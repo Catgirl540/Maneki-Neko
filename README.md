@@ -1118,3 +1118,32 @@ ssh <host> 'sudo certbot --nginx -d bank.waveflow.cn'
 
 certbot 走 HTTP-01 校验，**必须先有解析**。同机的 `agent.waveflow.cn` 已经有一张
 Let's Encrypt 证书，certbot 是现成的，不用装。
+
+## 20. 代码仓库
+
+**https://github.com/Catgirl540/Maneki-Neko**（私有）—— 团队的 Maneki-Neko 项目仓库。
+本目录是其中的**前端**部分（含纯前端 mock 后端），代码放在仓库**根目录**；
+后端以后放 `server/` 或 `backend/` 都行，README 开头已经写明这一点。
+
+### 本机 git 的两个环境适配
+
+这台机器上让 git 连上 GitHub 踩了两个坑，都已写进**仓库本地**的 `.git/config`（不进版本库）：
+
+1. **必须强制 HTTP/1.1**。HTTP/2 的流会被挂住：`git fetch` 卡满 136 秒后超时，
+   而**同一个 URL 用 `curl` 是 200、`git -c http.version=HTTP/1.1` 也是秒通**。
+   诊断方法是 `GIT_CURL_VERBOSE=1`，会看到它协商出 `using HTTP/2`、开完 stream 之后就没了下文。
+2. **凭证**。`gh auth setup-git` 要写 `~/.gitconfig`，而工作区之外是只读的，写不进去。
+   改用仓库本地的 credential helper，从 `gh auth token` **现取** ——
+   不把 token 写进任何文件：
+
+   ```bash
+   git config credential.helper '!f() { printf "username=x-access-token\npassword=%s\n" "$(gh auth token)"; }; f'
+   ```
+
+### ⚠️ 这个目录外层还套着一个 git 仓库
+
+`~/文档` 本身是个 git 仓库（里面有 Unreal 引擎、Jupyter 项目、各种翻译稿等无关内容，
+70 个未跟踪条目）。所以：
+
+- 提交只能在**本目录内**操作
+- **绝对不要在 `~/文档` 里 `git add -A`** —— 那会把几十 G 的无关文件一起提交
