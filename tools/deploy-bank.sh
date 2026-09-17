@@ -13,6 +13,16 @@
 set -euo pipefail
 
 KEY="${BANK_SSH_KEY:?请用 BANK_SSH_KEY 指定 SSH 私钥路径}"
+
+# 必须**先转成绝对路径**：脚本后面会 cd 到 app/ 去构建，
+# 相对路径到那时就指向 app/.deploy/key 了 —— 报错还是 "Identity file not accessible"，
+# 看起来像密钥不存在，其实是路径被 cd 带偏了。
+if [ ! -f "$KEY" ]; then
+  echo "❌ 找不到密钥：$KEY" >&2
+  exit 1
+fi
+KEY="$(cd "$(dirname "$KEY")" && pwd)/$(basename "$KEY")"
+
 HOST="${BANK_HOST:-ubuntu@81.71.23.46}"
 REMOTE_DIR="${BANK_REMOTE_DIR:-/var/www/bank.waveflow.cn}"
 DOMAIN="${BANK_DOMAIN:-bank.waveflow.cn}"
@@ -34,13 +44,18 @@ tar czf - -C dist . | "${SSH[@]}" "
   sudo chown -R www-data:www-data '$REMOTE_DIR'
 "
 
-echo "▶ 线上自检（用 Host 头，不依赖 DNS）"
+echo "▶ 线上自检（不依赖 DNS：把域名 --resolve 到本机）"
 "${SSH[@]}" "
   set -e
-  code() { curl -s -o /dev/null -w '%{http_code}' -H 'Host: $DOMAIN' \"\$1\"; }
-  printf '  首页            %s\n' \"\$(code http://127.0.0.1/)\"
-  printf '  深链接 /cards    %s（SPA 回落）\n' \"\$(code http://127.0.0.1/cards)\"
-  printf '  行标            %s\n' \"\$(code http://127.0.0.1/banks/cn-102.svg)\"
+  # 必须走 **HTTPS + --resolve**：上了证书之后 http 会 301，
+  # 拿 http 状态码自检的话每一项都是 301，看着像全挂，其实只是被跳转了。
+  # --resolve 让 curl 连本机、但带上正确的 SNI 与 Host，证书校验也照常走。
+  code() { curl -s -o /dev/null -w '%{http_code}' --resolve '$DOMAIN:443:127.0.0.1' \"https://$DOMAIN\$1\"; }
+  printf '  首页            %s\n' \"\$(code /)\"
+  printf '  深链接 /cards    %s（SPA 回落）\n' \"\$(code /cards)\"
+  printf '  行标            %s\n' \"\$(code /banks/cn-102.svg)\"
+  printf '  问一个不存在的    %s（SPA 回落也应 200）\n' \"\$(code /no-such-page)\"
+  printf '  HTTP 是否跳 HTTPS %s（应 301）\n' \"\$(curl -s -o /dev/null -w '%{http_code}' --resolve '$DOMAIN:80:127.0.0.1' http://$DOMAIN/)\"
   printf '  其它站点未受影响  %s\n' \"\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: waveflow.cn' http://127.0.0.1/)\"
 "
 
