@@ -1,0 +1,1505 @@
+/* ==========================================================================
+   本地模拟数据库
+   纯前端 MVP 的数据源：内存对象 + localStorage 持久化。
+   结构刻意与后端表结构一致，将来换成真接口时删掉整个 mock/ 目录即可。
+   ========================================================================== */
+
+import type {
+  Account,
+  AutoDebit,
+  Bank,
+  AccountTier,
+  CardProduct,
+  NavPoint,
+  RiskAssessment,
+  RiskQuestion,
+  BankCard,
+  BankRegion,
+  Cents,
+  Currency,
+  FpsIdType,
+  Payee,
+  SecurityOverview,
+  Transaction,
+  TransactionCategory,
+  TransactionChannel,
+  TransactionDetail,
+  TransactionDirection,
+  TransactionRecord,
+  User,
+  WealthAccount,
+  WealthHolding,
+  WealthProduct,
+} from '@/api/types'
+import { STORAGE_KEYS, storage } from '@/lib/storage'
+import { PRIMARY_BIN } from './bin-table'
+import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
+
+/**
+ * 模拟库的结构版本。
+ *
+ * MockDb 里的字段只要有增删，就把这个数字 +1：loadDb() 读取时校验，
+ * 对不上就整库重建。
+ *
+ * ⚠️ 不要再用「改 localStorage 的 key」来做版本管理 —— key 只能防住改 key 那一次，
+ * 防不住同一个 key 下字段又变了。之前正是这么漏的：key 升到 v2 之后才给明细加了
+ * accountLabel / accountNo，于是浏览器里留下了一份「v2 但缺字段」的数据，
+ * 交易详情页读 undefined 直接抛出，整棵树被卸载成白屏。
+ *
+ * 版本沿革：
+ *   3 → 交易明细（accountLabel / accountNo / counterpartyName）
+ *   4 → Bank 增加必填的 region（收款银行换成两地真实清算代码）。
+ *       忘了 +1 的后果实测过：旧 banks 数组没有 region，收款银行列表筛出来 0 家。
+ *   5 → Bank 增加 domain / logo（行标改为本地托管的真实图标）
+ *   6 → MockDb 增加 payPassword / payPasswordFailures（开卡要付钱，付钱要支付密码）
+ *   7 → 新增理财：products / holdings / riskAssessment（投资与资产板块）
+ *   8 → Account 增加必填的 tier；MockDb 增加 pendingSms（开户：账户分类 + 短信验证）
+ *   9 → BankCard 增加必填的 accountId（卡是支付工具，必须绑到具体账户）
+ *  10 → 新增 wealthAccount（理财账户 / 投资账户，开户后才能买理财）
+ *  11 → BankCard / CardProduct 的 brand 拆成 theme + network
+ *       （卡面配色与卡组织是两件事；星享卡同样走 Visa 网络）
+ *  12 → Bank 增加 primaryBin（选定收款行时补全卡号前缀用）
+ *  13 → 新增 cardSecrets（完整卡号与安全码，与卡列表分开存）
+ *  14 → 卡号改用真实感号段（Visa 402688 / 银联 620522）
+ *       —— 卡号存在 cardSecrets 里，不升版本的话浏览器会继续用旧号段
+ */
+export const MOCK_SCHEMA = 14
+
+export interface MockDb {
+  /** 结构版本，见 MOCK_SCHEMA */
+  schema: number
+  user: User
+  accounts: Account[]
+  /** 台账存的是带明细的完整记录，对外由接口裁剪成列表 DTO 或详情 */
+  transactions: TransactionRecord[]
+  banks: Bank[]
+  payees: Payee[]
+  cards: BankCard[]
+  /**
+   * 卡安全码（CVV）。**与 `cards` 分开存**，因为它和卡号/有效期不是一个安全级别：
+   * `cards` 会被 `listCards()` 整份下发给前端，安全码绝不能混在里面。
+   * 真实系统里这块加密存放、授权后即不可读（PCI DSS）；这里分开存是为了让
+   * 「哪个字段不该出列表接口」这件事**在数据层就成立**，而不是靠接口里记得删。
+   */
+  cardSecrets: Record<string, { cvv: string; pan: string }>
+  autoDebits: AutoDebit[]
+  security: SecurityOverview
+  /** 登录密码，明文仅存在于模拟环境 */
+  password: string
+  /**
+   * 支付密码。与登录密码分开：登录密码泄露不等于能扣钱，
+   * 所以付钱这一步必须单独验证一次。
+   * 真实系统里存的是不可逆摘要、且绝不回传 —— 这里明文只是为了演示能验证。
+   */
+  payPassword: string
+  /** 支付密码连续错误次数，达到阈值即锁定 */
+  payPasswordFailures: number
+  /** 理财持仓。市值随净值实时推导，不落库 */
+  holdings: WealthHolding[]
+  /** 风险承受能力测评结果。监管：超过一年未测须重做 */
+  riskAssessment: RiskAssessment
+  /** 待校验的短信验证码（开户 / 改密用） */
+  pendingSms: { phone: string; code: string; expiresAt: string } | null
+  /** 理财账户。默认未开立：要买理财必须先开 */
+  wealthAccount: WealthAccount
+}
+
+const DAY = 86_400_000
+
+/** 借记卡的展示文案，与种子数据里的星享借记卡一致 */
+export const CARD_PAYMENT_METHOD = '招财猫 · 星享借记卡 尾号 8888'
+
+/* ------------------------------------------------------------------ 换汇 */
+
+/**
+ * 换汇基准汇率表：1 单位该币种 = ? 人民币。
+ * 真实系统由行情源推送，这里固定住以保证演示可复现、可断言。
+ */
+export const FX_MID_RATES: Record<Currency, number> = {
+  CNY: 1,
+  USD: 7.1562,
+  HKD: 0.91547,
+}
+
+/** 换汇点差 0.35%，已经包含在成交汇率里，不再单独收一笔换汇手续费 */
+export const FX_SPREAD = 0.0035
+
+/** 报价有效期 30 秒。汇率是时效性数据，过期必须重新询价 */
+export const FX_QUOTE_TTL = 30
+
+/**
+ * 1 from = ? to，含点差。
+ * 点差永远对客户不利（换出去的钱比基准价少一点），这是银行的收入来源。
+ */
+export function fxRate(from: Currency, to: Currency): number {
+  if (from === to) return 1
+  const mid = FX_MID_RATES[from] / FX_MID_RATES[to]
+  return mid * (1 - FX_SPREAD)
+}
+
+/* ------------------------------------------------------- 交易编号 / 授权码 */
+
+/** FNV-1a：把字符串散列成一个稳定的 32 位无符号整数 */
+function fnv(seed: string): number {
+  let h = 2166136261
+  for (let i = 0; i < seed.length; i += 1) {
+    h = (h ^ seed.charCodeAt(i)) >>> 0
+    h = Math.imul(h, 16777619) >>> 0
+  }
+  return h >>> 0
+}
+
+/**
+ * 交易编号由 id 确定性派生，而不是随机生成：
+ * 同一条记录每次刷新、每次重新登录拿到的凭证号必须一致，否则客服无法核对。
+ * 位数（19 位）与真实回单保持一致。
+ */
+export function makeReferenceNo(seed: string): string {
+  let x = fnv(`ref:${seed}`)
+  let out = ''
+  while (out.length < 18) {
+    x = (Math.imul(x ^ (x >>> 13), 2246822519) + 0x9e3779b9) >>> 0
+    out += String(x % 10_000_000_000).padStart(10, '0')
+  }
+  return `2${out.slice(0, 18)}`
+}
+
+/** 6 位授权码，只有卡类 / 快捷支付才有 */
+export function makeAuthCode(seed: string): string {
+  return String(fnv(`auth:${seed}`) % 1_000_000).padStart(6, '0')
+}
+
+/** 按分类推断渠道：转账与房租走汇款，工资走代发，其余是消费类 */
+function defaultChannel(
+  category: TransactionCategory,
+  direction: TransactionDirection,
+): TransactionChannel {
+  if (category === 'transfer' || category === 'housing') return 'transfer'
+  if (category === 'salary') return 'account'
+  return direction === 'in' ? 'account' : 'quickpay'
+}
+
+function defaultPaymentMethod(channel: TransactionChannel, account: Account): string {
+  return channel === 'card' || channel === 'quickpay' ? CARD_PAYMENT_METHOD : account.label
+}
+
+/* -------------------------------------------------------------- 余额回推 */
+
+/**
+ * 交易前后余额：从账户**当前**余额按时间倒着推。
+ * 台账里每笔都带自己的 signedAmount（手续费是独立一笔），
+ * 所以这个推导对任意条数据都成立，转账 / 转入之后立刻是准的。
+ */
+export function withBalances(
+  rows: TransactionRecord[],
+  closing: Cents,
+): TransactionRecord[] {
+  let running = closing
+  return rows.map((row) => {
+    const balanceAfter = running
+    running -= row.signedAmount
+    return { ...row, detail: { ...row.detail, balanceAfter, balanceBefore: running } }
+  })
+}
+
+/**
+ * 列表 DTO：交易列表只需要够渲染一行的字段。
+ * 明细（交易编号 / 渠道 / 汇率 / 交易前后余额）由 getTransaction 单独下发。
+ */
+export function toTransactionListItem(rec: TransactionRecord): Transaction {
+  return {
+    id: rec.id,
+    accountId: rec.accountId,
+    direction: rec.direction,
+    amount: rec.amount,
+    signedAmount: rec.signedAmount,
+    counterparty: rec.counterparty,
+    memo: rec.memo,
+    category: rec.category,
+    createdAt: rec.createdAt,
+    status: rec.status,
+  }
+}
+
+/** 相对今天偏移 n 天、指定时刻的 ISO 字符串 */
+function daysAgo(n: number, hour = 12, minute = 0): string {
+  const d = new Date(Date.now() - n * DAY)
+  d.setHours(hour, minute, 0, 0)
+  return d.toISOString()
+}
+
+function inDays(n: number, hour = 9): string {
+  const d = new Date(Date.now() + n * DAY)
+  d.setHours(hour, 0, 0, 0)
+  return d.toISOString()
+}
+
+function monthKey(offset = 0): string {
+  const d = new Date()
+  d.setDate(1)
+  d.setMonth(d.getMonth() + offset)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+let seq = 0
+const nextId = (prefix: string) => `${prefix}_${String(++seq).padStart(4, '0')}`
+
+interface SeedRow {
+  direction: 'in' | 'out'
+  amount: number
+  counterparty: string
+  memo: string
+  category: TransactionCategory
+  /** 几天前 */
+  day: number
+  hour?: number
+  minute?: number
+  /**
+   * 交易详情里需要覆盖默认值的字段。
+   * 默认值（交易编号、渠道、支付方式、余额）由 seedTransactions 补齐，
+   * 只有「这条交易有什么特别」才写在这里 —— 比如外币交易的汇率与商户信息。
+   */
+  detail?: Partial<TransactionDetail>
+}
+
+/**
+ * 汇率口径与 ZA / Alipay+ 一致：**已包含外币交易手续费**，不再单独列一笔手续费。
+ * 因此记账金额 = 原币金额 × 这里的汇率，四舍五入到分。
+ */
+const USD_CNY_RATE = 7.2958 // 基准 ~7.1562 × 1.0195（1.95% 外币交易手续费）
+const HKD_CNY_RATE = 0.93341 // 基准 ~0.9155 × 1.0195
+const FX_NOTE = '已包括 1.95% 外币交易手续费'
+
+const SEED_ROWS: SeedRow[] = [
+  // —— 最近 7 天：喂给「现金流」图表，保证每天都有进出 ——
+  {
+    direction: 'out', amount: 8620, counterparty: '全家便利店', memo: '全家便利店',
+    category: 'shopping', day: 0, hour: 8, minute: 42,
+    detail: { channel: 'card', location: '上海市浦东新区 · 世纪大道店' },
+  },
+  {
+    direction: 'out', amount: 4500, counterparty: 'Manner Coffee', memo: 'Manner Coffee',
+    category: 'dining', day: 0, hour: 14, minute: 10,
+    detail: { channel: 'card', location: '上海市浦东新区 · 国金中心店' },
+  },
+  {
+    direction: 'out', amount: 259900, counterparty: 'Apple Store', memo: 'Apple Store 消费',
+    category: 'shopping', day: 1, hour: 14, minute: 32,
+    detail: {
+      channel: 'quickpay',
+      merchantId: 'M1008842137',
+      merchantCountry: '中国',
+      merchantCity: '上海市',
+      location: '线上商户 · Apple Store 中国',
+      counterpartyBank: '支付宝（中国）网络技术有限公司',
+      remark: 'MacBook Air 配件与 AppleCare',
+    },
+  },
+  // 外币交易：原币 USD，记账币 CNY，汇率已含 1.95% 外币交易手续费
+  {
+    direction: 'out', amount: 3648, counterparty: 'FIRWWORKS.AI',
+    memo: 'AI 图像生成服务订阅', category: 'subscription', day: 1, hour: 15, minute: 18,
+    detail: {
+      channel: 'quickpay',
+      merchantId: 'M1650870866',
+      merchantCountry: '美国',
+      merchantCity: '加利福尼亚州',
+      location: '线上商户 · fireworks.ai',
+      counterpartyBank: 'Stripe Payments',
+      originAmount: 500,
+      originCurrency: 'USD',
+      exchangeRate: USD_CNY_RATE,
+      exchangeRateNote: FX_NOTE,
+    },
+  },
+  {
+    direction: 'out', amount: 12840, counterparty: '盒马鲜生', memo: '盒马鲜生',
+    category: 'shopping', day: 1, hour: 19, minute: 5,
+    detail: { channel: 'quickpay', location: '上海市浦东新区 · 金桥店' },
+  },
+  {
+    direction: 'out', amount: 32800, counterparty: '海底捞', memo: '海底捞火锅',
+    category: 'dining', day: 2, hour: 19, minute: 20,
+    detail: {
+      channel: 'card',
+      merchantId: 'M2044190583',
+      merchantCountry: '中国',
+      merchantCity: '上海市',
+      location: '上海市静安区 · 南京西路店',
+    },
+  },
+  {
+    direction: 'in', amount: 120000, counterparty: '闲鱼卖出', memo: '闲置相机镜头',
+    category: 'other', day: 2, hour: 21, minute: 48,
+    detail: {
+      channel: 'account',
+      counterpartyName: '闲鱼买家',
+      counterpartyBank: '支付宝（中国）网络技术有限公司',
+    },
+  },
+  {
+    direction: 'out', amount: 650000, counterparty: '房租', memo: '本月房租',
+    category: 'housing', day: 3, hour: 9, minute: 0,
+    detail: {
+      channel: 'transfer',
+      counterpartyName: '张伟',
+      counterpartyAccountNo: '1100 **** **** 3321',
+      counterpartyBank: '中国建设银行',
+      location: '招财猫银行 App',
+      remark: '本月房租',
+    },
+  },
+  {
+    direction: 'in', amount: 420000, counterparty: '项目奖金', memo: '季度项目奖金',
+    category: 'salary', day: 4, hour: 11, minute: 30,
+    detail: {
+      channel: 'account',
+      counterpartyName: '上海云栖科技有限公司',
+    },
+  },
+  {
+    direction: 'out', amount: 5200, counterparty: '滴滴出行', memo: '滴滴出行',
+    category: 'transport', day: 4, hour: 22, minute: 12,
+    detail: { channel: 'quickpay', location: '线上商户 · 滴滴出行' },
+  },
+  {
+    direction: 'out', amount: 21000, counterparty: '万达影城', memo: '电影票',
+    category: 'other', day: 5, hour: 20, minute: 0,
+    detail: { channel: 'card', location: '上海市杨浦区 · 五角场店' },
+  },
+  {
+    direction: 'out', amount: 8900, counterparty: '美团外卖', memo: '美团外卖',
+    category: 'dining', day: 5, hour: 12, minute: 36,
+    detail: { channel: 'quickpay', location: '线上商户 · 美团' },
+  },
+  // 工资放在 7 天窗口之外，避免单根尖峰把现金流图压平（近 30 天视图仍能看到）
+  {
+    direction: 'in', amount: 1800000, counterparty: '工资入账', memo: '本月薪资',
+    category: 'salary', day: 9, hour: 10, minute: 0,
+    detail: {
+      channel: 'account',
+      paymentMethod: '工资代发',
+      counterpartyName: '上海云栖科技有限公司',
+      counterpartyAccountNo: '1001 **** **** 8899',
+      location: '代发渠道',
+      remark: '本月薪资',
+    },
+  },
+  {
+    direction: 'out', amount: 6800, counterparty: '瑞幸咖啡', memo: '瑞幸咖啡',
+    category: 'dining', day: 6, hour: 9, minute: 12,
+    detail: { channel: 'quickpay', location: '线上商户 · 瑞幸咖啡' },
+  },
+  {
+    direction: 'out', amount: 14592, counterparty: 'OpenAI', memo: 'API 用量结算',
+    category: 'subscription', day: 6, hour: 10, minute: 5,
+    detail: {
+      channel: 'quickpay',
+      merchantId: 'M1993002748',
+      merchantCountry: '美国',
+      merchantCity: '加利福尼亚州',
+      location: '线上商户 · platform.openai.com',
+      counterpartyBank: 'Stripe Payments',
+      originAmount: 2000,
+      originCurrency: 'USD',
+      exchangeRate: USD_CNY_RATE,
+      exchangeRateNote: FX_NOTE,
+    },
+  },
+
+  // —— 更早：喂给「消费分析」的当月与近 6 个月走势 ——
+  {
+    direction: 'out', amount: 12800, counterparty: '滴滴出行', memo: '滴滴出行',
+    category: 'transport', day: 8, hour: 8, minute: 40,
+    detail: { channel: 'quickpay' },
+  },
+  {
+    direction: 'out', amount: 2500, counterparty: '网易云音乐', memo: '黑胶会员',
+    category: 'subscription', day: 8, hour: 0, minute: 5,
+    detail: {
+      channel: 'quickpay',
+      merchantId: 'M1003310275',
+      merchantCountry: '中国',
+      merchantCity: '杭州市',
+      location: '线上商户 · 网易云音乐',
+      remark: '自动扣款 · 黑胶会员',
+    },
+  },
+  {
+    direction: 'out', amount: 45600, counterparty: '优衣库', memo: '换季衣物',
+    category: 'shopping', day: 10, hour: 18, minute: 26,
+    detail: { channel: 'card', location: '上海市徐汇区 · 港汇恒隆店' },
+  },
+  {
+    direction: 'out', amount: 15000, counterparty: '转账 · 陈嘉禾', memo: '房租 AA',
+    category: 'transfer', day: 11, hour: 21, minute: 3,
+    detail: {
+      channel: 'transfer',
+      counterpartyName: '陈嘉禾',
+      counterpartyAccountNo: '6222 **** **** 4471',
+      counterpartyBank: '招财猫银行',
+      location: '招财猫银行 App',
+      remark: '房租 AA',
+    },
+  },
+  // 港币消费：验证汇率按 ISO 4217 惯例展示（金额「代码 数字」、汇率「数字 代码 数字」）
+  {
+    direction: 'out', amount: 83914, counterparty: 'Apple Store 香港',
+    memo: 'AirPods Pro', category: 'shopping', day: 12, hour: 16, minute: 40,
+    detail: {
+      channel: 'card',
+      merchantId: 'M3007719024',
+      merchantCountry: '中国香港',
+      merchantCity: '中环',
+      location: '香港中环 · ifc mall 店',
+      originAmount: 89900,
+      originCurrency: 'HKD',
+      exchangeRate: HKD_CNY_RATE,
+      exchangeRateNote: FX_NOTE,
+    },
+  },
+  {
+    direction: 'out', amount: 8800, counterparty: '喜茶', memo: '喜茶',
+    category: 'dining', day: 12, hour: 15, minute: 47,
+    detail: { channel: 'quickpay' },
+  },
+  {
+    direction: 'in', amount: 32000, counterparty: '退款 · 京东', memo: '订单退款',
+    category: 'other', day: 13, hour: 11, minute: 20,
+    detail: { channel: 'quickpay', counterpartyName: '京东', counterpartyBank: '京东支付' },
+  },
+  {
+    direction: 'out', amount: 19900, counterparty: '腾讯视频', memo: '年度会员',
+    category: 'subscription', day: 14, hour: 0, minute: 3,
+    detail: { channel: 'quickpay', remark: '自动扣款 · 年度会员' },
+  },
+  {
+    direction: 'out', amount: 8900, counterparty: '地铁出行', memo: '交通卡充值',
+    category: 'transport', day: 15, hour: 7, minute: 55,
+    detail: { channel: 'quickpay', location: '上海地铁 · 自动充值' },
+  },
+  {
+    direction: 'out', amount: 128000, counterparty: '无印良品', memo: 'MUJI 家居',
+    category: 'shopping', day: 22, hour: 16, minute: 10,
+    detail: { channel: 'card', location: '上海市静安区 · 兴业太古汇店' },
+  },
+  {
+    direction: 'out', amount: 26000, counterparty: '西贝莜面村', memo: '西贝莜面村',
+    category: 'dining', day: 28, hour: 12, minute: 30,
+    detail: { channel: 'card' },
+  },
+  // 境外转账：手续费是独立一笔台账，所以在详情里只留汇款信息
+  {
+    direction: 'out', amount: 500000, counterparty: '转账 · Wing Chan', memo: '境外转账至汇丰',
+    category: 'transfer', day: 30, hour: 10, minute: 12,
+    detail: {
+      channel: 'transfer',
+      counterpartyName: 'Wing Chan',
+      counterpartyAccountNo: '0041 **** **** 9118',
+      counterpartyBank: '汇丰银行（香港）',
+      location: '招财猫银行 App',
+      remark: '生活费',
+    },
+  },
+  {
+    direction: 'in', amount: 1800000, counterparty: '工资入账', memo: '上月薪资',
+    category: 'salary', day: 36, hour: 10, minute: 0,
+    detail: {
+      channel: 'account',
+      paymentMethod: '工资代发',
+      counterpartyName: '上海云栖科技有限公司',
+    },
+  },
+  {
+    direction: 'out', amount: 650000, counterparty: '房租', memo: '上月房租',
+    category: 'housing', day: 33, hour: 9, minute: 0,
+    detail: {
+      channel: 'transfer',
+      counterpartyName: '张伟',
+      location: '招财猫银行 App',
+      remark: '上月房租',
+    },
+  },
+  {
+    direction: 'out', amount: 368000, counterparty: '京东', memo: '显示器',
+    category: 'shopping', day: 40, hour: 20, minute: 15,
+    detail: { channel: 'quickpay', counterpartyBank: '京东支付' },
+  },
+  {
+    direction: 'out', amount: 42000, counterparty: '山姆会员店', memo: '山姆会员店',
+    category: 'shopping', day: 44, hour: 17, minute: 5,
+    detail: { channel: 'card' },
+  },
+  {
+    direction: 'out', amount: 18000, counterparty: '健身房', memo: '月卡',
+    category: 'subscription', day: 48, hour: 8, minute: 0,
+    detail: { channel: 'quickpay', remark: '自动扣款 · 月卡' },
+  },
+  {
+    direction: 'in', amount: 1800000, counterparty: '工资入账', memo: '两月前薪资',
+    category: 'salary', day: 66, hour: 10, minute: 0,
+    detail: {
+      channel: 'account',
+      paymentMethod: '工资代发',
+      counterpartyName: '上海云栖科技有限公司',
+    },
+  },
+  {
+    direction: 'out', amount: 650000, counterparty: '房租', memo: '两月前房租',
+    category: 'housing', day: 63, hour: 9, minute: 0,
+    detail: { channel: 'transfer', counterpartyName: '张伟', location: '招财猫银行 App' },
+  },
+  {
+    direction: 'out', amount: 215000, counterparty: '携程旅行', memo: '周末机票',
+    category: 'transport', day: 70, hour: 13, minute: 40,
+    detail: { channel: 'quickpay', counterpartyBank: '携程支付' },
+  },
+]
+
+/**
+ * 台账种子的组装：默认值由这里补齐，SEED_ROWS 只声明「这条交易特别在哪」。
+ * 交易前后余额不在这里落库 —— 它们随账户余额变化，由 withBalances 在读取时回推。
+ */
+function seedTransactions(account: Account): TransactionRecord[] {
+  return SEED_ROWS.map((row) => {
+    const id = nextId('txn')
+    const channel = row.detail?.channel ?? defaultChannel(row.category, row.direction)
+
+    const detail: TransactionDetail = {
+      referenceNo: makeReferenceNo(id),
+      channel,
+      paymentMethod: defaultPaymentMethod(channel, account),
+      accountLabel: account.label,
+      accountNo: account.accountNo,
+      settleCurrency: account.currency,
+      balanceBefore: 0,
+      balanceAfter: 0,
+      // 授权码只有卡类 / 快捷支付才有；转账与代发不产生授权码
+      ...(channel === 'card' || channel === 'quickpay' ? { authCode: makeAuthCode(id) } : {}),
+    }
+    if (row.detail) Object.assign(detail, row.detail)
+
+    return {
+      id,
+      accountId: account.id,
+      direction: row.direction,
+      amount: row.amount,
+      signedAmount: row.direction === 'in' ? row.amount : -row.amount,
+      counterparty: row.counterparty,
+      memo: row.memo,
+      category: row.category,
+      createdAt: daysAgo(row.day, row.hour ?? 12, row.minute ?? 0),
+      status: 'success' as const,
+      detail,
+    }
+  }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+
+/* --------------------------------------------------------- 账户类别（Ⅰ/Ⅱ/Ⅲ） */
+
+/**
+ * 账户类别说明。
+ *
+ * 功能与限额**照抄监管原文**（银发〔2015〕392 号、银发〔2018〕16 号），
+ * 不自己概括 —— 这几组数字是用户判断"够不够用"的唯一依据，写错就是误导：
+ *
+ *   Ⅱ类户：非绑定账户转入、存入现金、消费和缴费、向非绑定账户转出、取出现金
+ *          日累计合计 1 万元，年累计合计 20 万元
+ *   Ⅲ类户：账户余额不得超过 2000 元；
+ *          消费和缴费支付、非绑定账户资金转出等 日累计合计 2000 元，
+ *          年累计合计 5 万元
+ */
+export const ACCOUNT_TIERS: AccountTier[] = [
+  {
+    tier: 'I',
+    name: 'Ⅰ 类户',
+    summary: '全功能账户，相当于"钱箱"，工资、大额资金都放这里',
+    features: ['现金存取款', '转账', '购买投资理财等金融产品', '消费和缴费支付'],
+    limitations: [],
+    limits: [
+      { label: '账户余额', value: '无上限' },
+      { label: '消费与缴费', value: '无上限' },
+      { label: '向非绑定账户转出', value: '无上限' },
+    ],
+    online: false,
+    offlineReason: '按账户分类管理规定，Ⅰ 类户需本人持身份证到柜台面签，无法在线开立',
+    requiresBinding: false,
+  },
+  {
+    tier: 'II',
+    name: 'Ⅱ 类户',
+    summary: '可存款、买理财、限额消费缴费，线上开户的主力类型',
+    features: ['存款', '购买投资理财产品', '限额消费和缴费', '限额向非绑定账户转出资金'],
+    limitations: ['取出现金受限额约束'],
+    limits: [
+      { label: '非绑定账户转入 / 存现 / 消费缴费 / 向非绑定账户转出 / 取现', value: '日累计合计 1 万元、年累计合计 20 万元' },
+      { label: '与绑定账户之间的转账', value: '不受上述限额约束' },
+    ],
+    online: true,
+    requiresBinding: true,
+  },
+  {
+    tier: 'III',
+    name: 'Ⅲ 类户',
+    summary: '小额高频的"零钱包"，适合日常小额支付',
+    features: ['限定金额的消费和缴费', '限额向非绑定账户转出资金'],
+    limitations: ['不能存取现金', '账户余额不得超过 2000 元'],
+    limits: [
+      { label: '账户余额', value: '不得超过 2000 元' },
+      { label: '消费缴费 / 向非绑定账户转出', value: '日累计合计 2000 元、年累计合计 5 万元' },
+    ],
+    online: true,
+    requiresBinding: true,
+  },
+]
+
+/* 承诺语句与惩戒文案在 lib/account-opening.ts —— 页面与 mock 共用同一份来源 */
+
+/* ------------------------------------------------------------ 卡产品与支付密码 */
+
+/** 演示用的支付密码 */
+export const DEFAULT_PAY_PASSWORD = '888888'
+
+/**
+ * 本行给这位客户的转数快 FPS ID。
+ *
+ * 转数快标识是**登记制**：手机号 / 电邮 / FPS ID 三选一都能收款，
+ * 但都得先在银行登记过。这里固定一个值，别的客户登记册（FPS_REGISTRY）里不会出现它。
+ */
+export const USER_FPS_ID = '2046881'
+
+/** 支付密码连续输错多少次就锁定 */
+export const PAY_PASSWORD_MAX_ATTEMPTS = 3
+
+/**
+ * 可申请的卡产品。
+ * 定价与权益归后端 —— 前端只负责展示和收款，不写死费率。
+ */
+export const CARD_PRODUCTS: CardProduct[] = [
+  {
+    code: 'LCB-UP-DEBIT',
+    name: '招财猫 · 云闪付借记卡',
+    theme: 'gold',
+    network: 'unionpay',
+    kind: 'debit',
+    issuingFee: 1_000, // ¥10.00
+    deliveryFee: 0, // 挂号信寄送，不收费
+    perks: ['境内跨行 ATM 取现每月前 5 笔免手续费', '云闪付乘车码 9 折', '动账短信提醒'],
+    deliveryDays: 5,
+  },
+  {
+    code: 'LCB-VISA-DEBIT',
+    name: '招财猫 · Visa 全球借记卡',
+    theme: 'ink',
+    network: 'visa',
+    kind: 'debit',
+    issuingFee: 2_000, // ¥20.00
+    deliveryFee: 1_500, // ¥15.00 快递
+    perks: ['境外消费免 1.5% 货币转换费', '全球 ATM 取现每月前 3 笔免费', '旅行意外险'],
+    deliveryDays: 7,
+  },
+]
+
+
+/* ==========================================================================
+   理财：产品、风险测评、持仓
+   --------------------------------------------------------------------------
+   数据口径对着监管来（见 api/types.ts 顶部的注释）。净值序列用固定种子的
+   伪随机游走生成 —— 每次刷新都一样，便于断言，也免得演示时数字乱跳。
+   ========================================================================== */
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/**
+ * 固定种子的净值序列。
+ * 用伪随机而不是 Math.random()：同一天多次刷新得到的曲线必须一致，
+ * 否则用户会觉得数据在乱跳，截图和断言也没法做。
+ */
+function navSeries(seed: number, days: number, drift: number, vol: number): NavPoint[] {
+  let x = seed >>> 0
+  const rand = () => {
+    x = (Math.imul(x ^ (x >>> 15), 2246822519) + 0x9e3779b9) >>> 0
+    return x / 0xffffffff
+  }
+  const out: NavPoint[] = []
+  let nav = 1
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  for (let i = days - 1; i >= 0; i -= 1) {
+    nav *= 1 + drift / 365 + (rand() - 0.5) * vol
+    const d = new Date(today)
+    d.setDate(d.getDate() - i)
+    out.push({
+      date: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+      nav: Number(nav.toFixed(4)),
+    })
+  }
+  return out
+}
+
+/** 按日计提、已体现在净值里的费率 */
+const ONGOING_FEES_STD = [
+  { label: '固定管理费', rate: 0.003 },
+  { label: '托管费', rate: 0.0005 },
+  { label: '销售服务费', rate: 0.002 },
+]
+
+export const WEALTH_PRODUCTS: WealthProduct[] = [
+  {
+    code: 'LCB-CASH-A',
+    name: '招财猫现金添利 A',
+    issuer: '招财猫理财有限责任公司',
+    category: 'cash',
+    risk: 'R1',
+    principalProtected: false,
+    benchmark: {
+      kind: 'range',
+      low: 0.016,
+      high: 0.021,
+      basis: '以组合平均剩余期限 90 天以内、同业存单与短融为主要配置测算',
+    },
+    sevenDayYield: 0.0186,
+    nav: 1.0015,
+    navDate: '',
+    sinceInception: 0.0181,
+    volatility: 0.0004,
+    minAmount: 100,
+    stepAmount: 100,
+    term: '随时赎回',
+    openEnded: true,
+    ongoingFees: [
+      { label: '固定管理费', rate: 0.0015 },
+      { label: '托管费', rate: 0.0002 },
+      { label: '销售服务费', rate: 0.002 },
+    ],
+    transactionFees: [],
+    navHistory: navSeries(11, 30, 0.018, 0.00008),
+    topHoldings: [
+      { name: '同业存单（穿透后合并列示）', weight: 0.42, lookThrough: false },
+      { name: '短期融资券', weight: 0.26, lookThrough: false },
+      { name: '现金及银行存款', weight: 0.22, lookThrough: false },
+      { name: '政策性金融债', weight: 0.1, lookThrough: false },
+      { name: '国家开发银行 2025 年第 8 期金融债', weight: 0.09, lookThrough: true },
+      { name: '中国工商银行 2025 年第 3 期同业存单', weight: 0.08, lookThrough: true },
+      { name: '中国农业银行 2025 年第 12 期同业存单', weight: 0.07, lookThrough: true },
+    ],
+  },
+  {
+    code: 'LCB-FIXED-090',
+    name: '招财猫稳盈 90 天',
+    issuer: '招财猫理财有限责任公司',
+    category: 'fixed',
+    risk: 'R2',
+    principalProtected: false,
+    benchmark: {
+      kind: 'range',
+      low: 0.023,
+      high: 0.028,
+      basis: '以中债-新综合全价(1 年以下)指数近一年收益率乘以 92% 测算，已扣除产品费用',
+    },
+    nav: 1.0064,
+    navDate: '',
+    sinceInception: 0.0258,
+    volatility: 0.0031,
+    minAmount: 1_000_000,
+    stepAmount: 100_000,
+    term: '90 天',
+    openEnded: false,
+    ongoingFees: ONGOING_FEES_STD,
+    transactionFees: [],
+    navHistory: navSeries(23, 30, 0.026, 0.0006),
+    topHoldings: [
+      { name: '国债', weight: 0.31, lookThrough: false },
+      { name: '政策性金融债', weight: 0.28, lookThrough: false },
+      { name: '高等级信用债', weight: 0.24, lookThrough: false },
+      { name: '现金及银行存款', weight: 0.17, lookThrough: false },
+      { name: '中国进出口银行 2025 年第 5 期金融债', weight: 0.11, lookThrough: true },
+      { name: '中国建设银行 2025 年第 22 期同业存单', weight: 0.09, lookThrough: true },
+    ],
+  },
+  {
+    code: 'LCB-FIXED-365',
+    name: '招财猫稳盈 365 天',
+    issuer: '招财猫理财有限责任公司',
+    category: 'fixed',
+    risk: 'R2',
+    principalProtected: false,
+    // 公式型基准：新规鼓励的做法 —— 收益从哪来、跟着什么走，一眼能看明白
+    benchmark: {
+      kind: 'formula',
+      formula: '中债-新综合全价(1 年以下)指数收益率 × 90% + 沪深 300 指数收益率 × 3% + 活期存款利率 × 7%',
+      basis: '债权类资产打底（90%）、权益类小幅增强（3%），并保留 7% 流动性与活期利率挂钩',
+    },
+    nav: 1.0128,
+    navDate: '',
+    sinceInception: 0.0287,
+    volatility: 0.0042,
+    minAmount: 1_000_000,
+    stepAmount: 100_000,
+    term: '365 天',
+    openEnded: false,
+    ongoingFees: ONGOING_FEES_STD,
+    transactionFees: [],
+    navHistory: navSeries(37, 30, 0.029, 0.0008),
+    topHoldings: [
+      { name: '政策性金融债', weight: 0.36, lookThrough: false },
+      { name: '国债', weight: 0.25, lookThrough: false },
+      { name: '高等级信用债', weight: 0.21, lookThrough: false },
+      { name: '权益类基金', weight: 0.05, lookThrough: false },
+      { name: '现金及银行存款', weight: 0.13, lookThrough: false },
+      { name: '中国农业发展银行 2025 年第 9 期金融债', weight: 0.13, lookThrough: true },
+      { name: '沪深 300 交易型开放式指数基金', weight: 0.04, lookThrough: true },
+    ],
+  },
+  {
+    code: 'LCB-MIXED-180',
+    name: '招财猫平衡配置 180 天',
+    issuer: '招财猫理财有限责任公司',
+    category: 'mixed',
+    risk: 'R3',
+    principalProtected: false,
+    benchmark: {
+      kind: 'formula',
+      formula: '中债-新综合全价指数收益率 × 60% + 沪深 300 指数收益率 × 35% + 活期存款利率 × 5%',
+      basis: '股债六四开，权益部分跟踪沪深 300，债券部分跟踪中债综合全价指数',
+    },
+    nav: 0.9984,
+    navDate: '',
+    sinceInception: 0.0412,
+    volatility: 0.0248,
+    minAmount: 1_000_000,
+    stepAmount: 100_000,
+    term: '180 天',
+    openEnded: false,
+    ongoingFees: ONGOING_FEES_STD,
+    transactionFees: [],
+    navHistory: navSeries(51, 30, 0.045, 0.006),
+    topHoldings: [
+      { name: '债券', weight: 0.58, lookThrough: false },
+      { name: '股票', weight: 0.29, lookThrough: false },
+      { name: '基金', weight: 0.08, lookThrough: false },
+      { name: '现金及银行存款', weight: 0.05, lookThrough: false },
+      { name: '沪深 300 交易型开放式指数基金', weight: 0.07, lookThrough: true },
+      { name: '招商银行股份有限公司', weight: 0.021, lookThrough: true },
+      { name: '宁德时代新能源科技股份有限公司', weight: 0.018, lookThrough: true },
+    ],
+  },
+  {
+    code: 'LCB-EQUITY-300',
+    name: '招财猫沪深 300 指数增强',
+    issuer: '招财猫理财有限责任公司',
+    category: 'equity',
+    risk: 'R4',
+    principalProtected: false,
+    benchmark: {
+      kind: 'formula',
+      formula: '沪深 300 指数收益率 × 95% + 活期存款利率 × 5%',
+      basis: '以沪深 300 指数为业绩基准，力争在控制跟踪误差的前提下取得超额收益',
+    },
+    nav: 1.0342,
+    navDate: '',
+    sinceInception: 0.0863,
+    volatility: 0.1876,
+    minAmount: 1_000_000,
+    stepAmount: 100_000,
+    term: '随时赎回',
+    openEnded: true,
+    ongoingFees: ONGOING_FEES_STD,
+    // 一次性收取、投资者额外承担 —— 与按日计提的那几项性质不同，要分开列
+    transactionFees: [
+      { label: '申购费', rate: 0.0015 },
+      { label: '赎回费（持有不满 7 天）', rate: 0.005 },
+    ],
+    navHistory: navSeries(67, 30, 0.08, 0.018),
+    topHoldings: [
+      { name: '股票', weight: 0.93, lookThrough: false },
+      { name: '现金及银行存款', weight: 0.07, lookThrough: false },
+      { name: '贵州茅台酒股份有限公司', weight: 0.052, lookThrough: true },
+      { name: '宁德时代新能源科技股份有限公司', weight: 0.041, lookThrough: true },
+      { name: '中国平安保险(集团)股份有限公司', weight: 0.033, lookThrough: true },
+    ],
+  },
+  {
+    code: 'LCB-GOLD-365',
+    name: '招财猫黄金挂钩 365 天',
+    issuer: '招财猫理财有限责任公司',
+    category: 'derivative',
+    risk: 'R5',
+    principalProtected: false,
+    benchmark: {
+      kind: 'formula',
+      formula: '上海金基准价收益率 × 90% + 活期存款利率 × 10%',
+      basis: '以上海黄金交易所上海金基准价为跟踪标的，含衍生品头寸，净值波动显著',
+    },
+    nav: 1.0571,
+    navDate: '',
+    sinceInception: 0.0947,
+    volatility: 0.3125,
+    minAmount: 5_000_000,
+    stepAmount: 500_000,
+    term: '365 天',
+    openEnded: false,
+    ongoingFees: ONGOING_FEES_STD,
+    transactionFees: [{ label: '申购费', rate: 0.003 }],
+    navHistory: navSeries(83, 30, 0.09, 0.03),
+    topHoldings: [
+      { name: '黄金现货合约', weight: 0.74, lookThrough: false },
+      { name: '黄金 ETF', weight: 0.18, lookThrough: false },
+      { name: '现金及银行存款', weight: 0.08, lookThrough: false },
+      { name: '上海黄金交易所 Au99.99 现货合约', weight: 0.61, lookThrough: true },
+      { name: '华安易富黄金交易型开放式证券投资基金', weight: 0.17, lookThrough: true },
+    ],
+  },
+]
+
+/**
+ * 风险承受能力测评问卷。
+ * 题目覆盖监管列明的维度（年龄、财务状况、投资经验、投资目的、收益期望、
+ * 风险偏好、流动性要求、风险认识及风险损失承受程度），不是随便编几道。
+ */
+export const RISK_QUESTIONS: RiskQuestion[] = [
+  {
+    id: 'q1',
+    question: '您的年龄区间是？',
+    options: [
+      { label: '60 岁以上', score: 1 },
+      { label: '46–60 岁', score: 2 },
+      { label: '31–45 岁', score: 3 },
+      { label: '18–30 岁', score: 4 },
+    ],
+  },
+  {
+    id: 'q2',
+    question: '您的家庭年收入（税后）大致为？',
+    options: [
+      { label: '10 万元以下', score: 1 },
+      { label: '10 万–30 万元', score: 2 },
+      { label: '30 万–100 万元', score: 3 },
+      { label: '100 万元以上', score: 4 },
+    ],
+  },
+  {
+    id: 'q3',
+    question: '您计划投入理财的资金占家庭金融资产的比例？',
+    options: [
+      { label: '70% 以上', score: 1 },
+      { label: '50%–70%', score: 2 },
+      { label: '20%–50%', score: 3 },
+      { label: '20% 以下', score: 4 },
+    ],
+  },
+  {
+    id: 'q4',
+    question: '您的投资经验是？',
+    options: [
+      { label: '只买过存款和国债', score: 1 },
+      { label: '买过货币基金、银行理财', score: 2 },
+      { label: '买过股票或股票型基金', score: 3 },
+      { label: '买过期货、期权等衍生品', score: 4 },
+    ],
+  },
+  {
+    id: 'q5',
+    question: '您能接受的本金最大回撤是？',
+    options: [
+      { label: '不能接受任何亏损', score: 1 },
+      { label: '5% 以内', score: 2 },
+      { label: '5%–20%', score: 3 },
+      { label: '20% 以上', score: 4 },
+    ],
+  },
+  {
+    id: 'q6',
+    question: '这笔资金您计划投资多久？',
+    options: [
+      { label: '随时可能要用', score: 1 },
+      { label: '半年以内', score: 2 },
+      { label: '半年到两年', score: 3 },
+      { label: '两年以上', score: 4 },
+    ],
+  },
+]
+
+/** 总分 → 风险承受能力等级 */
+export function toleranceFromScore(score: number): RiskAssessment['level'] {
+  if (score <= 9) return 'C1'
+  if (score <= 12) return 'C2'
+  if (score <= 16) return 'C3'
+  if (score <= 20) return 'C4'
+  return 'C5'
+}
+
+/* ==========================================================================
+   收款银行名录（真实数据）
+   --------------------------------------------------------------------------
+   两地的「银行代码」是两套不同的真实体系，但**结构完全对应**：
+   都是 3 位、银行级、由各自的清算机构分配 —— 所以放在同一个 code 字段里，
+   用 region 区分。
+
+   · 内地 = 人民银行《支付系统银行行别、行号业务标准》（银发〔2003〕189 号）
+            里的「银行行别代码」。3 位 = 1 位类别 + 2 位顺序编码：
+            0 中央银行 / 1 国有独资商业银行 / 2 政策性银行 / 3 其他商业银行 /
+            4 非银行金融机构 / 5-7 外资银行 / 9 特许参与者。
+            例：102 中国工商银行、104 中国银行、308 招商银行、403 邮储银行。
+   · 香港 = HKICL 清算所银行代码（3 位），在 FPS / CHATS / 支票清算里通用。
+            例：004 汇丰、012 中银香港、024 恒生。
+
+   ⚠️ 两套码表是**相互独立**的，code 单独并不唯一：在完整码表里
+      307（内地平安 / 香港 ABN AMRO）、308、309、316 两地都有机构在用。
+      本名录收窄后恰好没有撞号，但这是巧合不是保证 —— 加一家银行就可能撞上，
+      所以定位一家银行**必须**带上 region。真实跨境接口也是用
+      (国家/地区, 清算代码) 这一对来定位的。
+
+   收录范围刻意收窄，不是全量：
+     内地 —— 六大行 + 全国性股份制商业银行（零售汇款会遇到的）
+     香港 —— 本地持牌零售银行 + 内地银行在港机构（跨境支付通的实际收款方）
+   未收录香港虚拟银行（众安 / Mox / livi 等）：它们的清算代码没找到可靠来源，
+   宁可缺也不猜。
+   ========================================================================== */
+
+/** 内地：人民银行支付系统行别代码 */
+const CN_BANKS: Bank[] = [
+  // 本行是虚构机构，不占用真实行别代码，用内部代码 LCB 表示，也没有行标
+  // internal: 本行账户由本行核验，不参与卡 BIN 识别（见 Bank.internal）
+  { code: 'LCB', region: 'CN', name: '招财猫银行', shortName: '招财猫', color: '#E0A83C', internal: true, logo: '/banks/cn-LCB.svg' },
+  { code: '102', region: 'CN', name: '中国工商银行', shortName: '工商银行', color: '#C7000B', domain: 'icbc.com.cn', logo: '/banks/cn-102.svg' },
+  { code: '103', region: 'CN', name: '中国农业银行', shortName: '农业银行', color: '#00843D', domain: 'abchina.com', logo: '/banks/cn-103.svg' },
+  { code: '104', region: 'CN', name: '中国银行', shortName: '中国银行', color: '#A6192E', domain: 'boc.cn', logo: '/banks/cn-104.svg' },
+  { code: '105', region: 'CN', name: '中国建设银行', shortName: '建设银行', color: '#0066B3', domain: 'ccb.com', logo: '/banks/cn-105.svg' },
+  { code: '301', region: 'CN', name: '交通银行', shortName: '交通银行', color: '#003D7C', domain: 'bankcomm.com', logo: '/banks/cn-301.svg' },
+  { code: '308', region: 'CN', name: '招商银行', shortName: '招商银行', color: '#C8102E', domain: 'cmbchina.com', logo: '/banks/cn-308.svg' },
+  { code: '302', region: 'CN', name: '中信银行', shortName: '中信银行', color: '#E60012', domain: 'citicbank.com', logo: '/banks/cn-302.svg' },
+  { code: '303', region: 'CN', name: '中国光大银行', shortName: '光大银行', color: '#7A2E8E', domain: 'cebbank.com', logo: '/banks/cn-303.svg' },
+  { code: '304', region: 'CN', name: '华夏银行', shortName: '华夏银行', color: '#C8102E', domain: 'hxb.com.cn', logo: '/banks/cn-304.svg' },
+  { code: '305', region: 'CN', name: '中国民生银行', shortName: '民生银行', color: '#005BAC', domain: 'cmbc.com.cn', logo: '/banks/cn-305.svg' },
+  // 306 / 307 在行别代码表里是「广东发展银行」「深圳发展银行」，两家后来分别更名为广发、平安
+  { code: '306', region: 'CN', name: '广发银行', shortName: '广发银行', color: '#C8102E', domain: 'cgbchina.com.cn', logo: '/banks/cn-306.svg' },
+  { code: '307', region: 'CN', name: '平安银行', shortName: '平安银行', color: '#EA5504', domain: 'bank.pingan.com', logo: '/banks/cn-307.svg' },
+  { code: '309', region: 'CN', name: '兴业银行', shortName: '兴业银行', color: '#00693E', domain: 'cib.com.cn', logo: '/banks/cn-309.svg' },
+  { code: '310', region: 'CN', name: '上海浦东发展银行', shortName: '浦发银行', color: '#00538C', domain: 'spdb.com.cn', logo: '/banks/cn-310.svg' },
+  { code: '315', region: 'CN', name: '恒丰银行', shortName: '恒丰银行', color: '#C8102E', domain: 'hfbank.com.cn', logo: '/banks/cn-315.svg' },
+  { code: '316', region: 'CN', name: '浙商银行', shortName: '浙商银行', color: '#005BAC', domain: 'czbank.com', logo: '/banks/cn-316.svg' },
+  { code: '318', region: 'CN', name: '渤海银行', shortName: '渤海银行', color: '#003D7C', domain: 'cbhb.com.cn', logo: '/banks/cn-318.svg' },
+  { code: '319', region: 'CN', name: '徽商银行', shortName: '徽商银行', color: '#C8102E', domain: 'hsbank.com.cn', logo: '/banks/cn-319.svg' },
+  { code: '403', region: 'CN', name: '中国邮政储蓄银行', shortName: '邮储银行', color: '#00693E', domain: 'psbc.com', logo: '/banks/cn-403.svg' },
+]
+/**
+ * 香港：HKICL 清算所银行代码。
+ * 后半段（214 起）是内地银行在港机构的代码 —— 跨境支付通的实际收款方就在其中。
+ */
+const HK_BANKS: Bank[] = [
+  { code: '003', region: 'HK', name: '渣打银行（香港）', shortName: '渣打银行', color: '#0473BE', domain: 'sc.com', logo: '/banks/hk-003.svg' },
+  { code: '004', region: 'HK', name: '香港上海汇丰银行', shortName: '汇丰银行', color: '#DB0011', domain: 'hsbc.com.hk', logo: '/banks/hk-004.svg' },
+  { code: '006', region: 'HK', name: '花旗银行', shortName: '花旗银行', color: '#003D7C', domain: 'citi.com', logo: '/banks/hk-006.svg' },
+  { code: '009', region: 'HK', name: '中国建设银行（亚洲）', shortName: '建行亚洲', color: '#0066B3', domain: 'asia.ccb.com', logo: '/banks/hk-009.svg' },
+  { code: '012', region: 'HK', name: '中国银行（香港）', shortName: '中银香港', color: '#A6192E', domain: 'bochk.com', logo: '/banks/hk-012.svg' },
+  { code: '015', region: 'HK', name: '东亚银行', shortName: '东亚银行', color: '#00693E', domain: 'hkbea.com', logo: '/banks/hk-015.svg' },
+  { code: '016', region: 'HK', name: '星展银行（香港）', shortName: '星展银行', color: '#EC1C24', domain: 'dbs.com.hk', logo: '/banks/hk-016.svg' },
+  { code: '018', region: 'HK', name: '中信银行（国际）', shortName: '中信国际', color: '#E60012', domain: 'cncbinternational.com', logo: '/banks/hk-018.svg' },
+  { code: '020', region: 'HK', name: '招商永隆银行', shortName: '招商永隆', color: '#C8102E', domain: 'cmbwinglungbank.com', logo: '/banks/hk-020.svg' },
+  { code: '022', region: 'HK', name: '华侨银行', shortName: '华侨银行', color: '#C8102E', domain: 'ocbc.com', logo: '/banks/hk-022.svg' },
+  { code: '024', region: 'HK', name: '恒生银行', shortName: '恒生银行', color: '#00843D', domain: 'hangseng.com', logo: '/banks/hk-024.svg' },
+  { code: '025', region: 'HK', name: '上海商业银行', shortName: '上海商业', color: '#00538C', domain: 'shacombank.com.hk', logo: '/banks/hk-025.svg' },
+  { code: '027', region: 'HK', name: '交通银行', shortName: '交通银行', color: '#003D7C', domain: 'bankcomm.com.hk', logo: '/banks/hk-027.svg' },
+  { code: '028', region: 'HK', name: '大众银行（香港）', shortName: '大众银行', color: '#C8102E', domain: 'publicbank.com.hk', logo: '/banks/hk-028.svg' },
+  { code: '035', region: 'HK', name: '华侨永亨银行', shortName: '华侨永亨', color: '#C8102E', domain: 'ocbcwh.com', logo: '/banks/hk-035.svg' },
+  { code: '039', region: 'HK', name: '集友银行', shortName: '集友银行', color: '#A6192E', domain: 'chiyubank.com', logo: '/banks/hk-039.svg' },
+  { code: '040', region: 'HK', name: '大新银行', shortName: '大新银行', color: '#C8102E', domain: 'dahsing.com', logo: '/banks/hk-040.svg' },
+  { code: '041', region: 'HK', name: '创兴银行', shortName: '创兴银行', color: '#00538C', domain: 'chbank.com', logo: '/banks/hk-041.svg' },
+  { code: '043', region: 'HK', name: '南洋商业银行', shortName: '南洋商业', color: '#A6192E', domain: 'ncb.com.hk', logo: '/banks/hk-043.svg' },
+  { code: '061', region: 'HK', name: '大生银行', shortName: '大生银行', color: '#6B7280', domain: 'taisangbank.com', logo: '/banks/hk-061.png' },
+  { code: '071', region: 'HK', name: '大华银行', shortName: '大华银行', color: '#003D7C', domain: 'uobgroup.com', logo: '/banks/hk-071.svg' },
+  { code: '072', region: 'HK', name: '中国工商银行（亚洲）', shortName: '工银亚洲', color: '#C7000B', domain: 'icbcasia.com', logo: '/banks/hk-072.svg' },
+  { code: '128', region: 'HK', name: '富邦银行（香港）', shortName: '富邦银行', color: '#00538C', domain: 'fubonbank.com.hk', logo: '/banks/hk-128.svg' },
+  { code: '214', region: 'HK', name: '中国工商银行', shortName: '工商银行', color: '#C7000B', domain: 'icbc.com.cn', logo: '/banks/hk-214.svg' },
+  { code: '221', region: 'HK', name: '中国建设银行', shortName: '建设银行', color: '#0066B3', domain: 'ccb.com', logo: '/banks/hk-221.svg' },
+  { code: '222', region: 'HK', name: '中国农业银行', shortName: '农业银行', color: '#00843D', domain: 'abchina.com', logo: '/banks/hk-222.svg' },
+  { code: '238', region: 'HK', name: '招商银行', shortName: '招商银行', color: '#C8102E', domain: 'cmbchina.com', logo: '/banks/hk-238.svg' },
+  { code: '250', region: 'HK', name: '花旗银行（香港）', shortName: '花旗香港', color: '#003D7C', domain: 'citibank.com.hk', logo: '/banks/hk-250.svg' },
+  { code: '338', region: 'HK', name: '中国银行（香港分行）', shortName: '中行香港', color: '#A6192E', domain: 'boc.cn', logo: '/banks/hk-338.svg' },
+  { code: '345', region: 'HK', name: '上海浦东发展银行', shortName: '浦发银行', color: '#00538C', domain: 'spdb.com.cn', logo: '/banks/hk-345.svg' },
+  { code: '353', region: 'HK', name: '中国民生银行', shortName: '民生银行', color: '#005BAC', domain: 'cmbc.com.cn', logo: '/banks/hk-353.svg' },
+  { code: '368', region: 'HK', name: '中国光大银行', shortName: '光大银行', color: '#7A2E8E', domain: 'cebbank.com', logo: '/banks/hk-368.svg' },
+  { code: '372', region: 'HK', name: '上海银行（香港）', shortName: '上海银行', color: '#00538C', domain: 'bosc.cn', logo: '/banks/hk-372.svg' },
+  { code: '377', region: 'HK', name: '兴业银行', shortName: '兴业银行', color: '#00693E', domain: 'cib.com.cn', logo: '/banks/hk-377.svg' },
+  { code: '382', region: 'HK', name: '交通银行（香港）', shortName: '交银香港', color: '#003D7C', domain: 'bankcomm.com.hk', logo: '/banks/hk-382.svg' },
+]
+/**
+ * 把「常用借记卡号段」贴到银行记录上。
+ *
+ * BIN 表本身留在服务端（`bin-table.ts`）供反查「输卡号认银行」用，
+ * 随名录下发的只有这一个提示字段 —— 完整表十万量级，不可能下发给客户端。
+ */
+const BANKS: Bank[] = [...CN_BANKS, ...HK_BANKS].map((bank) => {
+  // 本行的前缀不是从真实码表来的，就是我们自己的账号格式（8820…），所以单独给
+  if (bank.internal) return { ...bank, primaryBin: INTERNAL_ACCOUNT_PREFIX }
+  const primaryBin = bank.region === 'CN' ? PRIMARY_BIN[bank.code] : undefined
+  return primaryBin ? { ...bank, primaryBin } : bank
+})
+
+/** 按 (region, code) 定位银行 —— code 单独会撞号，必须成对查 */
+export function findBank(banks: Bank[], code?: string, region?: BankRegion): Bank | undefined {
+  if (!code) return undefined
+  return banks.find((b) => b.code === code && (region == null || b.region === region))
+}
+
+/**
+ * 转数快登记册（模拟 HKICL 的中央解析）。
+ * 现实里手机号 / 邮箱可以绑定多于一间银行或 SVF，
+ * 收款方会指定其中一个为「默认收款户口」—— 解析结果就是默认那个。
+ */
+export interface FpsRegistration {
+  idType: FpsIdType
+  id: string
+  /** 户口名称；只有系统解析出的姓名可以和标识对得上 */
+  name: string
+  bankCode: string
+  bankName: string
+  /** 该标识一共绑定了几间银行 / SVF */
+  bankCount: number
+}
+
+/** 转数快是香港的清算网络，登记册里的银行一律是香港机构 */
+export const FPS_REGISTRY: FpsRegistration[] = [
+  { idType: 'mobile', id: '91234567', name: '梁乐怡', bankCode: '004', bankName: '香港上海汇丰银行', bankCount: 2 },
+  { idType: 'mobile', id: '62345678', name: '陳嘉禾', bankCode: '020', bankName: '招商永隆银行', bankCount: 1 },
+  { idType: 'mobile', id: '98761234', name: '黄敏仪', bankCode: '012', bankName: '中国银行（香港）', bankCount: 3 },
+  { idType: 'email', id: 'ken.ho@example.com', name: 'Ken Ho', bankCode: '012', bankName: '中国银行（香港）', bankCount: 1 },
+  { idType: 'email', id: 'wing.chan@example.com', name: 'Wing Chan', bankCode: '004', bankName: '香港上海汇丰银行', bankCount: 1 },
+  { idType: 'fpsid', id: '8820314', name: 'Ken Ho', bankCode: '012', bankName: '中国银行（香港）', bankCount: 1 },
+  { idType: 'fpsid', id: '1002938', name: '黄敏仪', bankCode: '004', bankName: '香港上海汇丰银行', bankCount: 3 },
+]
+
+/**
+ * 拼一个完整卡号：号段 + 自由位 + 该卡的后四位。
+ *
+ * 号段取的是**真实感**的借记卡号段（Visa `402688`、银联 `620522`），
+ * 而不是 Visa 官方那个测试 BIN `411111` —— 测试号段一眼就会被看出是演示数据。
+ *
+ * ⚠️ 代价说清楚：这样做**理论上可能与某张真实存在的卡撞号**（概率极低）。
+ * 这是个明确做过的取舍 —— 演示要的是「看起来像真卡」，因此不再保证绝不撞号。
+ * 如果哪天要绝对安全，换回 `411111` / `620000` 两个测试号段即可。
+ *
+ * 自由位穷举到 **Luhn 校验通过**：真卡都满足 Luhn，校验位算错会一眼露馅。
+ */
+export function cardPan(network: BankCard['network'], last4: string): string {
+  const prefix = network === 'visa' ? '402688' : '620522'
+  for (let n = 0; n < 1_000_000; n += 1) {
+    const body = prefix + String(n).padStart(6, '0') + last4.slice(0, 3)
+    let total = 0
+    let alt = true
+    for (let i = body.length - 1; i >= 0; i -= 1) {
+      let d = Number(body[i])
+      if (alt) {
+        d *= 2
+        if (d > 9) d -= 9
+      }
+      total += d
+      alt = !alt
+    }
+    if ((10 - (total % 10)) % 10 === Number(last4[3])) return body + last4[3]
+  }
+  return prefix + '000000' + last4
+}
+
+function seed(): MockDb {
+  seq = 0
+  const currentAccountId = nextId('acc')
+
+  const accounts: Account[] = [
+    {
+      id: currentAccountId,
+      kind: 'current',
+      tier: 'I',
+      label: '活期账户',
+      accountNo: '8820000000112233445',
+      currency: 'CNY',
+      balance: 12_864_055,
+      available: 12_764_055,
+      interestRate: 0.003,
+      monthNetChange: 0,
+    },
+    {
+      id: nextId('acc'),
+      kind: 'savings',
+      tier: 'II',
+      label: '储蓄账户',
+      accountNo: '8820000000556677889',
+      currency: 'CNY',
+      balance: 5_600_000,
+      available: 5_600_000,
+      interestRate: 0.0155,
+      monthNetChange: 0,
+    },
+    {
+      id: nextId('acc'),
+      kind: 'deposit',
+      tier: 'II',
+      label: '定期存款',
+      accountNo: '8820000000998877665',
+      currency: 'CNY',
+      balance: 10_000_000,
+      available: 0,
+      interestRate: 0.021,
+      monthNetChange: 0,
+    },
+  ]
+
+  const db: MockDb = {
+    schema: MOCK_SCHEMA,
+    user: {
+      id: 'u_0001',
+      name: '林小满',
+      phone: '13800138000',
+      memberLevel: '金卡会员',
+      avatarInitial: '林',
+    },
+    password: '123456',
+    payPassword: DEFAULT_PAY_PASSWORD,
+    payPasswordFailures: 0,
+    accounts,
+    transactions: seedTransactions(accounts[0]),
+    banks: BANKS,
+    payees: [
+      {
+        id: nextId('pay'),
+        name: '陈嘉禾',
+        channel: 'bank',
+        bankCode: 'LCB',
+        bankRegion: 'CN',
+        bankName: '招财猫银行',
+        accountNo: '8820000000124471',
+        scope: 'domestic',
+        lastUsedAt: daysAgo(10, 21, 3),
+      },
+      {
+        id: nextId('pay'),
+        name: '苏晚',
+        channel: 'bank',
+        bankCode: '308',
+        bankRegion: 'CN',
+        bankName: '招商银行',
+        accountNo: '6214830200989028',
+        scope: 'domestic',
+        lastUsedAt: daysAgo(21, 14, 30),
+      },
+      {
+        id: nextId('pay'),
+        name: 'Wing Chan',
+        channel: 'bank',
+        bankCode: '004',
+        bankRegion: 'HK',
+        bankName: '香港上海汇丰银行',
+        accountNo: '004123456789118',
+        scope: 'overseas',
+        lastUsedAt: daysAgo(58, 10, 12),
+      },
+      {
+        id: nextId('pay'),
+        name: '梁乐怡',
+        channel: 'fps',
+        fpsMethod: 'mobile',
+        fpsId: '91234567',
+        payeeCurrency: 'HKD',
+        bankCode: '004',
+        bankRegion: 'HK',
+        bankName: '香港上海汇丰银行',
+        scope: 'overseas',
+        lastUsedAt: daysAgo(4, 12, 40),
+      },
+      {
+        id: nextId('pay'),
+        name: 'Ken Ho',
+        channel: 'fps',
+        fpsMethod: 'fpsid',
+        fpsId: '8820314',
+        payeeCurrency: 'HKD',
+        bankCode: '012',
+        bankRegion: 'HK',
+        bankName: '中国银行（香港）',
+        scope: 'overseas',
+        lastUsedAt: daysAgo(30, 9, 15),
+      },
+    ],
+    holdings: [
+      {
+        id: nextId('hold'),
+        productCode: 'LCB-CASH-A',
+        productName: '招财猫现金添利 A',
+        category: 'cash',
+        risk: 'R1',
+        shares: 5_000,
+        costNav: 1,
+        principal: 500_000,
+        marketValue: 0,
+        profit: 0,
+        profitRate: 0,
+        purchasedAt: daysAgo(46, 10, 30),
+        redeemableAt: null,
+        closed: false,
+      },
+      {
+        id: nextId('hold'),
+        productCode: 'LCB-FIXED-090',
+        productName: '招财猫稳盈 90 天',
+        category: 'fixed',
+        risk: 'R2',
+        shares: 20_000,
+        costNav: 1,
+        principal: 2_000_000,
+        marketValue: 0,
+        profit: 0,
+        profitRate: 0,
+        purchasedAt: daysAgo(24, 14, 5),
+        redeemableAt: inDays(66, 0),
+        closed: true,
+      },
+    ],
+    pendingSms: null,
+    wealthAccount: {
+      opened: false,
+      accountNo: '',
+      openedAt: '',
+      settlementAccountId: '',
+      agreementSignedAt: '',
+      riskLevelAtOpening: 'C1',
+    },
+    riskAssessment: {
+      done: false,
+      level: 'C1',
+      score: 0,
+      assessedAt: '',
+      expiresAt: '',
+      expired: true,
+    },
+    cardSecrets: {},
+    cards: [
+      {
+        id: nextId('card'),
+        accountId: currentAccountId,
+        productName: '招财猫 · 星享借记卡',
+        last4: '8888',
+        cardholder: 'LIN XIAOMAN',
+        expiry: '08/29',
+        theme: 'ink',
+        network: 'visa',
+        kind: 'debit',
+        status: 'active',
+        onlinePayment: true,
+        overseasPayment: false,
+        dailyLimit: 5_000_000,
+      },
+      {
+        id: nextId('card'),
+        accountId: currentAccountId,
+        productName: '招财猫 · 云闪付联名卡',
+        last4: '3366',
+        cardholder: 'LIN XIAOMAN',
+        expiry: '03/28',
+        theme: 'gold',
+        network: 'unionpay',
+        kind: 'debit',
+        status: 'locked',
+        onlinePayment: false,
+        overseasPayment: false,
+        dailyLimit: 2_000_000,
+      },
+      // 在制卡中的 Visa 卡：让「邮寄地址 + 已收制卡费」这两个状态一进页面就看得到
+      {
+        id: nextId('card'),
+        accountId: currentAccountId,
+        productName: '招财猫 · Visa 全球借记卡',
+        last4: '2046',
+        cardholder: 'LIN XIAOMAN',
+        expiry: '11/30',
+        theme: 'gold',
+        network: 'visa',
+        kind: 'debit',
+        status: 'pending',
+        onlinePayment: false,
+        overseasPayment: false,
+        dailyLimit: 200_000,
+        shippingAddress: {
+          recipient: '林小满',
+          phone: '13800138000',
+          region: '上海市',
+          city: '上海市',
+          detail: '浦东新区世纪大道 100 号 32 层',
+          postalCode: '200120',
+        },
+        issuingFee: 3_500,
+      },
+    ],
+    autoDebits: [
+      { id: nextId('ad'), merchant: '网易云音乐', amount: 2500, cycle: '每月 8 日', nextRunAt: inDays(6), enabled: true, category: 'subscription' },
+      { id: nextId('ad'), merchant: '腾讯视频', amount: 19900, cycle: '每年 5 月', nextRunAt: inDays(23), enabled: true, category: 'subscription' },
+      { id: nextId('ad'), merchant: '房租', amount: 650000, cycle: '每月 3 日', nextRunAt: inDays(2), enabled: true, category: 'housing' },
+      { id: nextId('ad'), merchant: '健身房月卡', amount: 18000, cycle: '每月 18 日', nextRunAt: inDays(15), enabled: false, category: 'subscription' },
+    ],
+    security: {
+      score: 82,
+      level: '防护良好',
+      identityVerified: true,
+      devices: [
+        { id: nextId('dev'), name: 'MacBook Pro · Chrome', location: '上海 · 浦东新区', lastActiveAt: new Date().toISOString(), current: true },
+        { id: nextId('dev'), name: 'iPhone 17 Pro · App', location: '上海 · 徐汇区', lastActiveAt: daysAgo(0, 8, 20), current: false },
+        { id: nextId('dev'), name: 'iPad Air · Safari', location: '杭州 · 西湖区', lastActiveAt: daysAgo(12, 21, 5), current: false },
+      ],
+      logs: [
+        { id: nextId('log'), action: '登录成功', detail: 'MacBook Pro · Chrome · 上海', createdAt: new Date().toISOString(), level: 'info' },
+        { id: nextId('log'), action: '修改转账限额', detail: '单日限额调整为 ¥50,000.00', createdAt: daysAgo(4, 15, 12), level: 'info' },
+        { id: nextId('log'), action: '异地登录提醒', detail: '杭州 · 已通过短信二次验证', createdAt: daysAgo(12, 21, 6), level: 'warn' },
+        { id: nextId('log'), action: '开启境外交易', detail: '星享借记卡 · 尾号 8888', createdAt: daysAgo(26, 9, 30), level: 'info' },
+      ],
+      riskRules: [
+        { id: 'rule_amount', label: '大额转账二次确认', description: '单笔超过 ¥5,000.00 需再次确认', enabled: true },
+        { id: 'rule_overseas', label: '境外交易拦截', description: '境外收款方自动触发人工复核', enabled: true },
+        { id: 'rule_new_device', label: '新设备登录验证', description: '陌生设备登录需短信验证码', enabled: true },
+        { id: 'rule_night', label: '深夜交易提醒', description: '23:00–06:00 的交易实时推送', enabled: false },
+      ],
+    },
+  }
+
+  /**
+   * 卡安全码按卡 id 挂上去。
+   *
+   * 放在对象建好之后，是因为卡的 id 是上面 `nextId('card')` 现场生成的，写不进字面量。
+   * 固定值而不是随机：演示要能复现，断言也才有得对。
+   */
+  db.cardSecrets = {
+    [db.cards[0].id]: { cvv: '417', pan: cardPan('visa', db.cards[0].last4) },
+    [db.cards[1].id]: { cvv: '926', pan: cardPan('unionpay', db.cards[1].last4) },
+    [db.cards[2].id]: { cvv: '305', pan: cardPan('visa', db.cards[2].last4) },
+  }
+
+  return db
+}
+
+let cache: MockDb | null = null
+
+export function loadDb(): MockDb {
+  if (cache) return cache
+  // 历史结构版本曾经用 key 区分，清掉以免在 localStorage 里留垃圾
+  storage.remove('mock.db.v1')
+  storage.remove('mock.db.v2')
+
+  const stored = storage.get<MockDb | null>(STORAGE_KEYS.mockDb, null)
+  // 结构对不上就丢弃重建：localStorage 里的旧载荷不会有新字段，
+  // 继续用只会让页面在某个 undefined 上炸掉
+  cache = stored && stored.schema === MOCK_SCHEMA ? stored : seed()
+  persist()
+  return cache
+}
+
+export function persist(): void {
+  if (cache) storage.set(STORAGE_KEYS.mockDb, cache)
+}
+
+export function resetDb(): MockDb {
+  cache = seed()
+  persist()
+  return cache
+}
+
+export { monthKey, nextId }

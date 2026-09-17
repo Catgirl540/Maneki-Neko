@@ -1,0 +1,59 @@
+/* ==========================================================================
+   招财猫银行 · luckycat BANK —— 设计 Token
+   ==========================================================================
+   这里是**唯一的换肤入口**。组件层不写死任何颜色 / 圆角 / 字体。
+
+   配色方案：互补色（Complementary）
+     主色   #C8973C  招财金 —— 品牌、主按钮、当前态、图表主序列
+     互补色 #3C6DC8  信赖蓝 —— 收入/正向、图表次序列、链接与成功态
+     中性   #0E1B26  墨蓝   —— 正文与金额
+     功能   #D65B45  珊瑚   —— 风险警示（极克制）
+   ========================================================================== */
+
+@theme {
+  /* —— 底色 —— */
+  --color-paper: #f7f5f0; /* 页面底色 */
+  --color-surface: #ffffff; /* 卡片 */
+  --color-sunk: #fbfaf6; /* 侧栏 / 次级面板 */
+  --color-line: #eae6dc; /* 1px 发丝分隔线 */
+  --color-line-strong: #ddd7c9; /* 需要更明显的描边时 */
+
+  /* —— 文字 —— */
+  --color-ink: #0e1b26; /* 主文字 / 金额 / 标题 */
+  --color-ink-soft: #5c6b77; /* 次级文字 */
+  --color-ink-mute: #93a0a9; /* 辅助说明 / 占位符 */
+  --color-ink-invert: #ffffff;
+
+  /* —— 主色：招财金（一屏只允许一个金色主按钮）—— */
+  --color-gold: #c8973c;
+  --color-gold-deep: #9c7226; /* 文字与 hover，保证 AA 对比度 */
+  --color-gold-wash: #f0e4cb; /* 选中底 / 导航 active */
+  --color-gold-tint: #faf5ea; /* 图标底 / 极浅填充 */
+
+  /* —— 互补色：信赖蓝 —— */
+  --color-blue: #3c6dc8;
+  --color-blue-deep: #2c55a3;
+  --color-blue-wash: #e3eaf8;
+  --color-blue-tint: #f1f5fc;
+
+  /* —— 功能色 —— */
+  --color-coral: #d65b45;
+  --color-coral-wash: #fbe7e2;
+  --color-chart-neutral: #dcd8d0;
+
+  /* —— 圆角 —— */
+  --radius-card: 24px;
+  --radius-field: 16px;
+  --radius-chip: 999px;
+  --radius-tile: 12px;
+
+  /* —— 字体 —— */
+  --font-sans:
+    'Inter Variable', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+    'Noto Sans CJK SC', system-ui, sans-serif;
+  --font-brand: 'Poppins', 'Inter Variable', system-ui, sans-serif;
+  --font-num: 'Inter Variable', system-ui, sans-serif;
+
+  /* —— 动效 —— */
+  --ease-out-soft: cubic-bezier(0.4, 0, 0.2, 1);
+}

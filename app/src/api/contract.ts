@@ -1,0 +1,226 @@
+/* ==========================================================================
+   BankApi —— 前端唯一依赖的接口面
+   两套实现：createHttpApi（真后端） / createMockApi（本地模拟）
+   组件只 import { api }，永远不关心背后是谁。
+   ========================================================================== */
+
+import type {
+  Account,
+  AccountOpeningRequest,
+  AccountOpeningResult,
+  AccountTier,
+  AutoDebit,
+  Bank,
+  CardBinQuery,
+  CardSecrets,
+  ReceivingInfo,
+  CardBinResolution,
+  BankCard,
+  CardApplication,
+  CardProduct,
+  ChangePhoneRequest,
+  CardReplaceRequest,
+  CashFlow,
+  Cents,
+  ExportDataset,
+  ExportQuery,
+  FpsIdType,
+  FpsResolveResult,
+  Paged,
+  Payee,
+  ReceiptFile,
+  SecurityOverview,
+  SmsCodeResult,
+  SpendingAnalysis,
+  SupportMessage,
+  SupportReply,
+  Transaction,
+  TransactionCategory,
+  RiskAssessment,
+  RiskQuestion,
+  TransactionRecord,
+  TransferQuote,
+  TransferQuoteRequest,
+  TransferRequest,
+  TransferResult,
+  User,
+  WealthAccount,
+  WealthAccountOpeningRequest,
+  WealthOverview,
+  WealthProduct,
+  WealthRedeemRequest,
+  WealthRedeemResult,
+  WealthSubscribeRequest,
+  WealthSubscribeResult,
+} from './types'
+
+/** 与后端约定的 REST 路径表，mock 与 http 共用，保证两边不跑偏 */
+export const routes = {
+  login: () => '/api/auth/login',
+  logout: () => '/api/auth/logout',
+  profile: () => '/api/auth/profile',
+
+  accounts: () => '/api/accounts',
+  account: (id: string) => `/api/accounts/${id}`,
+  transactions: (id: string) => `/api/accounts/${id}/transactions`,
+  /** 流水导出（后端给数据集，前端落成 CSV） */
+  transactionsExport: (id: string) => `/api/accounts/${id}/transactions/export`,
+  /** 单笔交易详情（凭证）。列表接口不下发明细字段，详情单独取 */
+  transaction: (id: string) => `/api/transactions/${id}`,
+  /** 电子回单文件（真后端返回带签名的临时下载地址） */
+  receipt: (id: string) => `/api/transactions/${id}/receipt`,
+  deposit: (id: string) => `/api/accounts/${id}/deposit`,
+
+  accountTiers: () => '/api/accounts/tiers',
+  accountOpen: () => '/api/accounts/open',
+  smsCode: () => '/api/auth/sms-code',
+
+  banks: () => '/api/banks',
+  /** 本行的收款信息：别人转钱给你时照着填 */
+  receiving: () => '/api/receiving',
+  /** 卡 BIN 查询：输卡号前缀反查发卡行（银联/网联侧的接口） */
+  cardBin: () => '/api/cards/bin',
+  payees: () => '/api/payees',
+  fpsResolve: () => '/api/fps/resolve',
+  transferQuote: () => '/api/transfers/quote',
+  transfers: () => '/api/transfers',
+
+  cards: () => '/api/cards',
+  /** 可申请的卡产品（费用与权益由后端给） */
+  cardProducts: () => '/api/cards/products',
+  cardOpen: () => '/api/cards/open',
+  cardLock: (id: string) => `/api/cards/${id}/lock`,
+  cardReplace: (id: string) => `/api/cards/${id}/replace`,
+  cardSettings: (id: string) => `/api/cards/${id}/settings`,
+  /** 卡安全码：单独验支付密码后取，不进卡列表接口 */
+  cardSecrets: (id: string) => `/api/cards/${id}/secrets`,
+
+  wealthProducts: () => '/api/wealth/products',
+  wealthProduct: (code: string) => `/api/wealth/products/${code}`,
+  wealthOverview: () => '/api/wealth/overview',
+  wealthAccountOpen: () => '/api/wealth/account/open',
+  wealthRiskQuestions: () => '/api/wealth/risk/questions',
+  wealthRiskAssess: () => '/api/wealth/risk/assess',
+  wealthSubscribe: () => '/api/wealth/subscribe',
+  wealthRedeem: () => '/api/wealth/redeem',
+
+  spending: () => '/api/analysis/spending',
+  cashFlow: () => '/api/analysis/cashflow',
+  autoDebits: () => '/api/autodebits',
+  autoDebit: (id: string) => `/api/autodebits/${id}`,
+
+  security: () => '/api/security/overview',
+  securityRule: (id: string) => `/api/security/rules/${id}`,
+  changePassword: () => '/api/security/password',
+  /** 更换登录手机号（高危操作） */
+  changePhone: () => '/api/auth/phone',
+  verifyIdentity: () => '/api/security/verify',
+
+  supportHistory: () => '/api/support/messages',
+  supportChat: () => '/api/support/chat',
+} as const
+
+export interface TransactionQuery {
+  page?: number
+  size?: number
+  category?: TransactionCategory | 'all'
+  keyword?: string
+}
+
+export interface BankApi {
+  // —— 身份 ——
+  login(phone: string, password: string): Promise<{ token: string; user: User }>
+  logout(): Promise<void>
+  profile(): Promise<User>
+
+  // —— 账户与流水 ——
+  listAccounts(): Promise<Account[]>
+  getAccount(id: string): Promise<Account>
+  listTransactions(accountId: string, query?: TransactionQuery): Promise<Paged<Transaction>>
+  /** 导出流水数据集（后端给列与已格式化的值，前端落成 CSV） */
+  exportTransactions(accountId: string, query?: ExportQuery): Promise<ExportDataset>
+  /** 单笔交易详情：交易编号、渠道、汇率、交易前后余额等凭证要素 */
+  getTransaction(id: string): Promise<TransactionRecord>
+  /** 电子回单文件。演示环境 url 为 null，调用方需退回浏览器打印 */
+  getReceipt(id: string): Promise<ReceiptFile>
+  deposit(accountId: string, amount: Cents, channel: string): Promise<Account>
+
+  // —— 开户 ——
+  /** 账户类别（Ⅰ / Ⅱ / Ⅲ）的功能与限额说明 */
+  listAccountTiers(): Promise<AccountTier[]>
+  /** 发送短信验证码。演示环境会回传 demoCode，真后端不会 */
+  sendSmsCode(phone: string): Promise<SmsCodeResult>
+  openAccount(req: AccountOpeningRequest): Promise<AccountOpeningResult>
+
+  // —— 转账 ——
+  listBanks(): Promise<Bank[]>
+  /** 我的收款信息（户名 / 账户 / 转数快标识），由后端按账户与登记拼好 */
+  getReceivingInfo(): Promise<ReceivingInfo>
+  /** 卡 BIN 查询：卡号前缀 → 发卡行。前缀不认识时明确回 unsupported，界面据此提示 */
+  resolveCardBin(req: CardBinQuery): Promise<CardBinResolution>
+  listPayees(): Promise<Payee[]>
+  /** 转数快标识解析：查收款人姓名与收款银行 */
+  resolveFps(idType: FpsIdType, fpsId: string): Promise<FpsResolveResult>
+  quoteTransfer(req: TransferQuoteRequest): Promise<TransferQuote>
+  submitTransfer(req: TransferRequest): Promise<TransferResult>
+
+  // —— 银行卡 ——
+  listCards(): Promise<BankCard[]>
+  /** 开卡：申请一张新的借记卡，初始状态为待激活 */
+  /** 可申请的卡产品列表 */
+  listCardProducts(): Promise<CardProduct[]>
+  /** 申请新卡：要扣制卡费、要寄送地址、要支付密码 */
+  openCard(req: CardApplication): Promise<BankCard>
+  setCardLock(id: string, locked: boolean): Promise<BankCard>
+  /** 换卡同样要寄卡，所以也要地址与支付密码 */
+  replaceCard(id: string, req: CardReplaceRequest): Promise<BankCard>
+  /** 查看卡安全码：必须带支付密码；卡未寄到 / 已换卡时拒绝 */
+  revealCardSecrets(id: string, paymentPassword: string): Promise<CardSecrets>
+  updateCardSettings(
+    id: string,
+    patch: Partial<Pick<BankCard, 'onlinePayment' | 'overseasPayment' | 'dailyLimit'>>,
+  ): Promise<BankCard>
+
+  // —— 理财（投资与资产）——
+  listWealthProducts(): Promise<WealthProduct[]>
+  getWealthProduct(code: string): Promise<WealthProduct>
+  getWealthOverview(): Promise<WealthOverview>
+  /** 开立理财账户（投资账户）。未开立前不能申购 */
+  openWealthAccount(req: WealthAccountOpeningRequest): Promise<WealthAccount>
+  listRiskQuestions(): Promise<RiskQuestion[]>
+  /** 提交风险承受能力测评；监管要求超过一年须重做 */
+  submitRiskAssessment(answers: number[]): Promise<RiskAssessment>
+  /** 申购：适当性匹配 + 抄录风险确认语句 + 支付密码，一个都不能少 */
+  subscribeWealth(req: WealthSubscribeRequest): Promise<WealthSubscribeResult>
+  redeemWealth(req: WealthRedeemRequest): Promise<WealthRedeemResult>
+
+  // —— 财务管理 ——
+  getSpending(month?: string): Promise<SpendingAnalysis>
+  getCashFlow(days?: number): Promise<CashFlow>
+  listAutoDebits(): Promise<AutoDebit[]>
+  setAutoDebitEnabled(id: string, enabled: boolean): Promise<AutoDebit>
+
+  // —— 安全中心 ——
+  getSecurityOverview(): Promise<SecurityOverview>
+  setSecurityRule(id: string, enabled: boolean): Promise<SecurityOverview>
+  changePassword(oldPassword: string, newPassword: string): Promise<void>
+  /** 更换登录手机号：人脸核身 + 新号短信验证 */
+  changePhone(req: ChangePhoneRequest): Promise<User>
+  verifyIdentity(channel: 'sms' | 'face'): Promise<{ ticket: string }>
+
+  // —— 智能客服（MVP 为固定话术，后续换真实模型）——
+  listSupportMessages(): Promise<SupportMessage[]>
+  sendSupportMessage(text: string): Promise<SupportReply>
+}
+
+export class ApiError extends Error {
+  readonly status: number
+  readonly code?: string
+
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}

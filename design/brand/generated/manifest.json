@@ -1,0 +1,58 @@
+[
+  {
+    "name": "logo-a-cathead",
+    "file": "logo-a-cathead.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1024x1024",
+    "prompt": "Minimal flat vector logo mark for a virtual bank mascot. An abstract lucky-cat head reduced to pure geometry: one solid circle for the head, two small clean triangles for the ears, and three short straight horizontal whisker lines on each side. Perfectly symmetrical and centered. Solid warm gold (#F2B418) shape on a flat off-white (#F7F5F0) background. No gradients, no shadows, no bevels, no 3D, no outlines, no text, no letters, no watermark. Extremely simple, friendly and confident. Huge empty margin around the mark. Brand identity sheet quality, in the visual language of the ZA Bank, Monzo and Revolut rebrands."
+  },
+  {
+    "name": "logo-b-paw-coin",
+    "file": "logo-b-paw-coin.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1024x1024",
+    "prompt": "Minimal flat vector logo mark for a virtual bank. An abstract lucky-cat paw holding a plain round coin, reduced to a few bold geometric shapes: a rounded paw silhouette overlapping a perfect circle. Single solid warm gold (#F2B418) with a deep ink-navy (#0E1B26) accent only on the coin. Flat off-white (#F7F5F0) background. No gradients, no shadows, no 3D, no outlines, no text, no letters, no numbers, no watermark. Extremely simple, confident, playful but premium. Generous empty margin. Fintech brand identity sheet quality."
+  },
+  {
+    "name": "logo-c-negative-cat",
+    "file": "logo-c-negative-cat.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1024x1024",
+    "prompt": "Minimal flat vector app icon. A solid warm gold (#F2B418) rounded square, and inside it a friendly cat face carved out as negative space in flat off-white (#F7F5F0): two triangular ears cut from the top edge, two simple dot eyes, one small triangular nose. Nothing else inside. No gradients, no shadows, no 3D, no outlines, no text, no letters, no watermark. Ultra-simple, geometric, confident, premium. Centered with generous padding. Fintech app icon, ZA Bank and Revolut icon language."
+  },
+  {
+    "name": "logo-d-monoline",
+    "file": "logo-d-monoline.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1024x1024",
+    "prompt": "Minimal monoline vector logo mark drawn with a single uniform thick stroke: a lucky-cat head outline made of one continuous line, with two small ears and three whiskers per side, plus a tiny circular nose. Stroke in deep ink navy (#0E1B26), one small solid warm gold (#F2B418) dot as the nose only. Flat off-white (#F7F5F0) background. No gradients, no shadows, no fills, no 3D, no text, no letters, no watermark. Elegant, calm, editorial, extremely simple. Generous empty margin. Premium fintech identity."
+  },
+  {
+    "name": "logo-e-lockup",
+    "file": "logo-e-lockup.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1536x1024",
+    "prompt": "Horizontal logo lockup on a flat off-white (#F7F5F0) background, centered, very generous margins. Left: a small gold (#F2B418) geometric lucky-cat head mark (circle head, two triangle ears, three straight whiskers each side). Right: the lowercase wordmark \"luckycat\" set in a bold geometric sans-serif in deep ink navy (#0E1B26), tightly tracked, with the small uppercase word \"BANK\" underneath in the same navy at one quarter the size with wide letter spacing. Spelling must be exactly \"luckycat\" and \"BANK\". Flat vector, no gradients, no shadows, no 3D, no extra text, no tagline, no watermark. Clean premium fintech brand sheet."
+  },
+  {
+    "name": "ui-01-dashboard-zh",
+    "file": "ui-01-dashboard-zh.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1536x1024",
+    "prompt": "Ultra-clean web app UI design for a virtual bank dashboard, desktop browser at 1440px wide, flat off-white (#F7F5F0) page background, pure white content cards with 24px radius and a single hairline (#E8E4DA) border, deep ink-navy (#0E1B26) text, warm gold (#F2B418) as the only accent, generous whitespace, no gradients, no glassmorphism, no neon, no drop shadows. Layout: a slim left sidebar with a small gold geometric cat logo and six simple line icons with short Simplified Chinese labels (总览 / 转账 / 银行卡 / 消费分析 / 安全中心 / 智能客服). Main area top: a large friendly greeting in bold Simplified Chinese, 你好，林小满, with the date underneath in gray. Below it one big white card: 活期账户, a large balance number 128,640.55, and two pill buttons 转入 and 转账. To the right a smaller white card: 本月支出 with a simple flat donut chart in gold and teal. Below the two cards, one wide white card titled 最近交易 listing four rows: each row has a small circular icon, a Simplified Chinese merchant name, a date, and a right-aligned amount. Bottom right corner: a small floating round gold chat button. All UI labels in correct Simplified Chinese characters, crisp and legible. Swiss rational grid, premium fintech product design, ZA Bank and Monzo app aesthetic, high fidelity, clean, breathable, uncluttered."
+  },
+  {
+    "name": "ui-02-login-zh",
+    "file": "ui-02-login-zh.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1536x1024",
+    "prompt": "Ultra-clean web UI design for a virtual bank sign-in screen, desktop browser at 1440px wide, split layout with no visible border between halves. Left half: flat off-white (#F7F5F0) background, generous whitespace, vertically centered, a small gold (#F2B418) geometric lucky-cat head logo mark at the top, then a short bold headline in Simplified Chinese 欢迎回来, a light gray subline in Simplified Chinese, one large white rounded input for phone number, one white rounded input for password, a wide solid warm gold (#F2B418) rounded primary button with dark navy label 登入, and a plain text link 忘记密码 in gray underneath. Right half: a large flat illustration panel in soft teal and gold, a minimal geometric lucky cat illustration, no gradients, no 3D. Deep ink-navy (#0E1B26) text, hairline dividers, 24px radius, no drop shadows, no glow. All UI labels in correct Simplified Chinese characters, crisp and legible. Premium fintech product design, ZA Bank and Monzo aesthetic, calm, breathable, high fidelity."
+  },
+  {
+    "name": "ui-03-transfer-zh",
+    "file": "ui-03-transfer-zh.png",
+    "model": "microsoft/mai-image-2.6",
+    "size": "1536x1024",
+    "prompt": "Ultra-clean web UI design for a virtual bank transfer flow, desktop browser at 1440px wide, flat off-white (#F7F5F0) page background, white rounded cards with hairline (#E8E4DA) borders and 24px radius, deep ink-navy (#0E1B26) text, warm gold (#F2B418) accent, no gradients, no shadows, no glow. Layout: slim left sidebar with a small gold geometric cat logo and short Simplified Chinese navigation labels. Main area, three clean horizontal steps labelled in Simplified Chinese at the top. Centered white card titled 转账: a large centered amount display 3,200.00 with a small 人民币 label, a row of three selectable recipient chips showing Simplified Chinese bank names, one input row labelled 收款人, one input row labelled 备注, a toggle row labelled 境内 or 境外, and one wide solid gold rounded button with dark navy label 确认转账. To the right, a narrow white summary card listing 手续费, 到账时间 and 剩余余额 with right-aligned values. All UI labels in correct Simplified Chinese characters, crisp and legible. Swiss rational grid, premium fintech product design, ZA Bank aesthetic, high fidelity, breathable and uncluttered."
+  }
+]
