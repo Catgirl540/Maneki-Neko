@@ -172,6 +172,43 @@ report(/^\d{3}$/.test(cvv ?? ''), '⑥ 同时给出安全码与有效期', [
   `安全码 = ${cvv}，有效期 08/29`,
 ])
 
+/* ------------------------------------------------ ⑥′ 再点一下就能遮回去，且不验密码
+
+   验证是「看到」的门槛，不是「不看」的门槛。只能等 60 秒自动遮，
+   在有人凑过来看屏幕的时候是来不及的 —— 而那正是这个功能要解决的场景。 */
+// 先数一下按钮在不在：直接 click 的话，按钮不存在会抛超时异常，
+// 检查确实会失败，但报出来的是一堆 Playwright 堆栈，看不出到底哪条性质破了
+const hideBtn = tab.getByRole('button', { name: '隐藏安全码' })
+const hideBtnCount = await hideBtn.count()
+if (hideBtnCount > 0) {
+  await hideBtn.click()
+  await tab.waitForTimeout(400)
+}
+const hidden = await cardText()
+const dialogOpen = await tab.locator('div[role="dialog"]').count()
+report(
+  hideBtnCount === 1 && !/CVV\s*\n?\s*\d{3}/.test(hidden) && dialogOpen === 0,
+  '⑥′ 点一下露出来的安全码就立刻遮回去，且不弹验证框',
+  [
+    `「隐藏安全码」按钮数（应为 1，即露出来之后可点）：${hideBtnCount}`,
+    `安全码是否还在：${/CVV\s*\n?\s*\d{3}/.test(hidden)}`,
+    `弹窗数（应为 0，即没再要密码）：${dialogOpen}`,
+    `完整卡号是否被顺手遮掉：${!PAN_RE.test(hidden)}（不该被遮，卡号归那只眼睛管）`,
+  ],
+)
+report(
+  PAN_RE.test(hidden),
+  '⑥″ 遮安全码时不牵连完整卡号',
+  [PAN_RE.test(hidden) ? '完整卡号仍在显示' : '❌ 卡号被一起遮掉了'],
+)
+
+// 再解锁一次，供后面「60 秒自动遮」那条用
+await tab.getByRole('button', { name: '查看完整卡号与安全码' }).click()
+await fillPassword(PAY_PASSWORD)
+await tab.getByRole('button', { name: '验证并查看' }).click()
+await tab.locator('div[role="dialog"]').waitFor({ state: 'detached', timeout: 6000 }).catch(() => {})
+await tab.waitForTimeout(400)
+
 /* ------------------------------------------------ ⑦ 到点真清掉 */
 await toggleEye() // 先关掉眼睛，确认关掉就全遮
 const hiddenAgain = await cardText()

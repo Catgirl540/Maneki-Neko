@@ -90,6 +90,20 @@ export function CardsPage() {
     const entry = unlocked[id]
     return entry && nowTick < entry.expiresAt ? entry : null
   }
+  /**
+   * 遮回安全码：把那个值**真清掉**，不是只把数字藏起来。
+   *
+   * 只清安全码、**不动完整卡号** —— 卡号归那只眼睛管，两者分开。
+   * 顺手把卡号一起遮掉会让「点安全码隐藏」变成一个范围过大的操作。
+   */
+  const hideCardCvv = (id: string) => {
+    setUnlocked((prev) => {
+      const entry = prev[id]
+      if (!entry || !entry.cvv) return prev
+      return { ...prev, [id]: { ...entry, cvv: '' } }
+    })
+  }
+
   const unlockCard = (id: string, pan: string, cvv: string, ttlSeconds: number) => {
     setUnlocked((prev) => ({
       ...prev,
@@ -209,8 +223,9 @@ export function CardsPage() {
                 card={card}
                 account={accounts.data?.find((a) => a.id === card.accountId) ?? null}
                 pan={unlockedFor(card.id)?.pan ?? null}
-                cvv={unlockedFor(card.id)?.cvv ?? null}
+                cvv={unlockedFor(card.id)?.cvv || null}
                 onUnlockCvv={() => setSecretsFor(card)}
+                onHideCvv={() => hideCardCvv(card.id)}
               />
               {error && (
                 <p className="rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">
@@ -379,6 +394,7 @@ function BankCardVisual({
   pan,
   cvv,
   onUnlockCvv,
+  onHideCvv,
 }: {
   card: BankCard
   account: Account | null
@@ -388,6 +404,8 @@ function BankCardVisual({
   cvv: string | null
   /** 请求解锁安全码：安全码要先验支付密码，不能跟着眼睛一起出 */
   onUnlockCvv: () => void
+  /** 把已显示的安全码遮回去。**不需要认证** —— 验证是「看到」的门槛 */
+  onHideCvv: () => void
 }) {
   const dark = card.theme === 'ink'
   // 这张卡自己的眼睛：只管这张卡的卡号 / 有效期（安全码另需验密码，见下）
@@ -455,7 +473,20 @@ function BankCardVisual({
               <span className="flex flex-col items-end leading-tight">
                 <span className="text-[9px] tracking-[0.16em] uppercase opacity-70">CVV</span>
                 {shown && cvv ? (
-                  <span className="num opacity-80">{cvv}</span>
+                  /*
+                    露出来之后要能**再点一下遮回去**，而且**不需要再验一次密码**：
+                    验证是「看到」的门槛，不是「不看」的门槛。只能等 60 秒自动遮，
+                    在有人凑过来看屏幕的时候是来不及的 —— 那正是这个功能要解决的场景。
+                  */
+                  <button
+                    type="button"
+                    onClick={onHideCvv}
+                    aria-label="隐藏安全码"
+                    title="点击隐藏（无需验证）"
+                    className="num tracking-[0.1em] underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100"
+                  >
+                    {cvv}
+                  </button>
                 ) : (
                   <button
                     type="button"
