@@ -23,6 +23,7 @@ sed \
   -e "s|@LUCKYCAT_HELLO_PLUGIN@|$LUCKYCAT_ROOT/packages/hello/lib/index.js|g" \
   -e "s|@LUCKYCAT_EMBEDDING_PLUGIN@|$LUCKYCAT_ROOT/packages/embedding/lib/index.js|g" \
   -e "s|@LUCKYCAT_RAG_PLUGIN@|$LUCKYCAT_ROOT/packages/rag/lib/index.js|g" \
+  -e "s|@LUCKYCAT_HARDENING_PLUGIN@|$LUCKYCAT_ROOT/packages/hardening/lib/index.js|g" \
   -e "s|@LUCKYCAT_CORPUS@|$LUCKYCAT_ROOT/examples/bank/corpus.json|g" \
   "$SRC/cordis.patch.yml" > "$DEST/cordis.patch.yml"
 
@@ -30,6 +31,11 @@ sed \
 sed \
   -e "s|@LUCKYCAT_PROBE_PLUGIN@|$LUCKYCAT_ROOT/packages/probe/lib/index.js|g" \
   "$SRC/doctor.patch.yml" > "$DEST/doctor.patch.yml"
+
+# 只挂探针、不加白名单：用来验证守卫确实会拒绝。
+sed \
+  -e "s|@LUCKYCAT_PROBE_PLUGIN@|$LUCKYCAT_ROOT/packages/probe/lib/index.js|g" \
+  "$SRC/probe-denied.patch.yml" > "$DEST/probe-denied.patch.yml"
 
 echo "bootstrap: DSH_HOME=$DSH_HOME"
 echo "bootstrap: profile=$DEST"

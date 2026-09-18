@@ -95,6 +95,12 @@ if [ -n "$rag_block" ]; then ok "知识库插件行 luckycat-rag 在树中"; els
 if grep -q 'corpusPath: /' <<<"$rag_block"; then ok "语料路径已替换为绝对路径"; else bad "语料路径未替换（占位符没处理？）"; fi
 if grep -q 'maxInjectBytes: 2000' <<<"$rag_block"; then ok "注入预算已显式配置（2000 字节）"; else bad "注入预算未显式配置"; fi
 
+# V2e 加固
+hard_block="$(entry_block luckycat-hardening)"
+if [ -n "$hard_block" ]; then ok "加固插件行 luckycat-hardening 在树中"; else bad "加固插件行缺失"; fi
+if grep -q 'allowedTools:' <<<"$hard_block"; then ok "工具白名单已显式配置（fail-closed）"; else bad "工具白名单缺失"; fi
+if grep -q 'secretEnv:' <<<"$hard_block"; then ok "按环境变量名脱敏已配置（取值不进配置）"; else bad "secretEnv 未配置"; fi
+
 echo "== V3 工具真的注册了（注册表探针）=="
 probe_out="$(sleep 6 | timeout 30 bash "$LUCKYCAT_ROOT/scripts/dsh-profile.sh" --patch "$LUCKYCAT_HOME/profiles/luckycat/doctor.patch.yml" 2>&1 >/dev/null)"
 if grep -q 'luckycat_ping=REGISTERED' <<<"$probe_out"; then
@@ -107,10 +113,18 @@ if grep -q 'knowledge_lookup' <<<"$probe_out"; then
 else
   bad "knowledge_lookup 未注册: $(tr '\n' ' ' <<<"$probe_out")"
 fi
-if grep -q 'tools=2' <<<"$probe_out"; then
-  ok "工具面 = 2（恰好是框架自己的两个）"
+# 工具面用**集合同等**断言，而不是数字：数字看不出增删的是哪一个。
+# 探针是 --patch 挂载的，所以它自己那个诊断工具也在（多出的必须只是它）。
+if grep -q 'names=knowledge_lookup,luckycat_ping,luckycat_probe_secret' <<<"$probe_out"; then
+  ok "工具面集合完全匹配（生产 2 个 + 探针 1 个）"
 else
-  bad "工具面不是 2（有意外增删）: $(tr '\n' ' ' <<<"$probe_out")"
+  bad "工具面集合不匹配（有意外增删）: $(grep 'names=' <<<"$probe_out")"
+fi
+# 反过来确认生产树里**没有**探针插件。
+if grep -q 'luckycat-probe' <<<"$dump"; then
+  bad "生产树里混进了探针插件"
+else
+  ok "生产树里没有探针插件（只在 --patch 时挂载）"
 fi
 # 关键不变式：整棵树的工具面里不许出现 shell / 编码类工具。
 if grep -Eq 'names=.*(bash|shell|apply_patch|view_image|read_file|write_file|edit_file|web_search|web_fetch|exec)' <<<"$probe_out"; then
@@ -128,9 +142,23 @@ else
   bad "离线单测有失败: $(grep '^not ok' <<<"$unit_out" | head -3 | tr '\n' ' ')"
 fi
 
+echo "== V6 日志权限（上游显式收紧，这里做回归断言） =="
+# DSH 是**显式**建 0600/0700 的，不靠 umask（实测：本机 umask 0002 时仍是 600/700）。
+# 这条断言的意义是：一旦上游改成依赖 umask，这里会立刻发现。
+sample_log="$(find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' 2>/dev/null | head -1)"
+if [ -n "$sample_log" ]; then
+  file_mode="$(stat -c '%a' "$sample_log")"
+  if [ "$file_mode" = "600" ]; then ok "会话日志文件权限 600"; else bad "会话日志权限是 $file_mode，应为 600"; fi
+  dir_mode="$(stat -c '%a' "$(dirname "$sample_log")")"
+  if [ "$dir_mode" = "700" ]; then ok "会话目录权限 700"; else bad "会话目录权限是 $dir_mode，应为 700"; fi
+else
+  echo "  skip 还没有会话日志"
+fi
+
 echo "== V5 端到端 =="
 if [ "${LUCKYCAT_E2E:-0}" = "1" ]; then
-  if bash "$LUCKYCAT_ROOT/scripts/e2e-bank.sh"; then ok "端到端通过"; else bad "端到端失败"; fi
+  if bash "$LUCKYCAT_ROOT/scripts/e2e-bank.sh"; then ok "端到端（知识库问答）通过"; else bad "端到端（知识库问答）失败"; fi
+  if bash "$LUCKYCAT_ROOT/scripts/e2e-security.sh"; then ok "端到端（脱敏 + 白名单守卫）通过"; else bad "端到端（安全）失败"; fi
 else
   echo "  skip 默认跳过（需要联网与 OPENROUTER_API_KEY；设 LUCKYCAT_E2E=1 启用）"
 fi

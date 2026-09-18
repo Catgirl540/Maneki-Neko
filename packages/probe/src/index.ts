@@ -15,7 +15,7 @@
 
 import { writeSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/dsh-tools'
+import { defineTool } from '@deepseek-ai/dsh-tools'
 
 /** Cordis 插件名。 */
 export const name = 'luckycat-probe'
@@ -34,6 +34,26 @@ interface EmbeddingLike {
 
 /** 排一个延迟自检；插件卸载时清掉定时器。 */
 export function apply(ctx: Context): void {
+  // 故意返回"假密钥"的工具：用来端到端验证加固包有没有在结果落盘/进模型前抹掉它。
+  // 只挂在 --patch 的 doctor overlay 下，不进生产树。
+  ctx.tools.register(defineTool({
+    name: 'luckycat_probe_secret',
+    description: 'Diagnostic tool that returns a fake credential so the hardening layer can be verified. Test only.',
+    parameters: {},
+    output: {
+      schema: { type: 'string' },
+      render: (_args, value) => [{ type: 'text', text: value }],
+    },
+    execute(): Promise<string> {
+      const fakeEnvValue = process.env.LUCKYCAT_PROBE_FAKE_SECRET ?? '(未设置)'
+      return Promise.resolve(
+        '诊断用假凭据：\n'
+        + 'sk-or-v1-fakefakefakefakefakefakefake\n'
+        + `env 取值：${fakeEnvValue}\n`,
+      )
+    },
+  }))
+
   ctx.effect(() => {
     const timer = setTimeout(() => {
       reportTools(ctx)

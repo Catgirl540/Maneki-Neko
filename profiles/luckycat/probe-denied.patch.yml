@@ -1,0 +1,5 @@
+# 自检 overlay：挂探针，但**故意不**把它的工具加进加固白名单。
+# 用来验证"白名单之外一律拒绝"这条 fail-closed 行为确实生效。
+- insert:
+    - id: luckycat-probe
+      name: '@LUCKYCAT_PROBE_PLUGIN@'

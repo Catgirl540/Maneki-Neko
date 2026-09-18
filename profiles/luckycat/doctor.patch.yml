@@ -3,3 +3,19 @@
 - insert:
     - id: luckycat-probe
       name: '@LUCKYCAT_PROBE_PLUGIN@'
+
+# 探针工具也要进白名单——顺带演示"新增能力必须显式改配置"这件事：
+# 不改这一行，luckycat_probe_secret 会被加固守卫直接拒绝。
+# 注意：按 id 覆盖会替换**整个** config，所以字段要写全。
+- id: luckycat-hardening
+  config:
+    allowedTools:
+      - knowledge_lookup
+      - luckycat_ping
+      - luckycat_probe_secret
+    secretEnv:
+      - OPENROUTER_API_KEY
+      - RELAYROUTER_API_KEY
+      - DEEPSEEK_API_KEY
+      - LUCKYCAT_PROBE_FAKE_SECRET
+    redactTelemetry: true

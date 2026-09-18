@@ -29,9 +29,15 @@ process.env.DSH_HOME = home
 const prompt = process.argv.slice(2).join(' ') || '用一句话自我介绍。'
 const provider = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
 const model = process.env.LUCKYCAT_MODEL ?? 'inclusionai/ling-3.0-flash-vl:free'
+// 可选的额外 overlay（冒号或逗号分隔），用于挂自检插件。
+const patches = (process.env.LUCKYCAT_PATCHES ?? '')
+  .split(/[:,]/)
+  .map(entry => entry.trim())
+  .filter(entry => entry !== '')
 
 console.log(`[bridge] provider=${provider} model=${model}`)
 console.log(`[bridge] DSH_HOME=${home}`)
+if (patches.length > 0) console.log(`[bridge] patches=${patches.join(',')}`)
 
 const harness = new DeepSeekHarness({
   dshBin: join(ROOT, 'node_modules', '.bin', 'dsh'),
@@ -39,6 +45,7 @@ const harness = new DeepSeekHarness({
   provider,
   model,
   initializeTimeoutMs: 30_000,
+  ...patches.length === 0 ? {} : { patches },
 })
 
 try {

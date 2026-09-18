@@ -24,7 +24,7 @@
 | 4 | AGENTS.md 在 trust=None 时加载（F-7） | **存在且上游自己列为限制**：见下方 §2 | ⚠️ 存在，可配置规避 |
 | 5 | 项目本地配置注入（F-8，我们加了 4 键 denylist） | **不存在**：未发现任何从 cwd/项目加载配置的路径；配置只有 profile 目录 + `$DSH_HOME/cordis.patch.yml` + `--patch` | ✅ 不存在 |
 | 6 | `redact_secrets` 未接入工具输出（R1/R3） | **存在且默认更松**：`session-telemetry/src/index.ts:27` 原文 *"It ships **NO rules** of its own"*，且脱敏**只作用于导出副本**、规范化日志永不重写 | ❌ 需自己挂（P3） |
-| 7 | rollout 日志权限（R2，我们已修 0600） | **同类不对称**：建 `0o600`（`session-persistence-jsonl/src/index.ts:1196`），追加 `open(path,'a')` 无 mode（`:1249`） | ❌ 插件改不了 → umask + 断言（P3） |
+| 7 | rollout 日志权限（R2，我们已修 0600） | **上游已显式收紧**：实测会话日志文件 `0600`、目录 `0700`，而当时 `umask` 是 `0002` → 不是靠 umask | ✅ 上游已处理；我们加了回归断言（V6） |
 | 8 | `additionalContext.kind=application` 自报可进 developer 角色（F-6） | **更好**：DSH 的 `additionalContexts` 类型是 `UserMessage[]`（`core/tools/src/index.ts:562,574,600-602`）→ **user 角色**，客户端无法自封 developer 权威 | ✅ 更好 |
 
 ## 1. 我们当前树天然避开了什么
@@ -68,13 +68,13 @@ luckycat 以 `@deepseek-ai/dsh-sdk-minimal` 为底，而 `dsh-base` 挂的这些
   `maxBytes`，并知道符号链接会跨信任边界；
 - 这条**不需要改内核**，是配置 + 沙箱姿态问题。
 
-## 3. 需要部署层兜的两条（P3 处理）
+## 3. P3 的处理结果（详见 [P3-HARDENING.md](P3-HARDENING.md)）
 
-1. **脱敏出厂为空**：挂 `session-telemetry` 的 redaction waterfall，规则覆盖我们的密钥形态。
-   注意语义：脱敏**只影响导出副本**，规范化日志本身永不重写 → 真正的防线是
-   "别让密钥进工具输出"，脱敏是第二道。
-2. **日志追加无 mode**：这是内核行为，**插件改不了** → 用 `umask 077` 启动，
-   并在 P3 用测试断言落盘文件确实是 `0600`（把"绕不过"写成可测事实）。
+1. **脱敏**：没有挂在"遥测导出"上（那只是导出副本），而是挂在 `tools/post-execute`——
+   在结果**成为 durable 事件之前**替换投影。理由：规范化日志永不重写，
+   事后清洗根本不可能；只有在做出决定的那一步拦，密钥才既不进日志也不进模型。**已端到端验证**。
+2. **日志权限**：复查后**上游已显式收紧**（实测 600/700，`umask` 0002 时亦然），
+   这条不需要我们修，只留一条回归断言（验收门 V6）。
 
 ## 4. 不能因此放松的新风险（我判断需要记账）
 

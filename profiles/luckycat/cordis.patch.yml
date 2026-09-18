@@ -160,3 +160,20 @@
         minScore: 0.34
         maxInjectBytes: 2000
         maxChunkChars: 800
+
+# ── 8. 加固（P3） ──────────────────────────────────────────────────────────
+# 三件只收紧的事：工具结果脱敏、工具白名单单调守卫、遥测导出脱敏。
+- insert:
+    - id: luckycat-hardening
+      name: '@LUCKYCAT_HARDENING_PLUGIN@'
+      config:
+        # 白名单：只有这两个工具能执行。新增能力必须显式加进来（一次显式动作）。
+        allowedTools:
+          - knowledge_lookup
+          - luckycat_ping
+        # 只写变量名；取值在运行时读取，绝不进配置。
+        secretEnv:
+          - OPENROUTER_API_KEY
+          - RELAYROUTER_API_KEY
+          - DEEPSEEK_API_KEY
+        redactTelemetry: true
