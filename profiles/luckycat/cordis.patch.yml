@@ -60,3 +60,58 @@
 - insert:
     - id: luckycat-hello
       name: '@LUCKYCAT_HELLO_PLUGIN@'
+
+# ── 4. 换模型适配器：多供应商（P1） ─────────────────────────────────────────
+# sdk-minimal 出厂只装了 DeepSeek 官方适配器。DSH 的多供应商能力在
+# @deepseek-ai/dsh-llm-pi-ai（基于 pi-ai）：配置路由即可接第三方，零代码。
+# 换模型 = 改这里的配置，或由调用方在 SDK 握手里指定 provider/model。
+- id: llm-deepseek
+  disabled: true
+
+- insert:
+    - id: llm-pi-ai
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          # 云端：OpenRouter。模型 id 见 config/models.md，均为免费档。
+          openrouter:
+            displayName: OpenRouter
+            apiKeyEnv: OPENROUTER_API_KEY
+            api: openai-completions
+            baseURL: https://openrouter.ai/api/v1
+            # 必须显式写 normal：always 模式会无限重试且每次都计费。
+            retryPolicy:
+              mode: normal
+            models:
+              - id: nvidia/nemotron-3-ultra-550b-a55b:free
+                name: Nemotron 3 Ultra 550B (free)
+                contextWindow: 1000000
+              - id: nvidia/nemotron-3.5-lightning:free
+                name: Nemotron 3.5 Lightning (free)
+                contextWindow: 1000000
+              - id: inclusionai/ling-3.0-flash-vl:free
+                name: Ling 3.0 Flash VL (free)
+                contextWindow: 262144
+
+          # 本机：CUDA llama.cpp（OpenAI 兼容）。当前未启动，属备用路由。
+          # 启动后用 LUCKYCAT_PROVIDER=local LUCKYCAT_MODEL=... 即可切过来。
+          local:
+            displayName: 本机 llama.cpp (CUDA)
+            apiKeyEnv: LOCAL_API_KEY
+            api: openai-completions
+            baseURL: http://127.0.0.1:8080
+            retryPolicy:
+              mode: normal
+            models:
+              - id: qwen3.8-9b-q4
+                name: Qwen3.8-9B-Q4 (RTX5060 CUDA)
+                contextWindow: 65536
+
+# ── 5. 人设与运行时上下文 ──────────────────────────────────────────────────
+# sdk-minimal 出厂人设是 "You are a helpful software engineer assistant."，
+# 对业务 agent 不合适。整行覆盖（按 id 覆盖会替换整个 config，所以字段要写全）。
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    personaPrefix: !!js process.env.LUCKYCAT_SYSTEM_PROMPT ?? '你是一个严谨、务实的中文业务助手。回答简洁、直接；不确定时明确说明不确定，不要编造。'

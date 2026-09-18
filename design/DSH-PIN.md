@@ -34,6 +34,17 @@ Node 要求 `^22.19.0 || >=24`；本机 v22.22.1。
 | `mcp-resources` | `disabled: true` | 不挂 MCP |
 | `jobs` | `disabled: true` | 不挂后台任务 |
 | `luckycat-hello` | **insert**（我们自己） | 冒烟工具，P1 起替换为真实插件 |
+| `llm-deepseek` | `disabled: true` | 换成多供应商适配器；同时断掉官方 API 的数据回传链路 |
+| `llm-pi-ai` | **insert** | 多供应商：OpenRouter（云端）+ 本机 llama.cpp（备用）。换模型只改配置 |
+| `system-prompt` | 覆盖整行 `config` | 人设换成业务口径（`LUCKYCAT_SYSTEM_PROMPT` 可替换）；注意按 id 覆盖会替换整个 config，字段要写全 |
+
+### 已验证可用的模型（2026-09-17 实测）
+
+| 模型 id | 结果 |
+|---|---|
+| `inclusionai/ling-3.0-flash-vl:free` | ✅ 3.2s；**默认模型**；工具调用已验证 |
+| `nvidia/nemotron-3.5-lightning:free` | ✅ 15.1s |
+| `nvidia/nemotron-3-ultra-550b-a55b:free` | ❌ 上游过载（免费档），保留在配置里但不作默认 |
 
 **刻意不挂** `@deepseek-ai/dsh-permission-presets`：
 

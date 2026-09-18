@@ -48,9 +48,21 @@ fi
 if grep -q '^    mode: read-only$' <<<"$dump"; then ok "sandbox mode = read-only"; else bad "sandbox mode 不是 read-only"; fi
 if grep -q '^    policy: ask$' <<<"$dump"; then ok "approval policy = ask"; else bad "approval policy 不是 ask"; fi
 
+# 断言"某行确实被禁用"：按 id 取出该条目**整块**（直到下一个 - id: 为止）再找 disabled。
+# 不能用固定行数窗口——带 config 的条目会把 disabled: true 推到更后面
+# （llm-deepseek 就因此曾被误判为未禁用）。
+disabled_block() {
+  awk -v id="$1" '
+    $0 == "- id: " id { inside = 1; print; next }
+    inside && /^- id: / { exit }
+    inside { print }
+  ' <<<"$dump"
+}
+
 for id in persistent-bash persistent-pwsh terminal-bash terminal-pwsh pty mcp-resources jobs \
-          session-log-deepseek plugin-package-inventory-deepseek deepseek-llm-api-extensions; do
-  if grep -A4 "^- id: $id$" <<<"$dump" | grep -q 'disabled: true'; then
+          session-log-deepseek plugin-package-inventory-deepseek deepseek-llm-api-extensions \
+          llm-deepseek; do
+  if grep -q '^  disabled: true$' <<<"$(disabled_block "$id")"; then
     ok "删行已禁用: $id"
   else
     bad "删行未禁用: $id"
@@ -64,6 +76,13 @@ else
 fi
 
 if grep -q 'id: luckycat-hello' <<<"$dump"; then ok "插件行 luckycat-hello 在树中"; else bad "插件行 luckycat-hello 缺失"; fi
+
+# V2b 多供应商路由：llm-pi-ai 必须在树中，且路由与重试策略正确。
+if grep -q "id: llm-pi-ai" <<<"$dump"; then ok "多供应商适配器 llm-pi-ai 在树中"; else bad "llm-pi-ai 缺失（会没有可用模型）"; fi
+if grep -q 'apiKeyEnv: OPENROUTER_API_KEY' <<<"$dump"; then ok "OpenRouter 路由已配置"; else bad "OpenRouter 路由缺失"; fi
+if grep -q '^          mode: normal$' <<<"$dump"; then ok "重试策略显式为 normal（不会无限计费重试）"; else bad "重试策略不是 normal"; fi
+if grep -q 'always' <<<"$dump"; then bad "树里出现 always 重试（会无限重试并计费）"; else ok "树里无 always 重试"; fi
+if grep -q 'LUCKYCAT_SYSTEM_PROMPT' <<<"$dump"; then ok "业务人设覆盖已生效（可被环境变量替换）"; else bad "business persona 覆盖未生效"; fi
 
 echo "== V3 工具真的注册了（注册表探针）=="
 probe_out="$(sleep 6 | timeout 30 bash "$LUCKYCAT_ROOT/scripts/dsh-profile.sh" --patch "$LUCKYCAT_HOME/profiles/luckycat/doctor.patch.yml" 2>&1 >/dev/null)"
