@@ -16,8 +16,9 @@ agent/
 # 本机 Rust 工具链与 cargo 缓存（沙箱下 ~/.cargo 不可写，只能落在工作目录里）
 .toolchain/
 
-# agent 框架（DeepSeek Harness 之上的树外插件集合，独立 git 仓库，不进银行仓库）
-framework/
+# agent 框架（DeepSeek Harness 之上的树外插件集合）：
+# 用 `git subtree` 从独立仓库汇入 framework/，**保留其完整提交历史**；
+# 它自带的 framework/.gitignore 继续生效（node_modules / .dsh-home / lib 等仍不进仓库）。
 
 # 编辑器 / 系统
 .DS_Store
