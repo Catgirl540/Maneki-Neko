@@ -148,3 +148,15 @@
             batchSize: 32
             timeoutMs: 30000
             maxAttempts: 2
+
+# ── 7. 知识库检索（P2） ────────────────────────────────────────────────────
+# 语料路径在加载期同步读取：路径错/JSON 坏/字段缺都在启动时报错，不留到提问时。
+- insert:
+    - id: luckycat-rag
+      name: '@LUCKYCAT_RAG_PLUGIN@'
+      config:
+        corpusPath: '@LUCKYCAT_CORPUS@'
+        topK: 3
+        minScore: 0.34
+        maxInjectBytes: 2000
+        maxChunkChars: 800

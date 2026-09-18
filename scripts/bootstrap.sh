@@ -22,6 +22,8 @@ cp "$SRC/package.json" "$DEST/package.json"
 sed \
   -e "s|@LUCKYCAT_HELLO_PLUGIN@|$LUCKYCAT_ROOT/packages/hello/lib/index.js|g" \
   -e "s|@LUCKYCAT_EMBEDDING_PLUGIN@|$LUCKYCAT_ROOT/packages/embedding/lib/index.js|g" \
+  -e "s|@LUCKYCAT_RAG_PLUGIN@|$LUCKYCAT_ROOT/packages/rag/lib/index.js|g" \
+  -e "s|@LUCKYCAT_CORPUS@|$LUCKYCAT_ROOT/examples/bank/corpus.json|g" \
   "$SRC/cordis.patch.yml" > "$DEST/cordis.patch.yml"
 
 # doctor.patch.yml 只在 --patch 时挂载（框架自检），不进生产树。

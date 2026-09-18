@@ -38,6 +38,7 @@ Node 要求 `^22.19.0 || >=24`；本机 v22.22.1。
 | `llm-pi-ai` | **insert** | 多供应商：OpenRouter（云端）+ 本机 llama.cpp（备用）。换模型只改配置 |
 | `system-prompt` | 覆盖整行 `config` | 人设换成业务口径（`LUCKYCAT_SYSTEM_PROMPT` 可替换）；注意按 id 覆盖会替换整个 config，字段要写全 |
 | `luckycat-embedding` | **insert**（我们自己） | 向量服务 `ctx.embedding`——DSH **没有** embedding 通道，这是自研包 |
+| `luckycat-rag` | **insert**（我们自己） | 知识库检索：`knowledge_lookup` 工具 + 有界注入；语料绝对路径由 bootstrap 替换 |
 
 ### 已验证可用的模型（2026-09-17 实测）
 

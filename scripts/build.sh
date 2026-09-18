@@ -7,7 +7,13 @@ TSC="$ROOT/node_modules/.bin/tsc"
 
 packages=("$@")
 if [ ${#packages[@]} -eq 0 ]; then
-  packages=(hello)
+  # 不带参数时构建全部有 tsconfig.json 的包，避免漏掉新加的包。
+  packages=()
+  for dir in "$ROOT"/packages/*/; do
+    if [ -f "$dir/tsconfig.json" ]; then
+      packages+=("$(basename "$dir")")
+    fi
+  done
 fi
 
 for pkg in "${packages[@]}"; do

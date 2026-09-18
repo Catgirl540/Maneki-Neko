@@ -51,7 +51,7 @@ if grep -q '^    policy: ask$' <<<"$dump"; then ok "approval policy = ask"; else
 # 断言"某行确实被禁用"：按 id 取出该条目**整块**（直到下一个 - id: 为止）再找 disabled。
 # 不能用固定行数窗口——带 config 的条目会把 disabled: true 推到更后面
 # （llm-deepseek 就因此曾被误判为未禁用）。
-disabled_block() {
+entry_block() {
   awk -v id="$1" '
     $0 == "- id: " id { inside = 1; print; next }
     inside && /^- id: / { exit }
@@ -62,7 +62,7 @@ disabled_block() {
 for id in persistent-bash persistent-pwsh terminal-bash terminal-pwsh pty mcp-resources jobs \
           session-log-deepseek plugin-package-inventory-deepseek deepseek-llm-api-extensions \
           llm-deepseek; do
-  if grep -q '^  disabled: true$' <<<"$(disabled_block "$id")"; then
+  if grep -q '^  disabled: true$' <<<"$(entry_block "$id")"; then
     ok "删行已禁用: $id"
   else
     bad "删行未禁用: $id"
@@ -89,6 +89,12 @@ if grep -q 'id: luckycat-embedding' <<<"$dump"; then ok "向量服务行 luckyca
 if grep -q 'api: openai-embeddings' <<<"$dump"; then ok "向量路由协议 openai-embeddings 已配置"; else bad "向量路由协议缺失"; fi
 if grep -q 'model: nvidia/llama-nemotron-embed-vl-1b-v2:free' <<<"$dump"; then ok "向量默认模型已配置（2048 维免费档）"; else bad "向量默认模型缺失"; fi
 
+# V2d 知识库检索
+rag_block="$(entry_block luckycat-rag)"
+if [ -n "$rag_block" ]; then ok "知识库插件行 luckycat-rag 在树中"; else bad "知识库插件行缺失"; fi
+if grep -q 'corpusPath: /' <<<"$rag_block"; then ok "语料路径已替换为绝对路径"; else bad "语料路径未替换（占位符没处理？）"; fi
+if grep -q 'maxInjectBytes: 2000' <<<"$rag_block"; then ok "注入预算已显式配置（2000 字节）"; else bad "注入预算未显式配置"; fi
+
 echo "== V3 工具真的注册了（注册表探针）=="
 probe_out="$(sleep 6 | timeout 30 bash "$LUCKYCAT_ROOT/scripts/dsh-profile.sh" --patch "$LUCKYCAT_HOME/profiles/luckycat/doctor.patch.yml" 2>&1 >/dev/null)"
 if grep -q 'luckycat_ping=REGISTERED' <<<"$probe_out"; then
@@ -96,10 +102,21 @@ if grep -q 'luckycat_ping=REGISTERED' <<<"$probe_out"; then
 else
   bad "luckycat_ping 未注册: $(tr '\n' ' ' <<<"$probe_out")"
 fi
-if grep -q 'tools=1' <<<"$probe_out"; then
-  ok "工具面 = 1（无 shell / coding 工具）"
+if grep -q 'knowledge_lookup' <<<"$probe_out"; then
+  ok "knowledge_lookup 已注册"
 else
-  bad "工具面不是 1: $(tr '\n' ' ' <<<"$probe_out")"
+  bad "knowledge_lookup 未注册: $(tr '\n' ' ' <<<"$probe_out")"
+fi
+if grep -q 'tools=2' <<<"$probe_out"; then
+  ok "工具面 = 2（恰好是框架自己的两个）"
+else
+  bad "工具面不是 2（有意外增删）: $(tr '\n' ' ' <<<"$probe_out")"
+fi
+# 关键不变式：整棵树的工具面里不许出现 shell / 编码类工具。
+if grep -Eq 'names=.*(bash|shell|apply_patch|view_image|read_file|write_file|edit_file|web_search|web_fetch|exec)' <<<"$probe_out"; then
+  bad "工具面里出现了 shell / 编码类工具: $(grep 'names=' <<<"$probe_out")"
+else
+  ok "工具面里没有任何 shell / 编码类工具"
 fi
 
 echo "== V4 离线单测（不联网） =="
@@ -109,6 +126,13 @@ if [ "${unit_fail_count:-1}" = "0" ]; then
   ok "离线单测全过（$(sed -n 's/^# pass \([0-9]*\)$/\1/p' <<<"$unit_out") 个用例）"
 else
   bad "离线单测有失败: $(grep '^not ok' <<<"$unit_out" | head -3 | tr '\n' ' ')"
+fi
+
+echo "== V5 端到端 =="
+if [ "${LUCKYCAT_E2E:-0}" = "1" ]; then
+  if bash "$LUCKYCAT_ROOT/scripts/e2e-bank.sh"; then ok "端到端通过"; else bad "端到端失败"; fi
+else
+  echo "  skip 默认跳过（需要联网与 OPENROUTER_API_KEY；设 LUCKYCAT_E2E=1 启用）"
 fi
 
 echo
