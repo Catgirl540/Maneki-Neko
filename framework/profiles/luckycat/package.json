@@ -1,0 +1,11 @@
+{
+  "name": "dsh-profile-luckycat",
+  "private": true,
+  "dsh": {
+    "profile": {
+      "bundles": [
+        "@deepseek-ai/dsh-sdk-minimal"
+      ]
+    }
+  }
+}

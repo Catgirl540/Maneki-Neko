@@ -1,0 +1,4 @@
+# luckycat 知识库检索自带的 bundle 补丁。配置（语料路径、预算等）由部署方覆盖。
+- insert:
+    - id: luckycat-rag
+      name: '@luckycat/dsh-rag'

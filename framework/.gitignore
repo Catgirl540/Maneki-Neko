@@ -1,0 +1,22 @@
+# 依赖与构建产物
+node_modules/
+lib/
+dist/
+
+# 仓库内隔离的 DSH_HOME：本框架的一切实验都在这里，绝不碰用户的 ~/.dsh
+.dsh-home/
+
+# profile 安装产生的锁与残留
+profiles/*/node_modules/
+profiles/*/pnpm-lock.yaml
+profiles/*/.dsh-module-fallback/
+
+# 本机缓存
+.npm-cache/
+*.tsbuildinfo
+
+# 编辑器 / 系统
+.DS_Store
+*.swp
+.idea/
+.vscode/
