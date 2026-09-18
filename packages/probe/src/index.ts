@@ -78,6 +78,11 @@ function reportTools(ctx: Context): void {
  */
 async function reportEmbedding(ctx: Context): Promise<void> {
   const get = (ctx as unknown as { get(name: string): unknown }).get.bind(ctx)
+  // 补课项是否真的激活：压缩与用量统计都是可选服务，用 ctx.get 探。
+  // 注意：compaction-basic 硬依赖 tokenMeter，所以这两个要一起看。
+  writeSync(2, `[luckycat-probe] compaction=${get('compaction') === undefined ? 'ABSENT' : 'ACTIVE'}\n`)
+  writeSync(2, `[luckycat-probe] tokenMeter=${get('tokenMeter') === undefined ? 'ABSENT' : 'ACTIVE'}\n`)
+
   const embedding = get('embedding') as EmbeddingLike | undefined
   if (embedding === undefined) {
     writeSync(2, '[luckycat-probe] embedding=NOT_MOUNTED\n')

@@ -101,6 +101,11 @@ if [ -n "$hard_block" ]; then ok "加固插件行 luckycat-hardening 在树中";
 if grep -q 'allowedTools:' <<<"$hard_block"; then ok "工具白名单已显式配置（fail-closed）"; else bad "工具白名单缺失"; fi
 if grep -q 'secretEnv:' <<<"$hard_block"; then ok "按环境变量名脱敏已配置（取值不进配置）"; else bad "secretEnv 未配置"; fi
 
+# V2f 长对话与用量（补课项：sdk-minimal 原本没有压缩与用量统计）
+for id in token-meter session-checkpoint-policy tool-result-pruner compaction-basic; do
+  if grep -q "id: $id" <<<"$dump"; then ok "补课行在树中: $id"; else bad "补课行缺失: $id"; fi
+done
+
 echo "== V3 工具真的注册了（注册表探针）=="
 probe_out="$(sleep 6 | timeout 30 bash "$LUCKYCAT_ROOT/scripts/dsh-profile.sh" --patch "$LUCKYCAT_HOME/profiles/luckycat/doctor.patch.yml" 2>&1 >/dev/null)"
 if grep -q 'luckycat_ping=REGISTERED' <<<"$probe_out"; then
@@ -132,6 +137,9 @@ if grep -Eq 'names=.*(bash|shell|apply_patch|view_image|read_file|write_file|edi
 else
   ok "工具面里没有任何 shell / 编码类工具"
 fi
+# 补课项必须是**服务级**激活，不能只是"行在树里"。
+if grep -q 'compaction=ACTIVE' <<<"$probe_out"; then ok "压缩服务已激活"; else bad "压缩服务未激活: $(grep 'compaction=' <<<"$probe_out")"; fi
+if grep -q 'tokenMeter=ACTIVE' <<<"$probe_out"; then ok "用量统计服务已激活"; else bad "用量统计未激活: $(grep 'tokenMeter=' <<<"$probe_out")"; fi
 
 echo "== V4 离线单测（不联网） =="
 unit_out="$(node --test "$LUCKYCAT_ROOT"/packages/*/tests/*.test.mjs 2>&1)"

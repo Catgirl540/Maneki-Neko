@@ -172,3 +172,23 @@
       - RELAYROUTER_API_KEY
       - DEEPSEEK_API_KEY
     redactTelemetry: true
+
+# ── 9. 长对话与用量（补课：sdk-minimal 不带这些） ───────────────────────────
+# sdk-minimal 没有压缩、没有用量统计：聊长了会直接顶爆上下文，也没有成本数字。
+# 配置照 dsh-base 的出厂行抄（thresholdChars 等）。
+- insert:
+    - id: token-meter
+      name: '@deepseek-ai/dsh-token-meter'
+
+    - id: session-checkpoint-policy
+      name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'

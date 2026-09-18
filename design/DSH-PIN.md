@@ -40,6 +40,10 @@ Node 要求 `^22.19.0 || >=24`；本机 v22.22.1。
 | `luckycat-embedding` | **bundle 插入** + 本文件配置路由 | 向量服务 `ctx.embedding`——DSH **没有** embedding 通道，这是自研包 |
 | `luckycat-rag` | **bundle 插入** + 本文件配置语料/预算 | 知识库检索：`knowledge_lookup` 工具 + 有界注入；语料绝对路径由 bootstrap 替换 |
 | `luckycat-hardening` | **bundle 插入** + 本文件配置白名单/脱敏变量 | 加固：工具结果脱敏（`tools/post-execute`）+ 工具白名单单调守卫（`ctx.tools.guard`）+ 可选遥测脱敏 |
+| `token-meter` | **insert**（补课，抄 dsh-base） | `ctx.tokenMeter`：从会话日志确定性估算 token/上下文压力，不发模型调用 |
+| `session-checkpoint-policy` | **insert**（补课，抄 dsh-base） | 每次模型请求/顶层分发前的持久化检查点 |
+| `tool-result-pruner` | **insert**（补课，抄 dsh-base 配置） | 压力达标时裁超大工具输出（原始结果仍在日志里） |
+| `compaction-basic` | **insert**（补课，抄 dsh-base） | 长对话压缩；**硬依赖 `tokenMeter`**，必须与 `token-meter` 一起挂 |
 
 ### 我们自己的 bundle（P4）
 
