@@ -10,6 +10,15 @@ dist/
 # 解压后约 99M / 7925 个文件，第三方源码，不进仓库
 reference/
 
+# 从快照派生出来的 agent 改造仓库（独立 git 仓库，不进银行仓库）
+agent/
+
+# 本机 Rust 工具链与 cargo 缓存（沙箱下 ~/.cargo 不可写，只能落在工作目录里）
+.toolchain/
+
+# agent 框架（DeepSeek Harness 之上的树外插件集合，独立 git 仓库，不进银行仓库）
+framework/
+
 # 编辑器 / 系统
 .DS_Store
 *.swp
