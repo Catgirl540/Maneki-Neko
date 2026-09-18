@@ -48,7 +48,8 @@ fi
 if grep -q '^    mode: read-only$' <<<"$dump"; then ok "sandbox mode = read-only"; else bad "sandbox mode 不是 read-only"; fi
 if grep -q '^    policy: ask$' <<<"$dump"; then ok "approval policy = ask"; else bad "approval policy 不是 ask"; fi
 
-for id in persistent-bash persistent-pwsh terminal-bash terminal-pwsh pty mcp-resources jobs; do
+for id in persistent-bash persistent-pwsh terminal-bash terminal-pwsh pty mcp-resources jobs \
+          session-log-deepseek plugin-package-inventory-deepseek deepseek-llm-api-extensions; do
   if grep -A4 "^- id: $id$" <<<"$dump" | grep -q 'disabled: true'; then
     ok "删行已禁用: $id"
   else

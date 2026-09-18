@@ -42,6 +42,20 @@
 - id: jobs
   disabled: true
 
+# ── 2b. 删行：官方 API 的数据回传（银行框架必须删） ─────────────────────────
+# session-log-deepseek：把「规范化会话日志」**增量上传**给官方 DeepSeek API
+#   （README 原文："Disable it only when the official API must not receive a
+#    Session-log suffix."）。对银行而言这是客户对话外泄通道，一律删。
+# plugin-package-inventory-deepseek：把当前插件包清单上传给官方 API。
+# 上面两个都**硬注入** deepseekLlmApiExtensions，所以注册表也一起删——
+# 否则它们会 pending（loader 会报 "waiting for service"）。
+- id: session-log-deepseek
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: deepseek-llm-api-extensions
+  disabled: true
+
 # ── 3. 增行：luckycat 插件 ─────────────────────────────────────────────────
 - insert:
     - id: luckycat-hello
