@@ -115,3 +115,36 @@
     includeHarnessIdentity: false
     includeRuntimeContext: false
     personaPrefix: !!js process.env.LUCKYCAT_SYSTEM_PROMPT ?? '你是一个严谨、务实的中文业务助手。回答简洁、直接；不确定时明确说明不确定，不要编造。'
+
+# ── 6. 向量服务（P1b） ─────────────────────────────────────────────────────
+# DSH 没有任何 embedding 通道，所以这是我们自己写的 ctx.embedding 服务。
+# 两条路由都实测可用；换向量模型 = 改这里（或由调用方在请求里指定 route）。
+- insert:
+    - id: luckycat-embedding
+      name: '@LUCKYCAT_EMBEDDING_PLUGIN@'
+      config:
+        defaultRoute: openrouter
+        providers:
+          openrouter:
+            displayName: OpenRouter embeddings
+            apiKeyEnv: OPENROUTER_API_KEY
+            api: openai-embeddings
+            baseURL: https://openrouter.ai/api/v1
+            model: nvidia/llama-nemotron-embed-vl-1b-v2:free
+            dimensions: 2048
+            batchSize: 32
+            timeoutMs: 30000
+            maxAttempts: 2
+
+          relayrouter:
+            displayName: RelayRouter embeddings
+            apiKeyEnv: RELAYROUTER_API_KEY
+            api: openai-embeddings
+            # 必须带 /v1：本机 ~/.zshrc 里的 RELAYROUTER_BASE_URL 不含版本段，
+            # 直接拿来用会打到 /embeddings 上（该网关对错误路径返回 HTML）。
+            baseURL: !!js process.env.LUCKYCAT_RELAYROUTER_BASE_URL ?? 'https://api.relayrouter.ai/v1'
+            model: text-embedding-3-small
+            dimensions: 1536
+            batchSize: 32
+            timeoutMs: 30000
+            maxAttempts: 2

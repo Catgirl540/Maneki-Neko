@@ -84,6 +84,11 @@ if grep -q '^          mode: normal$' <<<"$dump"; then ok "重试策略显式为
 if grep -q 'always' <<<"$dump"; then bad "树里出现 always 重试（会无限重试并计费）"; else ok "树里无 always 重试"; fi
 if grep -q 'LUCKYCAT_SYSTEM_PROMPT' <<<"$dump"; then ok "业务人设覆盖已生效（可被环境变量替换）"; else bad "business persona 覆盖未生效"; fi
 
+# V2c 向量服务：DSH 没有 embedding 通道，这一行是我们自己加的服务。
+if grep -q 'id: luckycat-embedding' <<<"$dump"; then ok "向量服务行 luckycat-embedding 在树中"; else bad "向量服务行缺失"; fi
+if grep -q 'api: openai-embeddings' <<<"$dump"; then ok "向量路由协议 openai-embeddings 已配置"; else bad "向量路由协议缺失"; fi
+if grep -q 'model: nvidia/llama-nemotron-embed-vl-1b-v2:free' <<<"$dump"; then ok "向量默认模型已配置（2048 维免费档）"; else bad "向量默认模型缺失"; fi
+
 echo "== V3 工具真的注册了（注册表探针）=="
 probe_out="$(sleep 6 | timeout 30 bash "$LUCKYCAT_ROOT/scripts/dsh-profile.sh" --patch "$LUCKYCAT_HOME/profiles/luckycat/doctor.patch.yml" 2>&1 >/dev/null)"
 if grep -q 'luckycat_ping=REGISTERED' <<<"$probe_out"; then
@@ -95,6 +100,15 @@ if grep -q 'tools=1' <<<"$probe_out"; then
   ok "工具面 = 1（无 shell / coding 工具）"
 else
   bad "工具面不是 1: $(tr '\n' ' ' <<<"$probe_out")"
+fi
+
+echo "== V4 离线单测（不联网） =="
+unit_out="$(node --test "$LUCKYCAT_ROOT"/packages/*/tests/*.test.mjs 2>&1)"
+unit_fail_count="$(sed -n 's/^# fail \([0-9]*\)$/\1/p' <<<"$unit_out")"
+if [ "${unit_fail_count:-1}" = "0" ]; then
+  ok "离线单测全过（$(sed -n 's/^# pass \([0-9]*\)$/\1/p' <<<"$unit_out") 个用例）"
+else
+  bad "离线单测有失败: $(grep '^not ok' <<<"$unit_out" | head -3 | tr '\n' ' ')"
 fi
 
 echo

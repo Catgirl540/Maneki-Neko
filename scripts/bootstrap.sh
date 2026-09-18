@@ -21,6 +21,7 @@ cp "$SRC/package.json" "$DEST/package.json"
 # cordis.patch.yml 逐条替换占位符。
 sed \
   -e "s|@LUCKYCAT_HELLO_PLUGIN@|$LUCKYCAT_ROOT/packages/hello/lib/index.js|g" \
+  -e "s|@LUCKYCAT_EMBEDDING_PLUGIN@|$LUCKYCAT_ROOT/packages/embedding/lib/index.js|g" \
   "$SRC/cordis.patch.yml" > "$DEST/cordis.patch.yml"
 
 # doctor.patch.yml 只在 --patch 时挂载（框架自检），不进生产树。
