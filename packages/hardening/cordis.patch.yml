@@ -1,0 +1,4 @@
+# luckycat 加固包自带的 bundle 补丁。白名单与脱敏变量名由部署方覆盖。
+- insert:
+    - id: luckycat-hardening
+      name: '@luckycat/dsh-hardening'

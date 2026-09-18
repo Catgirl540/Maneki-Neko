@@ -1,0 +1,4 @@
+# luckycat 向量服务自带的 bundle 补丁。配置由部署方 profile patch 按 id 覆盖。
+- insert:
+    - id: luckycat-embedding
+      name: '@luckycat/dsh-embedding'

@@ -163,6 +163,13 @@ else
   echo "  skip 默认跳过（需要联网与 OPENROUTER_API_KEY；设 LUCKYCAT_E2E=1 启用）"
 fi
 
+echo "== V7 增删门 =="
+if [ "${LUCKYCAT_PLUGIN_GATE:-0}" = "1" ]; then
+  if bash "$LUCKYCAT_ROOT/scripts/plugin-gate.sh"; then ok "增删门通过（卸载后仍能启动，再装即恢复）"; else bad "增删门失败"; fi
+else
+  echo "  skip 默认跳过（会临时改动已装 bundle；设 LUCKYCAT_PLUGIN_GATE=1 启用）"
+fi
+
 echo
 if [ "$fail" -eq 0 ]; then echo "verify: 全部通过"; else echo "verify: 有失败项"; fi
 exit "$fail"

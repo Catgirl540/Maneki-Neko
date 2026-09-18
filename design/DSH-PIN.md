@@ -33,13 +33,28 @@ Node 要求 `^22.19.0 || >=24`；本机 v22.22.1。
 | `pty` | `disabled: true` | 框架无 shell |
 | `mcp-resources` | `disabled: true` | 不挂 MCP |
 | `jobs` | `disabled: true` | 不挂后台任务 |
-| `luckycat-hello` | **insert**（我们自己） | 冒烟工具，P1 起替换为真实插件 |
+| `luckycat-hello` | **bundle 插入**（本文件不配置） | 冒烟工具 |
 | `llm-deepseek` | `disabled: true` | 换成多供应商适配器；同时断掉官方 API 的数据回传链路 |
 | `llm-pi-ai` | **insert** | 多供应商：OpenRouter（云端）+ 本机 llama.cpp（备用）。换模型只改配置 |
 | `system-prompt` | 覆盖整行 `config` | 人设换成业务口径（`LUCKYCAT_SYSTEM_PROMPT` 可替换）；注意按 id 覆盖会替换整个 config，字段要写全 |
-| `luckycat-embedding` | **insert**（我们自己） | 向量服务 `ctx.embedding`——DSH **没有** embedding 通道，这是自研包 |
-| `luckycat-rag` | **insert**（我们自己） | 知识库检索：`knowledge_lookup` 工具 + 有界注入；语料绝对路径由 bootstrap 替换 |
-| `luckycat-hardening` | **insert**（我们自己） | 加固：工具结果脱敏（`tools/post-execute`）+ 工具白名单单调守卫（`ctx.tools.guard`）+ 可选遥测脱敏 |
+| `luckycat-embedding` | **bundle 插入** + 本文件配置路由 | 向量服务 `ctx.embedding`——DSH **没有** embedding 通道，这是自研包 |
+| `luckycat-rag` | **bundle 插入** + 本文件配置语料/预算 | 知识库检索：`knowledge_lookup` 工具 + 有界注入；语料绝对路径由 bootstrap 替换 |
+| `luckycat-hardening` | **bundle 插入** + 本文件配置白名单/脱敏变量 | 加固：工具结果脱敏（`tools/post-execute`）+ 工具白名单单调守卫（`ctx.tools.guard`）+ 可选遥测脱敏 |
+
+### 我们自己的 bundle（P4）
+
+`装哪些插件` 与 `怎么配置` 是两层：前者由下面的 bundle 决定（`dsh plugin add/remove` 维护），
+后者由 `profiles/luckycat/cordis.patch.yml` 按行 id 覆盖。
+
+| bundle | 包名 | 插入的行 |
+|---|---|---|
+| hello | `@luckycat/dsh-hello` | `luckycat-hello` |
+| embedding | `@luckycat/dsh-embedding` | `luckycat-embedding` |
+| rag | `@luckycat/dsh-rag` | `luckycat-rag` |
+| hardening | `@luckycat/dsh-hardening` | `luckycat-hardening` |
+
+注意：**装插件 = 执行代码**，且 DSH 明确写了它 "executes in-process outside the
+workspace sandbox"（见 [P4-PACKAGING.md](P4-PACKAGING.md) §4）——所以这是特权操作。
 
 ### 已验证可用的模型（2026-09-17 实测）
 

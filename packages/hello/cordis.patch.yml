@@ -1,0 +1,6 @@
+# luckycat hello 插件自带的 bundle 补丁。
+# 装了本包 → 选中这个 bundle → 这一行进树；卸载 → 取消选中 → 这一行消失。
+# 配置由部署方的 profile patch 按 id 覆盖（本文件只管"插进来"）。
+- insert:
+    - id: luckycat-hello
+      name: '@luckycat/dsh-hello'
