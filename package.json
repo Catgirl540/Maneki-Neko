@@ -1,0 +1,23 @@
+{
+  "name": "luckycat-agent-framework",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "招财猫 agent 框架：DeepSeek Harness 之上的树外插件集合（不改内核，增删插件）",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "dump-config": "bash scripts/dsh-profile.sh dump-config",
+    "verify": "bash scripts/verify.sh"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.6-alpha.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-tools": "0.1.6-alpha.2",
+    "@types/node": "^22.20.3",
+    "typescript": "^6.0.3"
+  }
+}

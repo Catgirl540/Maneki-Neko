@@ -1,0 +1,5 @@
+# 自检 overlay：只在 `--patch` 时挂载，不进生产树。
+# 用 scripts/dsh-profile.sh --patch <此文件> 来跑框架自检。
+- insert:
+    - id: luckycat-probe
+      name: '@LUCKYCAT_PROBE_PLUGIN@'

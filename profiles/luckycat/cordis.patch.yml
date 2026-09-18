@@ -1,0 +1,48 @@
+# luckycat 框架的 profile 补丁层（模板）。
+# 由 scripts/bootstrap.sh 复制到 $DSH_HOME/profiles/luckycat/ 并替换 @…@ 占位符。
+#
+# 设计口径：**不改内核**——只按行 id 覆盖配置、disabled 关闭行、insert 增行。
+
+# ── 1. 安全钉值 ────────────────────────────────────────────────────────────
+# sdk-minimal 出厂是 danger-full-access；本框架钉成 read-only。
+# 注意：**不使用** DSH_PERMISSION_MODE 这个单点开关——它会把沙箱开到全权
+# 并把审批同时设成 never。
+- id: sandbox-policy
+  config:
+    mode: read-only
+    workspaceRoot: !!js process.cwd()
+
+# sdk-minimal 不含审批，补上（审批 ask；无 answerer 时 fail-closed → deny）。
+- insert:
+    - id: approval
+      name: '@deepseek-ai/dsh-user-approval'
+      config:
+        policy: ask
+
+# 刻意**不**挂 @deepseek-ai/dsh-permission-presets：
+#   1) 它 inject 'shell'，而本框架删掉了全部 shell 行 → 会一直 pending；
+#   2) 它自带 danger-full-access preset（sandbox 全权 + approval never），
+#      等于把一个安全翻转开关留进树里。我们直接钉 sandbox-policy + approval，
+#      不需要这一层间接。
+
+# ── 2. 删行：框架无 shell ───────────────────────────────────────────────────
+# 匹配不到的补丁只 warn 不报错，所以 verify 必须把这些行 id 的"确已消失"当成断言。
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- id: terminal-pwsh
+  disabled: true
+- id: pty
+  disabled: true
+- id: mcp-resources
+  disabled: true
+- id: jobs
+  disabled: true
+
+# ── 3. 增行：luckycat 插件 ─────────────────────────────────────────────────
+- insert:
+    - id: luckycat-hello
+      name: '@LUCKYCAT_HELLO_PLUGIN@'
