@@ -89,6 +89,12 @@ try {
     bad('页面没有连上 agent', '确认 agent 演示服务与前端 dev server 都在跑')
   }
 
+  // ── 1b. 快捷入口不许有一键发起资金操作的按钮
+  const quickAsks = await page.locator('button.rounded-chip').allTextContents()
+  const oneClickOps = quickAsks.filter((text) => /帮我转|转 ?\d|转账给|打款给/.test(text))
+  if (oneClickOps.length === 0) ok('快捷问题里没有"一键转账"这类操作入口')
+  else bad('快捷问题里出现了一键资金操作', oneClickOps.join(' / '))
+
   // ── 2. 发一句转账
   const input = page.getByPlaceholder('描述你的需求', { exact: false })
   await input.fill(TRANSFER_PROMPT)
@@ -196,6 +202,37 @@ try {
   } catch {
     bad('确认后没有余额结果')
   }
+  // ── 8. 助手回复必须是**渲染后**的：Markdown 源码不该出现在屏幕上
+  // 这是客户直接看到的问题（`**粗体**`、`|---|` 原样显示），所以单独断言。
+  const bubbles = await page.locator('.bg-sunk').allInnerTexts()
+  const rawMarkdown = bubbles.filter((text) => /\*\*|\|\s*-{2,}\s*\|/.test(text))
+  if (rawMarkdown.length === 0) ok('助手气泡里没有残留 Markdown 源码（** / |---|）')
+  else bad('助手气泡里还看得见 Markdown 源码', rawMarkdown[0].slice(0, 120))
+
+  const katexCss = await page.evaluate(() =>
+    [...document.styleSheets].some((sheet) => {
+      try {
+        return [...sheet.cssRules].some((rule) => rule.cssText.includes('.katex'))
+      } catch {
+        return false
+      }
+    }))
+  if (katexCss) ok('KaTeX 样式已生效（公式能正常排版）')
+  else bad('页面里没有 KaTeX 样式（公式会挤成一堆字符）')
+
+  // 工具结果摘要不许泄漏内部结构：绝对路径、内部字段名都曾经直接显示给客户过。
+  const toolLabels = await page.locator('span.px-3.py-1\\.5').allInnerTexts()
+  const leaky = toolLabels.filter((text) => /\/home\/|corpusPath|indexedChunks|degradedReason|\{"|\[\{/.test(text))
+  if (toolLabels.length === 0) {
+    // 选择器抓不到东西时 leaky 一定为空，上面那条会**空转通过**。
+    // 所以先断言"确实抓到了工具摘要"，否则这条检查等于没做。
+    bad('没抓到任何工具摘要标签，泄漏检查会空转', '检查一下页面结构或选择器')
+  } else if (leaky.length === 0) {
+    ok(`工具摘要没有泄漏内部路径/字段（检查了 ${toolLabels.length} 条）`)
+  } else {
+    bad('工具摘要里出现了内部结构', leaky[0].slice(0, 120))
+  }
+
   if (TAKE_SHOTS) await page.screenshot({ path: path.join(SHOT_DIR, 'agent-03-readonly.png'), fullPage: false })
 } finally {
   await browser.close()

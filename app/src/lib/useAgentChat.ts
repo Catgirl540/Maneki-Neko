@@ -135,7 +135,7 @@ export function useAgentChat(): AgentChat {
           if (item.kind !== 'tool') return item
           // 有 callId 就精确匹配；没有（上游偶尔不回填）就退回"最后一个还在执行的行"。
           if (id !== undefined ? item.id !== id : item.state !== 'running') return item
-          return { ...item, state: event.isError ? 'error' : 'done', text: summarize(event.text) }
+          return { ...item, state: event.isError ? 'error' : 'done', text: summarize(item.name, event.text) }
         }))
         return
       }
@@ -278,18 +278,65 @@ export function useAgentChat(): AgentChat {
   return { status, model, items, busy, pending, send, answer, reset }
 }
 
-/** 把工具结果压成一行摘要（界面只展示要点，完整内容在服务端日志里）。 */
-function summarize(text: string): string {
+/**
+ * 把工具结果压成**一行给人看的摘要**。
+ *
+ * 两条规矩：
+ *   1. 按工具名认形状，**绝不把原始 JSON 直接倒到界面上**——工具结果里有
+ *      `corpusPath` 这类内部字段，之前就在客户的聊天窗里显示过
+ *      `/home/…/framework/examples/bank/corpus.json`（实测踩到）；
+ *   2. 认不出来的形状就说"已完成"，宁可少说，也不泄漏内部结构。
+ * 完整结果在会话日志里，排查问题看那边。
+ * @param name - 工具名。
+ * @param text - 工具返回的渲染文本（JSON 字符串）。
+ * @returns 一行摘要。
+ */
+function summarize(name: string, text: string): string {
   const trimmed = text.trim()
   if (trimmed === '') return ''
+  let parsed: Record<string, unknown>
   try {
-    const parsed = JSON.parse(trimmed) as Record<string, unknown>
-    if (typeof parsed['error'] === 'string') return parsed['error']
-    if (typeof parsed['reference'] === 'string') return `回执号 ${parsed['reference']}`
-    if (typeof parsed['balance'] === 'string') return `余额 ${parsed['balance']}`
-    if (Array.isArray(parsed['transactions'])) return `${parsed['transactions'].length} 条流水`
+    parsed = JSON.parse(trimmed) as Record<string, unknown>
   } catch {
-    // 不是 JSON 就原样截断显示。
+    // 不是 JSON：只取第一行、限长，避免把一大段原文塞进标签。
+    const firstLine = trimmed.split('\n')[0] ?? ''
+    return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine
   }
-  return trimmed.length > 120 ? `${trimmed.slice(0, 120)}…` : trimmed
+
+  // 失败信息始终如实显示——那是客户需要知道的。
+  if (typeof parsed['error'] === 'string') return parsed['error']
+
+  const reference = parsed['reference']
+  if (typeof reference === 'string') return `回执号 ${reference}`
+
+  switch (name) {
+    case 'knowledge_lookup': {
+      const hits = parsed['hits']
+      if (!Array.isArray(hits)) return '已完成'
+      if (hits.length === 0) return '知识库里没有相关资料'
+      const mode = parsed['mode'] === 'hybrid' ? '向量 + 关键词' : '关键词'
+      return `找到 ${hits.length} 段资料（${mode}）`
+    }
+    case 'bank_get_balance':
+      return typeof parsed['balance'] === 'string' ? `余额 ${parsed['balance']}` : '已完成'
+    case 'bank_list_transactions': {
+      const rows = parsed['transactions']
+      return Array.isArray(rows) ? `${rows.length} 条流水` : '已完成'
+    }
+    case 'bank_get_transaction_detail': {
+      const amount = parsed['amount']
+      const counterparty = parsed['counterparty']
+      return typeof amount === 'string' && typeof counterparty === 'string'
+        ? `${counterparty} · ${amount}`
+        : '已完成'
+    }
+    case 'bank_wealth_quote': {
+      const risk = parsed['riskLevel']
+      return typeof risk === 'string' ? `风险等级 ${risk}` : '已完成'
+    }
+    case 'bank_reveal_card_secret':
+      return '已返回占位值（非真实卡信息）'
+    default:
+      return '已完成'
+  }
 }

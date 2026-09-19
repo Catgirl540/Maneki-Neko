@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '@/api'
 import type { SupportMessage } from '@/api/types'
 import { ConsentCard } from '@/components/agent/ConsentCard'
+// 懒加载：Markdown + KaTeX 加起来约 430KB，只有这一页用得上，
+// 不该让全部页面（登录、总览、转账…）一起背。首次出现助手回复时才去取。
+const Markdown = lazy(() => import('@/components/agent/Markdown').then(m => ({ default: m.Markdown })))
 import { CatMark } from '@/components/brand/Logo'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -12,11 +15,19 @@ import { cn } from '@/lib/cn'
 import { STORAGE_KEYS, storage } from '@/lib/storage'
 import { toolLabel, useAgentChat, type ChatItem } from '@/lib/useAgentChat'
 
+/**
+ * 快捷问题。
+ *
+ * 刻意**不放**"帮我转 800 元给某人"这类**操作**入口：那是一键发起一笔资金操作，
+ * 客户可能没看清收款人就点下去。要转账就自己把话说清楚——确认卡片是防误操作的
+ * 第二道闸，不该让第一道闸（"要不要发起"）变成一个手滑就能碰到的按钮。
+ * 「转账手续费怎么收？」是**咨询**不是操作，保留。
+ */
 const QUICK_ASKS = [
   '我的账户余额还有多少？',
-  '帮我转 800 元给梁乐怡，账号尾号 9123，备注房租',
   '最近有哪些支出？',
   '转账手续费怎么收？',
+  '有哪些理财产品？',
   '卡丢了怎么办？',
 ]
 
@@ -289,8 +300,22 @@ function AgentBubble({ item }: { item: ChatItem }) {
           <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
         )}
       </span>
-      <div className={cn('max-w-[80%] rounded-card px-4 py-3 text-[14px] leading-relaxed whitespace-pre-wrap', isUser ? 'bg-ink text-ink-invert' : 'bg-sunk text-ink')}>
-        {item.text}
+      <div
+        className={cn(
+          'max-w-[85%] rounded-card px-4 py-3',
+          isUser ? 'text-[14px] leading-relaxed whitespace-pre-wrap bg-ink text-ink-invert' : 'bg-sunk text-ink',
+        )}
+      >
+        {/* 助手回复可能带 Markdown 表格与公式；用户自己说的话按纯文本显示，
+            免得他打的 `#` 或 `*` 被当成格式。
+            懒加载期间的兜底就是纯文本——和没有这个功能时的显示一致，不会闪空白。 */}
+        {isUser
+          ? item.text
+          : (
+            <Suspense fallback={<span className="whitespace-pre-wrap">{item.text}</span>}>
+              <Markdown text={item.text} />
+            </Suspense>
+          )}
       </div>
     </div>
   )

@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 import ts from '../app/node_modules/typescript/lib/typescript.js'
 
 const SRC = new URL('../app/src/', import.meta.url)
+const APP_PACKAGE = new URL('../app/package.json', import.meta.url).href
 
 const TS_EXT = /\.tsx?$/
 
@@ -40,7 +41,16 @@ registerHooks({
         }
       }
     }
-    return nextResolve(specifier, context)
+    // 裸包名（react、react-dom/server、react-markdown…）在**工具目录**里没有依赖，
+    // 但 app 里有。默认解析失败时退回 app/package.json 再解析一次。
+    // 这样检查脚本就能直接 import 应用里真正在跑的那个组件，而不是照源码抄一遍。
+    try {
+      return nextResolve(specifier, context)
+    } catch (error) {
+      const bare = !specifier.startsWith('.') && !specifier.startsWith('node:') && !specifier.startsWith('file:')
+      if (!bare) throw error
+      return nextResolve(specifier, { ...context, parentURL: APP_PACKAGE })
+    }
   },
 
   load(url, context, nextLoad) {
