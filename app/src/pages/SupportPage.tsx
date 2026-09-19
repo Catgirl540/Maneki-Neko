@@ -5,7 +5,7 @@ import type { SupportMessage } from '@/api/types'
 import { ConsentCard } from '@/components/agent/ConsentCard'
 import { CatMark } from '@/components/brand/Logo'
 import { Button } from '@/components/ui/Button'
-import { Card, CardHeader } from '@/components/ui/Card'
+import { Card } from '@/components/ui/Card'
 import { Tag } from '@/components/ui/Segmented'
 import { AlertIcon, ArrowRightIcon, CheckIcon, RefreshIcon, SendIcon, SparkleIcon, UserIcon } from '@/components/ui/icons'
 import { cn } from '@/lib/cn'
@@ -18,14 +18,6 @@ const QUICK_ASKS = [
   '最近有哪些支出？',
   '转账手续费怎么收？',
   '卡丢了怎么办？',
-]
-
-/** 能力说明。agent 接通后前两条由真模型承担，这里如实标注。 */
-const CAPABILITIES = [
-  { title: '智能问答与业务办理', description: '真模型 + 知识库检索，可查余额、流水、产品', ready: true },
-  { title: '敏感操作确认', description: '转账 / 理财 / 看卡密：先展示、再确认、验身份后才执行', ready: true },
-  { title: '人工接管 / 转人工', description: '规划中：一键转人工客服', ready: false },
-  { title: 'Agent 自主操作', description: '规划中：授权后自动执行定期任务', ready: false },
 ]
 
 export function SupportPage() {
@@ -115,156 +107,106 @@ export function SupportPage() {
         <ModeTag status={agent.status} model={agent.model} />
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        {/* 对话 */}
-        <Card padded={false} className="float-up flex h-[680px] flex-col overflow-hidden">
-          <div className="flex items-center gap-3 border-b border-line px-6 py-5">
-            <span className="grid size-10 place-items-center rounded-chip bg-gold-wash">
-              <CatMark className="size-6 text-gold-deep" cutout="var(--color-gold-wash)" />
+      {/* 对话 */}
+            {/* 高度跟着视口走：右侧两栏撤掉之后，聊天区可以占满一屏，
+          确认卡片不用滚动就能看全（有 min-height 兜住小窗口）。 */}
+      <Card padded={false} className="float-up flex h-[calc(100vh-240px)] min-h-[560px] flex-col overflow-hidden">
+        <div className="flex items-center gap-3 border-b border-line px-6 py-5">
+          <span className="grid size-10 place-items-center rounded-chip bg-gold-wash">
+            <CatMark className="size-6 text-gold-deep" cutout="var(--color-gold-wash)" />
+          </span>
+          <span>
+            <span className="block text-[15px] font-medium text-ink">招财猫智能助手</span>
+            <span className="block text-[13px] text-ink-mute">
+              {usingAgent ? '真模型驱动 · 敏感操作需你确认' : '演示话术 · agent 未连接'}
             </span>
-            <span>
-              <span className="block text-[15px] font-medium text-ink">招财猫智能助手</span>
-              <span className="block text-[13px] text-ink-mute">
-                {usingAgent ? '真模型驱动 · 敏感操作需你确认' : '演示话术 · agent 未连接'}
-              </span>
-            </span>
-            {usingAgent && (
-              <Button size="sm" variant="ghost" className="ml-auto" icon={<RefreshIcon size={15} />} onClick={agent.reset}>
-                新对话
-              </Button>
-            )}
-          </div>
-
-          <div ref={scroller} className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
-            {usingAgent
-              ? agent.items.map((item) => <AgentBubble key={item.id} item={item} />)
-              : messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
-
-            {/* 待确认的敏感操作：工具此刻**还没有执行** */}
-            {agent.pending !== undefined && (
-              <div ref={consentRef}>
-                <ConsentCard
-                  pending={agent.pending}
-                  onApprove={(password) => { agent.answer('approve', password) }}
-                  onReject={() => { agent.answer('reject') }}
-                />
-              </div>
-            )}
-
-            {(usingAgent ? agent.busy : thinking) && agent.pending === undefined && (
-              <div className="flex items-center gap-3">
-                <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
-                  <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
-                </span>
-                <span className="flex gap-1.5 rounded-card bg-sunk px-4 py-3">
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="size-1.5 animate-bounce rounded-chip bg-ink-mute"
-                      style={{ animationDelay: `${i * 120}ms` }}
-                    />
-                  ))}
-                </span>
-              </div>
-            )}
-
-            {usingAgent && agent.items.length === 0 && agent.pending === undefined && (
-              <p className="rounded-card bg-sunk px-4 py-3 text-[13px] text-ink-soft">
-                试试下面的问题。涉及转账、理财申购、查看卡号密码这类操作时，
-                我会先把交易信息列出来，等你确认并验证支付密码之后才执行。
-              </p>
-            )}
-          </div>
-
-          <div className="border-t border-line px-6 py-4">
-            <div className="mb-3 flex flex-wrap gap-2">
-              {QUICK_ASKS.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => send(q)}
-                  className="h-8 rounded-chip border border-line px-3 text-[12px] text-ink-soft transition-colors hover:border-gold hover:text-gold-deep"
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
-            <form
-              className="flex items-center gap-3"
-              onSubmit={(e) => {
-                e.preventDefault()
-                send(input)
-              }}
-            >
-              <input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder={probing ? '正在连接 agent…' : '描述你的需求，例如：帮我转 800 元给梁乐怡'}
-                disabled={probing}
-                className="h-12 flex-1 rounded-chip border border-line bg-surface px-4 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
-              />
-              <button
-                type="submit"
-                aria-label="发送"
-                disabled={(usingAgent ? agent.busy : thinking) || !input.trim() || probing}
-                className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert disabled:cursor-not-allowed disabled:bg-gold/40"
-              >
-                <SendIcon size={20} />
-              </button>
-            </form>
-          </div>
-        </Card>
-
-        {/* 能力说明 */}
-        <div className="flex flex-col gap-6">
-          <Card className="float-up" style={{ animationDelay: '60ms' }}>
-            <CardHeader title="Agent 能力" />
-            <ul className="mt-4 divide-y divide-line">
-              {CAPABILITIES.map((item) => (
-                <li key={item.title} className="flex items-start gap-4 py-4">
-                  <span
-                    className={cn(
-                      'mt-0.5 grid size-9 shrink-0 place-items-center rounded-tile',
-                      item.ready ? 'bg-gold-tint text-gold-deep' : 'bg-sunk text-ink-mute',
-                    )}
-                  >
-                    <SparkleIcon size={18} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[15px] font-medium text-ink">{item.title}</span>
-                    <span className="mt-0.5 block text-[13px] text-ink-mute">
-                      {item.description}
-                    </span>
-                  </span>
-                  {item.ready && <Tag tone="blue">已上线</Tag>}
-                </li>
-              ))}
-            </ul>
-          </Card>
-
-          <Card className="float-up" style={{ animationDelay: '120ms' }}>
-            <CardHeader title="安全与合规" />
-            <ul className="mt-4 flex flex-col gap-3 text-[13px] text-ink-soft">
-              <li>· 涉及资金与敏感信息的操作，一律先展示交易信息、再由你确认</li>
-              <li>· 转账、理财申赎、查看卡密需要验证支付密码后才执行</li>
-              <li>· 支付密码不会进入对话记录，也不会发给模型</li>
-              <li>· 你点取消或超时未确认，操作不会执行</li>
-            </ul>
-            <div className="mt-5 flex gap-3">
-              <Link to="/transfer" className="flex-1">
-                <Button block size="sm">
-                  自行转账
-                </Button>
-              </Link>
-              <Link to="/security" className="flex-1">
-                <Button block size="sm">
-                  安全中心
-                </Button>
-              </Link>
-            </div>
-          </Card>
+          </span>
+          {usingAgent && (
+            <Button size="sm" variant="ghost" className="ml-auto" icon={<RefreshIcon size={15} />} onClick={agent.reset}>
+              新对话
+            </Button>
+          )}
         </div>
-      </div>
+
+        <div ref={scroller} className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
+          {usingAgent
+            ? agent.items.map((item) => <AgentBubble key={item.id} item={item} />)
+            : messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
+
+          {/* 待确认的敏感操作：工具此刻**还没有执行** */}
+          {agent.pending !== undefined && (
+            <div ref={consentRef}>
+              <ConsentCard
+                pending={agent.pending}
+                onApprove={(password) => { agent.answer('approve', password) }}
+                onReject={() => { agent.answer('reject') }}
+              />
+            </div>
+          )}
+
+          {(usingAgent ? agent.busy : thinking) && agent.pending === undefined && (
+            <div className="flex items-center gap-3">
+              <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
+                <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
+              </span>
+              <span className="flex gap-1.5 rounded-card bg-sunk px-4 py-3">
+                {[0, 1, 2].map((i) => (
+                  <span
+                    key={i}
+                    className="size-1.5 animate-bounce rounded-chip bg-ink-mute"
+                    style={{ animationDelay: `${i * 120}ms` }}
+                  />
+                ))}
+              </span>
+            </div>
+          )}
+
+          {usingAgent && agent.items.length === 0 && agent.pending === undefined && (
+            <p className="rounded-card bg-sunk px-4 py-3 text-[13px] text-ink-soft">
+              试试下面的问题。涉及转账、理财申购、查看卡号密码这类操作时，
+              我会先把交易信息列出来，等你确认并验证支付密码之后才执行。
+            </p>
+          )}
+        </div>
+
+        <div className="border-t border-line px-6 py-4">
+          <div className="mb-3 flex flex-wrap gap-2">
+            {QUICK_ASKS.map((q) => (
+              <button
+                key={q}
+                type="button"
+                onClick={() => send(q)}
+                className="h-8 rounded-chip border border-line px-3 text-[12px] text-ink-soft transition-colors hover:border-gold hover:text-gold-deep"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+          <form
+            className="flex items-center gap-3"
+            onSubmit={(e) => {
+              e.preventDefault()
+              send(input)
+            }}
+          >
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={probing ? '正在连接 agent…' : '描述你的需求，例如：帮我转 800 元给梁乐怡'}
+              disabled={probing}
+              className="h-12 flex-1 rounded-chip border border-line bg-surface px-4 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
+            />
+            <button
+              type="submit"
+              aria-label="发送"
+              disabled={(usingAgent ? agent.busy : thinking) || !input.trim() || probing}
+              className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert disabled:cursor-not-allowed disabled:bg-gold/40"
+            >
+              <SendIcon size={20} />
+            </button>
+          </form>
+        </div>
+      </Card>
     </div>
   )
 }
