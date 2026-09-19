@@ -166,6 +166,7 @@ cd app && npm run dev          # http://localhost:5180
 | 会话存档的读写/裁剪/坏数据（离线，不需要浏览器和模型） | `node --import ./tools/ts-resolve-hook.mjs tools/check-sessions.mjs` |
 | Markdown/公式渲染 + 安全退让（离线） | `node --import ./tools/ts-resolve-hook.mjs tools/check-markdown.mjs` |
 | 被 import 的源码都在 git 里（离线，防"推上去编译不过"） | `node tools/check-tracked.mjs` |
+| 交接文档里写的路径真的存在、插件都写进了文档（离线） | `node tools/check-handoff-doc.mjs` |
 
 设计与边界：`framework/design/P5-CONSENT.md`（闸门）、`framework/design/P6-WEB-BRIDGE.md`（演示服务）、
 `framework/design/P7-SESSIONS.md`（会话管理）、

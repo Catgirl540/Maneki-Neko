@@ -1708,6 +1708,25 @@ interface SecurityOverview {
 
 ### 2.9 智能客服（2 条）
 
+> **先读这一段，否则会把这两条当成客服的全部。**
+>
+> 智能客服有**两条路**，这一节写的是**回落路**：
+>
+> | | 走哪条 | 接口 |
+> | --- | --- | --- |
+> | agent 可用时（默认） | **真模型驱动**，多段历史对话、敏感操作要确认 | 不在本契约里：见 `AGENT-RUNTIME-CONTRACT.md`（前缀 `/agent/*`，独立通道） |
+> | agent 不可用时 | 固定话术（就是这一节的两条） | `/api/support/messages`、`/api/support/chat` |
+>
+> 意思是：**本节的 `/api/support/*` 不是"客服的主接口"，而是"agent 连不上时的兜底"**。
+> 纯前端部署（`VITE_AGENT_ENABLED=false`）上走的就是它。
+>
+> 两点由此得来：
+> - **两边的历史是分开存的**，互不同步。本节用的是 `luckycat.support.history.v1`
+>   （`SupportMessage[]`）；agent 那条路用的是 `luckycat.agent.sessions.v1`
+>   （多段对话，见 `AGENT-RUNTIME-CONTRACT.md` §6）。切换通道时看到的历史不一样，**这是现状，不是 bug**。
+> - 真后端上线后，如果 agent 通道也归你们，**不要让这两条接口去代理 agent**——
+>   事件流、确认通道的形状与它们完全不同，硬塞会两边都变形。
+
 #### 2.9.1 `GET /api/support/messages`
 
 - 请求体：无
@@ -1735,8 +1754,8 @@ interface SupportMessage {
 
 - 请求体：`{ text: string }`（http.ts 第 126 行）
 - 响应：`SupportReply` = `{ message: SupportMessage; canned: boolean }`
-- 业务含义：客服对话。MVP 是**固定话术匹配**（关键词规则），未接入大模型，
-  所以 `canned: true`。
+- 业务含义：客服对话。**回落路**：固定话术匹配（关键词规则），未接入大模型，
+  所以 `canned: true`。（agent 可用时根本不走这里，见本节开头。）
 - `message.role` 必须是 `'agent'`（前端把它追加到消息列表）。
 - **关键词规则**（mock 的 `CANNED_RULES`，按顺序取第一条命中的，`i` 表示忽略大小写）：
 
