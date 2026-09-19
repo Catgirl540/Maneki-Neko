@@ -1,0 +1,7 @@
+# 端到端自检用的 overlay：把确认超时压到 20 秒，让"不回答就拒绝"那条用例能快速跑完。
+# 只用于 LUCKYCAT_E2E 的自检，不进生产树。
+- id: luckycat-consent
+  config:
+    channel: http-poll
+    channelUrl: !!js process.env.LUCKYCAT_CONSENT_URL ?? 'http://127.0.0.1:8788/consent/challenge'
+    timeoutMs: 20000

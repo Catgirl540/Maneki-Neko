@@ -32,6 +32,11 @@ interface EmbeddingLike {
   embed(request: { texts: readonly string[] }): Promise<number[][]>
 }
 
+/** 敏感操作闸门的最小结构类型（同样可选读取）。 */
+interface ConsentLike {
+  declaredTools(): readonly string[]
+}
+
 /** 排一个延迟自检；插件卸载时清掉定时器。 */
 export function apply(ctx: Context): void {
   // 故意返回"假密钥"的工具：用来端到端验证加固包有没有在结果落盘/进模型前抹掉它。
@@ -82,6 +87,17 @@ async function reportEmbedding(ctx: Context): Promise<void> {
   // 注意：compaction-basic 硬依赖 tokenMeter，所以这两个要一起看。
   writeSync(2, `[luckycat-probe] compaction=${get('compaction') === undefined ? 'ABSENT' : 'ACTIVE'}\n`)
   writeSync(2, `[luckycat-probe] tokenMeter=${get('tokenMeter') === undefined ? 'ABSENT' : 'ACTIVE'}\n`)
+
+  // 敏感操作闸门：不只看"服务在不在"，还要看**声明了几条**规则。
+  // 规则表为空 = 闸门形同虚设（任何工具都能直接执行），所以这条要能一眼看出来。
+  const consent = get('consent') as ConsentLike | undefined
+  if (consent === undefined) {
+    writeSync(2, '[luckycat-probe] consent=NOT_MOUNTED\n')
+  } else {
+    const tools = consent.declaredTools()
+    writeSync(2, `[luckycat-probe] consent=ACTIVE count=${tools.length}\n`)
+    writeSync(2, `[luckycat-probe] consent_tools=${tools.join(',') || 'none'}\n`)
+  }
 
   const embedding = get('embedding') as EmbeddingLike | undefined
   if (embedding === undefined) {

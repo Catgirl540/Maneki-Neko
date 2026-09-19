@@ -111,6 +111,40 @@ source ~/.zshrc                # 提供 OPENROUTER_API_KEY
 python3 scripts/gen_images.py design/brand/image-spec.json
 ```
 
+## 2.1 接上 agent（可选，不接后端）
+
+智能客服可以接**真的 agent**（本地演示服务驱动，不需要银行后端；所有工具返回占位数据）。
+**不启动它也能用**：页面会自动回落固定话术，并在右上角标明「演示话术（未连接 agent）」。
+
+```bash
+# 终端 1：agent 演示服务（首次先装依赖：cd framework && npm install）
+source ~/.zshrc                # 提供 OPENROUTER_API_KEY
+cd framework
+bash scripts/build.sh          # 编译插件（改过插件就要重跑）
+bash scripts/bootstrap.sh      # 生成仓库内隔离的 DSH_HOME 并装插件（幂等）
+node bridge/demo-server.mjs    # 监听 127.0.0.1:8788
+
+# 终端 2：前端
+cd app && npm run dev          # http://localhost:5180
+```
+
+然后打开「智能客服」，试试：
+
+> 帮我转 800 元给梁乐怡，账号尾号 9123，备注房租
+
+会看到：agent 调用工具 → 弹出**确认卡片**（逐条列出收款人 / 金额 / 尾号 / 手续费）
+→ 输入支付密码 `123456` → 才执行，并返回演示回执号 `LCB-DEMO-…`。
+点「取消」或不管它，**操作不会执行**。
+
+| 想验证什么 | 命令 |
+| --- | --- |
+| 框架侧 56 条离线断言 + 101 个离线单测 | `cd framework && bash scripts/verify.sh` |
+| 敏感操作端到端（需联网 + 密钥） | `cd framework && bash scripts/e2e-consent.sh` |
+| 浏览器里走一遍确认流程（需上面两个服务在跑） | `node tools/check-agent.mjs --shots` |
+
+设计与边界：`framework/design/P5-CONSENT.md`（闸门）、`framework/design/P6-WEB-BRIDGE.md`（演示服务）、
+`design/backend-handoff/AGENT-RUNTIME-CONTRACT.md`（后端要实现的确认通道形状）。
+
 ## 3. 前后端分离怎么落地
 
 所有网络访问都经过 `src/api/`，组件只 `import { api }`，从不直接 `fetch`。

@@ -155,5 +155,41 @@ report(bareCode.length === 0, '⑤ 没有裸比较银行代码（必须 (region,
   bareCode.length ? bareCode.join('；') : '未发现 .code === 字面量',
 ])
 
+/* ------------------------------------------------ ⑥ agent 通道：前端与文档一致
+
+agent 是**另一条通道**，不进 BankApi（它是给银行后端的契约）。
+但它同样容易漂移：改了 app/src/api/agent.ts 的路径却忘了改文档，
+下一个人就照着旧文档去实现后端。这里把"前端实际调用的路径"与
+"P6-WEB-BRIDGE 里写给后端看的路径表"钉在一起。 */
+const agentClient = await read('app/src/api/agent.ts')
+const agentDoc = await read('framework/design/P6-WEB-BRIDGE.md')
+
+/** 归一：`${...}` 与 `:id` 是同一个东西。 */
+const normAgentPath = (p) => p.replace(/\$\{[^}]*\}/g, ':p').replace(/:[A-Za-z_][\w]*/g, ':p')
+
+/** 前端实际调用的路径（只取真正发起请求的那两个调用点）。 */
+const clientPaths = new Set([
+  ...[...agentClient.matchAll(/requestJson(?:<[^>]*>)?\(\s*[`'"]([^`'"]+)[`'"]/g)].map((m) => normAgentPath(m[1])),
+  ...[...agentClient.matchAll(/EventSource\(\s*`\$\{AGENT_BASE\}([^`]+)`/g)].map((m) => normAgentPath(m[1])),
+])
+
+/** 文档里写给后端看的路径表（去掉演示服务的 /agent-api 前缀）。 */
+const docPaths = new Set(
+  [...agentDoc.matchAll(/^\|\s*(?:GET|POST)\s*\|\s*`([^`]+)`/gm)]
+    .map((m) => normAgentPath(m[1].replace(/^\/agent-api/, ''))),
+)
+
+const pathsOnlyInClient = [...clientPaths].filter((p) => !docPaths.has(p))
+const pathsOnlyInDoc = [...docPaths].filter((p) => !clientPaths.has(p))
+report(
+  clientPaths.size >= 4 && docPaths.size >= 4 && pathsOnlyInClient.length === 0 && pathsOnlyInDoc.length === 0,
+  '⑥ agent 通道：前端调用的路径与 P6-WEB-BRIDGE 的路径表一致',
+  [
+    `前端 ${clientPaths.size} 条 · 文档 ${docPaths.size} 条`,
+    pathsOnlyInClient.length ? `前端有、文档没有：${pathsOnlyInClient.join('、')}` : '',
+    pathsOnlyInDoc.length ? `文档有、前端没有：${pathsOnlyInDoc.join('、')}` : '',
+  ].filter(Boolean),
+)
+
 console.log(failures === 0 ? '\n全部通过 ✅' : `\n${failures} 项未通过 ❌`)
 process.exit(failures === 0 ? 0 : 1)

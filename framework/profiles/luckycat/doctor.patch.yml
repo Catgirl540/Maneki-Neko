@@ -13,6 +13,14 @@
       - knowledge_lookup
       - luckycat_ping
       - luckycat_probe_secret
+      - bank_get_balance
+      - bank_list_transactions
+      - bank_get_transaction_detail
+      - bank_transfer
+      - bank_wealth_quote
+      - bank_wealth_subscribe
+      - bank_wealth_redeem
+      - bank_reveal_card_secret
     secretEnv:
       - OPENROUTER_API_KEY
       - RELAYROUTER_API_KEY

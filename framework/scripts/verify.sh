@@ -101,6 +101,28 @@ if [ -n "$hard_block" ]; then ok "加固插件行 luckycat-hardening 在树中";
 if grep -q 'allowedTools:' <<<"$hard_block"; then ok "工具白名单已显式配置（fail-closed）"; else bad "工具白名单缺失"; fi
 if grep -q 'secretEnv:' <<<"$hard_block"; then ok "按环境变量名脱敏已配置（取值不进配置）"; else bad "secretEnv 未配置"; fi
 
+# V2g 敏感操作闸门与银行示例消费者
+if grep -q 'id: luckycat-consent' <<<"$dump"; then ok "闸门行 luckycat-consent 在树中"; else bad "闸门行缺失"; fi
+# 注意：`!!js` 表达式的值会渲染到**下一行**，所以不能写成 `channelUrl: http://…` 这种
+# 单行匹配——第一版就是这么误报的。按条目块分别查"有 channelUrl"和"有回环地址"。
+consent_block="$(entry_block luckycat-consent)"
+if grep -q 'channelUrl:' <<<"$consent_block" && grep -q 'http://127.0.0.1:8788' <<<"$consent_block"; then
+  ok "确认通道地址已配置（本机演示服务的回环地址）"
+else
+  bad "确认通道地址未配置: $(tr '\n' ' ' <<<"$consent_block")"
+fi
+# 通道地址允许被环境变量覆盖，但不允许被改成明文 http 的外网地址
+# （插件的 assertAllowedEndpoint 会在加载期拒绝；这里做配置层的回归断言）。
+if grep -Eq 'http://(?!127\.0\.0\.1|localhost)' <<<"$consent_block"; then
+  bad "确认通道指向了明文 http 的外网地址"
+else
+  ok "确认通道没有指向明文 http 的外网地址"
+fi
+if grep -q 'id: luckycat-bank-demo' <<<"$dump"; then ok "银行示例消费者行 luckycat-bank-demo 在树中"; else bad "银行示例消费者行缺失"; fi
+if grep -q 'dataPath: /' <<<"$(entry_block luckycat-bank-demo)"; then ok "演示数据路径已替换为绝对路径"; else bad "演示数据路径未替换（占位符没处理？）"; fi
+# 不允许出现"全权 + 免审批"的开关（与 V2 的 danger-full-access 断言同一口径）。
+if grep -q 'approval: never' <<<"$dump"; then bad "树里出现 approval: never（会把审批整个关掉）"; else ok "树里没有 approval: never"; fi
+
 # V2f 长对话与用量（补课项：sdk-minimal 原本没有压缩与用量统计）
 for id in token-meter session-checkpoint-policy tool-result-pruner compaction-basic; do
   if grep -q "id: $id" <<<"$dump"; then ok "补课行在树中: $id"; else bad "补课行缺失: $id"; fi
@@ -119,9 +141,10 @@ else
   bad "knowledge_lookup 未注册: $(tr '\n' ' ' <<<"$probe_out")"
 fi
 # 工具面用**集合同等**断言，而不是数字：数字看不出增删的是哪一个。
-# 探针是 --patch 挂载的，所以它自己那个诊断工具也在（多出的必须只是它）。
-if grep -q 'names=knowledge_lookup,luckycat_ping,luckycat_probe_secret' <<<"$probe_out"; then
-  ok "工具面集合完全匹配（生产 2 个 + 探针 1 个）"
+# 生产树 = 知识库 + 框架自检 + 8 个银行占位工具；探针是 --patch 挂载的，所以还多它一个。
+expected_names='bank_get_balance,bank_get_transaction_detail,bank_list_transactions,bank_reveal_card_secret,bank_transfer,bank_wealth_quote,bank_wealth_redeem,bank_wealth_subscribe,knowledge_lookup,luckycat_ping,luckycat_probe_secret'
+if grep -q "^\[luckycat-probe\] names=$expected_names$" <<<"$probe_out"; then
+  ok "工具面集合完全匹配（生产 10 个 + 探针 1 个）"
 else
   bad "工具面集合不匹配（有意外增删）: $(grep 'names=' <<<"$probe_out")"
 fi
@@ -140,6 +163,30 @@ fi
 # 补课项必须是**服务级**激活，不能只是"行在树里"。
 if grep -q 'compaction=ACTIVE' <<<"$probe_out"; then ok "压缩服务已激活"; else bad "压缩服务未激活: $(grep 'compaction=' <<<"$probe_out")"; fi
 if grep -q 'tokenMeter=ACTIVE' <<<"$probe_out"; then ok "用量统计服务已激活"; else bad "用量统计未激活: $(grep 'tokenMeter=' <<<"$probe_out")"; fi
+
+# 敏感操作闸门：光"服务在"不够，必须**声明了规则**。
+# 规则表为空 = 闸门形同虚设（任何工具都能直接执行），所以断言的是规则集合本身。
+expected_consent='bank_get_balance,bank_get_transaction_detail,bank_list_transactions,bank_reveal_card_secret,bank_transfer,bank_wealth_quote,bank_wealth_redeem,bank_wealth_subscribe'
+if grep -q '^\[luckycat-probe\] consent=ACTIVE count=8$' <<<"$probe_out"; then
+  ok "敏感操作闸门已激活，且声明了 8 条规则"
+else
+  bad "敏感操作闸门未激活或规则条数不对: $(grep 'consent=' <<<"$probe_out")"
+fi
+if grep -q "^\[luckycat-probe\] consent_tools=$expected_consent$" <<<"$probe_out"; then
+  ok "闸门拦截的工具集合与预期完全一致"
+else
+  bad "闸门拦截的工具集合不匹配: $(grep 'consent_tools=' <<<"$probe_out")"
+fi
+# 反向断言：每一个会被拦截的工具，都必须在加固白名单里。
+# 只拦不白名单 = 用户确认完还是被守卫拒绝；只白名单不拦 = 直接执行、更糟。
+for name in ${expected_consent//,/ }; do
+  if grep -q "^      - $name$" <<<"$(entry_block luckycat-hardening)"; then
+    :
+  else
+    bad "被闸门拦截的工具 $name 不在加固白名单里（用户确认后仍会被守卫拒绝）"
+  fi
+done
+ok "闸门拦截的 8 个工具都在加固白名单里"
 
 echo "== V4 离线单测（不联网） =="
 unit_out="$(node --test "$LUCKYCAT_ROOT"/packages/*/tests/*.test.mjs 2>&1)"
@@ -167,6 +214,7 @@ echo "== V5 端到端 =="
 if [ "${LUCKYCAT_E2E:-0}" = "1" ]; then
   if bash "$LUCKYCAT_ROOT/scripts/e2e-bank.sh"; then ok "端到端（知识库问答）通过"; else bad "端到端（知识库问答）失败"; fi
   if bash "$LUCKYCAT_ROOT/scripts/e2e-security.sh"; then ok "端到端（脱敏 + 白名单守卫）通过"; else bad "端到端（安全）失败"; fi
+  if bash "$LUCKYCAT_ROOT/scripts/e2e-consent.sh"; then ok "端到端（敏感操作：展示 → 确认 → 验身份 → 才执行）通过"; else bad "端到端（敏感操作）失败"; fi
 else
   echo "  skip 默认跳过（需要联网与 OPENROUTER_API_KEY；设 LUCKYCAT_E2E=1 启用）"
 fi

@@ -1,0 +1,4 @@
+# luckycat 敏感操作闸门自带的 bundle 补丁。通道地址由部署方覆盖。
+- insert:
+    - id: luckycat-consent
+      name: '@luckycat/dsh-consent'

@@ -1,0 +1,4 @@
+# luckycat 银行示例消费者自带的 bundle 补丁。数据路径由部署方覆盖。
+- insert:
+    - id: luckycat-bank-demo
+      name: '@luckycat/dsh-bank-demo'

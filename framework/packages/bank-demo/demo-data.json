@@ -1,0 +1,80 @@
+{
+  "accounts": [
+    {
+      "id": "acc-cny-1",
+      "name": "招财猫银行 Ⅰ 类户",
+      "tail": "6688",
+      "currency": "CNY",
+      "balanceCents": 1286450
+    },
+    {
+      "id": "acc-hkd-1",
+      "name": "招财猫银行 港币储蓄",
+      "tail": "3021",
+      "currency": "HKD",
+      "balanceCents": 864200
+    }
+  ],
+  "transactions": [
+    {
+      "id": "tx-1",
+      "accountId": "acc-cny-1",
+      "amountCents": -38800,
+      "currency": "CNY",
+      "counterparty": "FIRWWORKS.AI",
+      "category": "订阅服务",
+      "occurredAt": "2026-09-15T10:24:00+08:00",
+      "memo": "年度会员续费",
+      "channel": "网银"
+    },
+    {
+      "id": "tx-2",
+      "accountId": "acc-cny-1",
+      "amountCents": 1200000,
+      "currency": "CNY",
+      "counterparty": "陈嘉禾",
+      "category": "转账",
+      "occurredAt": "2026-09-12T09:05:00+08:00",
+      "memo": "房租",
+      "channel": "转数快"
+    },
+    {
+      "id": "tx-3",
+      "accountId": "acc-cny-1",
+      "amountCents": -12800,
+      "currency": "CNY",
+      "counterparty": "招财猫便利店",
+      "category": "日常消费",
+      "occurredAt": "2026-09-11T19:42:00+08:00",
+      "memo": "日用品",
+      "channel": "手机银行"
+    },
+    {
+      "id": "tx-4",
+      "accountId": "acc-hkd-1",
+      "amountCents": -56000,
+      "currency": "HKD",
+      "counterparty": "香港电讯",
+      "category": "生活缴费",
+      "occurredAt": "2026-09-09T08:15:00+08:00",
+      "memo": "宽带月费",
+      "channel": "自动扣款"
+    }
+  ],
+  "products": [
+    {
+      "code": "LC-WM-001",
+      "name": "招财猫稳健添利 90 天",
+      "riskLevel": "R2",
+      "benchmark": "近 7 日年化 2.15%（业绩比较基准，不是预期收益率，不构成收益承诺）",
+      "minAmountCents": 10000
+    },
+    {
+      "code": "LC-WM-002",
+      "name": "招财猫均衡配置混合类",
+      "riskLevel": "R3",
+      "benchmark": "沪深 300 指数收益率 × 60% + 中债综合指数收益率 × 40%（业绩比较基准，不是预期收益率）",
+      "minAmountCents": 100000
+    }
+  ]
+}

@@ -3,6 +3,12 @@ node_modules/
 lib/
 dist/
 
+# tsc 在 rootDir 约束失败时会把产物直接吐在 src 旁边（实测踩到：
+# 用 tsconfig paths 指向别的包的 src 会触发 TS6059，但 tsc 仍然照常 emit）。
+# 那些是构建垃圾，不是源码。
+packages/*/src/*.js
+packages/*/src/*.d.ts
+
 # 仓库内隔离的 DSH_HOME：本框架的一切实验都在这里，绝不碰用户的 ~/.dsh
 .dsh-home/
 
