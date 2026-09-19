@@ -62,6 +62,9 @@ async function login(page) {
     }))
     // 每次都从干净的对话开始，避免上一轮的本地历史干扰断言。
     localStorage.removeItem('luckycat.support.history.v1')
+    // 历史对话也清掉：第 9 段要数"这一页开了几段"，带着旧记录会数不准。
+    localStorage.removeItem('luckycat.agent.sessions.v1')
+    localStorage.removeItem('luckycat.ui.agentHistoryOpen')
   })
 }
 
@@ -157,14 +160,21 @@ try {
   }
 
   // ── 6. 正确密码 → 执行
-  for (const [index, digit] of [...PAY_PASSWORD].entries()) await pins.nth(index).fill(digit)
-  await page.getByRole('button', { name: /确认并验证/ }).click()
+  // 卡片没出来时不要在这里抛异常：抛了整轮就断，后面的会话管理检查一条都跑不到，
+  // 而"为什么没出来"的线索反而更少。
+  if (pinCount < 6) {
+    bad('跳过"正确密码 → 执行"：支付密码框没出现')
+    bad('跳过"验证通过后工具执行完成"')
+  } else {
+    for (const [index, digit] of [...PAY_PASSWORD].entries()) await pins.nth(index).fill(digit)
+    await page.getByRole('button', { name: /确认并验证/ }).click()
 
-  try {
-    await doneChip.waitFor({ state: 'visible', timeout: 120_000 })
-    ok('验证通过后工具执行完成')
-  } catch {
-    bad('验证通过后工具没有执行完成')
+    try {
+      await doneChip.waitFor({ state: 'visible', timeout: 120_000 })
+      ok('验证通过后工具执行完成')
+    } catch {
+      bad('验证通过后工具没有执行完成')
+    }
   }
 
   const receipt = page.getByText('LCB-DEMO-', { exact: false }).first()
@@ -234,6 +244,153 @@ try {
   }
 
   if (TAKE_SHOTS) await page.screenshot({ path: path.join(SHOT_DIR, 'agent-03-readonly.png'), fullPage: false })
+
+  /* ══════════════════════════════════════════════════════════════════════
+     9. 会话管理：列表 / 切换 / 不受打扰 / 改名 / 刷新不丢 / 删除
+     ══════════════════════════════════════════════════════════════════════ */
+
+  // 注意选择器要**精确**：页面左边的主导航也是一个 <aside>，
+  // 用 `page.locator('aside')` 会同时匹配到它，waitFor/isVisible 的行为就全乱了。
+  const drawer = page.locator('aside[aria-label="历史对话"]')
+  const historyToggle = page.getByRole('button', { name: /历史对话/ })
+  const rows = () => drawer.locator('div.group > button')
+  /** 页面上用户自己说的话。 */
+  const userBubbles = async () =>
+    (await page.locator('div.bg-ink.text-ink-invert').allInnerTexts()).map(t => t.trim()).filter(t => t !== '')
+
+  await historyToggle.click()
+  try {
+    await drawer.waitFor({ state: 'visible', timeout: 5_000 })
+    ok('点「历史对话」打开了会话抽屉')
+  } catch {
+    bad('会话抽屉没有打开')
+  }
+
+  // ── 9a. 每一段都记下来了，标题按第一句话自动起名
+  const rowCount = await rows().count()
+  if (rowCount >= 2) ok(`抽屉里列了 ${rowCount} 段对话（这一页开过的都在）`)
+  else bad('抽屉里的对话条数不对', `找到 ${rowCount} 段，应该有 2 段以上`)
+
+  const titles = await rows().allInnerTexts()
+  const hasTransfer = titles.some(t => t.includes('帮我转 800 元'))
+  const hasBalance = titles.some(t => t.includes('我的账户余额还有多少'))
+  if (hasTransfer && hasBalance) ok('两段对话各自按第一句话自动起了标题')
+  else bad('自动标题不对', titles.map(t => t.split('\n')[0]).join(' | '))
+
+  // ── 9b. 切换：内容跟着换，而且**不许串**
+  await rows().filter({ hasText: '帮我转 800 元' }).first().click()
+  await page.waitForTimeout(600)
+  const onTransfer = await userBubbles()
+  const transferIsolated = onTransfer.length === 1 && onTransfer[0].includes('帮我转 800 元')
+    && !onTransfer.some(t => t.includes('余额'))
+  if (transferIsolated) ok('切到转账那段：只显示那一段的内容，没有和余额那段串在一起')
+  else bad('切换对话之后内容串了', JSON.stringify(onTransfer).slice(0, 200))
+
+  await rows().filter({ hasText: '我的账户余额还有多少' }).first().click()
+  await page.waitForTimeout(600)
+  const onBalance = await userBubbles()
+  if (onBalance.length === 1 && onBalance[0] === '我的账户余额还有多少？') {
+    ok('切回余额那段：内容也各归各的')
+  } else {
+    bad('切回之后内容不对', JSON.stringify(onBalance).slice(0, 200))
+  }
+
+  // ── 9c. 切走**不能打断**正在回答的那一段（会话管理最容易做错的地方）
+  // 用"数到 30"当提示词：生成要花一阵子，切换一定能落在它还没答完的窗口里。
+  // 抽屉开着的时候「新对话」有两个（顶栏一个、抽屉里一个），取第一个就行——两个做的是同一件事。
+  await page.getByRole('button', { name: '新对话' }).first().click()
+  await page.waitForTimeout(300)
+  const SLOW_PROMPT = '请从 1 数到 30，每个数字单独一行，一个都不许省略。'
+  await input.fill(SLOW_PROMPT)
+  await page.keyboard.press('Enter')
+  // 立刻切走：这时它应该还在回答
+  await rows().filter({ hasText: '我的账户余额还有多少' }).first().click()
+  await page.waitForTimeout(700)
+
+  const busyRow = drawer.locator('div.group', { hasText: '请从 1 数到 30' }).first()
+  const busySeen = (await busyRow.innerText().catch(() => '')).includes('回答中')
+  if (busySeen) ok('切走之后那一行仍然标着「回答中」——没有被切换打断')
+  else bad('切走之后看不到「回答中」，无法确认没被打断')
+
+  const duringSwitch = await userBubbles()
+  if (duringSwitch.length === 1 && duringSwitch[0] === '我的账户余额还有多少？') {
+    ok('切走时显示的是被切到的那一段，不是还在回答的那一段')
+  } else {
+    bad('切走之后显示的内容不对', JSON.stringify(duringSwitch).slice(0, 200))
+  }
+
+  // 等它答完（"回答中"消失），再切回去确认回答确实落在了它自己那一段里。
+  let settled = false
+  for (let i = 0; i < 240; i += 1) {
+    const text = await busyRow.innerText().catch(() => '')
+    if (!text.includes('回答中')) { settled = true; break }
+    await page.waitForTimeout(500)
+  }
+  if (!settled) bad('等了两分钟那一行还标着「回答中」')
+
+  await busyRow.click()
+  await page.waitForTimeout(600)
+  const answered = await userBubbles()
+  const replyCount = await page.locator('div.bg-sunk.rounded-card').count()
+  if (answered.length === 1 && answered[0] === SLOW_PROMPT && replyCount >= 1) {
+    ok('切回来之后：回答写在了它自己那一段里（没跑到别处，也没丢）')
+  } else {
+    bad('被切走的那一段没有收到回答', `用户气泡 ${JSON.stringify(answered).slice(0, 120)}；助手气泡 ${replyCount}`)
+  }
+
+  // ── 9d. 改名
+  await drawer.locator('div.group:has(button[aria-current="true"])').first()
+    .getByRole('button', { name: /^重命名/ }).click()
+  await page.getByLabel('对话标题').fill('房租转账')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.waitForTimeout(400)
+  if ((await rows().allInnerTexts()).some(t => t.includes('房租转账'))) ok('改名生效，列表里换成了新名字')
+  else bad('改名没有生效')
+
+  // ── 9e. 刷新不丢（记录存在这台设备上）
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  // 先等通道连上：抽屉只在 agent 可用时才渲染。太早点会点到"还没出现的按钮"，
+  // 而 Playwright 会一直等它出现——等到了再点，反而把本来开着的抽屉关掉。
+  await page.getByText('Agent 已连接', { exact: false }).waitFor({ state: 'visible', timeout: 15_000 })
+  const drawerUp = async () => await drawer.waitFor({ state: 'visible', timeout: 4_000 })
+    .then(() => true).catch(() => false)
+  // 抽屉的开合状态也是存着的，刷新前开着，刷新后应该自己开回来。
+  let open = await drawerUp()
+  if (!open) {
+    await historyToggle.click()
+    open = await drawerUp()
+  }
+  if (!open) {
+    bad('刷新之后抽屉打不开')
+  } else {
+    const afterReload = await rows().allInnerTexts()
+    if (afterReload.some(t => t.includes('房租转账')) && afterReload.length >= 3) {
+      ok(`刷新之后历史对话还在（${afterReload.length} 段，含改过名的那一段）`)
+    } else {
+      bad('刷新之后历史对话丢了，或改过的名字没保住',
+        `拿到 ${afterReload.length} 段：${afterReload.map(t => t.split('\n')[0]).join(' | ') || '（空）'}`)
+    }
+  }
+
+  // ── 9f. 删除：要二次确认，而且说清楚删的是什么
+  const beforeDelete = await rows().count()
+  await drawer.locator('div.group', { hasText: '房租转账' }).first()
+    .getByRole('button', { name: /^删除/ }).click()
+  const warned = await page.getByText('只从这台设备上移除', { exact: false })
+    .waitFor({ state: 'visible', timeout: 5_000 }).then(() => true).catch(() => false)
+  if (warned) ok('删除前有二次确认，并写明了「服务端与审计日志里的记录会保留」')
+  else bad('删除没有二次确认')
+
+  await page.getByRole('button', { name: '删除', exact: true }).click()
+  await page.waitForTimeout(400)
+  const afterDelete = await rows().count()
+  if (afterDelete === beforeDelete - 1 && !(await rows().allInnerTexts()).some(t => t.includes('房租转账'))) {
+    ok(`删除从列表里拿掉了一段（${beforeDelete} → ${afterDelete}）`)
+  } else {
+    bad('删除没有生效', `${beforeDelete} → ${afterDelete}`)
+  }
+
+  if (TAKE_SHOTS) await page.screenshot({ path: path.join(SHOT_DIR, 'agent-05-sessions.png'), fullPage: false })
 } finally {
   await browser.close()
 }

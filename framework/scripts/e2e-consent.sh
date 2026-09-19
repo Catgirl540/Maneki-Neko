@@ -9,9 +9,9 @@
 #   2. 点取消：工具体**没有**执行
 #   3. 确认但密码错：执行未发生
 #   4. 不回答（超时）：执行未发生
-#   5. 支付密码**不出现**在 agent 会话日志里
-#   6. 重放旧答复（challengeId 不匹配）：执行未发生
-#   7. 只读查询（余额）：有确认卡片、**不**要密码，确认后返回占位余额
+#   5. 只读查询（余额）：有确认卡片、**不**要密码，确认后返回占位余额
+#   6. 一次确认只能消费一次（重复答复被拒）
+#   7. 会话状态查询（`GET /agent-api/sessions/:id`）：语义正确，且**只读**（不许把会话建出来）
 #
 # 用法：OPENROUTER_API_KEY=... bash scripts/e2e-consent.sh
 set -uo pipefail
@@ -282,6 +282,42 @@ log6="$(log_for "$s6")"
 refs="$(grep -o 'LCB-DEMO-[0-9]*' "$log6" 2>/dev/null | sort -u | wc -l)"
 if [ "$refs" = "1" ]; then ok "工具体只执行了一次（回执号唯一）"; else bad "回执号数量是 $refs，应为 1"; fi
 kill "$p6" 2>/dev/null || true
+
+echo
+echo "== 用例 7：网页问「这段对话的上下文还在吗」时不许有副作用 =="
+# 网页把历史对话存在浏览器里，刷新后拿着旧 id 回来问一句。这一问必须是**只读**的：
+# 顺手把它建出来，每个历史对话都会被问成「还在」，失忆提示就永远不会出现。
+s7="$(new_session)"
+state7="$(curl -sf "$BASE/agent-api/sessions/$s7")"
+if python3 - "$state7" <<'PY'
+import json, sys
+state = json.loads(sys.argv[1])
+assert state['known'] is True, state
+assert state['started'] is False, state   # 建过 ≠ 跑过
+PY
+then ok "刚建、还没跑过的会话报 known=true / started=false（建过不等于跑过）"; else bad "新建会话的状态不对：$state7"; fi
+
+before7="$(curl -sf "$BASE/agent-api/health" | python3 -c 'import json,sys;print(json.load(sys.stdin)["sessions"])')"
+for _ in 1 2 3; do curl -sf "$BASE/agent-api/sessions/web-never-existed" >/dev/null; done
+after7="$(curl -sf "$BASE/agent-api/health" | python3 -c 'import json,sys;print(json.load(sys.stdin)["sessions"])')"
+if [ "$before7" = "$after7" ]; then ok "问一个不存在的会话不会把它建出来（服务端会话数 $before7 → $after7）"; else bad "查询竟然建了会话（$before7 → $after7）"; fi
+ghost7="$(curl -sf "$BASE/agent-api/sessions/web-never-existed")"
+if python3 - "$ghost7" <<'PY'
+import json, sys
+state = json.loads(sys.argv[1])
+assert state['known'] is False and state['started'] is False, state
+PY
+then ok "不存在的会话报 known=false / started=false"; else bad "不存在的会话状态不对：$ghost7"; fi
+
+# 跑过一轮之后，同一个 id 必须变成 started=true —— 这是"上下文还在"的唯一依据。
+curl -sf -X POST "$BASE/agent-api/sessions/$s7/messages" -H 'content-type: application/json' \
+  -d '{"text":"你好，只回复两个字：收到。"}' >/dev/null
+ran7=0
+for _ in $(seq 1 120); do
+  if curl -sf "$BASE/agent-api/sessions/$s7" | grep -q '"started": *true'; then ran7=1; break; fi
+  sleep 1
+done
+if [ "$ran7" = "1" ]; then ok "跑过一轮之后同一个会话变成 started=true（网页据此判断上下文还在）"; else bad "跑过一轮之后 started 仍然是 false"; fi
 
 echo
 if [ "$fail" -eq 0 ]; then echo "e2e-consent: 全部通过"; else echo "e2e-consent: 有失败项"; fi

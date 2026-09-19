@@ -26,9 +26,23 @@ dsh 子进程（profile luckycat，DSH_HOME=framework/.dsh-home）
 | --- | --- | --- |
 | GET | `/agent-api/health` | 是否可用 + 当前 provider/model（前端据此决定走真 agent 还是回落固定话术） |
 | POST | `/agent-api/sessions` | 建会话 → `{ sessionId }` |
+| GET | `/agent-api/sessions/:id` | **只读**问这段会话还在不在 → `{ sessionId, known, started, busy }`（见下） |
 | POST | `/agent-api/sessions/:id/messages` | `{ text }` → 202 + `{ accepted: true }`（**入队回执，不代表回答完成**） |
 | GET | `/agent-api/sessions/:id/stream` | SSE 事件流 |
 | POST | `/agent-api/consent/:challengeId` | `{ decision, paymentPassword? }` → 校验后放行长轮询 |
+
+### 为什么多一个"只读问一句"的接口
+
+网页把历史对话存在浏览器本地（见 `P7-SESSIONS.md`），刷新之后会拿着旧的 sessionId
+回来问一句"助手还记不记得这段对话"。**这个查询必须是只读的**：
+
+- 顺手把它建出来的话，每个历史对话都会被答成"还在"，"助手已经不记得了"这条提示
+  永远不会出现，用户就会对着一整段完整的记录等一个答非所问的回复而看不出原因；
+- `started` 记的是"**真的往运行时递过提示词**"——建过不等于跑过。
+  前端只认这一个字段。
+
+`framework/scripts/e2e-consent.sh` 用例 7 断言了这个语义与只读性
+（连问三次不存在的会话，服务端会话数不许变）。
 
 SSE 事件的形状（`data:` 一行一个 JSON）：
 

@@ -87,6 +87,7 @@
 | 你们的接口 | 作用 |
 | --- | --- |
 | `POST /agent/sessions` | 建会话，返回你们的 sessionId |
+| `GET /agent/sessions/{id}` | **只读**查询这段会话还在不在（见下） |
 | `POST /agent/sessions/{id}/messages` | `{ text }` → 入队，返回 202 + 队列回执 |
 | `GET /agent/sessions/{id}/stream`（SSE）或 `WS …/{id}` | 事件流（见下表） |
 | `POST /agent/consent/{challengeId}` | 用户对一次待确认事项的答复（**含支付密码**） |
@@ -94,6 +95,29 @@
 
 事件流的形状见 `framework/design/P6-WEB-BRIDGE.md` §2。要点：`consent` 事件携带
 待确认事项（交易信息 + 需要的验证方式），前端渲染成确认卡片。
+
+### `GET /agent/sessions/{id}` 的形状
+
+前端把历史对话存在浏览器本地，刷新之后会拿着旧的 sessionId 回来问一句。
+这个接口回答"助手还记不记得这段对话"：
+
+```json
+{ "sessionId": "…", "known": true, "started": true, "busy": false }
+```
+
+- `known`：服务端还认得这个 id。
+- `started`：**真的往运行时递过提示词**。只有它为真，助手才记得这段对话——
+  "建过"不等于"跑过"。前端只认这一个字段。
+- `busy`：正在回答。
+
+**这个查询必须是只读的**：顺手把会话建出来的话，每个历史对话都会被答成"还在"，
+"助手已经不记得了"这条提示永远不会出现，前端就会让用户对着一整段完整的记录
+等一个答非所问的回复而看不出原因。参考实现与断言见
+`framework/design/P7-SESSIONS.md`。
+
+返回 `started:false` 时前端不会去"恢复"上下文，而是**新开一段**并在界面上说清楚。
+如果你们要做真正的上下文恢复，请另开一个明确的接口（例如
+`GET /agent/sessions/{id}/transcript`），不要把这个只读探测变成有副作用的调用。
 
 **本地已经有一份可跑的参考实现**：`framework/bridge/demo-server.mjs`（演示服务，不接业务后端）
 + `app/src/api/agent.ts`（前端客户端）。后端就绪后按同一形状实现即可，前端只需要改

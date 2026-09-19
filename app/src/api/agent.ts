@@ -137,6 +137,38 @@ export async function createAgentSession(): Promise<string> {
   return result.sessionId
 }
 
+/** 一个旧会话在 agent 侧还剩下什么。 */
+export interface AgentSessionState {
+  /** 服务端还认得这个 id。 */
+  known: boolean
+  /** 真的往运行时递过提示词——**只有这个为真，助手才记得这段对话**。 */
+  started: boolean
+  /** 正在回答。 */
+  busy: boolean
+}
+
+/**
+ * 问一个旧会话还在不在。**永不抛异常**：问不到只是一种状态。
+ *
+ * 为什么需要这一步：历史对话存在浏览器里，服务端重启过之后记录还在、
+ * 上下文没了。不探测的话，界面会显示一段完整的历史配一个什么都不记得的助手，
+ * 而用户看不出哪里不对。
+ * @param sessionId - agent 侧会话 id。
+ * @returns 会话状态；问不到时返回 null（**不等于**"不存在"，调用方不要据此报失忆）。
+ */
+export async function probeAgentSession(sessionId: string): Promise<AgentSessionState | null> {
+  try {
+    const state = await requestJson<AgentSessionState>(
+      `/sessions/${encodeURIComponent(sessionId)}`,
+      {},
+      3_000,
+    )
+    return state
+  } catch {
+    return null
+  }
+}
+
 /**
  * 发一条消息。**返回即代表已入队**，不代表回答完成。
  * @param sessionId - 会话 id。

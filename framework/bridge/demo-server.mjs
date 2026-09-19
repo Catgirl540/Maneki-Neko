@@ -228,11 +228,18 @@ async function ensureHarness() {
   return harness
 }
 
-/** 取或建一个会话。 */
+/**
+ * 取或建一个会话。
+ *
+ * `started` 是关键的一格：**建过**不等于**跑过**。网页把历史对话存在浏览器里，
+ * 刷新之后会拿着旧的会话 id 回来问"这段对话的上下文还在吗"。只有真的往运行时
+ * 递过提示词的会话，运行时里才存在这个会话；服务重启过就全没了。少了这一格，
+ * 用户看到的是一段记得住的记录配一个失忆的助手，而且**界面上看不出来**。
+ */
 function sessionOf(sessionId) {
   let entry = sessions.get(sessionId)
   if (entry === undefined) {
-    entry = { id: sessionId, busy: false, handle: undefined }
+    entry = { id: sessionId, busy: false, handle: undefined, started: false }
     sessions.set(sessionId, entry)
   }
   return entry
@@ -253,6 +260,8 @@ async function runTurn(sessionId, text) {
   try {
     const active = await ensureHarness()
     entry.handle ??= active.session(sessionId)
+    // 递提示词之前打上标记：这一步之后运行时里就有这个会话了。
+    entry.started = true
     const result = await entry.handle.run(text, {
       onNotification: (notification) => {
         if (notification.method !== 'session.event') return
@@ -311,6 +320,20 @@ async function handle(req, res) {
     const sessionId = `web-${randomUUID()}`
     sessionOf(sessionId)
     sendJson(res, 200, { sessionId })
+    return
+  }
+
+  // 问一个会话还在不在（网页恢复历史对话时用）。
+  // 只读：**不会**顺手把它建出来，否则每个历史对话都被问成"还在"。
+  if (req.method === 'GET' && parts.length === 3 && parts[0] === 'agent-api' && parts[1] === 'sessions') {
+    const sessionId = parts[2]
+    const entry = sessions.get(sessionId)
+    sendJson(res, 200, {
+      sessionId,
+      known: entry !== undefined,
+      started: entry?.started === true,
+      busy: entry?.busy === true,
+    })
     return
   }
 

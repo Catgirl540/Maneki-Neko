@@ -1,6 +1,24 @@
 /** 带命名空间的 localStorage 封装：读写失败（隐私模式 / 配额）时静默降级 */
 const PREFIX = 'luckycat.'
 
+/**
+ * 和 {@link storage.set} 一样，但**告诉调用方有没有写进去**。
+ *
+ * 会话存档需要这个返回值：配额满的时候要能丢掉最旧的一段再试，
+ * 而不是无声无息地什么都存不下（用户下次打开发现历史全没了）。
+ * @param key - 不含命名空间的键。
+ * @param value - 会被 JSON 序列化的值。
+ * @returns 是否写入成功。
+ */
+export function trySet(key: string, value: unknown): boolean {
+  try {
+    window.localStorage.setItem(PREFIX + key, JSON.stringify(value))
+    return true
+  } catch {
+    return false
+  }
+}
+
 export const storage = {
   get<T>(key: string, fallback: T): T {
     try {
@@ -11,11 +29,7 @@ export const storage = {
     }
   },
   set(key: string, value: unknown): void {
-    try {
-      window.localStorage.setItem(PREFIX + key, JSON.stringify(value))
-    } catch {
-      /* 忽略 */
-    }
+    trySet(key, value)
   },
   remove(key: string): void {
     try {
@@ -33,4 +47,8 @@ export const STORAGE_KEYS = {
   mockDb: 'mock.db',
   supportHistory: 'support.history.v1',
   sidebarCollapsed: 'ui.sidebarCollapsed',
+  /** 客服页的历史对话抽屉是不是开着。 */
+  agentHistoryOpen: 'ui.agentHistoryOpen',
+  /** agent 的历史对话（只存在这台设备上）。 */
+  agentSessions: 'agent.sessions.v1',
 } as const

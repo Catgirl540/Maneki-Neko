@@ -358,3 +358,30 @@ export const SidebarExpandIcon = (p: IconProps) => (
     <path d="M13.8 9.4 16.4 12l-2.6 2.6" />
   </Icon>
 )
+
+/** 铅笔：重命名 */
+export const PencilIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17z" />
+    <path d="M14.5 6.5 17.5 9.5" />
+  </Icon>
+)
+
+/** 垃圾桶：删除 */
+export const TrashIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 7h16" />
+    <path d="M9.5 7V4.8h5V7" />
+    <path d="M6.5 7l1 12.2c.06.9.8 1.6 1.7 1.6h5.6c.9 0 1.64-.7 1.7-1.6L17.5 7" />
+    <path d="M10.5 11v6M13.5 11v6" />
+  </Icon>
+)
+
+/** 带指针的表盘：历史对话 */
+export const HistoryIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3.5 12a8.5 8.5 0 1 0 2.6-6.1" />
+    <path d="M3.2 4.2v4.3h4.3" />
+    <path d="M12 7.8V12l3 1.8" />
+  </Icon>
+)

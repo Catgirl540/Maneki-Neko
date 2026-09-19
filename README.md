@@ -139,15 +139,36 @@ cd app && npm run dev          # http://localhost:5180
 助手回复会按 **Markdown + KaTeX** 渲染（表格、粗体、列表、行内/块级公式），
 用户自己说的话仍是纯文本。原始 HTML 不会被注入、图片不会被加载、`javascript:` 链接不成链。
 
+### 会话管理
+
+「历史对话」抽屉（默认收着，聊天窗独占整宽）：新建、切换、改名、删除。
+一段对话在回答时切到别的对话**不会打断它**——回答照样写回它自己那一段，
+列表上那一行会标「回答中」。
+
+记录只存在**这台设备的浏览器本地**（`luckycat.agent.sessions.v1`），刷新和关掉重开都还在；
+一段都不留时自动给一段空的，不用先点「新对话」。删除只是从本地列表里拿掉，
+**服务端与审计日志里的记录会保留**。
+
+有一条必须说清楚的边界：**本地有记录 ≠ 助手还记得**。agent 服务重启过之后，
+记录还在，但运行时里的上下文没了。页面会问一句
+`GET /agent-api/sessions/:id`，答不上「跑过」就在对话上方写一条红字，
+明说「助手已经不记得这段对话了」，再发言会从一段新的对话开始——
+不让用户对着一整段完整的记录，等一个答非所问的回复还找不到原因。
+
+还有一个**已知缺口**：如果一整个页面被关掉或刷新，发生在关掉之后的回复不会进到本地记录里
+（演示服务不重放事件）。切到别的对话不受影响，只有真的关页面才会碰到。
+
 | 想验证什么 | 命令 |
 | --- | --- |
 | 框架侧 56 条离线断言 + 101 个离线单测 | `cd framework && bash scripts/verify.sh` |
-| 敏感操作端到端（需联网 + 密钥） | `cd framework && bash scripts/e2e-consent.sh` |
-| 浏览器里走一遍确认流程（需上面两个服务在跑） | `node tools/check-agent.mjs --shots` |
+| 敏感操作端到端 + 会话状态接口（需联网 + 密钥） | `cd framework && bash scripts/e2e-consent.sh` |
+| 浏览器里走一遍确认流程与会话管理（需上面两个服务在跑） | `node tools/check-agent.mjs --shots` |
+| 会话存档的读写/裁剪/坏数据（离线，不需要浏览器和模型） | `node --import ./tools/ts-resolve-hook.mjs tools/check-sessions.mjs` |
 | Markdown/公式渲染 + 安全退让（离线） | `node --import ./tools/ts-resolve-hook.mjs tools/check-markdown.mjs` |
 | 被 import 的源码都在 git 里（离线，防"推上去编译不过"） | `node tools/check-tracked.mjs` |
 
 设计与边界：`framework/design/P5-CONSENT.md`（闸门）、`framework/design/P6-WEB-BRIDGE.md`（演示服务）、
+`framework/design/P7-SESSIONS.md`（会话管理）、
 `design/backend-handoff/AGENT-RUNTIME-CONTRACT.md`（后端要实现的确认通道形状）。
 
 ## 3. 前后端分离怎么落地
