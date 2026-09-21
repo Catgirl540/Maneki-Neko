@@ -29,6 +29,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setUser(nextUser)
   }, [])
 
+  const acceptSession = useCallback((token: string, nextUser: User) => {
+    rememberSession(token, nextUser)
+    setUser(nextUser)
+  }, [])
+
   const logout = useCallback(async () => {
     await api.logout()
     forgetSession()
@@ -46,8 +51,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ user, ready, login, logout, updateUser }),
-    [user, ready, login, logout, updateUser],
+    () => ({ user, ready, login, acceptSession, logout, updateUser }),
+    [user, ready, login, acceptSession, logout, updateUser],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

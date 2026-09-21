@@ -43,11 +43,6 @@ export interface ReceivingInfo {
 export interface Account {
   id: string
   kind: AccountKind
-  /**
-   * 账户类别。个人银行结算账户分 Ⅰ / Ⅱ / Ⅲ 类，功能与限额完全不同：
-   * 线上开立的只能是 Ⅱ / Ⅲ 类（Ⅰ 类需柜面面签）。
-   */
-  tier: AccountClass
   label: string
   accountNo: string
   currency: Currency
@@ -878,37 +873,8 @@ export interface WealthRedeemResult {
 }
 
 /* ==========================================================================
-   开户（个人银行结算账户分类管理）
-   --------------------------------------------------------------------------
-   依据：
-   · 《中国人民银行关于改进个人银行账户服务加强账户管理的通知》（银发〔2015〕392 号）
-   · 《中国人民银行关于改进个人银行账户分类管理有关事项的通知》（银发〔2018〕16 号）
-   · 《关于进一步加强支付结算管理防范电信网络新型违法犯罪有关事项的通知》
-     （银发〔2019〕85 号）—— 开户须经客户确认合法开立和使用账户的承诺
+   注册并开立默认储蓄账户
    ========================================================================== */
-
-/** 账户类别。Ⅰ 类需柜面面签，线上只能开 Ⅱ / Ⅲ 类 */
-export type AccountClass = 'I' | 'II' | 'III'
-
-/** 一类账户的完整说明 —— 功能、限制、限额都按监管原文给 */
-export interface AccountTier {
-  tier: AccountClass
-  name: string
-  /** 一句话定位 */
-  summary: string
-  /** 可以办理的业务 */
-  features: string[]
-  /** 办不了的业务 */
-  limitations: string[]
-  /** 限额。数字来自监管原文，不是估算 */
-  limits: { label: string; value: string }[]
-  /** 能否线上开立 */
-  online: boolean
-  /** 不能线上开立的原因 */
-  offlineReason?: string
-  /** 是否需要绑定本人 Ⅰ 类户 */
-  requiresBinding: boolean
-}
 
 export interface SmsCodeResult {
   sent: boolean
@@ -923,34 +889,28 @@ export interface SmsCodeResult {
   demoCode?: string
 }
 
-/** 开户申请 */
-export interface AccountOpeningRequest {
-  tier: AccountClass
-  kind: AccountKind
-  /** 持卡人姓名 */
+/** 注册申请。确认密码只在客户端校验，不进入契约。 */
+export interface RegistrationRequest {
+  phone: string
+  password: string
   holderName: string
-  /** 身份证号 */
   idNumber: string
   smsCode: string
-  /** 绑定的本人 Ⅰ 类户卡号（Ⅱ / Ⅲ 类必填） */
-  bindingCardNo?: string
-  /** 人脸核身票据（由 verifyIdentity 得到） */
   faceTicket: string
-  /** 合法开立和使用账户承诺 */
   pledge: string
 }
 
-export interface AccountOpeningResult {
+export interface RegistrationResult {
+  token: string
+  user: User
   account: Account
   openedAt: string
-  tier: AccountClass
-  limits: { label: string; value: string }[]
 }
 
 /* ==========================================================================
    理财账户（投资账户）
    --------------------------------------------------------------------------
-   和 ZA 一样：注册时开的是**银行账户**（Ⅰ/Ⅱ/Ⅲ 类，装钱的地方），
+   注册时开的是**储蓄账户**（装钱的地方），
    要买理财还得单独开一个**理财账户**（投资账户）——
    它不装钱，只是把「你」和理财公司之间的委托关系立起来。
 

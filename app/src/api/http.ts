@@ -53,6 +53,7 @@ const patch = <T,>(path: string, body?: unknown) =>
 export function createHttpApi(): BankApi {
   return {
     login: (phone, password, smsCode) => post(routes.login(), { phone, password, smsCode }),
+    register: (req) => post(routes.register(), req),
     logout: () => post<void>(routes.logout()),
     profile: () => request<User>(routes.profile()),
 
@@ -80,9 +81,7 @@ export function createHttpApi(): BankApi {
     getReceipt: (id) => request<ReceiptFile>(routes.receipt(id)),
     deposit: (id, amount, channel) => post(routes.deposit(id), { amount, channel }),
 
-    listAccountTiers: () => request(routes.accountTiers()),
     sendSmsCode: (phone) => post(routes.smsCode(), { phone }),
-    openAccount: (req) => post(routes.accountOpen(), req),
 
     listBanks: () => request(routes.banks()),
     getReceivingInfo: () => request(routes.receiving()),

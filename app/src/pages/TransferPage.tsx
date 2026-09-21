@@ -569,6 +569,27 @@ export function TransferPage() {
       {step === 1 && (
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
           <Card className="float-up">
+            <div className="mb-7 rounded-field border border-line bg-sunk px-4 py-3.5">
+              <p className="text-[12px] text-ink-mute">付款账户</p>
+              {accounts.loading ? (
+                <Skeleton className="mt-2 h-7 w-full" />
+              ) : account ? (
+                <div className="mt-1.5 flex items-end justify-between gap-4">
+                  <div>
+                    <p className="text-[15px] font-medium text-ink">储蓄账户</p>
+                    <p className="num mt-0.5 text-[12px] text-ink-mute">
+                      尾号 {account.accountNo.slice(-4)}
+                    </p>
+                  </div>
+                  <p className="num text-right text-[14px] text-ink-soft">
+                    可用余额 {shown ? `¥${formatAmount(account.available)}` : '¥••••••'}
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-[13px] text-coral">暂未找到可付款的储蓄账户</p>
+              )}
+            </div>
+
             {/* 金额 */}
             <div className="flex flex-col items-center border-b border-line pb-8">
               <span className="text-[13px] text-ink-mute">转账金额</span>

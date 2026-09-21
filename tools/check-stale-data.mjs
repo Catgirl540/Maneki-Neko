@@ -66,7 +66,7 @@ await tab.evaluate(() => localStorage.clear())
 await login(tab, BASE, { to: '/transactions/txn_0005' })
 {
   const text = await openDetail()
-  report(text.includes('Manner Coffee') && text.includes('交易编号'), '① 全新安装能正常打开交易详情', [
+  report(text.includes('交易成功') && text.includes('交易编号'), '① 全新安装能正常打开交易详情', [
     text.slice(0, 74),
   ])
 }
@@ -89,7 +89,7 @@ await login(tab, BASE, { to: '/transactions/txn_0005' })
     v2: localStorage.getItem('luckycat.mock.db.v2'),
   }))
   report(
-    text.includes('Manner Coffee') && leftover.v1 === null && leftover.v2 === null,
+    text.includes('交易成功') && leftover.v1 === null && leftover.v2 === null,
     '② 旧键脏数据被清理且页面不受影响',
     [`遗留键 mock.db.v1=${leftover.v1} / mock.db.v2=${leftover.v2}`, text.slice(0, 74)],
   )
@@ -107,7 +107,7 @@ await login(tab, BASE, { to: '/transactions/txn_0005' })
   const schema = await tab.evaluate(
     () => JSON.parse(localStorage.getItem('luckycat.mock.db')).schema,
   )
-  report(text.includes('Manner Coffee') && schema !== 1, '③ 结构版本过期自动重建', [
+  report(text.includes('交易成功') && schema !== 1, '③ 结构版本过期自动重建', [
     `重建后 schema=${schema}`,
     text.slice(0, 74),
   ])

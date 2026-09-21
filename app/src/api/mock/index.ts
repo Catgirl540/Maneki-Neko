@@ -49,8 +49,7 @@ import type {
   Payee,
   Paged,
   ReceivingInfo,
-  AccountOpeningResult,
-  AccountTier,
+  RegistrationResult,
   ReceiptFile,
   RiskAssessment,
   RiskQuestion,
@@ -80,7 +79,6 @@ import type {
   WealthSubscribeResult,
 } from '../types'
 import {
-  ACCOUNT_TIERS,
   CARD_PAYMENT_METHOD,
   CARD_PRODUCTS,
   USER_FPS_ID,
@@ -95,11 +93,12 @@ import {
   PAY_PASSWORD_MAX_ATTEMPTS,
   fxRate,
   loadDb,
+  findProfileByPhone,
+  activateDb,
   makeReferenceNo,
   monthKey,
   nextId,
   persist,
-  resetDb,
   toTransactionListItem,
   withBalances,
 } from './db'
@@ -108,6 +107,12 @@ import type { MockDb } from './db'
 
 const delay = (ms = 220 + Math.random() * 200) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+async function passwordDigest(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const dayKey = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
@@ -356,7 +361,7 @@ const CANNED_RULES: { match: RegExp; text: string; actions?: { label: string; to
   },
   {
     match: /余额|多少钱|账户/,
-    text: '你的活期账户当前可用余额已同步到「总览」。储蓄账户和定期存款需要先转到活期才能对外支付。',
+    text: '你的储蓄账户当前可用余额已同步到「总览」。转账、银行卡和理财资金往来都使用这个主账户。',
     actions: [{ label: '查看总览', to: '/' }],
   },
   {
@@ -458,7 +463,7 @@ function chargeCardFee(amount: Cents, label: string): void {
   const db = loadDb()
   const account = db.accounts[0]
   if (amount > account.available) {
-    throw new ApiError('活期账户可用余额不足，请先转入后再申请', 400, 'INSUFFICIENT_FUNDS')
+    throw new ApiError('储蓄账户可用余额不足，请先转入后再申请', 400, 'INSUFFICIENT_FUNDS')
   }
   applyBalance(account.id, -amount)
   pushTransaction(
@@ -522,7 +527,8 @@ export function createMockApi(): BankApi {
       if (!/^\d{11}$/.test(phone)) {
         throw new ApiError('请输入 11 位手机号', 400, 'INVALID_PHONE')
       }
-      if (password !== db.password) {
+      const target = findProfileByPhone(phone)
+      if (target === null || await passwordDigest(password) !== target.passwordDigest) {
         throw new ApiError('手机号或密码不正确', 401, 'BAD_CREDENTIALS')
       }
       // 验证码在**密码之后**校验：先报密码错，免得"这个手机号存不存在"
@@ -541,15 +547,72 @@ export function createMockApi(): BankApi {
       }
       // 一次性：用过就作废，不能让同一个码反复登录
       db.pendingSms = null
-      // 重新登录即解除支付密码锁定
-      db.payPasswordFailures = 0
       persist()
-      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: db.user }
+      target.pendingSms = null
+      // 重新登录即解除支付密码锁定
+      target.payPasswordFailures = 0
+      activateDb(target)
+      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: target.user }
+    },
+
+    async register(req): Promise<RegistrationResult> {
+      await delay(760)
+      const db = loadDb()
+      const phone = digitsOnly(req.phone)
+      if (!/^1[3-9]\d{9}$/.test(phone)) throw new ApiError('请输入 11 位手机号', 400, 'INVALID_PHONE')
+      if (findProfileByPhone(phone) !== null) throw new ApiError('该手机号已注册', 409, 'PHONE_EXISTS')
+      if (req.password.length < 6 || req.password.length > 20) {
+        throw new ApiError('登录密码需为 6–20 个字符', 400, 'WEAK_PASSWORD')
+      }
+      if (!req.holderName.trim()) throw new ApiError('请填写姓名', 400, 'NAME_REQUIRED')
+      if (!/^\d{17}[\dXx]$/.test(req.idNumber.trim())) throw new ApiError('请输入 18 位身份证号', 400, 'INVALID_ID')
+      const sms = db.pendingSms
+      if (!sms || digitsOnly(sms.phone) !== phone) throw new ApiError('请先获取短信验证码', 400, 'SMS_NOT_SENT')
+      if (Date.now() > new Date(sms.expiresAt).getTime()) throw new ApiError('验证码已过期，请重新获取', 400, 'SMS_EXPIRED')
+      if (digitsOnly(req.smsCode) !== sms.code) throw new ApiError('验证码不正确', 400, 'BAD_SMS_CODE')
+      if (!req.faceTicket) throw new ApiError('请先完成人脸识别', 400, 'FACE_REQUIRED')
+      if (req.pledge.trim() !== ACCOUNT_OPENING_PLEDGE) {
+        throw new ApiError('请确认合法开立和使用账户承诺', 400, 'PLEDGE_REQUIRED')
+      }
+
+      const now = new Date().toISOString()
+      const account: Account = {
+        id: `acc_${Date.now()}`,
+        kind: 'savings',
+        label: '储蓄账户',
+        accountNo: `6222${String(Math.floor(1e12 + Math.random() * 8e12))}`.slice(0, 19),
+        currency: 'CNY',
+        balance: 0,
+        available: 0,
+        interestRate: 0.0155,
+        monthNetChange: 0,
+      }
+      const next = structuredClone(db)
+      next.user = {
+        id: `u_${Date.now()}`,
+        name: req.holderName.trim(),
+        phone,
+        memberLevel: '普通会员',
+        avatarInitial: req.holderName.trim().slice(0, 1),
+      }
+      next.passwordDigest = await passwordDigest(req.password)
+      next.accounts = [account]
+      next.transactions = []
+      next.cards = []
+      next.cardSecrets = {}
+      next.autoDebits = []
+      next.holdings = []
+      next.pendingSms = null
+      next.wealthAccount = { opened: false, accountNo: '', openedAt: '', settlementAccountId: '', agreementSignedAt: '', riskLevelAtOpening: 'C1' }
+      next.riskAssessment = { done: false, level: 'C1', score: 0, assessedAt: '', expiresAt: '', expired: true }
+      next.security = { ...next.security, score: 72, level: '基础防护', devices: [], logs: [], identityVerified: true }
+      activateDb(next)
+      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: next.user, account, openedAt: now }
     },
 
     async logout() {
       await delay(120)
-      resetDb()
+      // 退出只结束客户端会话。账户资料属于持久数据，不能随登出一起删除。
     },
 
     async profile(): Promise<User> {
@@ -1042,7 +1105,7 @@ export function createMockApi(): BankApi {
       // 显式构造而不是 spread 旧卡：新卡的字段应当全部明确，不继承别人的地址与费用
       const fresh: BankCard = {
         id: nextId('card'),
-        // 新卡绑到活期账户：卡本身不装钱，扣款走这个账户
+        // 新卡绑定储蓄账户：卡本身不装钱，扣款走这个账户
         accountId: db.accounts[0].id,
         productName: product.name,
         last4: String(Math.floor(1000 + Math.random() * 8999)),
@@ -1167,11 +1230,6 @@ export function createMockApi(): BankApi {
 
     /* ------------------------------------------------------------ 开户 */
 
-    async listAccountTiers(): Promise<AccountTier[]> {
-      await delay(120)
-      return ACCOUNT_TIERS
-    },
-
     async sendSmsCode(phone): Promise<SmsCodeResult> {
       await delay(420)
       const db = loadDb()
@@ -1190,74 +1248,6 @@ export function createMockApi(): BankApi {
       return { sent: true, expiresAt: db.pendingSms.expiresAt, demoCode: code }
     },
 
-    async openAccount(req): Promise<AccountOpeningResult> {
-      await delay(760)
-      const db = loadDb()
-      const tier = ACCOUNT_TIERS.find((t) => t.tier === req.tier)
-      if (!tier) throw new ApiError('账户类别不存在', 404, 'TIER_NOT_FOUND')
-      if (!tier.online) {
-        throw new ApiError(tier.offlineReason ?? '该账户类别无法在线开立', 400, 'TIER_OFFLINE_ONLY')
-      }
-
-      // —— 身份信息 ——
-      if (!req.holderName.trim()) throw new ApiError('请填写姓名', 400, 'NAME_REQUIRED')
-      if (!/^\d{17}[\dXx]$/.test(req.idNumber.trim())) {
-        throw new ApiError('请输入 18 位身份证号', 400, 'INVALID_ID')
-      }
-
-      // —— 短信验证码：必须校验，而且是一次性的 ——
-      const sms = db.pendingSms
-      if (!sms) throw new ApiError('请先获取短信验证码', 400, 'SMS_NOT_SENT')
-      if (Date.now() > new Date(sms.expiresAt).getTime()) {
-        db.pendingSms = null
-        persist()
-        throw new ApiError('验证码已过期，请重新获取', 400, 'SMS_EXPIRED')
-      }
-      if (req.smsCode.replace(/\D/g, '') !== sms.code) {
-        throw new ApiError('验证码不正确', 400, 'BAD_SMS_CODE')
-      }
-
-      // —— 绑定本人 Ⅰ 类户：Ⅱ / Ⅲ 类户身份核验的一环 ——
-      if (tier.requiresBinding) {
-        const err = validateBankAccount(req.bindingCardNo ?? '')
-        if (err) throw new ApiError(`绑定卡：${err}`, 400, 'INVALID_BINDING_CARD')
-      }
-
-      // —— 人脸核身票据 ——
-      if (!req.faceTicket) throw new ApiError('请先完成人脸识别', 400, 'FACE_REQUIRED')
-
-      // —— 承诺语句：85 号文要求由客户确认 ——
-      if (req.pledge.trim() !== ACCOUNT_OPENING_PLEDGE) {
-        throw new ApiError('请确认合法开立和使用账户承诺', 400, 'PLEDGE_REQUIRED')
-      }
-
-      // 验证码用过即废，防止一码多开
-      db.pendingSms = null
-
-      const label =
-        req.kind === 'current' ? '活期账户' : req.kind === 'savings' ? '储蓄账户' : '定期存款'
-      const account: Account = {
-        id: nextId('acc'),
-        kind: req.kind,
-        tier: tier.tier,
-        label: `${label}（${tier.name}）`,
-        accountNo: `6222${String(Math.floor(1e12 + Math.random() * 8e12))}`.slice(0, 19),
-        currency: 'CNY',
-        balance: 0,
-        available: 0,
-        interestRate: req.kind === 'savings' ? 0.0155 : req.kind === 'deposit' ? 0.021 : 0.003,
-        monthNetChange: 0,
-      }
-      db.accounts.push(account)
-      persist()
-
-      return {
-        account: withDerived(account),
-        openedAt: new Date().toISOString(),
-        tier: tier.tier,
-        limits: tier.limits,
-      }
-    },
 
     /* ------------------------------------------------------------ 理财 */
 
@@ -1275,7 +1265,9 @@ export function createMockApi(): BankApi {
     async getWealthOverview(): Promise<WealthOverview> {
       await delay(240)
       const db = loadDb()
-      const holdings = withDerivedHoldings(db)
+      // 未开立理财账户时，不存在可归属给用户的持仓与收益。
+      // 旧演示数据可能残留 holdings，但不能在账户闸门前泄露成“收益”。
+      const holdings = db.wealthAccount.opened ? withDerivedHoldings(db) : []
       const totalValue = holdings.reduce((sum, h) => sum + h.marketValue, 0)
       const totalPrincipal = holdings.reduce((sum, h) => sum + h.principal, 0)
       return {
@@ -1295,6 +1287,8 @@ export function createMockApi(): BankApi {
       if (db.wealthAccount.opened) {
         throw new ApiError('理财账户已开立，无需重复开户', 400, 'ALREADY_OPENED')
       }
+      // 兼容旧本地演示数据：未开户期间的残留持仓不属于新开的理财账户。
+      db.holdings = []
 
       // —— 身份核验：与银行开户同一套口径 ——
       if (!req.holderName.trim()) throw new ApiError('请填写姓名', 400, 'NAME_REQUIRED')
@@ -1421,7 +1415,7 @@ export function createMockApi(): BankApi {
       }
       if (req.amount > account.available) {
         // 文案要带**实际那个账户**的名字：资金账户是用户自己指定的，
-        // 写死「活期账户」会在指定了储蓄/定期账户时指错对象，用户照着去找也找不到
+        // 使用后端返回的账户名称，避免客户端自行猜测资金账户
         throw new ApiError(`${account.label}可用余额不足`, 400, 'INSUFFICIENT_FUNDS')
       }
 
@@ -1721,13 +1715,13 @@ export function createMockApi(): BankApi {
     async changePassword(oldPassword, newPassword) {
       await delay(420)
       const db = loadDb()
-      if (oldPassword !== db.password) {
+      if (await passwordDigest(oldPassword) !== db.passwordDigest) {
         throw new ApiError('原密码不正确', 400, 'BAD_OLD_PASSWORD')
       }
       if (newPassword.length < 6) {
         throw new ApiError('新密码至少 6 位', 400, 'WEAK_PASSWORD')
       }
-      db.password = newPassword
+      db.passwordDigest = await passwordDigest(newPassword)
       db.security.logs.unshift({
         id: nextId('log'),
         action: '修改登录密码',

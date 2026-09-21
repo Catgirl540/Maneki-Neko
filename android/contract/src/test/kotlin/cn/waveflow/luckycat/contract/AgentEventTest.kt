@@ -81,6 +81,42 @@ class AgentEventTest {
     }
 
     @Test
+    fun `challenge 的展示字段逐个解出来`() {
+        // 「展示交易信息」那一步的全部内容就在 fields 里，少解一个字段
+        // 界面上就少一行，而用户是按这些行核对转账对象的
+        val event = decode(
+            """{"type":"consent","challenge":{"challengeId":"c1","kind":"转账","fields":[""" +
+                """{"label":"收款人","value":"梁乐怡"},{"label":"金额","value":"¥800.00","emphasis":true}]}}"""
+        )
+        val fields = (event as AgentEvent.Consent).challenge!!.fields
+        assertEquals(2, fields.size)
+        assertEquals("收款人", fields[0].label)
+        assertEquals("梁乐怡", fields[0].value)
+        assertFalse("没收 emphasis 的不该被当成强调", fields[0].emphasis)
+        assertTrue(fields[1].emphasis)
+    }
+
+    @Test
+    fun `challenge 的 consequence 与 expiresAt`() {
+        val event = decode(
+            """{"type":"consent","challenge":{"challengeId":"c1","consequence":"确认后立即扣款，不可撤销",""" +
+                """"expiresAt":1789000000000,"createdAt":1788999700000}}"""
+        )
+        val challenge = (event as AgentEvent.Consent).challenge!!
+        assertEquals("确认后立即扣款，不可撤销", challenge.consequence)
+        assertEquals(1_789_000_000_000L, challenge.expiresAt)
+        assertEquals(1_788_999_700_000L, challenge.createdAt)
+    }
+
+    @Test
+    fun `fields 缺失或不是数组时回空列表 而不是崩`() {
+        assertEquals(0, (decode("""{"type":"consent","challenge":{"challengeId":"c1"}}""") as AgentEvent.Consent).challenge!!.fields.size)
+        assertEquals(0, (decode("""{"type":"consent","challenge":{"fields":"oops"}}""") as AgentEvent.Consent).challenge!!.fields.size)
+        // 数组里混进非对象元素也不能整个崩掉
+        assertEquals(1, (decode("""{"type":"consent","challenge":{"fields":[1,{"label":"金额","value":"¥1"}]}}""") as AgentEvent.Consent).challenge!!.fields.size)
+    }
+
+    @Test
     fun `consent 事件缺 challenge 时返回 null 而不是崩`() {
         val event = decode("""{"type":"consent"}""")
         assertEquals(null, (event as AgentEvent.Consent).challenge)

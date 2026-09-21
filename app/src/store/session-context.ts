@@ -11,6 +11,8 @@ export interface SessionValue {
    * @param smsCode - 短信验证码（先调 `api.sendSmsCode(phone)` 获取）。
    */
   login: (phone: string, password: string, smsCode: string) => Promise<void>
+  /** 注册接口已返回登录态时，原子地接管该会话。 */
+  acceptSession: (token: string, user: User) => void
   logout: () => Promise<void>
   updateUser: (patch: Partial<User>) => void
 }

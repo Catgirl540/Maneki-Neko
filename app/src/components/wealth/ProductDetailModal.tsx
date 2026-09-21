@@ -352,7 +352,7 @@ export function ProductDetailModal({
                 </dd>
               </div>
               <div className="flex items-baseline justify-between border-t border-line pt-3">
-                <dt className="text-ink-soft">从活期账户扣除</dt>
+                <dt className="text-ink-soft">从储蓄账户扣除</dt>
                 <dd className="num text-[15px] font-semibold text-ink">¥{formatAmount(amount)}</dd>
               </div>
             </dl>

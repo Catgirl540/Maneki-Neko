@@ -6,9 +6,8 @@
 
 import type {
   Account,
-  AccountOpeningRequest,
-  AccountOpeningResult,
-  AccountTier,
+  RegistrationRequest,
+  RegistrationResult,
   AutoDebit,
   Bank,
   CardBinQuery,
@@ -57,6 +56,7 @@ import type {
 /** 与后端约定的 REST 路径表，mock 与 http 共用，保证两边不跑偏 */
 export const routes = {
   login: () => '/api/auth/login',
+  register: () => '/api/auth/register',
   logout: () => '/api/auth/logout',
   profile: () => '/api/auth/profile',
 
@@ -71,8 +71,6 @@ export const routes = {
   receipt: (id: string) => `/api/transactions/${id}/receipt`,
   deposit: (id: string) => `/api/accounts/${id}/deposit`,
 
-  accountTiers: () => '/api/accounts/tiers',
-  accountOpen: () => '/api/accounts/open',
   smsCode: () => '/api/auth/sms-code',
 
   banks: () => '/api/banks',
@@ -136,6 +134,8 @@ export interface BankApi {
    * @param smsCode - 短信验证码；先调 `sendSmsCode(phone)` 拿。
    */
   login(phone: string, password: string, smsCode: string): Promise<{ token: string; user: User }>
+  /** 注册成功同时开立唯一的储蓄账户并返回登录态。 */
+  register(req: RegistrationRequest): Promise<RegistrationResult>
   logout(): Promise<void>
   profile(): Promise<User>
 
@@ -152,11 +152,8 @@ export interface BankApi {
   deposit(accountId: string, amount: Cents, channel: string): Promise<Account>
 
   // —— 开户 ——
-  /** 账户类别（Ⅰ / Ⅱ / Ⅲ）的功能与限额说明 */
-  listAccountTiers(): Promise<AccountTier[]>
   /** 发送短信验证码。演示环境会回传 demoCode，真后端不会 */
   sendSmsCode(phone: string): Promise<SmsCodeResult>
-  openAccount(req: AccountOpeningRequest): Promise<AccountOpeningResult>
 
   // —— 转账 ——
   listBanks(): Promise<Bank[]>

@@ -90,7 +90,7 @@ function AccountMock() {
 
       <div className="mt-5 space-y-2">
         {[
-          ['Ⅰ 类户 · 活期', '¥12,864.50', '**** 6688'],
+          ['储蓄账户', '¥284,640.55', '**** 3445'],
           ['稳健增利 90 天', '¥30,000.00', 'R2'],
         ].map(([name, amount, tail]) => (
           <div key={name} className="flex items-baseline justify-between gap-3 rounded-chip bg-sunk px-3.5 py-2.5">
@@ -446,7 +446,7 @@ const MORE: { to: string; Icon: typeof CardIcon; title: string; desc: string }[]
     to: '/open-account',
     Icon: SparkleIcon,
     title: '在线开户',
-    desc: 'Ⅰ / Ⅱ / Ⅲ 类户的类别与限额写在页面上，短信验证码与人脸核身两步都走。',
+    desc: '注册即开通唯一的储蓄账户，短信验证码与人脸核身两步都走。',
   },
 ]
 
@@ -489,7 +489,7 @@ export function LandingPage() {
             )}
             <Link to={loggedIn ? '/dashboard' : '/open-account'}>
               <Button size="sm" variant="primary" trailing={<ArrowRightIcon size={15} />}>
-                {loggedIn ? '进入总览' : '立即开户'}
+                {loggedIn ? '进入总览' : '注册并开户'}
               </Button>
             </Link>
           </div>
@@ -523,7 +523,7 @@ export function LandingPage() {
                 <div className="mt-9 flex flex-wrap gap-3">
                   <Link to={loggedIn ? '/dashboard' : '/open-account'}>
                     <Button size="lg" variant="primary" trailing={<ArrowRightIcon size={16} />}>
-                      {loggedIn ? '进入总览' : '立即开户'}
+                      {loggedIn ? '进入总览' : '注册并开户'}
                     </Button>
                   </Link>
                   <a href="#assistant">
@@ -639,7 +639,7 @@ export function LandingPage() {
             </h2>
             <div className="mt-10 grid gap-5 sm:grid-cols-3">
               {[
-                { step: '1', title: '在线开户', desc: 'Ⅰ / Ⅱ / Ⅲ 类户任选，类别与限额写在页面上。' },
+                { step: '1', title: '注册开户', desc: '设置登录密码，默认开通唯一的储蓄账户。' },
                 { step: '2', title: '跟智能助手说一句', desc: '「我的账户余额还有多少？」或者「帮我转 800 元给梁乐怡，账号尾号 9123」。' },
                 { step: '3', title: '核对确认卡片', desc: '涉及资金的操作会停下来等你。核对完点确认并输入支付密码，它才会执行。' },
               ].map(({ step, title, desc }) => (
@@ -658,7 +658,7 @@ export function LandingPage() {
               <div className="ml-auto flex gap-3">
                 <Link to={loggedIn ? '/dashboard' : '/open-account'}>
                   <Button size="sm" variant="primary" trailing={<ArrowRightIcon size={14} />}>
-                    {loggedIn ? '进入总览' : '立即开户'}
+                    {loggedIn ? '进入总览' : '注册并开户'}
                   </Button>
                 </Link>
                 {!loggedIn && (

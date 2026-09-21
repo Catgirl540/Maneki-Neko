@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 转账：上下两个反向箭头。坐标由改造前的 Canvas 比例平移而来，见 ic_home.xml 的说明。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M7.68,19.68 L7.68,5.28 L3.36,10.08 M7.68,5.28 L12,10.08 M16.32,4.32 L16.32,18.72 L12,13.92 M16.32,18.72 L20.64,13.92"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.64"
+        android:strokeLineCap="round" />
+</vector>

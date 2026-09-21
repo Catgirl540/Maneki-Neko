@@ -114,7 +114,7 @@ export function RedeemModal({
             </div>
           </dl>
           <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">
-            实际到账金额按赎回确认日的净值计算，可能与预计金额有差异。款项将划入你申购时使用的活期账户。
+            实际到账金额按赎回确认日的净值计算，可能与预计金额有差异。款项将划入你申购时使用的储蓄账户。
           </p>
         </div>
       ) : (
@@ -180,7 +180,7 @@ export function RedeemModal({
           )}
 
           <p className="text-[12px] leading-relaxed text-ink-mute">
-            赎回到账时间以产品说明为准，通常为 T+1 个工作日。赎回不收取支付密码验证，款项只回到你本人的活期账户。
+            赎回到账时间以产品说明为准，通常为 T+1 个工作日。赎回不收取支付密码验证，款项只回到你本人的储蓄账户。
           </p>
         </div>
       )}

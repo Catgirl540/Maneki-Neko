@@ -49,6 +49,27 @@ class AgentApiTest {
         .setBody(body)
 
     @Test
+    fun `baseUrl 带了 agent-api 前缀要在构造时就报错`() {
+        // 这个坑真踩过：`AgentApi("https://bank.waveflow.cn/agent-api")` 会拼出
+        // /agent-api/agent-api/health，服务端回 404，看着像路径写错、其实是约定搞混。
+        // 与其让它静默错，不如构造时就炸，并说清该传什么。
+        try {
+            AgentApi("https://bank.waveflow.cn/agent-api")
+            fail("应该抛 IllegalArgumentException")
+        } catch (e: IllegalArgumentException) {
+            assertTrue("报错里要说清该传主机根", e.message!!.contains("主机根"))
+        }
+    }
+
+    @Test
+    fun `baseUrl 带结尾斜杠也能用`() = runBlocking {
+        server.enqueue(json("""{"ok":true,"sessions":0,"voice":{"asr":false,"tts":false}}"""))
+        // AgentApi 会把结尾斜杠去掉，所以 path 仍是 /agent-api/health
+        AgentApi(server.url("/").toString().trimEnd('/')).health()
+        assertEquals("/agent-api/health", server.takeRequest().path)
+    }
+
+    @Test
     fun `health 解析出语音能力`() = runBlocking {
         server.enqueue(
             json("""{"ok":true,"sessions":3,"voice":{"asr":true,"tts":true,"maxSeconds":60}}""")
@@ -313,6 +334,31 @@ class AgentApiTest {
         } catch (e: ApiException) {
             assertEquals(500, e.code)
         }
+    }
+
+    @Test
+    fun `流式连接不能沿用默认的 10 秒读超时`() {
+        // OkHttp 默认读超时 10 秒，而桥接每 **15 秒**才发一次 `: ping` 保活。
+        // 沿用默认值的话，每条 SSE 订阅都会在空闲 10 秒后被自己掐断，
+        // 抛 SocketTimeoutException——回复已经收到了，**十几秒之后**才冒一条
+        // "网络不给力"，症状极具迷惑性（实测踩了三次）。
+        //
+        // 这条断言把"必须大于心跳间隔"这件事钉住：以后谁把超时改小都会红。
+        assertTrue(
+            "流式读超时 ${AgentApi.STREAM_READ_TIMEOUT_MS}ms 必须大于桥接的心跳间隔 15000ms",
+            AgentApi.STREAM_READ_TIMEOUT_MS > 15_000L,
+        )
+    }
+
+    @Test
+    fun `事件流用的是长读超时的客户端`() = runBlocking {
+        // 行为上的证据：订阅一条**迟迟不发数据**的流，10 秒之内不该被掐断。
+        // （真去等 10 秒太慢，这里只断言流能挂住并正常收到后来的那一帧。）
+        server.enqueue(
+            sse("data: {\"type\":\"hello\"}\n\n").setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.KEEP_OPEN)
+        )
+        val first = api().streamEvents("web-1").first()
+        assertTrue(first is AgentEvent.Hello)
     }
 
     @Test

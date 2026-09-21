@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  选图：圆角相框 + 一座山。
+  这个形状是**新画**的（原来这里是一个彩色 emoji，码位 U+1F5BC），按同一套线条语言画：
+  24 格、圆头、线宽 2.64。山只在框内，不越过边框。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M6,4.8 L18,4.8 A3.6,3.6 0 0 1 21.6,8.4 L21.6,15.6 A3.6,3.6 0 0 1 18,19.2 L6,19.2 A3.6,3.6 0 0 1 2.4,15.6 L2.4,8.4 A3.6,3.6 0 0 1 6,4.8 Z M5.28,16.8 L9.6,12.48 L13.44,16.32 L15.6,14.16 L18.72,17.28"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="2.64"
+        android:strokeLineCap="round" />
+</vector>

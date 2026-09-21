@@ -46,7 +46,7 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 1000
 /** 官网首屏的标记文案。用它判断"这一页是不是官网"。 */
 const LANDING_MARK = '新形态银行'
 /** 总览页才有的东西。 */
-const DASHBOARD_MARK = '账户速览'
+const DASHBOARD_MARK = '储蓄账户余额'
 
 const has = async (page, text) => (await page.locator('body').innerText()).includes(text)
 

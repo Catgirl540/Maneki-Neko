@@ -1,10 +1,12 @@
 package cn.waveflow.luckycat.contract
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonObject
 
 /**
@@ -89,6 +91,14 @@ sealed interface AgentEvent {
  * 确认挑战。[verification] 是**要不要输支付密码**的唯一依据：
  * 为 `null` 表示这个操作不需要验证（只读查询），否则目前只有 `payment-password`。
  */
+/**
+ * 待确认挑战里的一条展示信息（"收款人 / 梁乐怡"这种）。
+ *
+ * [emphasis] 是后端标出来的"要强调"（金额那类），界面据此加粗。
+ * 形状见 `framework/packages/consent/src/types.ts` 的 `ConsentField`。
+ */
+data class ConsentField(val label: String, val value: String, val emphasis: Boolean)
+
 class Challenge(private val obj: JsonObject) {
     val challengeId: String? get() = obj.stringOrNull("challengeId")
     val sessionId: String? get() = obj.stringOrNull("sessionId")
@@ -96,6 +106,31 @@ class Challenge(private val obj: JsonObject) {
     val kind: String? get() = obj.stringOrNull("kind")
     val verification: String? get() = obj.stringOrNull("verification")
     val requiresPaymentPassword: Boolean get() = verification == "payment-password"
+
+    /**
+     * 展示给用户的信息。**这是"展示交易信息"那一步的全部内容**——
+     * 界面上必须逐条显示出来，不能只写一句"确认执行吗"。
+     */
+    val fields: List<ConsentField>
+        get() = (obj["fields"] as? JsonArray)
+            ?.mapNotNull { element ->
+                val row = (element as? JsonObject) ?: return@mapNotNull null
+                val label = row.stringOrNull("label") ?: return@mapNotNull null
+                ConsentField(
+                    label = label,
+                    value = row.stringOrNull("value") ?: "",
+                    emphasis = row.boolOrNull("emphasis") ?: false,
+                )
+            }
+            ?: emptyList()
+
+    /** 「确认后会发生什么」的补充说明，例如「确认后立即扣款，不可撤销」。 */
+    val consequence: String? get() = obj.stringOrNull("consequence")
+
+    /** 超时时刻（Unix 毫秒）。超过即视为拒绝——界面要**禁用**确认按钮。 */
+    val expiresAt: Long? get() = (obj["expiresAt"] as? JsonPrimitive)?.longOrNull
+
+    val createdAt: Long? get() = (obj["createdAt"] as? JsonPrimitive)?.longOrNull
 
     /** 原样带走，界面按需取字段（交易信息各工具不同）。 */
     val raw: JsonObject get() = obj

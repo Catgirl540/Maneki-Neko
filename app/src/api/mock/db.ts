@@ -8,7 +8,6 @@ import type {
   Account,
   AutoDebit,
   Bank,
-  AccountTier,
   CardProduct,
   NavPoint,
   RiskAssessment,
@@ -63,7 +62,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  *  14 → 卡号改用真实感号段（Visa 402688 / 银联 620522）
  *       —— 卡号存在 cardSecrets 里，不升版本的话浏览器会继续用旧号段
  */
-export const MOCK_SCHEMA = 14
+export const MOCK_SCHEMA = 15
 
 export interface MockDb {
   /** 结构版本，见 MOCK_SCHEMA */
@@ -84,8 +83,8 @@ export interface MockDb {
   cardSecrets: Record<string, { cvv: string; pan: string }>
   autoDebits: AutoDebit[]
   security: SecurityOverview
-  /** 登录密码，明文仅存在于模拟环境 */
-  password: string
+  /** 登录密码的 SHA-256 摘要；模拟库也不落明文。 */
+  passwordDigest: string
   /**
    * 支付密码。与登录密码分开：登录密码泄露不等于能扣钱，
    * 所以付钱这一步必须单独验证一次。
@@ -595,64 +594,6 @@ function seedTransactions(account: Account): TransactionRecord[] {
   }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
 }
 
-
-/* --------------------------------------------------------- 账户类别（Ⅰ/Ⅱ/Ⅲ） */
-
-/**
- * 账户类别说明。
- *
- * 功能与限额**照抄监管原文**（银发〔2015〕392 号、银发〔2018〕16 号），
- * 不自己概括 —— 这几组数字是用户判断"够不够用"的唯一依据，写错就是误导：
- *
- *   Ⅱ类户：非绑定账户转入、存入现金、消费和缴费、向非绑定账户转出、取出现金
- *          日累计合计 1 万元，年累计合计 20 万元
- *   Ⅲ类户：账户余额不得超过 2000 元；
- *          消费和缴费支付、非绑定账户资金转出等 日累计合计 2000 元，
- *          年累计合计 5 万元
- */
-export const ACCOUNT_TIERS: AccountTier[] = [
-  {
-    tier: 'I',
-    name: 'Ⅰ 类户',
-    summary: '全功能账户，相当于"钱箱"，工资、大额资金都放这里',
-    features: ['现金存取款', '转账', '购买投资理财等金融产品', '消费和缴费支付'],
-    limitations: [],
-    limits: [
-      { label: '账户余额', value: '无上限' },
-      { label: '消费与缴费', value: '无上限' },
-      { label: '向非绑定账户转出', value: '无上限' },
-    ],
-    online: false,
-    offlineReason: '按账户分类管理规定，Ⅰ 类户需本人持身份证到柜台面签，无法在线开立',
-    requiresBinding: false,
-  },
-  {
-    tier: 'II',
-    name: 'Ⅱ 类户',
-    summary: '可存款、买理财、限额消费缴费，线上开户的主力类型',
-    features: ['存款', '购买投资理财产品', '限额消费和缴费', '限额向非绑定账户转出资金'],
-    limitations: ['取出现金受限额约束'],
-    limits: [
-      { label: '非绑定账户转入 / 存现 / 消费缴费 / 向非绑定账户转出 / 取现', value: '日累计合计 1 万元、年累计合计 20 万元' },
-      { label: '与绑定账户之间的转账', value: '不受上述限额约束' },
-    ],
-    online: true,
-    requiresBinding: true,
-  },
-  {
-    tier: 'III',
-    name: 'Ⅲ 类户',
-    summary: '小额高频的"零钱包"，适合日常小额支付',
-    features: ['限定金额的消费和缴费', '限额向非绑定账户转出资金'],
-    limitations: ['不能存取现金', '账户余额不得超过 2000 元'],
-    limits: [
-      { label: '账户余额', value: '不得超过 2000 元' },
-      { label: '消费缴费 / 向非绑定账户转出', value: '日累计合计 2000 元、年累计合计 5 万元' },
-    ],
-    online: true,
-    requiresBinding: true,
-  },
-]
 
 /* 承诺语句与惩戒文案在 lib/account-opening.ts —— 页面与 mock 共用同一份来源 */
 
@@ -1210,38 +1151,13 @@ function seed(): MockDb {
   const accounts: Account[] = [
     {
       id: currentAccountId,
-      kind: 'current',
-      tier: 'I',
-      label: '活期账户',
+      kind: 'savings',
+      label: '储蓄账户',
       accountNo: '8820000000112233445',
       currency: 'CNY',
-      balance: 12_864_055,
-      available: 12_764_055,
-      interestRate: 0.003,
-      monthNetChange: 0,
-    },
-    {
-      id: nextId('acc'),
-      kind: 'savings',
-      tier: 'II',
-      label: '储蓄账户',
-      accountNo: '8820000000556677889',
-      currency: 'CNY',
-      balance: 5_600_000,
-      available: 5_600_000,
+      balance: 28_464_055,
+      available: 28_464_055,
       interestRate: 0.0155,
-      monthNetChange: 0,
-    },
-    {
-      id: nextId('acc'),
-      kind: 'deposit',
-      tier: 'II',
-      label: '定期存款',
-      accountNo: '8820000000998877665',
-      currency: 'CNY',
-      balance: 10_000_000,
-      available: 0,
-      interestRate: 0.021,
       monthNetChange: 0,
     },
   ]
@@ -1255,7 +1171,7 @@ function seed(): MockDb {
       memberLevel: '金卡会员',
       avatarInitial: '林',
     },
-    password: '123456',
+    passwordDigest: '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92',
     payPassword: DEFAULT_PAY_PASSWORD,
     payPasswordFailures: 0,
     accounts,
@@ -1477,6 +1393,25 @@ function seed(): MockDb {
 }
 
 let cache: MockDb | null = null
+const PROFILES_KEY = 'luckycat.mock.user-profiles.v1'
+
+function profiles(): Record<string, MockDb> {
+  return storage.get<Record<string, MockDb>>(PROFILES_KEY, {})
+}
+
+/** 按手机号找一个独立演示档案，不切换当前用户。 */
+export function findProfileByPhone(phone: string): MockDb | null {
+  const normalized = phone.replace(/\D/g, '')
+  const current = loadDb()
+  if (current.user.phone === normalized) return current
+  return profiles()[normalized] ?? null
+}
+
+/** 注册/登录成功后切换到该用户的独立数据档案。 */
+export function activateDb(next: MockDb): void {
+  cache = next
+  persist()
+}
 
 export function loadDb(): MockDb {
   if (cache) return cache
@@ -1493,10 +1428,14 @@ export function loadDb(): MockDb {
 }
 
 export function persist(): void {
-  if (cache) storage.set(STORAGE_KEYS.mockDb, cache)
+  if (cache) {
+    storage.set(STORAGE_KEYS.mockDb, cache)
+    storage.set(PROFILES_KEY, { ...profiles(), [cache.user.phone]: cache })
+  }
 }
 
 export function resetDb(): MockDb {
+  storage.remove(PROFILES_KEY)
   cache = seed()
   persist()
   return cache

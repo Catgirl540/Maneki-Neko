@@ -58,7 +58,7 @@ export function DashboardPage() {
       {/* 第一行：余额 + 现金流 */}
       <div className="grid gap-6 lg:grid-cols-[1fr_1.08fr]">
         <Card className="float-up flex flex-col">
-          <p className="text-[13px] text-ink-mute">活期账户余额</p>
+          <p className="text-[13px] text-ink-mute">储蓄账户余额</p>
 
           {accounts.loading || !current ? (
             <div className="mt-5 flex flex-col gap-4">
@@ -212,7 +212,7 @@ export function DashboardPage() {
           {/* 开户入口不放在这里：侧栏「开户」与登录页「立即开户」已经覆盖，
               同一张卡片里再塞一个纯属重复 */}
           <CardHeader
-            title="账户速览"
+            title="本月速览"
             action={
               <RevealToggle
                 shown={accountsReveal.shown}
@@ -223,31 +223,11 @@ export function DashboardPage() {
           />
           <ul className="mt-3 divide-y divide-line">
             {accounts.loading &&
-              Array.from({ length: 3 }).map((_, i) => (
+              Array.from({ length: 1 }).map((_, i) => (
                 <li key={i} className="py-4">
                   <Skeleton className="h-9 w-full" />
                 </li>
               ))}
-
-            {accounts.data?.slice(1).map((acc, index) => (
-              <li key={acc.id} className="flex items-center gap-3 py-5">
-                <span
-                  className="size-2.5 shrink-0 rounded-chip"
-                  style={{
-                    backgroundColor: index === 0 ? 'var(--color-gold)' : 'var(--color-blue)',
-                  }}
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] text-ink-soft">{acc.label}</span>
-                  <span className="num mt-0.5 block text-[12px] text-ink-mute">
-                    {acc.tier} 类户 · 年化 {(acc.interestRate * 100).toFixed(2)}%
-                  </span>
-                </span>
-                <span className="num shrink-0 text-[19px] font-semibold text-ink">
-                  {accountsReveal.shown ? `¥${formatAmount(acc.balance)}` : '¥••••••'}
-                </span>
-              </li>
-            ))}
 
             <li className="flex items-center gap-3 py-5">
               <span
@@ -358,7 +338,7 @@ function MoneyInModal({
       description={
         mode === 'info'
           ? '把这些抄到对方银行 App 的收款人里，即可转给你。'
-          : '演示用：直接给活期账户记一笔入账，方便看清余额变化。'
+          : '演示用：直接给储蓄账户记一笔入账，方便看清余额变化。'
       }
       width={mode === 'info' ? 'max-w-[480px]' : 'max-w-[440px]'}
       footer={

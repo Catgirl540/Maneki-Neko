@@ -191,7 +191,7 @@ export function LoginPage() {
               to="/open-account"
               className="ml-1 font-medium text-gold-deep transition-colors hover:text-ink"
             >
-              立即开户
+              注册并开户
             </Link>
           </p>
 

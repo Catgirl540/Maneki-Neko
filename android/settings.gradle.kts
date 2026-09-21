@@ -38,3 +38,4 @@ rootProject.name = "luckycat-android"
 
 include(":app")
 include(":contract")
+include(":domain")

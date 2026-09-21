@@ -123,7 +123,7 @@ export function CardApplicationModal({
       title={mode === 'open' ? '申请新卡' : '换卡'}
       description={
         mode === 'open'
-          ? '实体卡将寄送到你填写的地址，制卡费用从活期账户扣除。'
+          ? '实体卡将寄送到你填写的地址，制卡费用从储蓄账户扣除。'
           : '换卡后旧卡立即失效、卡号变更，已绑定的自动扣款需要重新签约；新卡寄到填写的地址。'
       }
       footer={
@@ -281,7 +281,7 @@ export function CardApplicationModal({
                 </dd>
               </div>
               <div className="flex items-baseline justify-between border-t border-line pt-3">
-                <dt className="text-ink-soft">合计（从活期账户扣除）</dt>
+                <dt className="text-ink-soft">合计（从储蓄账户扣除）</dt>
                 <dd className="num text-[15px] font-semibold text-ink">¥{formatAmount(fee)}</dd>
               </div>
             </dl>

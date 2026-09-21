@@ -38,6 +38,15 @@ data class Health(val ok: Boolean = false, val sessions: Int = 0, val voice: Voi
 @Serializable
 data class SessionCreated(val sessionId: String)
 
+/**
+ * 一条要发给 agent 的图片。
+ *
+ * [data] 是**裸 base64**（不带 `data:` 前缀——那会被上游当成非法音频/图片）。
+ * [mimeType] 必须是**真实容器类型**：桥接按它判能不能收，写错会得到 415。
+ */
+@Serializable
+data class ImageAttachment(val data: String, val mimeType: String)
+
 /** 会话是否还在。[started] 记的是"真的往运行时递过提示词"——建过不等于跑过，前端只认这个字段。 */
 @Serializable
 data class SessionInfo(
@@ -56,6 +65,12 @@ data class AsrResult(val text: String = "", val seconds: Double? = null, val cos
 /**
  * 桥接 `/agent-api/…` 的客户端。
  *
+ * **`baseUrl` 传主机根**（`https://bank.waveflow.cn`、`http://10.0.2.2:8788`），
+ * **不要带 `/agent-api` 前缀**——`/agent-api` 是桥接固定的路由前缀（见 P6），
+ * 由这个类自己拼。传成 `https://bank.waveflow.cn/agent-api` 会拼出
+ * `/agent-api/agent-api/health`，服务端回 404 而且报错信息看着像路径写错了，
+ * 实际是**约定搞混**。所以构造时就挡下来（见 [init]），不靠记性。
+ *
  * 只有这一处定义接口面：`:app` 与契约测试都用它，桥接一改两边同时红。
  *
  * [token] 对应服务端 `LUCKYCAT_DEMO_TOKEN`（请求头 `x-luckycat-token`）。
@@ -69,6 +84,32 @@ class AgentApi(
 ) {
     private val base: HttpUrl = baseUrl.trimEnd('/').toHttpUrl()
 
+    /**
+     * **流式请求专用的客户端**：读超时放到 60 秒。
+     *
+     * OkHttp 默认读超时是 **10 秒**，而 SSE 是长连接——桥接每 **15 秒**发一次
+     * `: ping` 保活，10 秒的超时根本等不到下一次心跳，于是每条订阅都会在
+     * 空闲 10 秒后被自己掐断，抛 `SocketTimeoutException`。
+     *
+     * 症状很有迷惑性：回复正常收到，**十几秒之后**界面上才冒一条"网络不给力"。
+     * 实测踩到三次才顺着 logcat 找到这里。
+     *
+     * 取 60 秒而不是"永不超时"：心跳是 15 秒一次，60 秒足够容忍抖动，
+     * 而真的断了的连接还能在一分钟内被发现（永不超时的话它会一直挂着）。
+     */
+    private val streamClient: OkHttpClient = client.newBuilder()
+        .readTimeout(STREAM_READ_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        .build()
+
+    init {
+        val path = base.encodedPath
+        require(path.isEmpty() || path == "/") {
+            "baseUrl 要传主机根（例如 https://bank.waveflow.cn），不要带路径；" +
+                "实际收到的是 \"$baseUrl\"，路径为 \"$path\"。" +
+                "路由前缀 /agent-api 由 AgentApi 自己拼，带上会变成 /agent-api/agent-api/…"
+        }
+    }
+
     /** 服务在不在、有哪些能力。**响应里没有模型名/厂商名**，别去要。 */
     suspend fun health(): Health = json.decodeFromString(call(builder("GET", "agent-api/health").build()))
 
@@ -81,9 +122,22 @@ class AgentApi(
     suspend fun sessionInfo(sessionId: String): SessionInfo =
         json.decodeFromString(call(builder("GET", "agent-api/sessions/$sessionId").build()))
 
-    /** 发一条消息。返回 202 只是**入队回执**，不代表回答完成——回答从 [streamEvents] 来。 */
-    suspend fun sendMessage(sessionId: String, text: String) {
-        val payload = buildJsonObject { put("text", text) }.toString()
+    /**
+     * 发一条消息。返回 202 只是**入队回执**，不代表回答完成——回答从 [streamEvents] 来。
+     *
+     * [image] 选填，但**文字与图片不能都空**（桥接会回 400）——只有图没文字是允许的，
+     * 那是"发一张截图问这是什么"的正常用法。
+     */
+    suspend fun sendMessage(sessionId: String, text: String, image: ImageAttachment? = null) {
+        val payload = buildJsonObject {
+            put("text", text)
+            if (image != null) {
+                put("image", buildJsonObject {
+                    put("data", image.data)
+                    put("mimeType", image.mimeType)
+                })
+            }
+        }.toString()
         call(builder("POST", "agent-api/sessions/$sessionId/messages").post(payload.toRequestBody(JSON_MEDIA)).build())
     }
 
@@ -94,7 +148,8 @@ class AgentApi(
      * 不是留着连接只停止收集——后者会让服务端一直挂着一个订阅者。
      */
     fun streamEvents(sessionId: String): Flow<AgentEvent> = channelFlow {
-        val call = client.newCall(builder("GET", "agent-api/sessions/$sessionId/stream").build())
+        // 用 streamClient 而不是 client：SSE 是长连接，默认 10 秒读超时活不过心跳间隔
+        val call = streamClient.newCall(builder("GET", "agent-api/sessions/$sessionId/stream").build())
         val reader = launch(Dispatchers.IO) {
             try {
                 call.execute().use { res ->
@@ -163,7 +218,7 @@ class AgentApi(
             put("text", text)
             if (voice != null) put("voice", voice)
         }.toString()
-        val call = client.newCall(
+        val call = streamClient.newCall(
             builder("POST", "agent-api/tts/stream").post(payload.toRequestBody(JSON_MEDIA)).build()
         )
         val reader = launch(Dispatchers.IO) {
@@ -187,7 +242,25 @@ class AgentApi(
         awaitClose { call.cancel() }
     }
 
-    fun close() {
+    /**
+     * 关掉调度线程池与连接池。
+     *
+     * **必须是 `suspend`，不能在主线程直接调**：`connectionPool.evictAll()` 会去关
+     * 连接池里的连接，而 HTTPS 连接在被关时 Conscrypt 要写出 `close_notify` ——
+     * 那是一次**真实的网络写**，会被 Android 的 StrictMode 拦下来抛
+     * `NetworkOnMainThreadException`。
+     *
+     * 模拟器 + 真公网 HTTPS 端点上抓到的堆栈：
+     * ```
+     * RealConnectionPool.evictAll → ConscryptEngineSocket.close
+     *   → SSLOutputStream.writeInternal → StrictMode.onNetwork
+     * ```
+     * 用明文 HTTP 打本机时**不会**触发，所以只连本地开发环境是看不出来的，
+     * 一换成公网 HTTPS 立刻炸。这里用 `withContext(Dispatchers.IO)` 把它挪到后台，
+     * 调用方就不必各自记得"close 要放后台线程"。
+     */
+    suspend fun close() = withContext(Dispatchers.IO) {
+        streamClient.connectionPool.evictAll()
         client.dispatcher.executorService.shutdown()
         client.connectionPool.evictAll()
     }
@@ -216,6 +289,12 @@ class AgentApi(
         }
         private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
         private const val EMPTY_JSON = "{}"
+
+        /**
+         * 流式连接的读超时。**必须大于桥接的 `: ping` 间隔（15 秒）**，
+         * 否则每条订阅都会在空闲时被自己掐断。
+         */
+        const val STREAM_READ_TIMEOUT_MS = 60_000L
     }
 }
 

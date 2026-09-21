@@ -48,6 +48,7 @@ import { fileURLToPath } from 'node:url'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
 import { streamVolcTTS } from './volc-stream.mjs'
+import { createDemoBank } from './demo-bank.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -496,6 +497,37 @@ async function runTurn(sessionId, input) {
 }
 
 /* ------------------------------------------------------------ HTTP 路由 */
+
+/**
+ * 占位银行后端的懒加载单例。
+ *
+ * 只在第一次收到 `/api/*` 时才去初始化：它要动态 import 前端的 TS，
+ * 会拖慢启动；而大多数请求根本不碰银行数据。
+ *
+ * @returns 初始化好的后端；失败时返回 `null`（原因记在 [demoBankFailure]）。
+ */
+let demoBankPromise = null
+let demoBankFailure = null
+function demoBank() {
+  if (demoBankPromise === null) {
+    demoBankPromise = createDemoBank({
+      stateFile: join(home, 'demo-bank-state.json'),
+      // 从 framework 根开始向上找 app 源码与钩子（开发仓库与服务器布局不同，见 findAssetRoot）
+      searchFrom: ROOT,
+    })
+      .then((bank) => {
+        const stats = bank.stats()
+        console.log(`[demo-server] 占位银行后端就绪：${stats.routes} 条路由，状态存 ${stats.stateFile}`)
+        return bank
+      })
+      .catch((error) => {
+        demoBankFailure = error instanceof Error ? error : new Error(String(error))
+        console.warn(`[demo-server] 占位银行后端没起来（/api/* 会回 503）：${demoBankFailure.message}`)
+        return null
+      })
+  }
+  return demoBankPromise
+}
 
 const server = createServer((req, res) => {
   void handle(req, res).catch((error) => {
@@ -1065,6 +1097,27 @@ async function handle(req, res) {
     })
     // 客户端已经断开时不能再写响应（会抛写入已结束）。
     if (!res.writableEnded && !res.destroyed) sendJson(res, 200, answer)
+    return
+  }
+
+  // ── 占位银行后端（`/api/*`）──────────────────────────────────────────
+  // 把前端那份 mock 挂到 HTTP 上，给安卓端（以及将来的真后端）提供银行数据。
+  // 见 `bridge/demo-bank.mjs` 的说明。
+  //
+  // **懒加载 + fail-soft**：它要现场转译前端的 TS，失败的可能性是存在的
+  // （app 源码没同步过去、typescript 没装…）。而 agent（`/agent-api/*`）才是
+  // 这个服务的主业，**绝不能因为银行数据起不来就一起挂掉**，所以这里
+  // 捕获失败、`/api/*` 回 503，其余接口照常。
+  if (url.pathname.startsWith('/api/')) {
+    const bank = await demoBank()
+    if (bank === null) {
+      sendJson(res, 503, {
+        message: `占位银行后端不可用：${demoBankFailure?.message ?? '未知原因'}`,
+        code: 'DEMO_BANK_UNAVAILABLE',
+      })
+      return
+    }
+    await bank.handle(req, res, url)
     return
   }
 

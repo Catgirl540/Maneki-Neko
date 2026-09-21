@@ -58,7 +58,14 @@ fi
 
 manifest="$DEST/package.json"
 # 顺序有讲究：consent 是通用层，bank-demo 是它的消费者，先装 consent。
-for pkg in hello embedding rag hardening consent bank-demo; do
+#
+# `tool-fs` 与 `ask` 原先**不在这个列表里**——它们是在做 P10（看图）与 P12（提问卡片）时
+# 手工 `dsh plugin add` 进去的，本机 profile 里于是有，这行却没跟着改。
+# 后果：**全新环境 bootstrap 出来的 profile 会缺 `read` 与 `ask_user_question`**
+# （看图不能用、提问卡片弹不出来），而且 `scripts/verify.sh` 里
+# "文件系统四个工具在树中" 那条会红。做服务器部署时踩到的，补上。
+# 两者都声明了 `dsh.bundle.patch`，走同一条安装路径。
+for pkg in hello embedding rag hardening consent bank-demo tool-fs ask; do
   name="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['name'])" "$LUCKYCAT_ROOT/packages/$pkg/package.json")"
   if grep -q "\"$name\"" "$manifest"; then
     echo "bootstrap: 已装 $name"
