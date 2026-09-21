@@ -27,8 +27,12 @@ export function Toggle({
     >
       <span
         className={cn(
-          'absolute top-1 size-5 rounded-full bg-surface transition-all duration-200',
-          checked ? 'left-6' : 'left-1',
+          // 位置用 translate 而不是 left：left 是布局属性，过渡它每帧都要重排；
+          // 而且 `transition-transform` 对 left 根本不生效——那样滑块会**瞬移**。
+          // 滑块 20px、轨道 48px、左右各留 4px，所以最大位移正好 20px。
+          'absolute top-1 left-1 size-5 rounded-full bg-surface',
+          'transition-transform duration-[var(--duration-state)] ease-[var(--ease-out-soft)]',
+          checked ? 'translate-x-5' : 'translate-x-0',
         )}
       />
     </button>

@@ -69,8 +69,15 @@ export function Tag({
   )
 }
 
+/**
+ * 骨架屏。
+ *
+ * 用 `.skeleton` 的扫光而不是 `animate-pulse`：脉冲只是整块明暗呼吸，
+ * 扫光能表达"正在往这个方向填内容"，也更不容易被误认成一块静态灰底。
+ * `.skeleton` 只动 transform，不重排。
+ */
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-tile bg-line/60', className)} />
+  return <div className={cn('skeleton rounded-tile', className)} aria-hidden="true" />
 }
 
 export function EmptyState({

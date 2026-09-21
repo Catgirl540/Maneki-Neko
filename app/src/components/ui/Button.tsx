@@ -46,7 +46,13 @@ export function Button({
       type="button"
       disabled={disabled || loading}
       className={cn(
-        'inline-flex items-center justify-center font-medium transition-all duration-200',
+        // 逐个列出要过渡的属性，不用 `transition-all`：
+        // 后者把 width/height 这类**布局**属性也纳进来，按钮在文字变化或
+        // 变成 block 时会跟着做一次重排动画（看起来像"抖一下"），
+        // 而且没人能从 `transition-all` 看出到底打算动什么。
+        'inline-flex items-center justify-center font-medium',
+        'transition-[background-color,color,border-color,transform,opacity]',
+        'duration-[var(--duration-state)] ease-[var(--ease-out-soft)]',
         'disabled:cursor-not-allowed',
         VARIANTS[variant],
         SIZES[size],

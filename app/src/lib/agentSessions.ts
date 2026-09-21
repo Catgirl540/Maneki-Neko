@@ -19,13 +19,20 @@ import { STORAGE_KEYS, storage, trySet } from '@/lib/storage'
 
 /** 对话里的一条内容。 */
 export type ChatItem =
-  | { kind: 'user'; id: string; text: string }
+  /*
+   * `thumb` 是**缩略图**（`data:image/jpeg;base64,…`），不是原图：
+   * 原图只发给 agent，存档里放原图会一张就吃掉 `MAX_STORE_BYTES`（2MB）的大半。
+   * 见 `lib/image.ts` 的 `prepareImage`——它返回的两份数据是分开的。
+   */
+  | { kind: 'user'; id: string; text: string; thumb?: string; imageName?: string }
   | { kind: 'assistant'; id: string; text: string }
   | { kind: 'tool'; id: string; name: string; state: 'running' | 'done' | 'error'; text?: string }
   | { kind: 'notice'; id: string; text: string; tone: 'info' | 'error' }
 
-/** 一段对话（含它的全部内容）。 */
-export interface StoredConversation {
+/** 一条"人说的话"：用户发言或助手回复。工具执行过程与系统通知不算。 */
+export type MessageItem = Extract<ChatItem, { kind: 'user' | 'assistant' }>
+
+/** 一段对话（含它的全部内容）。 */export interface StoredConversation {
   /** 本地 id：只在这台设备上有意义，用来在界面上认人。 */
   id: string
   /**
@@ -93,7 +100,11 @@ function sameDay(a: Date, b: Date): boolean {
  * @param now - 现在（毫秒），显式传入是为了能测。
  * @returns 例如「刚刚」「5 分钟前」「14:03」「昨天」「3 月 2 日」。
  */
-export function relativeTime(ts: number, now: number = Date.now()): string {
+export function relativeTime(
+  ts: number,
+  now: number = Date.now(),
+  options: { compact?: boolean } = {},
+): string {
   if (!Number.isFinite(ts)) return ''
   const diff = now - ts
   // 未来时间（设备时钟被调过）按"刚刚"处理，不显示负数。
@@ -104,7 +115,11 @@ export function relativeTime(ts: number, now: number = Date.now()): string {
   if (sameDay(at, today)) return `${pad(at.getHours())}:${pad(at.getMinutes())}`
   const yesterday = new Date(now)
   yesterday.setDate(yesterday.getDate() - 1)
-  if (sameDay(at, yesterday)) return `昨天 ${pad(at.getHours())}:${pad(at.getMinutes())}`
+  if (sameDay(at, yesterday)) {
+    // 列表那一行很窄（旁边还有状态标记和两个按钮），`昨天 20:17` 会被挤到截断。
+    // 在这个位置"昨天"已经够了，几点几分是次要信息。
+    return options.compact === true ? '昨天' : `昨天 ${pad(at.getHours())}:${pad(at.getMinutes())}`
+  }
   if (today.getFullYear() === at.getFullYear()) return `${at.getMonth() + 1} 月 ${at.getDate()} 日`
   return `${at.getFullYear()} 年 ${at.getMonth() + 1} 月 ${at.getDate()} 日`
 }
@@ -112,6 +127,109 @@ export function relativeTime(ts: number, now: number = Date.now()): string {
 /** 一段对话有多少条"人看得见"的内容（工具执行过程不算）。 */
 export function messageCount(conversation: StoredConversation): number {
   return conversation.items.filter(item => item.kind === 'user' || item.kind === 'assistant').length
+}
+
+/**
+ * 这段对话是不是"空"的——建出来但一次都没用过。
+ *
+ * **不能只看内容条数**：`agentSessionId` 是发第一句话时才建的，所以只要它有值，
+ * 就一定发过话。两个条件一起看，才不会把一段真用过的对话误判成空的丢掉。
+ * （清空是不可能的：没有"清空这段对话"这个操作，内容只增不减。）
+ * @param conversation - 待判断的对话。
+ * @returns 是不是空对话。
+ */
+export function isEmptyConversation(conversation: StoredConversation): boolean {
+  return conversation.items.length === 0 && conversation.agentSessionId === undefined
+}
+
+/**
+ * 最后一条助手回复的 id。
+ *
+ * 「重新生成」只挂在这一条上。挂到每一条上要面临一个很难解释的问题：
+ * 重新生成中间那条回复，就得把它**后面**的几轮问答全丢掉——
+ * 用户点的是"重说这一句"，代价却是删掉后面十分钟的对话。
+ * @param items - 一段对话的内容。
+ * @returns 最后一条助手回复的 id；没有助手回复时 undefined。
+ */
+export function lastAssistantId(items: ChatItem[]): string | undefined {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i]
+    if (item !== undefined && item.kind === 'assistant') return item.id
+  }
+  return undefined
+}
+
+/**
+ * 一条内容"对应的那次提问"是哪一句。
+ *
+ * 「重新生成」的按钮挂在**助手回复**上（用户点的就是那条回复），但倒回要倒到的
+ * 是**产生它的那句提问**——这个换算很容易漏。漏了的后果是静默失灵：
+ * `rewindTo` 拿到一个助手 id、按规矩拒绝、于是按钮点了什么都不发生
+ * （实测踩到：编辑能用，因为编辑本来就传的用户消息 id）。
+ * @param items - 一段对话的内容。
+ * @param itemId - 用户点的那条内容。
+ * @returns 对应的用户消息 id；不是用户发言/助手回复、或往前找不到提问时 undefined。
+ */
+export function promptOf(items: ChatItem[], itemId: string): string | undefined {
+  const index = items.findIndex(item => item.id === itemId)
+  const target = index < 0 ? undefined : items[index]
+  if (target === undefined) return undefined
+  if (target.kind === 'user') return target.id
+  // 工具行和系统通知上没有这些动作，不该走到这里。
+  if (target.kind !== 'assistant') return undefined
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const item = items[i]
+    if (item !== undefined && item.kind === 'user') return item.id
+  }
+  return undefined
+}
+
+/**
+ * 把一段对话倒回到某条用户消息：保留到它为止，丢掉它后面的全部内容。
+ *
+ * 这是「编辑重发」和「重新生成」共用的那一步。两者只差在要不要换文字：
+ *   · 编辑重发 → 传 `text`，那条用户消息换成新的
+ *   · 重新生成 → 不传，保留原话，丢掉助手那条回复
+ *
+ * **只是本地这份记录的倒退，服务端的会话日志退不了。** 助手那边仍然记得
+ * 被丢掉的那些话，所以重发等于"在同一个上下文里再问一遍"，而不是"回到当初那个状态"。
+ * 这件事不藏着，写在界面的提示里（见 `MessageActions.tsx`）。
+ * @param items - 一段对话的内容。
+ * @param itemId - 要倒回到的那条内容 id，必须是用户说的话。
+ * @param text - 换掉这条用户消息的文字；不传就用原文。
+ * @returns 倒回之后的内容；找不到、或者那条不是用户消息时返回 undefined。
+ */
+export function rewindTo(items: ChatItem[], itemId: string, text?: string): ChatItem[] | undefined {
+  const index = items.findIndex(item => item.id === itemId)
+  const target = index < 0 ? undefined : items[index]
+  if (target === undefined || target.kind !== 'user') return undefined
+  const kept = items.slice(0, index + 1)
+  if (text === undefined) return kept
+  // 换文字时把最后一条也换掉。空文字是调用方的事——这里只做切片，不判断内容。
+  return [...kept.slice(0, -1), { ...target, text }]
+}
+
+/**
+ * 丢掉多余的"空对话"。
+ *
+ * 空对话没有内容可回看，留着唯一的价值是"当前正打开着这一段"。所以策略是：
+ *   · 有非空的 → 空的一个都不留（用户不会想回到一张白纸）
+ *   · 全是空的 → 只留最新那一段（列表总得有东西可显示）
+ *
+ * 页面上另有两条同源的规则（见 `useAgentChat`）：当前已经是空对话就不许再新建、
+ * 离开空对话就把它销毁。这里管的是**读存档时**：老版本的存档里可能已经躺着
+ * 好几个空的，光靠那两条规则清不掉。
+ * @param list - 一堆对话。
+ * @returns 清完的列表。
+ */
+export function pruneEmptyConversations(list: StoredConversation[]): StoredConversation[] {
+  const nonEmpty = list.filter(conversation => !isEmptyConversation(conversation))
+  if (nonEmpty.length > 0) return nonEmpty
+  const newest = list.reduce<StoredConversation | undefined>(
+    (best, conversation) => (best === undefined || conversation.updatedAt > best.updatedAt ? conversation : best),
+    undefined,
+  )
+  return newest === undefined ? [] : [newest]
 }
 
 /* ----------------------------------------------------------------- 读回来 */
@@ -129,7 +247,19 @@ function sanitizeItem(raw: unknown, index: number): ChatItem | undefined {
   if (kind === 'user' || kind === 'assistant') {
     const text = raw['text']
     if (typeof text !== 'string') return undefined
-    return { kind, id, text }
+    if (kind === 'assistant') return { kind, id, text }
+    // 缩略图是可选的；存坏了就丢掉它，不能让整条消息消失。
+    const thumb = typeof raw['thumb'] === 'string' && raw['thumb'].startsWith('data:image/')
+      ? raw['thumb']
+      : undefined
+    const imageName = typeof raw['imageName'] === 'string' && raw['imageName'] !== '' ? raw['imageName'] : undefined
+    return {
+      kind,
+      id,
+      text,
+      ...thumb === undefined ? {} : { thumb },
+      ...imageName === undefined ? {} : { imageName },
+    }
   }
   if (kind === 'notice') {
     const text = raw['text']
@@ -203,7 +333,9 @@ export function sanitizeConversations(raw: unknown): StoredConversation[] {
 
 /** 读存档。 */
 export function loadConversations(): StoredConversation[] {
-  return sanitizeConversations(storage.get<unknown>(STORAGE_KEYS.agentSessions, []))
+  // 先洗（认不出来的丢掉）再裁（多余的空白对话丢掉）：两件事分开，
+  // 因为"合法"和"该留"不是一回事。
+  return pruneEmptyConversations(sanitizeConversations(storage.get<unknown>(STORAGE_KEYS.agentSessions, [])))
 }
 
 /* ----------------------------------------------------------------- 存回去 */

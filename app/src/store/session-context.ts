@@ -1,11 +1,16 @@
 import { createContext, useContext } from 'react'
 import type { User } from '@/api/types'
-import { STORAGE_KEYS, storage } from '@/lib/storage'
 
 export interface SessionValue {
   user: User | null
   ready: boolean
-  login: (phone: string, password: string) => Promise<void>
+  /**
+   * 登录。三步都对才能进：手机号格式、密码、短信验证码。
+   * @param phone - 11 位手机号。
+   * @param password - 登录密码。
+   * @param smsCode - 短信验证码（先调 `api.sendSmsCode(phone)` 获取）。
+   */
+  login: (phone: string, password: string, smsCode: string) => Promise<void>
   logout: () => Promise<void>
   updateUser: (patch: Partial<User>) => void
 }
@@ -19,8 +24,8 @@ export function useSession(): SessionValue {
   return ctx
 }
 
-/** 演示环境：先读缓存的用户信息，避免刷新后闪回登录页 */
-export function bootstrapSession(): User | null {
-  const token = storage.get<string | null>(STORAGE_KEYS.token, null)
-  return token ? storage.get<User | null>('session.user', null) : null
-}
+/*
+ * 这里原来有一个 `bootstrapSession()`：从 localStorage 里读回令牌和用户信息，
+ * 让刷新之后不用重新登录。**已经删掉**，因为那正是"登录态一直留着"的来源。
+ * 现在登录态存在 sessionStorage 里（见 `lib/authToken.ts`）：刷新还在，关标签页才没。
+ */

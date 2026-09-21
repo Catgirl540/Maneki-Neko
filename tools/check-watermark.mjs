@@ -17,6 +17,7 @@
  *   node tools/check-watermark.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login } from './lib/session.mjs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -43,30 +44,32 @@ const report = (ok, title, lines = []) => {
 const ROUTES = [
   { path: '/login', auth: false },
   { path: '/open-account', auth: false },
-  { path: '/', auth: true },
+  // 官网首页（公开）与总览（要登录）都要盖水印——演示标识不能只盖在登录之后
+  { path: '/', auth: false },
+  { path: '/dashboard', auth: true },
   { path: '/wealth', auth: true },
   { path: '/cards', auth: true },
 ]
 
 for (const route of ROUTES) {
   const tab = await browser.newPage()
+  /*
+   * 每条路由都用**一次真正的整页加载**来看水印（这是这张检查的意义：
+   * 用户直接打开这个地址时该看得见水印）。
+   *
+   * 登录态现在只在内存里，整页加载必然把它清掉——所以受保护的路由一律用
+   * `login`，它一次做完"重载 + 重新登录"，然后就停在这条路由上。
+   * 公开路由不需要登录，直接 goto，但**要先清掉本地存档**，
+   * 免得被上一条路由留下的东西影响（原来是统一在这里清）。
+   */
   await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-  await tab.evaluate((auth) => {
-    localStorage.clear()
-    if (!auth) return
-    localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-    localStorage.setItem(
-      'luckycat.session.user',
-      JSON.stringify({
-        id: 'u_0001',
-        name: '林小满',
-        phone: '13800138000',
-        memberLevel: '金卡会员',
-        avatarInitial: '林',
-      }),
-    )
-  }, route.auth)
-  await tab.goto(`${BASE}${route.path}`, { waitUntil: 'networkidle' })
+  await tab.evaluate(() => localStorage.clear())
+
+  if (route.auth) {
+    await login(tab, BASE, { to: route.path })
+  } else {
+    await tab.goto(`${BASE}${route.path}`, { waitUntil: 'networkidle' })
+  }
   await tab.waitForTimeout(900)
 
   const probe = await tab.evaluate((text) => {

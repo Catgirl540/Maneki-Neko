@@ -68,7 +68,7 @@ ok "演示服务已就绪"
 new_session() { curl -sf -X POST "$BASE/agent-api/sessions" | python3 -c 'import json,sys;print(json.load(sys.stdin)["sessionId"])'; }
 
 log_for() {
-  find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' -path "*$1*" | head -1
+  find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' -path "*$1*" -print -quit 2>/dev/null
 }
 
 # 后台收 SSE 到文件，返回它的 pid。

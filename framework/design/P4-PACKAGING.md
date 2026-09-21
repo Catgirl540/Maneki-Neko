@@ -13,7 +13,14 @@ packages/hello/cordis.patch.yml       → insert { id: luckycat-hello, name: '@l
 packages/embedding/cordis.patch.yml   → insert { id: luckycat-embedding, … }
 packages/rag/cordis.patch.yml         → insert { id: luckycat-rag, … }
 packages/hardening/cordis.patch.yml   → insert { id: luckycat-hardening, … }
+packages/tool-fs/cordis.patch.yml     → insert { id: fs-sandbox / fs-observation-policy / tool-fs / attachment-local }
 ```
+
+> `packages/tool-fs` 是**另一种形态的 bundle**：它自己**没有运行时接口**
+> （`lib/index.js` 就一个 `export {}`），实体就是补丁本身——补丁里插的那四个行
+> 全都来自官方的 `@deepseek-ai/*` 包。为什么需要套这层壳：那些 `@deepseek-ai/*`
+> 包**都不声明 `dsh.bundle`**，从 profile 的补丁层里直接写 `- id/name` 挂不动
+> （实测：挂了但服务不出现、也没有任何报错）。细节见 `framework/design/P10-IMAGE.md` §2。
 
 于是职责彻底分开：
 

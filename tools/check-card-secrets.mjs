@@ -14,6 +14,7 @@
  *   node tools/check-card-secrets.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -69,15 +70,8 @@ report(
 const browser = await chromium.launch({ executablePath: await findChrome() })
 const tab = await (await browser.newContext({ viewport: { width: 1440, height: 1100 }, locale: 'zh-CN' })).newPage()
 
-await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-await tab.evaluate(() => {
-  localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-  localStorage.setItem(
-    'luckycat.session.user',
-    JSON.stringify({ id: 'u_0001', name: '林小满', phone: '13800138000', memberLevel: '金卡会员', avatarInitial: '林' }),
-  )
-})
-await tab.goto(`${BASE}/cards`, { waitUntil: 'networkidle' })
+await login(tab, BASE)
+await gotoInApp(tab, '/cards')
 await tab.waitForTimeout(500)
 
 const cardText = () => tab.locator('main').innerText()

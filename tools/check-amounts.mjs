@@ -14,6 +14,7 @@
  *   node tools/check-amounts.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -36,17 +37,14 @@ const report = (ok, title, lines = []) => {
 const browser = await chromium.launch({ executablePath: await findChrome() })
 const tab = await (await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' })).newPage()
 
-await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-await tab.evaluate(() => {
-  localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-  localStorage.setItem(
-    'luckycat.session.user',
-    JSON.stringify({ id: 'u_0001', name: '林小满', phone: '13800138000', memberLevel: '金卡会员', avatarInitial: '林' }),
-  )
-})
+await login(tab, BASE)
 
 const PAGES = [
-  ['首页', '/'],
+  // 「总览」从 `/` 挪到了 `/dashboard`（`/` 现在是公开的官网首页）
+  ['总览', '/dashboard'],
+  // 官网也纳入：那几个界面示意图是**照着真实界面画的**，金额该和真实界面一样带 ¥，
+  // 不带就是示意图和产品对不上（实测：漏改过一次，这条断言把它抓出来了）
+  ['官网', '/'],
   ['消费分析', '/analysis'],
   ['转账', '/transfer'],
   ['银行卡', '/cards'],
@@ -56,7 +54,8 @@ const PAGES = [
 
 const offenders = []
 for (const [name, url] of PAGES) {
-  await tab.goto(`${BASE}${url}`, { waitUntil: 'networkidle' })
+  // 应用内换页：不用整页重载，省掉重新拉一遍接口（见 tools/lib/session.mjs）
+  await gotoInApp(tab, url)
   await tab.waitForTimeout(900)
   // 有些金额默认被「眼睛」遮住，先全部掀开再扫，否则遮住的那些扫不到
   const eyes = await tab.locator('main').getByRole('button', { name: /^显示/ }).all()

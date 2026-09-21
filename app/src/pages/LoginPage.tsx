@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ApiError } from '@/api'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { ApiError, api } from '@/api'
 import { CatMark, Logo } from '@/components/brand/Logo'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
@@ -8,25 +8,62 @@ import { BoltIcon, GlobalIcon, LockIcon, PhoneIcon, ShieldIcon } from '@/compone
 import { useSession } from '@/store/session-context'
 import { isMockMode } from '@/api'
 
+/** 重发验证码的冷却秒数。 */
+const RESEND_SECONDS = 60
+
 export function LoginPage() {
   const { login } = useSession()
-  const navigate = useNavigate()
-  const location = useLocation()
   const [phone, setPhone] = useState('13800138000')
   const [password, setPassword] = useState('123456')
+  const [smsCode, setSmsCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [cooldown, setCooldown] = useState(0)
+  const [smsHint, setSmsHint] = useState<string | null>(null)
 
-  const from = (location.state as { from?: string } | null)?.from ?? '/'
+  // 倒计时。用 ref 存 timer 并在卸载时清掉，否则离开登录页之后它还在跑
+  const timer = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (cooldown <= 0) return
+    timer.current = window.setTimeout(() => setCooldown((v) => v - 1), 1000)
+    return () => {
+      if (timer.current !== undefined) window.clearTimeout(timer.current)
+    }
+  }, [cooldown])
+
+  /**
+   * 发验证码。**只校验手机号**，不要求先填密码——
+   * 真实银行的短信登录也是这样：先证明你拿着这个号，再证明你知道密码。
+   */
+  async function onSendCode() {
+    setError(null)
+    setSending(true)
+    try {
+      const result = await api.sendSmsCode(phone.trim())
+      setCooldown(RESEND_SECONDS)
+      // 演示环境后端会把验证码回传（真后端不会），直接告诉用户，否则走不下去
+      setSmsHint(
+        result.demoCode === undefined
+          ? '验证码已发送，请查看短信'
+          : `演示环境验证码：${result.demoCode}（5 分钟内有效）`,
+      )
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '验证码发送失败，请稍后重试')
+    } finally {
+      setSending(false)
+    }
+  }
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault()
     setError(null)
     setLoading(true)
     try {
-      await login(phone.trim(), password)
-      navigate(from, { replace: true })
+      await login(phone.trim(), password, smsCode.trim())
+      // **不在这里导航**：登录成功后 `user` 变成非空，`LoginRoute` 会按记下来的
+      // 来源页把我们送过去。两处都导航会互相覆盖（见 App.tsx 里 LoginRoute 的说明）。
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '登录失败，请稍后重试')
     } finally {
@@ -66,7 +103,6 @@ export function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="请输入密码"
               autoComplete="current-password"
-              error={error ?? undefined}
               trailing={
                 <button
                   type="button"
@@ -93,6 +129,39 @@ export function LoginPage() {
               }
             />
 
+            {/* 验证码：获取按钮放在输入框里，和真实银行的登录页一致。
+                冷却期间按钮禁用并显示秒数，避免连点把短信打爆。 */}
+            <Field
+              label="短信验证码"
+              icon={<ShieldIcon size={20} />}
+              value={smsCode}
+              onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="请输入 6 位验证码"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              trailing={
+                <button
+                  type="button"
+                  onClick={() => void onSendCode()}
+                  disabled={sending || cooldown > 0 || phone.trim().length !== 11}
+                  className="shrink-0 text-[13px] font-medium whitespace-nowrap text-gold-deep transition-colors hover:text-ink disabled:text-ink-mute"
+                >
+                  {sending ? '发送中…' : cooldown > 0 ? `${cooldown} 秒后重发` : '获取验证码'}
+                </button>
+              }
+            />
+
+            {smsHint !== null && (
+              <p className="-mt-2 text-[12px] text-ink-soft">{smsHint}</p>
+            )}
+
+            {error !== null && (
+              <p role="alert" className="text-[13px] text-coral">
+                {error}
+              </p>
+            )}
+
             <Button type="submit" variant="primary" size="lg" block loading={loading}>
               登入
             </Button>
@@ -108,6 +177,7 @@ export function LoginPage() {
           {isMockMode && (
             <p className="mt-9 border-t border-line pt-5 text-[13px] text-ink-mute">
               演示环境 · 任意 11 位手机号 + 密码 <span className="num text-ink-soft">123456</span>
+              ，验证码点「获取验证码」后会直接显示在下方
               <span className="mt-1 block text-[12px] text-ink-mute">
                 本作品为比赛演示用途，非真实银行，不提供任何金融服务，所有数据均为模拟
               </span>

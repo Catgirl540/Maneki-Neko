@@ -32,7 +32,7 @@ if [ -z "$session_id" ]; then
   exit 1
 fi
 
-log_file="$(find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' -path "*$session_id*" | head -1)"
+log_file="$(find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' -path "*$session_id*" -print -quit 2>/dev/null)"
 if [ -z "$log_file" ]; then
   echo "e2e-bank: FAIL 找不到会话日志：$session_id"
   exit 1

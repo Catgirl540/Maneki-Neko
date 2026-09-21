@@ -56,13 +56,16 @@ export class ErrorBoundary extends Component<Props, State> {
           </pre>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button onClick={() => window.location.assign('/')}>回到总览</Button>
+            {/* 「总览」在 `/dashboard`：`/` 是公开的官网首页，跳过去等于没回到应用里 */}
+            <Button onClick={() => window.location.assign('/dashboard')}>回到总览</Button>
             <Button onClick={() => window.location.reload()}>重新加载</Button>
             <Button
               variant="ghost"
               onClick={() => {
+                // 清掉的是**业务数据**（localStorage）。登录态在 sessionStorage 里，
+                // 故意不动它——用户只是想从坏数据里恢复，没必要顺带把他登出。
                 window.localStorage.clear()
-                window.location.assign('/login')
+                window.location.assign('/dashboard')
               }}
             >
               重置演示数据

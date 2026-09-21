@@ -40,6 +40,41 @@ export const storage = {
   },
 }
 
+/**
+ * 和 {@link storage} 同一套命名空间与降级策略，但存在 **sessionStorage** 里。
+ *
+ * 只给登录态用。两者的区别正是登录态需要的那条界线：
+ *
+ *   · `localStorage` —— 关掉浏览器还在（业务数据：账户、流水、聊天记录）
+ *   · `sessionStorage` —— **关掉标签页就没了**，但同一个标签页里刷新还在
+ *
+ * 所以登录态放这里 = 「关掉浏览器退出登录」，而刷新不用重新登录。
+ */
+export const sessionStore = {
+  get<T>(key: string, fallback: T): T {
+    try {
+      const raw = window.sessionStorage.getItem(PREFIX + key)
+      return raw === null ? fallback : (JSON.parse(raw) as T)
+    } catch {
+      return fallback
+    }
+  },
+  set(key: string, value: unknown): void {
+    try {
+      window.sessionStorage.setItem(PREFIX + key, JSON.stringify(value))
+    } catch {
+      /* 忽略：写不进去最多是这一次登录不持久，不该让登录本身失败 */
+    }
+  },
+  remove(key: string): void {
+    try {
+      window.sessionStorage.removeItem(PREFIX + key)
+    } catch {
+      /* 忽略 */
+    }
+  },
+}
+
 export const STORAGE_KEYS = {
   token: 'token',
   // 结构版本写在载荷内部（MockDb.schema），不再靠改 key 做版本管理 ——

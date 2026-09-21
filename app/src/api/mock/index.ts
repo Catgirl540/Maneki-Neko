@@ -516,7 +516,7 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 
 export function createMockApi(): BankApi {
   return {
-    async login(phone, password) {
+    async login(phone, password, smsCode) {
       await delay()
       const db = loadDb()
       if (!/^\d{11}$/.test(phone)) {
@@ -525,6 +525,22 @@ export function createMockApi(): BankApi {
       if (password !== db.password) {
         throw new ApiError('手机号或密码不正确', 401, 'BAD_CREDENTIALS')
       }
+      // 验证码在**密码之后**校验：先报密码错，免得"这个手机号存不存在"
+      // 能被"验证码错误"这个提示反推出来。
+      // 错误码与状态码**照抄其他几处短信校验**（开户 / 开理财户 / 换手机号）：
+      // 同一件事已经有约定的 code 就别另造一个，否则后端要同时实现两套。
+      const pending = db.pendingSms
+      if (pending === null || digitsOnly(pending.phone) !== digitsOnly(phone)) {
+        throw new ApiError('请先获取短信验证码', 400, 'SMS_NOT_SENT')
+      }
+      if (new Date(pending.expiresAt).getTime() < Date.now()) {
+        throw new ApiError('验证码已过期，请重新获取', 400, 'SMS_EXPIRED')
+      }
+      if (digitsOnly(smsCode) !== pending.code) {
+        throw new ApiError('验证码不正确', 400, 'BAD_SMS_CODE')
+      }
+      // 一次性：用过就作废，不能让同一个码反复登录
+      db.pendingSms = null
       // 重新登录即解除支付密码锁定
       db.payPasswordFailures = 0
       persist()

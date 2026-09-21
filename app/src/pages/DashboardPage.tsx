@@ -25,6 +25,7 @@ import { copyText } from '@/lib/clipboard'
 import { receivingRows, receivingText } from '@/lib/receiving'
 import { useReveal } from '@/lib/useReveal'
 import { useToast } from '@/components/ui/toast-context'
+import { useResetOnOpen } from '@/lib/usePresence'
 
 type Range = '7' | '30'
 
@@ -272,13 +273,12 @@ export function DashboardPage() {
       </div>
 
       {/*
-        靠 key 在每次打开时重挂载，回到「收款信息」首屏 —— 上次停在演示表单上，
-        下次打开会让人以为走错了。写一个「open 时 setMode」的 effect 也行，
-        但那是在 effect 里同步 setState：多一轮渲染，且被 lint 拦
-        （react(set-state-in-effect)）。
+        这里原来靠 `key={depositOpen ? … }` 在每次打开时重挂载，好回到「收款信息」首屏。
+        那个写法**顺带把退场动画也弄没了**：关闭时 key 一变，React 立刻卸载旧实例、
+        挂一个 open=false 的新实例，`Modal` 里的退场动画根本没机会播。
+        现在改成常驻挂载 + 打开时重置（`useResetOnOpen`），两件事都成立。
       */}
       <MoneyInModal
-        key={depositOpen ? 'money-in-open' : 'money-in-closed'}
         open={depositOpen}
         accountId={current?.id ?? ''}
         onClose={() => setDepositOpen(false)}
@@ -327,6 +327,14 @@ function MoneyInModal({
   const [channel, setChannel] = useState<'card' | 'salary'>('card')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  // 每次重开都回到「收款信息」首屏：上次停在演示表单上，下次打开会让人以为走错了。
+  useResetOnOpen(open, () => {
+    setMode('info')
+    setAmount('1000')
+    setChannel('card')
+    setError(null)
+  })
 
   async function submitDeposit() {
     setError(null)

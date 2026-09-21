@@ -87,7 +87,7 @@
 
 ## 8. 最小自测（你们接完可以先跑这个）
 
-1. 起进程 → `initialize({ cwd, provider: 'openrouter', model: 'inclusionai/ling-3.0-flash-vl:free' })`
+1. 起进程 → `initialize({ cwd, provider: 'openrouter', model: 'qwen/qwen3.8-flash' })`
 2. `session/prompt({ sessionId, contentBlocks: [{ type: 'text', text: '转账手续费怎么收？单笔最高收多少？' }] })`
 3. 在 `session.event` 流里应当看到：一次 `knowledge_lookup` 工具调用，
    以及带出处（`kb-fee#0` / `kb-fee#1`）的回答，内容是"千分之一、单笔上限 50 元"。

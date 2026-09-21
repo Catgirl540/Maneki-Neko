@@ -2,32 +2,45 @@ import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { api } from '@/api'
 import type { User } from '@/api/types'
-import { STORAGE_KEYS, storage } from '@/lib/storage'
-import { SessionContext, bootstrapSession, useSession } from './session-context'
+import { forgetSession, rememberSession, rememberUser, restoreSession } from '@/lib/authToken'
+import { SessionContext, useSession } from './session-context'
 
+/**
+ * 登录态。
+ *
+ * ## 存在 sessionStorage 里：刷新还在，关掉浏览器才退出
+ *
+ * 用户信息与令牌都存在 sessionStorage（见 `lib/authToken.ts`），于是：
+ *
+ *   · 同一个标签页里**刷新** = 还在（不用重新登录）
+ *   · **关掉标签页 / 浏览器** = 没了，下次要重新登录
+ *   · **新开标签页** = 空的
+ *
+ * 业务数据（账户、流水、聊天记录）仍然在 localStorage 里，两者互不影响。
+ */
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => bootstrapSession())
+  // 初值从 sessionStorage 恢复：同一个标签页刷新之后不该再登一次
+  const [user, setUser] = useState<User | null>(() => restoreSession()?.user ?? null)
   const ready = true
 
-  const login = useCallback(async (phone: string, password: string) => {
-    const { token, user: nextUser } = await api.login(phone, password)
-    storage.set(STORAGE_KEYS.token, token)
-    storage.set('session.user', nextUser)
+  const login = useCallback(async (phone: string, password: string, smsCode: string) => {
+    const { token, user: nextUser } = await api.login(phone, password, smsCode)
+    rememberSession(token, nextUser)
     setUser(nextUser)
   }, [])
 
   const logout = useCallback(async () => {
     await api.logout()
-    storage.remove(STORAGE_KEYS.token)
-    storage.remove('session.user')
+    forgetSession()
     setUser(null)
   }, [])
 
   const updateUser = useCallback((patch: Partial<User>) => {
     setUser((prev) => {
-      if (!prev) return prev
+      if (prev === null) return prev
       const next = { ...prev, ...patch }
-      storage.set('session.user', next)
+      // 改了用户信息也要写回去，否则刷新之后又变回旧的
+      rememberUser(next)
       return next
     })
   }, [])

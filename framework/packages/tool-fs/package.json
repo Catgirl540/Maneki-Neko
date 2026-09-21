@@ -1,0 +1,10 @@
+{
+  "name": "@luckycat/dsh-tool-fs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "把原版的 read 工具挂进来（DSH 的 tool-fs）：客服要能读用户发的图片",
+  "main": "lib/index.js",
+  "exports": { ".": "./lib/index.js", "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

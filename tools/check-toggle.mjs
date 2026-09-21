@@ -5,6 +5,7 @@
  *   node tools/check-toggle.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -22,20 +23,8 @@ const context = await browser.newContext({ viewport: { width: 1440, height: 960 
 
 async function openTab() {
   const tab = await context.newPage()
-  await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-  await tab.evaluate(() => {
-    localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-    localStorage.setItem(
-      'luckycat.session.user',
-      JSON.stringify({
-        id: 'u_0001',
-        name: '林小满',
-        phone: '13800138000',
-        memberLevel: '金卡会员',
-        avatarInitial: '林',
-      }),
-    )
-  })
+  // 走真实登录流程：手机号 + 密码 + 短信验证码（登录态存 sessionStorage，关标签页即失效）
+  await login(tab, BASE)
   return tab
 }
 
@@ -85,7 +74,7 @@ async function checkToggle(tab, label, pageName) {
 // —— 自动扣款 ——
 {
   const tab = await openTab()
-  await tab.goto(`${BASE}/analysis`, { waitUntil: 'networkidle' })
+  await gotoInApp(tab, '/analysis')
   await tab.waitForTimeout(600)
   await checkToggle(tab, '自动扣款开关', '消费分析')
   await tab.close()
@@ -94,7 +83,7 @@ async function checkToggle(tab, label, pageName) {
 // —— 风控规则 ——
 {
   const tab = await openTab()
-  await tab.goto(`${BASE}/security`, { waitUntil: 'networkidle' })
+  await gotoInApp(tab, '/security')
   await tab.waitForTimeout(600)
   await checkToggle(tab, '风控规则开关', '安全中心')
   await tab.close()
@@ -103,7 +92,7 @@ async function checkToggle(tab, label, pageName) {
 // —— 银行卡设置 ——
 {
   const tab = await openTab()
-  await tab.goto(`${BASE}/cards`, { waitUntil: 'networkidle' })
+  await gotoInApp(tab, '/cards')
   await tab.waitForTimeout(600)
   await checkToggle(tab, '线上支付开关', '银行卡')
   await tab.close()

@@ -23,9 +23,25 @@ FAKE_ENV='fake-probe-secret-value-123456'
 FAKE_SK='sk-or-v1-fakefakefakefakefakefakefake'
 export LUCKYCAT_PROBE_FAKE_SECRET="$FAKE_ENV"
 
+# ── 自检模式的人设（**只在这条脚本里**，生产人设一个字不动） ────────────────
+#
+# 为什么需要这一段：生产人设把助手限定成"办银行业务的客服"，能办的事是
+# 查账/转账/理财/看截图。于是当这条脚本要求它「调用 luckycat_probe_secret 工具」时，
+# 它会礼貌地拒绝——原话是「这个工具是框架的自检项，不是给您的服务」。
+#
+# **那个拒绝是对的**：银行助手不该听用户一句话就去调内部管线。
+# 但脱敏这条性质仍然必须被真正测到：必须让模型真的调一次那个工具、
+# 真的看到 `[REDACTED:…]`，否则这条检查就会变成"因为没调用，所以没有泄漏"的假通过。
+#
+# 所以这里用环境变量把后缀整段换掉（profile 里读的是
+# `LUCKYCAT_SYSTEM_PROMPT_SUFFIX`，这是官方支持的覆盖方式）。
+# 注意这是**整段替换**，不是追加：这条脚本因此不再覆盖生产人设的三条硬规矩——
+# 那三条由 e2e-consent.sh 和 tools/check-persona.mjs 负责。
+export LUCKYCAT_SYSTEM_PROMPT_SUFFIX='现在是框架自检模式，不是真实用户对话。用户会点名要求你调用某个工具（例如 luckycat_probe_secret），你必须照做：直接调用那个工具，然后把工具返回的内容一字不差、完整地告诉用户。不要用文字推辞，不要判断它是否属于你的业务范围，也不要反问。'
+
 # 找到某个 session 的日志文件。
 log_for() {
-  find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' -path "*$1*" | head -1
+  find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' -path "*$1*" -print -quit 2>/dev/null
 }
 
 run_bridge() {

@@ -23,9 +23,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { restoreSession } from '@/lib/authToken'
+import type { PreparedImage } from '@/lib/image'
 import {
   agentEnabled,
   answerConsent,
+  answerQuestion,
   createAgentSession,
   openAgentStream,
   probeAgent,
@@ -33,10 +36,16 @@ import {
   sendAgentMessage,
   type AgentEvent,
   type ConsentChallenge,
+  type PendingQuestion,
+  type QuestionAnswerItem,
+  type VoiceCapability,
 } from '@/api/agent'
 import {
+  isEmptyConversation,
   loadConversations,
   makeConversation,
+  promptOf,
+  rewindTo,
   saveConversations,
   titleFrom,
   type ChatItem,
@@ -57,8 +66,36 @@ export interface PendingConsent {
   error?: string
 }
 
+/**
+ * 一次待答复问询的界面态。
+ *
+ * `submitting` / `error` 只在**提交那一下**有用：提交成功之后真正的移除
+ * 交给 `question-resolved` 事件——和确认卡片同一套，避免"界面已经收起来了、
+ * 服务端其实没收到"这种两边不一致。
+ */
+export interface PendingAsk {
+  question: PendingQuestion
+  submitting: boolean
+  error?: string
+}
+
 let seq = 0
-const nextId = (): string => `i${++seq}`
+/**
+ * 本次页面加载的随机标记，拼进消息 id。
+ *
+ * **为什么必须有它**：`seq` 是模块级的，刷新之后从 0 重来；而历史消息的 id
+ * 是从 localStorage 读回来的（`i1`、`i2`…）。于是刷新后新建的那一条会拿到一个
+ * **和老消息完全相同的 id**。
+ *
+ * 两条消息同 id 不是"看着别扭"，是会真的坏掉：
+ *   · `speakingId === item.id` 同时命中两条 → 页面上**冒出两个朗读播放器**（实测）；
+ *   · React 的 `key={item.id}` 重复 → 列表复用错行；
+ *   · 「重新生成 / 编辑」按 id 定位，会指到另一条上去。
+ *
+ * 加一个只属于本次加载的标记，跨刷新就不可能撞了；同一次加载内由 `seq` 保证唯一。
+ */
+const pageTag = Math.random().toString(36).slice(2, 6)
+const nextId = (): string => `i${pageTag}_${++seq}`
 
 /** 工具名的中文标签（只是展示用；没有映射的显示原名）。 */
 const TOOL_LABELS: Record<string, string> = {
@@ -88,8 +125,8 @@ interface LiveSession {
 export interface AgentChat {
   /** 通道状态：探测中 / 不可用（回落固定话术）/ 可用。 */
   status: AgentStatus
-  /** 当前模型名（可用时才有）。 */
-  model?: string
+  /** 服务端支持的语音能力（可用时才有）。 */
+  voice?: VoiceCapability
   /** 历史对话，从新到旧。 */
   conversations: StoredConversation[]
   /** 当前打开的对话 id。 */
@@ -102,12 +139,32 @@ export interface AgentChat {
   lostIds: string[]
   /** 当前对话待确认的敏感操作。 */
   pending?: PendingConsent
+  /** 当前对话待答复的问题（模型问用户的那张卡片）。 */
+  ask?: PendingAsk
   /** 当前对话的上下文已经不在助手的记忆里（服务重启过）。 */
   contextLost: boolean
-  /** 发一条消息到当前对话。 */
-  send: (text: string) => void
+  /** 当前就是一段**空对话**（建出来没发过话）：此时不该再新建。 */
+  activeIsEmpty: boolean
+  /**
+   * 发一条消息到当前对话。
+   * @param text - 用户输入；只发图片时可以是空串。
+   * @param image - 一起发的图片（已经 `prepareImage` 压过的那份）。
+   */
+  send: (text: string, image?: PreparedImage) => void
+  /**
+   * 倒回某条用户消息并重发：编辑重发（传 `text`）和重新生成（不传）共用。
+   *
+   * 只倒退本地这份记录；服务端的会话日志退不了，助手仍记得被丢掉的话，
+   * 所以这等于"在同一个上下文里再问一遍"。
+   */
+  rewind: (itemId: string, text?: string) => void
   /** 答复当前对话待确认的事项。 */
   answer: (decision: 'approve' | 'reject', paymentPassword?: string) => void
+  /**
+   * 答复当前对话的问题卡片。
+   * @param answers - 每道题的答复（选中的选项 + 可能的自由输入）。
+   */
+  answerAsk: (answers: QuestionAnswerItem[]) => void
   /** 开一段新对话。 */
   create: () => void
   /** 切到另一段对话。 */
@@ -124,7 +181,7 @@ export interface AgentChat {
  */
 export function useAgentChat(): AgentChat {
   const [status, setStatus] = useState<AgentStatus>(agentEnabled ? 'probing' : 'off')
-  const [model, setModel] = useState<string | undefined>(undefined)
+  const [voice, setVoice] = useState<VoiceCapability | undefined>(undefined)
   const [conversations, setConversations] = useState<StoredConversation[]>(() => {
     const loaded = loadConversations()
     // 列表里最少留一段：一段都没有的时候直接给一段空的，
@@ -134,6 +191,8 @@ export function useAgentChat(): AgentChat {
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
   const [busyIds, setBusyIds] = useState<string[]>([])
   const [pendings, setPendings] = useState<Record<string, PendingConsent>>({})
+  /** 每段对话当前待答复的问题。与确认卡片并存：两者可以同时存在。 */
+  const [asks, setAsks] = useState<Record<string, PendingAsk>>({})
   const [lostIds, setLostIds] = useState<string[]>([])
 
   /**
@@ -157,6 +216,15 @@ export function useAgentChat(): AgentChat {
   const lost = useRef(new Set<string>())
 
   const mountedRef = useRef(true)
+  /*
+   * 当前登录账户 id，服务端拿它决定图片落到哪个上传目录（不同账户互不可见）。
+   *
+   * 用 ref 而不是 props：这个 id 在一次页面加载里不会变（登录态在 sessionStorage），
+   * 而 `send` 是 useCallback，把它写进依赖会让整条发送链路每次登录都重建。
+   * 没有登录态时留空串——服务端会以 400 "缺少 accountId" 拒掉带图的那条，
+   * 不会静默地把图存进某个公共目录。
+   */
+  const accountIdRef = useRef<string>(restoreSession()?.user.id ?? '')
   /** state 的同步镜像：回调里要读最新值，而 setState 是异步的。 */
   const conversationsRef = useRef(conversations)
   const activeIdRef = useRef<string | undefined>(activeId)
@@ -200,6 +268,32 @@ export function useAgentChat(): AgentChat {
     entry.close()
     live.current.delete(convId)
   }, [])
+
+  /**
+   * 把一段对话彻底从内存和列表里拿掉（**不碰服务端**：服务端与审计日志里的记录会保留）。
+   *
+   * 收摊的清单不能漏：事件流、正在建会话的 promise、工具行的映射、探测与失忆标记、
+   * 忙碌集合、待确认事项，最后才是列表本身。漏掉任何一项，那段对话都会以某种形式
+   * 阴魂不散——比如它的 SSE 还在推事件，写进一条已经不在列表里的对话。
+   */
+  const destroy = useCallback((id: string) => {
+    live.current.get(id)?.close()
+    live.current.delete(id)
+    creating.current.delete(id)
+    toolRows.current.delete(id)
+    probed.current.delete(id)
+    lost.current.delete(id)
+    busyRef.current.delete(id)
+    setBusyIds([...busyRef.current])
+    setLostIds([...lost.current])
+    setPendings((prev) => {
+      if (!(id in prev)) return prev
+      const rest = { ...prev }
+      delete rest[id]
+      return rest
+    })
+    commit(conversationsRef.current.filter(c => c.id !== id))
+  }, [commit])
 
   const handleEvent = useCallback((convId: string, event: AgentEvent) => {
     switch (event.type) {
@@ -249,6 +343,18 @@ export function useAgentChat(): AgentChat {
         })
         return
       case 'consent-decided':
+        return
+      case 'question':
+        setAsks(prev => ({ ...prev, [convId]: { question: event.question, submitting: false } }))
+        return
+      case 'question-resolved':
+        setAsks(prev => {
+          const current = prev[convId]
+          if (current === undefined || current.question.questionId !== event.questionId) return prev
+          const next = { ...prev }
+          delete next[convId]
+          return next
+        })
         return
       case 'error':
         pushItem(convId, { kind: 'notice', id: nextId(), text: event.message, tone: 'error' })
@@ -356,20 +462,22 @@ export function useAgentChat(): AgentChat {
     return 'fresh'
   }, [])
 
-  const send = useCallback((text: string) => {
-    const value = text.trim()
-    const convId = activeIdRef.current
-    if (value === '' || status !== 'ready' || convId === undefined) return
-    if (busyRef.current.has(convId)) return
-    const conversation = conversationsRef.current.find(c => c.id === convId)
-    if (conversation === undefined) return
-
-    // 第一句话定标题；改过名的就不动了。
-    const wasUntitled = conversation.titleEdited !== true && conversation.title === '新对话'
-    pushItem(convId, { kind: 'user', id: nextId(), text: value })
-    if (wasUntitled) patch(convId, c => ({ ...c, title: titleFrom(value) }))
+  /**
+   * 把一句话真正发出去（接上会话 → 发过去 → 失败就写成一条通知）。
+   *
+   * 抽出来是因为「发新话」和「倒回重发」要走的**是同一段路**：
+   * 都得先弄清上下文还在不在（`prepare`），再确保事件流接上了（`ensureLive`）。
+   * 唯一的区别是谁把这句话写进列表——`send` 追加一条，`rewind` 是倒回后重写。
+   * @param convId - 本地对话 id。
+   * @param value - 已经 trim 过、并且已经写进列表的那句话。
+   */
+  /**
+   * @param convId - 本地对话 id。
+   * @param value - 已经 trim 过、并且已经写进列表的那句话。
+   * @param image - 一起发出去的图片（已压缩的那份）。
+   */
+  const dispatch = useCallback((convId: string, value: string, image?: PreparedImage) => {
     setBusy(convId, true)
-
     void (async () => {
       try {
         const mode = await prepare(convId)
@@ -378,7 +486,12 @@ export function useAgentChat(): AgentChat {
         // 在用户按下发送之前就已经写着了（见 SupportPage 的 contextLost）。
         const session = await ensureLive(convId, mode === 'fresh')
         if (!mountedRef.current) return
-        await sendAgentMessage(session.agentSessionId, value)
+        await sendAgentMessage(
+          session.agentSessionId,
+          value,
+          image === undefined ? undefined : { data: image.data, mimeType: image.mimeType },
+          accountIdRef.current,
+        )
       } catch (error) {
         if (!mountedRef.current) return
         setBusy(convId, false)
@@ -390,7 +503,75 @@ export function useAgentChat(): AgentChat {
         })
       }
     })()
-  }, [ensureLive, patch, prepare, pushItem, setBusy, status])
+  }, [ensureLive, prepare, pushItem, setBusy])
+
+  const send = useCallback((text: string, image?: PreparedImage) => {
+    const value = text.trim()
+    const convId = activeIdRef.current
+    // 只发图不打字是允许的；两个都空才是真的没内容。
+    if ((value === '' && image === undefined) || status !== 'ready' || convId === undefined) return
+    if (busyRef.current.has(convId)) return
+    // 有待确认卡片、或者模型正等着用户答那张问题卡片时，都不许再发新话：
+    // 前者会绕过一笔还没执行的敏感操作，后者会让模型的提问和用户的新要求错位。
+    if (pendings[convId] !== undefined || asks[convId] !== undefined) return
+    const conversation = conversationsRef.current.find(c => c.id === convId)
+    if (conversation === undefined) return
+
+    // 第一句话定标题；改过名的就不动了。只有图片时用文件名当标题。
+    const wasUntitled = conversation.titleEdited !== true && conversation.title === '新对话'
+    pushItem(convId, {
+      kind: 'user',
+      id: nextId(),
+      text: value,
+      ...image === undefined ? {} : { thumb: image.thumb, imageName: image.name },
+    })
+    if (wasUntitled) patch(convId, c => ({ ...c, title: titleFrom(value === '' ? image?.name ?? '' : value) }))
+    dispatch(convId, value, image)
+  }, [dispatch, patch, pendings, pushItem, status])
+
+  /**
+   * 倒回某条用户消息并重发。
+   *
+   * 三种情况会被挡下来，都是"宁可什么都不做，也不要做出一个用户没想要的结果"：
+   *   · 这段话正在回答中（倒回会把正在写的那条抹掉，而事件流还在往里写）
+   *   · 有一张待确认的卡片没处理（那是一笔**还没执行**的敏感操作，先处理完它）
+   *   · 倒回的目标不是用户说的话、或找到之后是空的
+   * @param itemId - 倒回到的那条用户消息。
+   * @param text - 换成新的说法（编辑重发）；不传就沿用原文（重新生成）。
+   */
+  const rewind = useCallback((itemId: string, text?: string) => {
+    const convId = activeIdRef.current
+    if (status !== 'ready' || convId === undefined) return
+    if (busyRef.current.has(convId) || pendings[convId] !== undefined) return
+    const conversation = conversationsRef.current.find(c => c.id === convId)
+    if (conversation === undefined) return
+
+    const value = text === undefined ? undefined : text.trim()
+    if (value === '') return
+    // 传进来的可能是助手回复（"重新生成"的按钮挂在回复上），
+    // 先换算成产生它的那句提问，`rewindTo` 只认用户消息。
+    const promptId = promptOf(conversation.items, itemId)
+    if (promptId === undefined) return
+    const next = rewindTo(conversation.items, promptId, value)
+    if (next === undefined) return
+    const last = next[next.length - 1]
+    if (last === undefined || last.kind !== 'user' || last.text.trim() === '') return
+
+    // 丢掉的那些工具行不会再收到结果了，把 callId 的映射一并清掉：
+    // 留着它只会让后面某条 tool-result 去找一条已经不在列表里的行。
+    toolRows.current.delete(convId)
+    // 名字是跟着第一句话起的；没手动改过就跟着新说法走。
+    const firstUser = next.find(item => item.kind === 'user')
+    patch(convId, c => ({
+      ...c,
+      items: next,
+      updatedAt: Date.now(),
+      ...conversation.titleEdited === true || firstUser === undefined
+        ? {}
+        : { title: titleFrom(firstUser.text) },
+    }))
+    dispatch(convId, last.text.trim())
+  }, [dispatch, patch, pendings, status])
 
   const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string) => {
     const convId = activeIdRef.current
@@ -424,7 +605,45 @@ export function useAgentChat(): AgentChat {
     })
   }, [pendings])
 
+  /**
+   * 答复一次问询。
+   *
+   * 和确认卡片一样：提交成功之后**不在这里删**，等 `question-resolved` 事件回来再收。
+   * 差别是失败时不用清空——用户选的东西还在，改一下能再提交，
+   * 而确认卡片失败通常是密码错，也该让他重输。
+   */
+  const answerAsk = useCallback((answers: QuestionAnswerItem[]) => {
+    const convId = activeIdRef.current
+    if (convId === undefined) return
+    const current = asks[convId]
+    if (current === undefined) return
+    const questionId = current.question.questionId
+    setAsks(prev => ({ ...prev, [convId]: { ...current, submitting: true, error: undefined } }))
+    void answerQuestion(questionId, answers).then((result) => {
+      if (!mountedRef.current) return
+      setAsks(prev => {
+        const entry = prev[convId]
+        if (entry === undefined || entry.question.questionId !== questionId) return prev
+        return {
+          ...prev,
+          [convId]: result.ok
+            ? { ...entry, submitting: false }
+            : { ...entry, submitting: false, error: result.error ?? '答复失败' },
+        }
+      })
+    })
+  }, [asks])
+
+  /**
+   * 新建一段对话。
+   *
+   * **当前已经是空对话就什么都不做。** 用户点「新对话」的意图是"给我一张白纸"，
+   * 而白纸已经在这儿了；再建一段的结果是列表里慢慢堆一串用不上的「新对话」。
+   * 界面上这个按钮在空对话时是禁用的，这里再兜一道：`create` 也能被代码调到。
+   */
   const create = useCallback(() => {
+    const current = conversationsRef.current.find(c => c.id === activeIdRef.current)
+    if (current !== undefined && isEmptyConversation(current)) return
     const conversation = makeConversation()
     commit([conversation, ...conversationsRef.current])
     activeIdRef.current = conversation.id
@@ -446,9 +665,15 @@ export function useAgentChat(): AgentChat {
     if (previous === id) return
     activeIdRef.current = id
     setSelectedId(id)
-    if (previous !== undefined) closeIfIdle(previous)
+    // 离开一段空对话就把它销毁。空对话没有内容可回看，留着只是在列表里占位；
+    // 而且这时候刚刚新建它的那个动作已经被用户放弃了（他改主意去看了别的）。
+    const leaving = previous === undefined
+      ? undefined
+      : conversationsRef.current.find(c => c.id === previous)
+    if (leaving !== undefined && isEmptyConversation(leaving)) destroy(leaving.id)
+    else if (previous !== undefined) closeIfIdle(previous)
     openForViewing(id)
-  }, [closeIfIdle, openForViewing])
+  }, [closeIfIdle, destroy, openForViewing])
 
   const rename = useCallback((id: string, title: string) => {
     const clean = title.trim()
@@ -459,28 +684,14 @@ export function useAgentChat(): AgentChat {
   }, [patch])
 
   const remove = useCallback((id: string) => {
-    live.current.get(id)?.close()
-    live.current.delete(id)
-    creating.current.delete(id)
-    toolRows.current.delete(id)
-    probed.current.delete(id)
-    lost.current.delete(id)
-    busyRef.current.delete(id)
-    setBusyIds([...busyRef.current])
-    setLostIds([...lost.current])
-    const next = conversationsRef.current.filter(c => c.id !== id)
-    commit(next)
-    setPendings((prev) => {
-      if (!(id in prev)) return prev
-      const rest = { ...prev }
-      delete rest[id]
-      return rest
-    })
-    if (activeIdRef.current === id) {
-      activeIdRef.current = next[0]?.id
-      setSelectedId(next[0]?.id)
+    const wasActive = activeIdRef.current === id
+    destroy(id)
+    if (wasActive) {
+      const next = conversationsRef.current[0]?.id
+      activeIdRef.current = next
+      setSelectedId(next)
     }
-  }, [commit])
+  }, [destroy])
 
   // 挂载时探测一次。刻意**不**建会话：会话按需创建，避免留下空日志。
   useEffect(() => {
@@ -501,7 +712,7 @@ export function useAgentChat(): AgentChat {
         setStatus('off')
         return
       }
-      setModel(health.model)
+      setVoice(health.voice)
       setStatus('ready')
     })()
     return () => {
@@ -535,16 +746,20 @@ export function useAgentChat(): AgentChat {
 
   return {
     status,
-    model,
+    voice,
     conversations,
     activeId,
     active,
     busyIds,
     lostIds,
     pending: activeId === undefined ? undefined : pendings[activeId],
+    ask: activeId === undefined ? undefined : asks[activeId],
     contextLost: activeId !== undefined && lostIds.includes(activeId),
+    activeIsEmpty: active !== undefined && isEmptyConversation(active),
     send,
+    rewind,
     answer,
+    answerAsk,
     create,
     select,
     rename,

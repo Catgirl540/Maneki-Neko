@@ -87,7 +87,9 @@ if grep -q 'LUCKYCAT_SYSTEM_PROMPT' <<<"$dump"; then ok "业务人设覆盖已�
 # V2c 向量服务：DSH 没有 embedding 通道，这一行是我们自己加的服务。
 if grep -q 'id: luckycat-embedding' <<<"$dump"; then ok "向量服务行 luckycat-embedding 在树中"; else bad "向量服务行缺失"; fi
 if grep -q 'api: openai-embeddings' <<<"$dump"; then ok "向量路由协议 openai-embeddings 已配置"; else bad "向量路由协议缺失"; fi
-if grep -q 'model: nvidia/llama-nemotron-embed-vl-1b-v2:free' <<<"$dump"; then ok "向量默认模型已配置（2048 维免费档）"; else bad "向量默认模型缺失"; fi
+if grep -q 'model: baai/bge-m3' <<<"$dump"; then ok "向量默认模型已配置（bge-m3，付费档 1024 维）"; else bad "向量默认模型缺失"; fi
+if grep -q 'id: qwen/qwen3.8-flash' <<<"$dump"; then ok "聊天默认模型已配置（qwen/qwen3.8-flash，唯一过了 e2e-consent 的付费档）"; else bad "聊天默认模型不对"; fi
+if grep -q 'dimensions: 1024' <<<"$dump"; then ok "向量维度已按新模型改成 1024（旧的 2048 会静默算错相似度）"; else bad "向量维度没跟着模型改"; fi
 
 # V2d 知识库检索
 rag_block="$(entry_block luckycat-rag)"
@@ -141,10 +143,17 @@ else
   bad "knowledge_lookup 未注册: $(tr '\n' ' ' <<<"$probe_out")"
 fi
 # 工具面用**集合同等**断言，而不是数字：数字看不出增删的是哪一个。
-# 生产树 = 知识库 + 框架自检 + 8 个银行占位工具；探针是 --patch 挂载的，所以还多它一个。
-expected_names='bank_get_balance,bank_get_transaction_detail,bank_list_transactions,bank_reveal_card_secret,bank_transfer,bank_wealth_quote,bank_wealth_redeem,bank_wealth_subscribe,knowledge_lookup,luckycat_ping,luckycat_probe_secret'
+# 生产树 = 知识库 + 框架自检 + 8 个银行占位工具 + 文件系统四件套；探针是 --patch 挂载的，所以还多它一个。
+#
+# 文件系统那四个（read / read_image / write / edit）来自官方 `@deepseek-ai/dsh-tool-fs`：
+# 它是**整套注册**的，没有"只挂 read"的配置开关。而 DSH 的工具面遮罩
+# （`ctx.tools.restrict`）只在 **agent 作用域**可用（官方源码原话：context-global
+# 会 "mask every agent"），profile 层拿不到这个口子。所以这 4 个**会出现在工具面上**，
+# 但只有 `read` 在 hardening 白名单里——另外 3 个一调就被拒。
+# 下面两组断言钉的就是这件事：面**完全已知**，且白名单**只放行 read**。
+expected_names='ask_user_question,bank_get_balance,bank_get_transaction_detail,bank_list_transactions,bank_reveal_card_secret,bank_transfer,bank_wealth_quote,bank_wealth_redeem,bank_wealth_subscribe,edit,knowledge_lookup,luckycat_ping,luckycat_probe_secret,read,read_image,write'
 if grep -q "^\[luckycat-probe\] names=$expected_names$" <<<"$probe_out"; then
-  ok "工具面集合完全匹配（生产 10 个 + 探针 1 个）"
+  ok "工具面集合完全匹配（生产 15 个 + 探针 1 个）"
 else
   bad "工具面集合不匹配（有意外增删）: $(grep 'names=' <<<"$probe_out")"
 fi
@@ -154,12 +163,35 @@ if grep -q 'luckycat-probe' <<<"$dump"; then
 else
   ok "生产树里没有探针插件（只在 --patch 时挂载）"
 fi
-# 关键不变式：整棵树的工具面里不许出现 shell / 编码类工具。
-if grep -Eq 'names=.*(bash|shell|apply_patch|view_image|read_file|write_file|edit_file|web_search|web_fetch|exec)' <<<"$probe_out"; then
-  bad "工具面里出现了 shell / 编码类工具: $(grep 'names=' <<<"$probe_out")"
+# 关键不变式：整棵树的工具面里不许出现 shell / 联网类工具。
+# `edit`/`write` **故意不列进这个正则**：它们是上面那套 fs 工具自带的、已知可见，
+# 由 hardening 白名单拦（下面单独断言）。这里拦的是真正的执行面：能起进程、能出网。
+if grep -Eq 'names=.*(bash|shell|exec|spawn|apply_patch|web_search|web_fetch|fetch_url)' <<<"$probe_out"; then
+  bad "工具面里出现了 shell / 联网类工具: $(grep 'names=' <<<"$probe_out")"
 else
-  ok "工具面里没有任何 shell / 编码类工具"
+  ok "工具面里没有任何 shell / 联网类工具"
 fi
+# 白名单**只**放行 read 这一个文件类工具。
+allowed_block="$(entry_block luckycat-hardening)"
+if grep -q '^ *- read$' <<<"$allowed_block"; then
+  ok "白名单放行了 read（原版读文件的工具）"
+else
+  bad "白名单里没有 read（那是唯一一个文件类工具，必须显式写）"
+fi
+# 提问工具**必须**在白名单里，否则模型一调就被拒——而"缺信息时问用户"
+# 是这个助手的正常行为，不是可选能力。
+if grep -q '^ *- ask_user_question$' <<<"$allowed_block"; then
+  ok "白名单放行了 ask_user_question（缺信息时能弹卡片问用户）"
+else
+  bad "白名单里没有 ask_user_question（模型一提问就会被守卫拒掉）"
+fi
+for t in read_image write edit; do
+  if grep -q "^ *- $t\$" <<<"$allowed_block"; then
+    bad "白名单意外放行了 $t"
+  else
+    ok "白名单没有放行 $t（工具面上可见，但一调就被拒）"
+  fi
+done
 # 补课项必须是**服务级**激活，不能只是"行在树里"。
 if grep -q 'compaction=ACTIVE' <<<"$probe_out"; then ok "压缩服务已激活"; else bad "压缩服务未激活: $(grep 'compaction=' <<<"$probe_out")"; fi
 if grep -q 'tokenMeter=ACTIVE' <<<"$probe_out"; then ok "用量统计服务已激活"; else bad "用量统计未激活: $(grep 'tokenMeter=' <<<"$probe_out")"; fi
@@ -200,7 +232,10 @@ fi
 echo "== V6 日志权限（上游显式收紧，这里做回归断言） =="
 # DSH 是**显式**建 0600/0700 的，不靠 umask（实测：本机 umask 0002 时仍是 600/700）。
 # 这条断言的意义是：一旦上游改成依赖 umask，这里会立刻发现。
-sample_log="$(find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' 2>/dev/null | head -1)"
+# `-print -quit` 而不是 `| head -1`：管道会在 find 还写着的时候被 head 关掉，
+# find 吃 SIGPIPE，`set -o pipefail` 让整条管道非 0，脚本当场中止。
+# 会话日志攒到一定数量就会踩到（实测 116 个的时候）。`-print -quit` 不带管道。
+sample_log="$(find "$LUCKYCAT_HOME/sessions" -name 'session.v*.jsonl' -print -quit 2>/dev/null)"
 if [ -n "$sample_log" ]; then
   file_mode="$(stat -c '%a' "$sample_log")"
   if [ "$file_mode" = "600" ]; then ok "会话日志文件权限 600"; else bad "会话日志权限是 $file_mode，应为 600"; fi
@@ -215,6 +250,8 @@ if [ "${LUCKYCAT_E2E:-0}" = "1" ]; then
   if bash "$LUCKYCAT_ROOT/scripts/e2e-bank.sh"; then ok "端到端（知识库问答）通过"; else bad "端到端（知识库问答）失败"; fi
   if bash "$LUCKYCAT_ROOT/scripts/e2e-security.sh"; then ok "端到端（脱敏 + 白名单守卫）通过"; else bad "端到端（安全）失败"; fi
   if bash "$LUCKYCAT_ROOT/scripts/e2e-consent.sh"; then ok "端到端（敏感操作：展示 → 确认 → 验身份 → 才执行）通过"; else bad "端到端（敏感操作）失败"; fi
+  # 语音这条不需要起 agent 运行时（不走模型），只用到语音上游，所以最便宜。
+  if bash "$LUCKYCAT_ROOT/scripts/e2e-voice.sh"; then ok "端到端（语音：合成 → 喂回去识别，往返一致）通过"; else bad "端到端（语音）失败"; fi
 else
   echo "  skip 默认跳过（需要联网与 OPENROUTER_API_KEY；设 LUCKYCAT_E2E=1 启用）"
 fi

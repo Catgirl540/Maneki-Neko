@@ -10,6 +10,9 @@
 - id: luckycat-hardening
   config:
     allowedTools:
+      # 自检 overlay 是**整段替换**白名单的，所以这里也得写上提问工具——
+      # 少了它，自检里的模型一问问题就会被守卫拒掉（而生产树是有的）。
+      - ask_user_question
       - knowledge_lookup
       - luckycat_ping
       - luckycat_probe_secret

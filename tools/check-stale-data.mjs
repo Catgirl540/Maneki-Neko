@@ -13,6 +13,7 @@
  *   node tools/check-stale-data.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -43,24 +44,15 @@ tab.on('console', (m) => {
   if (m.type() === 'error') consoleErrors.push(m.text())
 })
 
-const login = () =>
-  tab.evaluate(() => {
-    localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-    localStorage.setItem(
-      'luckycat.session.user',
-      JSON.stringify({
-        id: 'u_0001',
-        name: '林小满',
-        phone: '13800138000',
-        memberLevel: '金卡会员',
-        avatarInitial: '林',
-      }),
-    )
-  })
-
 /** 打开交易详情，返回页面可见文本（main 不存在时返回空串） */
 async function openDetail(id = 'txn_0005') {
-  await tab.goto(`${BASE}/transactions/${id}`, { waitUntil: 'networkidle' })
+  /*
+   * 这里**故意**用 `login` 而不是 `gotoInApp`：这一整套测的就是"本地存档坏掉之后，
+   * 应用下次启动能不能自愈"，所以每一步都必须是一次**真正的整页加载**让应用重新读盘。
+   * `login` 内含一次 `goto`，正好是整页加载；它顺便保证登录态在位
+   * （登录态在 sessionStorage 里，刷新本来是留着的，这里不依赖这一点）。
+   */
+  await login(tab, BASE, { to: `/transactions/${id}` })
   await tab.waitForTimeout(1300)
   const main = tab.locator('main')
   const hasMain = (await main.count()) > 0
@@ -69,8 +61,9 @@ async function openDetail(id = 'txn_0005') {
 
 // —— 1. 全新安装 ——
 await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
+// 先清掉本地存档，再走真实登录流程（往 localStorage 写 token 已经不代表登录了）
 await tab.evaluate(() => localStorage.clear())
-await login()
+await login(tab, BASE, { to: '/transactions/txn_0005' })
 {
   const text = await openDetail()
   report(text.includes('Manner Coffee') && text.includes('交易编号'), '① 全新安装能正常打开交易详情', [
@@ -132,7 +125,7 @@ await login()
   const id = await tab.evaluate(
     () => JSON.parse(localStorage.getItem('luckycat.mock.db')).transactions[0].id,
   )
-  await tab.goto(`${BASE}/transactions/${id}`, { waitUntil: 'networkidle' })
+  await login(tab, BASE, { to: `/transactions/${id}` })
   await tab.waitForTimeout(1300)
   const body = (await tab.locator('body').innerText()).replace(/\s+/g, ' ')
   // 错误边界会「吃掉」异常（这正是它的职责），所以 window 的 pageerror 是空的，
@@ -150,9 +143,17 @@ await login()
   await tab.getByRole('button', { name: '重置演示数据' }).click()
   await tab.waitForTimeout(1500)
   const recovered = new URL(tab.url()).pathname
-  const loginVisible = (await tab.locator('body').innerText()).includes('登录')
-  report(recovered === '/login' || loginVisible, '④b 错误页的「重置演示数据」能恢复', [
-    `跳转到 ${recovered}`,
+  const recoveredText = await tab.locator('body').innerText()
+  /*
+   * 判据是"回到一个能用的应用页面"，不是"跳回登录页"。
+   * 「重置演示数据」清的是 **localStorage 里的业务数据**；登录态在 sessionStorage 里，
+   * 刻意不动它（用户只是想从坏数据里恢复，没必要顺带登出）。
+   * 所以重置之后仍然登录着，会落在总览。
+   */
+  const stillBroken = recoveredText.includes('页面出错了')
+  report(recovered === '/dashboard' && !stillBroken, '④b 错误页的「重置演示数据」能恢复', [
+    `跳转到 ${recovered}（应回到应用里，且不再显示错误页）`,
+    `错误页还在吗：${stillBroken}`,
   ])
 }
 

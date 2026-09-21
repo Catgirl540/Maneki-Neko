@@ -13,6 +13,7 @@
  *   node tools/check-card-bin-ui.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -36,20 +37,7 @@ const browser = await chromium.launch({ executablePath: await findChrome() })
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' })
 
 const tab = await context.newPage()
-await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-await tab.evaluate(() => {
-  localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-  localStorage.setItem(
-    'luckycat.session.user',
-    JSON.stringify({
-      id: 'u_0001',
-      name: '林小满',
-      phone: '13800138000',
-      memberLevel: '金卡会员',
-      avatarInitial: '林',
-    }),
-  )
-})
+await login(tab, BASE)
 
 /** 收款账户输入框：placeholder 随市场变化 */
 const accountInput = () => tab.locator('input[placeholder*="银行"]').first()
@@ -83,7 +71,7 @@ async function pickBank(keyword, name) {
 /** 等卡 BIN 查询落地（防抖 320ms + mock 140ms，留足余量） */
 const settle = () => tab.waitForTimeout(900)
 
-await tab.goto(`${BASE}/transfer`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/transfer')
 await accountInput().waitFor({ timeout: 15000 })
 
 /* ------------------------------------------- A. 选收款行 → 补全卡号前缀 */
@@ -176,7 +164,7 @@ report(
 )
 
 /* ------------------------------------------- G. 常用收款人不会被认到别家 */
-await tab.goto(`${BASE}/transfer`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/transfer')
 await accountInput().waitFor({ timeout: 15000 })
 await tab.getByRole('button', { name: /陈嘉禾/ }).first().click()
 await settle()

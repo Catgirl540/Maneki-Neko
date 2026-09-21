@@ -3,10 +3,17 @@ import { ToastContext, type ToastTone } from './toast-context'
 import { AlertIcon, CheckIcon } from './icons'
 import { cn } from '@/lib/cn'
 
+/** 一条轻提示停留多久（不含退场动画）。 */
+const TOAST_HOLD_MS = 2600
+/** 退场动画时长，必须和 `.toast-out` 的 `--duration-press` 对上。 */
+const TOAST_EXIT_MS = 140
+
 interface Toast {
   id: number
   message: string
   tone: ToastTone
+  /** 正在退场：换成滑出动画。 */
+  exiting?: boolean
 }
 
 const TONES: Record<ToastTone, { className: string; icon: ReactNode }> = {
@@ -21,7 +28,13 @@ const TONES: Record<ToastTone, { className: string; icon: ReactNode }> = {
   },
 }
 
-/** 极简轻提示：右上角堆叠，2.6s 自动消失 */
+/**
+ * 极简轻提示：右上角堆叠，停留 2.6s 后滑出。
+ *
+ * 退场用**两个**定时器而不是一个：到点先打上 `exiting` 让它滑出去，
+ * 动画放完才真的从列表里摘掉。原来是一个定时器直接删——轻提示是"啪"地没的，
+ * 而它偏偏正是用户盯着看的那个东西。
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const seq = useRef(0)
@@ -30,8 +43,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const id = ++seq.current
     setToasts((prev) => [...prev, { id, message, tone }])
     window.setTimeout(() => {
+      setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, exiting: true } : t)))
+    }, TOAST_HOLD_MS)
+    window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
-    }, 2600)
+    }, TOAST_HOLD_MS + TOAST_EXIT_MS)
   }, [])
 
   const value = useMemo(() => ({ show }), [show])
@@ -48,8 +64,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             className={cn(
-              'float-up flex items-start gap-2.5 rounded-field border px-4 py-3 text-[13px] leading-relaxed',
+              'flex items-start gap-2.5 rounded-field border px-4 py-3 text-[13px] leading-relaxed',
               'shadow-[0_10px_28px_rgba(14,27,38,0.10)]',
+              toast.exiting === true ? 'toast-out' : 'toast-in',
               TONES[toast.tone].className,
             )}
           >

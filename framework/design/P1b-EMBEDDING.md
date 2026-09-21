@@ -22,7 +22,7 @@ DSH **完全没有** embedding 通道：全仓没有 `ctx.embedding`，`packages
 
 | 用例 | 结果 |
 |---|---|
-| 默认路由 `openrouter`（`nvidia/llama-nemotron-embed-vl-1b-v2:free`） | ✅ **2048 维** |
+| 默认路由 `openrouter`（`baai/bge-m3`，2026-09-20 起） | ✅ **1024 维** |
 | 切到 `relayrouter`（`text-embedding-3-small`）**只改一个环境变量** | ✅ **1536 维** |
 | 离线单测（本机 stub HTTP，不联网） | ✅ **11/11** |
 | 变异测试：破坏"按 index 还原顺序" | ✅ 被对应用例抓住 |

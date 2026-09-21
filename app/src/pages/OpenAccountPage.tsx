@@ -528,13 +528,13 @@ function OpenAccountFlow({ standalone = false }: { standalone?: boolean }) {
               </>
             ) : (
               <>
-                <Link to="/" className="flex-1">
+                <Link to="/dashboard" className="flex-1">
                   <Button block>返回总览</Button>
                 </Link>
                 <Link to="/cards" className="flex-1">
                   <Button block>去申请银行卡</Button>
                 </Link>
-                <Button variant="primary" className="flex-1" onClick={() => navigate('/')}>
+                <Button variant="primary" className="flex-1" onClick={() => navigate('/dashboard')}>
                   去转入资金
                 </Button>
               </>

@@ -17,8 +17,8 @@
  *         apiKeyEnv: OPENROUTER_API_KEY   # 只引用变量名，不落密钥
  *         api: openai-embeddings
  *         baseURL: https://openrouter.ai/api/v1
- *         model: nvidia/llama-nemotron-embed-vl-1b-v2:free
- *         dimensions: 2048
+ *         model: baai/bge-m3
+ *         dimensions: 1024
  * ```
  *
  * @module @luckycat/dsh-embedding

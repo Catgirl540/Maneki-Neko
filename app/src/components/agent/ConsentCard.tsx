@@ -61,9 +61,16 @@ export function ConsentCard({
   const expired = now > challenge.expiresAt
   const verified = /^\d{6}$/.test(password)
   const canApprove = !submitting && !expired && (!needsVerification || verified)
+  const secondsLeft = Math.ceil((challenge.expiresAt - now) / 1000)
+  // 只剩 30 秒就把倒计时染红：这张卡过期之后工具就**永远不执行**了，
+  // 用户得重新发起一次。仅仅"数字在变小"不足以表达这件事。
+  const urgent = !expired && secondsLeft <= 30
 
   return (
-    <div className="float-up rounded-card border border-gold bg-gold-wash/50 p-5">
+    // ring-pulse：外面那圈金边响两下就停。这张卡是全站最需要"看一眼"的东西
+    //（它对应运行时里已经挂住的那次工具调用），但它要的是被看到，不是被盯着，
+    // 所以脉冲**不是**无限循环。
+    <div className="pop-in ring-pulse rounded-card border border-gold bg-gold-wash/50 p-5">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-chip bg-gold text-ink">
           <LockIcon size={16} />
@@ -134,7 +141,14 @@ export function ConsentCard({
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <span className="text-[12px] text-ink-mute">{remainingText(challenge.expiresAt, now)}</span>
+        <span
+          className={cn(
+            'num text-[12px] transition-colors duration-[var(--duration-state)]',
+            urgent ? 'font-medium text-coral' : 'text-ink-mute',
+          )}
+        >
+          {remainingText(challenge.expiresAt, now)}
+        </span>
         <span className="ml-auto flex items-center gap-2">
           <Button variant="ghost" size="sm" disabled={submitting} onClick={onReject}>
             取消

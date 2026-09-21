@@ -10,6 +10,7 @@
  *   node tools/check-fx-export.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -42,26 +43,12 @@ const yuan = (text) => Math.round(num(text) * 100)
 const tab = await context.newPage()
 tab.on('pageerror', (e) => console.log('PAGEERROR:', e.message))
 
-await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-await tab.evaluate(() => {
-  localStorage.clear()
-  localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-  localStorage.setItem(
-    'luckycat.session.user',
-    JSON.stringify({
-      id: 'u_0001',
-      name: '林小满',
-      phone: '13800138000',
-      memberLevel: '金卡会员',
-      avatarInitial: '林',
-    }),
-  )
-})
+await login(tab, BASE)
 
 const mainText = async () => (await tab.locator('main').innerText()).replace(/\s+/g, ' ')
 
 // ============================================================ ① 换汇报价
-await tab.goto(`${BASE}/transfer`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/transfer')
 await tab.waitForTimeout(900)
 await tab.getByText('转数快 / 跨境支付通', { exact: true }).first().click()
 await tab.waitForTimeout(400)
@@ -152,7 +139,7 @@ report(
 )
 
 // ============================================================ ④b 回单口径
-await tab.goto(`${BASE}/analysis`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/analysis')
 await tab.waitForTimeout(1000)
 await tab.getByPlaceholder('搜索商户或备注').fill('Wing Chan')
 await tab.waitForTimeout(900)
@@ -175,7 +162,7 @@ report(
 )
 
 // ============================================================ ⑤ CSV 导出
-await tab.goto(`${BASE}/analysis`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/analysis')
 await tab.waitForTimeout(1100)
 const [download] = await Promise.all([
   tab.waitForEvent('download', { timeout: 15000 }),

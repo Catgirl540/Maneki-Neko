@@ -9,6 +9,7 @@
  *   node tools/check-tx-detail.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -30,20 +31,8 @@ const context = await browser.newContext({
 
 async function openTab() {
   const tab = await context.newPage()
-  await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-  await tab.evaluate(() => {
-    localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-    localStorage.setItem(
-      'luckycat.session.user',
-      JSON.stringify({
-        id: 'u_0001',
-        name: '林小满',
-        phone: '13800138000',
-        memberLevel: '金卡会员',
-        avatarInitial: '林',
-      }),
-    )
-  })
+  // 走真实登录流程：手机号 + 密码 + 短信验证码（登录态存 sessionStorage，关标签页即失效）
+  await login(tab, BASE)
   return tab
 }
 
@@ -77,7 +66,7 @@ const cents = (text) =>
 const tab = await openTab()
 
 // —— 1. 从流水点进详情 ——
-await tab.goto(`${BASE}/analysis`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/analysis')
 await tab.waitForTimeout(1200)
 await tab.getByText('FIRWWORKS.AI', { exact: true }).first().click()
 await tab.waitForTimeout(1400)
@@ -131,8 +120,14 @@ report(
 await tab.emulateMedia({ media: 'screen' })
 
 // —— 5. 不存在的交易 ——
-await tab.goto(`${BASE}/transactions/txn_9999`, { waitUntil: 'networkidle' })
-await tab.waitForTimeout(1200)
+await gotoInApp(tab, '/transactions/txn_9999')
+/*
+ * 等空状态**出现**，不能只 sleep 一个固定时长。
+ * 取数是 stale-while-revalidate：换 id 时会先保留上一笔的数据、等新的回来才替换。
+ * 整页加载时初值是空的，所以立刻就是对的；换成应用内换页之后会先看到上一笔，
+ * 固定 sleep 会读到那份旧内容（实测踩到：断言看到的是 txn_0007 的正文）。
+ */
+await tab.getByText('这笔交易查不到了').waitFor({ state: 'visible', timeout: 8_000 }).catch(() => {})
 const emptyText = (await tab.locator('main').innerText()).replace(/\s+/g, ' ')
 report(emptyText.includes('这笔交易查不到了') && emptyText.includes('返回流水'), '⑤ 不存在的交易给空状态', [
   emptyText.slice(0, 90),

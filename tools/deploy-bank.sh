@@ -51,7 +51,8 @@ echo "▶ 线上自检（不依赖 DNS：把域名 --resolve 到本机）"
   # 拿 http 状态码自检的话每一项都是 301，看着像全挂，其实只是被跳转了。
   # --resolve 让 curl 连本机、但带上正确的 SNI 与 Host，证书校验也照常走。
   code() { curl -s -o /dev/null -w '%{http_code}' --resolve '$DOMAIN:443:127.0.0.1' \"https://$DOMAIN\$1\"; }
-  printf '  首页            %s\n' \"\$(code /)\"
+  printf '  官网首页 /       %s\n' \"\$(code /)\"
+  printf '  深链接 /dashboard %s（SPA 回落；未登录会被前端送去登录页）\n' \"\$(code /dashboard)\"
   printf '  深链接 /cards    %s（SPA 回落）\n' \"\$(code /cards)\"
   printf '  行标            %s\n' \"\$(code /banks/cn-102.svg)\"
   printf '  问一个不存在的    %s（SPA 回落也应 200）\n' \"\$(code /no-such-page)\"

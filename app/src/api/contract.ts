@@ -129,7 +129,13 @@ export interface TransactionQuery {
 
 export interface BankApi {
   // —— 身份 ——
-  login(phone: string, password: string): Promise<{ token: string; user: User }>
+  /**
+   * 登录。**三步都要过**：手机号格式、密码、短信验证码。
+   * @param phone - 11 位手机号。
+   * @param password - 登录密码。
+   * @param smsCode - 短信验证码；先调 `sendSmsCode(phone)` 拿。
+   */
+  login(phone: string, password: string, smsCode: string): Promise<{ token: string; user: User }>
   logout(): Promise<void>
   profile(): Promise<User>
 

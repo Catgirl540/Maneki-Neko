@@ -1,0 +1,20 @@
+# 「问用户」能力自带的 bundle 补丁。
+#
+# 三行缺一不可：
+#   user-questions —— **服务定义**（`ctx.userQuestions`），官方包，
+#     不挂它的话后面那个工具会一直"等依赖"，工具面上什么都不会出现。
+#   tool-ask-user  —— 模型看得见的工具 `ask_user_question`，官方包。
+#   luckycat-ask   —— **答复者**，我们自己的。官方只在 DSH 自带的 Web GUI 里
+#     实现了答复者；我们用的是自己的银行网页，所以这一段必须自己写。
+#
+# 为什么这三行能从一个补丁层挂进来，而 `dsh plugin add` 挂不了这些官方包：
+# 前者是"往组合树里插行"，后者要求包自己声明 `dsh.bundle`。
+# 官方这些包都不声明，所以套一层带 `dsh.bundle.patch` 的壳（本包）是唯一的路
+# ——和 `packages/tool-fs` 挂 fs 那几个包是同一个手法。
+- insert:
+    - id: user-questions
+      name: '@deepseek-ai/dsh-user-questions'
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+    - id: luckycat-ask
+      name: '@luckycat/dsh-ask'

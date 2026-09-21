@@ -13,8 +13,10 @@
 
 import {
   MAX_CONVERSATIONS,
+  isEmptyConversation,
   makeConversation,
   messageCount,
+  pruneEmptyConversations,
   relativeTime,
   sanitizeConversations,
   saveConversations,
@@ -117,6 +119,10 @@ eq(relativeTime(base - 30_000, base), '刚刚', '时间：30 秒前还是「刚�
 eq(relativeTime(base - 5 * 60_000, base), '5 分钟前', '时间：5 分钟前')
 eq(relativeTime(base - 3 * 3_600_000, base), '12:30', '时间：同一天只给时刻')
 eq(relativeTime(at('2026-03-09T09:05:00'), base), '昨天 09:05', '时间：昨天带时刻')
+eq(relativeTime(at('2026-03-09T09:05:00'), base, { compact: true }), '昨天',
+  '时间：compact 时省掉昨天的时刻（列表那一行太窄，会被截断）')
+eq(relativeTime(base - 5 * 60_000, base, { compact: true }), '5 分钟前',
+  '时间：compact 不影响比"昨天"更近的那几档')
 eq(relativeTime(at('2026-03-02T09:05:00'), base), '3 月 2 日', '时间：同年更早的日期')
 eq(relativeTime(at('2025-12-31T23:00:00'), base), '2025 年 12 月 31 日', '时间：跨年带年份')
 eq(relativeTime(base + 60_000, base), '刚刚', '时间：设备时钟被调快时不显示负数')
@@ -186,6 +192,55 @@ eq(
   1,
   '读回来：坏时间戳不许把整段丢掉',
 )
+
+/* --------------------------------------------------- 空对话的判定与清理 */
+
+const emptyConv = conversation({ id: 'e' })
+const talkedConv = conversation({
+  id: 't',
+  items: [{ kind: 'user', id: 'u', text: '你好' }],
+})
+report(isEmptyConversation(emptyConv), '空对话：没有内容、也没有 agent 会话 → 是空的')
+report(!isEmptyConversation(talkedConv), '空对话：有内容 → 不是空的')
+// 这一条是关键：agent 会话是发第一句话时才建的，所以有它就一定发过话。
+// 只看内容条数的话，这种会被误判成空的删掉——把一段真用过的对话弄丢。
+report(
+  !isEmptyConversation(conversation({ id: 's', agentSessionId: 'web-1' })),
+  '空对话：有 agent 会话 id 就不算空（哪怕内容被清过，也说明用过）',
+)
+
+eq(
+  pruneEmptyConversations([
+    conversation({ id: 'a', updatedAt: 3 }),
+    conversation({ id: 'e1', updatedAt: 2 }),
+    conversation({ id: 'e2', updatedAt: 1 }),
+  ]).map(c => c.id),
+  ['a'],
+  '清理：有真内容时，空对话一个都不留',
+)
+eq(
+  pruneEmptyConversations([
+    conversation({ id: 'e1', updatedAt: 1 }),
+    conversation({ id: 'e2', updatedAt: 9 }),
+  ]).map(c => c.id),
+  ['e2'],
+  '清理：全是空的时只留最新那一段（列表总得有东西可显示）',
+)
+eq(pruneEmptyConversations([]).map(c => c.id), [], '清理：空列表还是空列表')
+eq(
+  pruneEmptyConversations([conversation({ id: 'a', updatedAt: 1, items: talkedConv.items })]).map(c => c.id),
+  ['a'],
+  '清理：没有空对话时原样返回',
+)
+
+installStorage()
+globalThis.window.localStorage.setItem('luckycat.agent.sessions.v1', JSON.stringify([
+  conversation({ id: 'real', updatedAt: 5, items: talkedConv.items, agentSessionId: 'web-1' }),
+  conversation({ id: 'blank1', updatedAt: 4 }),
+  conversation({ id: 'blank2', updatedAt: 3 }),
+]))
+eq(loadConversations().map(c => c.id), ['real'],
+  '读存档时就把老版本留下的多余空对话清掉（光靠"切走时销毁"清不掉已经躺在盘上的）')
 
 /* -------------------------------------------------------------------- 存回去 */
 

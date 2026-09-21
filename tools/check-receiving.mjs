@@ -12,6 +12,7 @@
  *   node tools/check-receiving.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -52,15 +53,9 @@ const ctx = await browser.newContext({
 })
 const tab = await ctx.newPage()
 
-await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-await tab.evaluate(() => {
-  localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-  localStorage.setItem(
-    'luckycat.session.user',
-    JSON.stringify({ id: 'u_0001', name: '林小满', phone: '13800138000', memberLevel: '金卡会员', avatarInitial: '林' }),
-  )
-})
-await tab.goto(`${BASE}/`, { waitUntil: 'networkidle' })
+await login(tab, BASE)
+// 总览从 `/` 挪到了 `/dashboard`（`/` 现在是公开的官网首页）
+await gotoInApp(tab, '/dashboard')
 await tab.waitForTimeout(700)
 
 const readClipboard = () => tab.evaluate(() => navigator.clipboard.readText())

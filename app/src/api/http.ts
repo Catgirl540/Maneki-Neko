@@ -14,12 +14,13 @@ import type {
   TransferRequest,
   User,
 } from './types'
-import { STORAGE_KEYS, storage } from '@/lib/storage'
+import { getAuthToken } from '@/lib/authToken'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = storage.get<string | null>(STORAGE_KEYS.token, null)
+  // 令牌只存在内存里（不落盘）：刷新即失效，见 lib/authToken.ts
+  const token = getAuthToken()
   const res = await fetch(BASE_URL + path, {
     ...init,
     headers: {
@@ -51,7 +52,7 @@ const patch = <T,>(path: string, body?: unknown) =>
  */
 export function createHttpApi(): BankApi {
   return {
-    login: (phone, password) => post(routes.login(), { phone, password }),
+    login: (phone, password, smsCode) => post(routes.login(), { phone, password, smsCode }),
     logout: () => post<void>(routes.logout()),
     profile: () => request<User>(routes.profile()),
 

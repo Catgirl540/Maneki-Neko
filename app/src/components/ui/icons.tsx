@@ -385,3 +385,42 @@ export const HistoryIcon = (p: IconProps) => (
     <path d="M12 7.8V12l3 1.8" />
   </Icon>
 )
+/** 麦克风：语音输入 */
+export const MicIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="9" y="3" width="6" height="11" rx="3" />
+    <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0" />
+    <path d="M12 18v3" />
+  </Icon>
+)
+
+/** 停止：打断正在朗读的语音 */
+export const StopIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="7" y="7" width="10" height="10" rx="2" />
+  </Icon>
+)
+
+/** 声波：语音模式 */
+export const WaveIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 10v4M8 6.5v11M12 4v16M16 6.5v11M20 10v4" />
+  </Icon>
+)
+
+/** 图片 + 加号：给客服发截图 */
+export const ImagePlusIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="3" y="4.5" width="18" height="15" rx="3" />
+    <path d="m4.5 16.5 4.2-4.2a1.6 1.6 0 0 1 2.3 0l3 3" />
+    <path d="m14.2 14.6 1.7-1.7a1.6 1.6 0 0 1 2.3 0l1.3 1.3" />
+    <circle cx="15.6" cy="9.6" r="1.3" />
+  </Icon>
+)
+
+/** 叉：移除已选的图片 */
+export const CloseIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />
+  </Icon>
+)

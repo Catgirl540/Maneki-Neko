@@ -1078,7 +1078,7 @@ export function TransferPage() {
             <Button block onClick={reset}>
               再转一笔
             </Button>
-            <Link to="/" className="flex-1">
+            <Link to="/dashboard" className="flex-1">
               <Button block variant="primary">
                 返回总览
               </Button>

@@ -24,12 +24,16 @@ dsh 子进程（profile luckycat，DSH_HOME=framework/.dsh-home）
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| GET | `/agent-api/health` | 是否可用 + 当前 provider/model（前端据此决定走真 agent 还是回落固定话术） |
+| GET | `/agent-api/health` | 是否可用 + 语音能力（前端据此决定走真 agent 还是回落固定话术）。**不返回模型名/厂商名**，见 `P11-PERSONA.md` |
 | POST | `/agent-api/sessions` | 建会话 → `{ sessionId }` |
 | GET | `/agent-api/sessions/:id` | **只读**问这段会话还在不在 → `{ sessionId, known, started, busy }`（见下） |
 | POST | `/agent-api/sessions/:id/messages` | `{ text }` → 202 + `{ accepted: true }`（**入队回执，不代表回答完成**） |
 | GET | `/agent-api/sessions/:id/stream` | SSE 事件流 |
 | POST | `/agent-api/consent/:challengeId` | `{ decision, paymentPassword? }` → 校验后放行长轮询 |
+| POST | `/agent-api/questions/:questionId/answer` | `{ answers }` → 校验后放行提问那边挂住的长轮询 |
+| POST | `/agent-api/asr` | `{ audio: 裸 base64, mimeType, language? }` → `{ text, seconds?, cost? }`（语音转文字） |
+| POST | `/agent-api/tts` | `{ text, voice? }` → **原始音频字节** `audio/mpeg`（整段合成，兜底/对照路径） |
+| POST | `/agent-api/tts/stream` | `{ text, voice? }` → **SSE**：`start` → `audio`×N（裸 PCM16 LE 的 base64）→ `end`（上游失败回 `error`）。前端朗读走这条：首帧到达就出声，不等整段合成完（形状见 `P8-VOICE.md`） |
 
 ### 为什么多一个"只读问一句"的接口
 
@@ -56,6 +60,8 @@ SSE 事件的形状（`data:` 一行一个 JSON）：
 | `consent` | `{ challenge }` | **待确认卡片**（展示交易信息 + 身份验证输入） |
 | `consent-resolved` | `{ challengeId, decision }` | 卡片收起（`approve`/`reject`/`timeout`/`abandoned`） |
 | `consent-asked` / `consent-decided` | 审计用 | 语言无关的审计轨迹 |
+| `question` | `{ question: { questionId, sessionId, questions, createdAt, expiresAt } }` | **提问卡片**（单选/多选/自由输入） |
+| `question-resolved` | `{ questionId, answered }` | 卡片收起（`answered=false` = 超时或插件已不等了） |
 | `error` | `{ message }` | 运行失败（含上游模型失败） |
 
 ## 3. 为什么工具结果是占位
@@ -68,6 +74,25 @@ SSE 事件的形状（`data:` 一行一个 JSON）：
 - 卡密工具返回 `0000 0000 0000 0000` 这种不可能被误认成真值的占位。
 
 理由：银行场景里，"返回编造的数据"比"功能没做"更糟——模型会把它当事实告诉客户。
+
+## 3b. 提问通道的形状（插件 → 桥接那一半）
+
+和确认通道**同一个形状**，但网关方向有两半，别搞混：
+
+| 方向 | 端点 | 谁调 |
+| --- | --- | --- |
+| 插件 → 桥接（长轮询，挂住） | `POST /agent-api/questions` | **`@luckycat/dsh-ask` 插件**（不是前端） |
+| 前端 → 桥接（答复） | `POST /agent-api/questions/:questionId/answer` | 网页上的提问卡片 |
+
+只有第二个在前面的前端路径表里——第一个是插件调的，和 `/consent/challenge`
+（同样是插件 → 桥接）是一类，所以放在这里。
+
+请求体：`{ sessionId, questions: [{ id, question, header?, options?, multiSelect? }] }`；
+挂到用户答完，回 `{ answers: [{ id, selected: [], custom? }] }`；超时回 `{ "answers": [] }`。
+
+完整的字段口径、校验分工与踩过的坑（超时不等于拒绝、空白答复不能结算、
+插件放弃后答复要拿 404）见 `framework/design/P12-ASK.md` 与
+`design/backend-handoff/AGENT-RUNTIME-CONTRACT.md` 的「模型问用户」一节。
 
 ## 4. 确认通道的形状（后端要实现的就这一段）
 
@@ -128,7 +153,7 @@ npm run dev                          # http://localhost:5180
 | 变量 | 默认 | 作用 |
 | --- | --- | --- |
 | `LUCKYCAT_DEMO_PORT` | 8788 | 监听端口（只绑 127.0.0.1） |
-| `LUCKYCAT_PROVIDER` / `LUCKYCAT_MODEL` | `openrouter` / `inclusionai/ling-3.0-flash-vl:free` | 模型路由 |
+| `LUCKYCAT_PROVIDER` / `LUCKYCAT_MODEL` | `openrouter` / `qwen/qwen3.8-flash` | 模型路由（理由见 `P1-MODEL-ROUTING.md`） |
 | `LUCKYCAT_DEMO_PASSWORD` | `123456` | 演示用支付密码 |
 | `LUCKYCAT_DEMO_TOKEN` | 空 | 设了以后所有请求都要带 `x-luckycat-token` |
 | `LUCKYCAT_PATCHES` | 空 | 额外 profile overlay（自检用） |

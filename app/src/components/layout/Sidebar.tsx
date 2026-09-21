@@ -17,7 +17,7 @@ import { cn } from '@/lib/cn'
 import { greeting } from '@/lib/format'
 
 const NAV = [
-  { to: '/', label: '总览', Icon: HomeIcon },
+  { to: '/dashboard', label: '总览', Icon: HomeIcon },
   { to: '/transfer', label: '转账', Icon: TransferIcon },
   { to: '/cards', label: '银行卡', Icon: CardIcon },
   { to: '/analysis', label: '消费分析', Icon: ChartIcon },
@@ -50,7 +50,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           collapsed ? 'flex-col items-center gap-3' : 'items-center justify-between',
         )}
       >
-        <NavLink to="/" title="招财猫银行" className="min-w-0">
+        <NavLink to="/dashboard" title="招财猫银行" className="min-w-0">
           {collapsed ? (
             <CatMark className="size-9 text-gold" />
           ) : (
@@ -112,11 +112,16 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <>
                 <Icon size={20} className={isActive ? 'text-gold' : 'text-ink-mute'} />
                 {!collapsed && label}
-                {/* 右侧金色指示条，落在侧栏描边上 */}
+                {/* 右侧金色指示条，落在侧栏描边上。
+                    用 `.nav-marker` 滑进来而不是直接出现：切路由时它是整页唯一
+                    "跟着走"的东西，硬切会显得页面是跳过去的。
+                    定中的 `translateY(-50%)` 写在关键帧里（见 global.css），
+                    所以这里**不能**再挂 Tailwind 的 `-translate-y-1/2`——
+                    两处都写会被后者覆盖掉。 */}
                 {isActive && (
                   <span
                     className={cn(
-                      'absolute top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-l-full bg-gold',
+                      'nav-marker absolute top-1/2 h-7 w-[3px] rounded-l-full bg-gold',
                       collapsed ? '-right-3.5' : '-right-6',
                     )}
                   />

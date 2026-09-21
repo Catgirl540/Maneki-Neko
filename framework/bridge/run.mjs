@@ -12,7 +12,7 @@
  * 环境变量：
  *   OPENROUTER_API_KEY / LOCAL_API_KEY —— 由 profile 的 apiKeyEnv 引用，脚本不打印它们
  *   LUCKYCAT_PROVIDER  默认 openrouter
- *   LUCKYCAT_MODEL     默认 inclusionai/ling-3.0-flash-vl:free（2026-09-17 实测 3.2s 可用）
+ *   LUCKYCAT_MODEL     默认 qwen/qwen3.8-flash（唯一能过 e2e-consent 的那个；付费档实测过载/不调工具，详见 profiles/luckycat/cordis.patch.yml 的注释）
  */
 
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
@@ -28,7 +28,7 @@ process.env.DSH_HOME = home
 
 const prompt = process.argv.slice(2).join(' ') || '用一句话自我介绍。'
 const provider = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
-const model = process.env.LUCKYCAT_MODEL ?? 'inclusionai/ling-3.0-flash-vl:free'
+const model = process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash'
 // 可选的额外 overlay（冒号或逗号分隔），用于挂自检插件。
 const patches = (process.env.LUCKYCAT_PATCHES ?? '')
   .split(/[:,]/)

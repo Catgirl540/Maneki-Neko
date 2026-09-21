@@ -10,6 +10,7 @@
  *   node tools/check-scroll-top.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -32,14 +33,7 @@ const report = (ok, title, lines = []) => {
 const browser = await chromium.launch({ executablePath: await findChrome() })
 const tab = await (await browser.newContext({ viewport: { width: 1280, height: 560 }, locale: 'zh-CN' })).newPage()
 
-await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-await tab.evaluate(() => {
-  localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-  localStorage.setItem(
-    'luckycat.session.user',
-    JSON.stringify({ id: 'u_0001', name: '林小满', phone: '13800138000', memberLevel: '金卡会员', avatarInitial: '林' }),
-  )
-})
+await login(tab, BASE)
 
 const scrollY = () => tab.evaluate(() => Math.round(window.scrollY))
 /**
@@ -70,7 +64,8 @@ const NAVS = ['转账', '银行卡', '消费分析', '理财', '安全中心']
 
 // 视口取 1280×560：实测这个高度下几个栏目都超过一屏，每条都能真的滚下去再切
 
-await tab.goto(`${BASE}/`, { waitUntil: 'networkidle' })
+// 起点必须是带侧栏的应用内页面：`/` 现在是公开官网，没有那排栏目导航
+await gotoInApp(tab, '/dashboard')
 await tab.waitForTimeout(600)
 
 const rows = []
@@ -101,7 +96,7 @@ report(
 )
 
 /* ------------------------------------------------ ② 详情页也要回到顶部 */
-await tab.goto(`${BASE}/analysis`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/analysis')
 await tab.waitForTimeout(700)
 const beforeDetail = await scrollToBottom()
 const firstTx = tab.locator('a[href^="/transactions/"]').first()
@@ -130,7 +125,7 @@ report(
 )
 
 /* ------------------------------------------------ ④ 页内 query 变化不该被拽回顶部 */
-await tab.goto(`${BASE}/analysis`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/analysis')
 await tab.waitForTimeout(700)
 const kept = await tab.evaluate(async () => {
   window.scrollTo(0, 320)

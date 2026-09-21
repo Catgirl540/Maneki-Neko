@@ -5,6 +5,7 @@
  *   node tools/shoot.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login } from './lib/session.mjs'
 import { mkdir, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -13,8 +14,11 @@ const BASE = process.argv[2] ?? 'http://127.0.0.1:5180'
 const OUT = path.resolve(import.meta.dirname, '../design/shots')
 
 const PAGES = [
+  // 官网首页是公开的：截图脚本里它也不需要登录态
+  { name: '00-landing', path: '/', auth: false },
+  { name: '00-landing-mobile', path: '/', auth: false, width: 390 },
   { name: '01-login', path: '/login', auth: false },
-  { name: '02-dashboard', path: '/', auth: true },
+  { name: '02-dashboard', path: '/dashboard', auth: true },
   { name: '03-transfer', path: '/transfer', auth: true },
   { name: '04-cards', path: '/cards', auth: true },
   { name: '05-analysis', path: '/analysis', auth: true },
@@ -29,7 +33,7 @@ const PAGES = [
     viewportOnly: true,
     collapsed: true,
   },
-  { name: '10-dashboard-collapsed', path: '/', auth: true, collapsed: true },
+  { name: '10-dashboard-collapsed', path: '/dashboard', auth: true, collapsed: true },
   // 转账两条通道
   { name: '11-transfer-fps', path: '/transfer', auth: true, clicks: ['转数快 / 跨境支付通'] },
   {
@@ -160,30 +164,26 @@ const context = await browser.newContext({
 
 for (const page of PAGES) {
   const tab = await context.newPage()
+  // 单页可以指定视口宽度：手机版那一张要和 1440 宽的分开截，
+  // 光靠 `fullPage` 截不出窄屏的换行效果。
+  if (page.width !== undefined) await tab.setViewportSize({ width: page.width, height: 844 })
+  /*
+   * 要登录的页面走真实登录流程（手机号 + 密码 + 短信验证码）：
+   * 登录态现在只在内存里，往 localStorage 写 token 已经不起作用了。
+   * 侧栏折叠那个偏好**仍然存在 localStorage**（它不是登录态），照旧先写。
+   */
   await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-  await tab.evaluate(
-    ({ auth, collapsed }) => {
-      if (auth) {
-        localStorage.setItem('luckycat.token', JSON.stringify('shot.token'))
-        localStorage.setItem(
-          'luckycat.session.user',
-          JSON.stringify({
-            id: 'u_0001',
-            name: '林小满',
-            phone: '13800138000',
-            memberLevel: '金卡会员',
-            avatarInitial: '林',
-          }),
-        )
-        localStorage.setItem('luckycat.ui.sidebarCollapsed', JSON.stringify(!!collapsed))
-      } else {
-        localStorage.clear()
-      }
-    },
-    { auth: page.auth, collapsed: page.collapsed },
-  )
+  await tab.evaluate(({ auth, collapsed }) => {
+    if (auth) localStorage.setItem('luckycat.ui.sidebarCollapsed', JSON.stringify(!!collapsed))
+    else localStorage.clear()
+  }, { auth: page.auth, collapsed: page.collapsed })
 
-  await tab.goto(`${BASE}${page.path}`, { waitUntil: 'networkidle' })
+  if (page.auth) {
+    await login(tab, BASE, { to: page.path })
+  } else {
+    await tab.evaluate(() => localStorage.clear())
+    await tab.goto(`${BASE}${page.path}`, { waitUntil: 'networkidle' })
+  }
   await tab.waitForTimeout(900)
 
   // 破坏数据后必须整页重新加载：mock 库在模块内还有一份内存缓存，
@@ -195,7 +195,8 @@ for (const page of PAGES) {
       localStorage.setItem('luckycat.mock.db', JSON.stringify(db))
       return db.transactions[0].id
     })
-    await tab.goto(`${BASE}/transactions/${id}`, { waitUntil: 'networkidle' })
+    // 同上：这里要的是一次**整页重载**（让应用重新读盘），顺便确保登录态在位
+    await login(tab, BASE, { to: `/transactions/${id}` })
     await tab.waitForTimeout(900)
   }
 

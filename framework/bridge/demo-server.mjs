@@ -1,18 +1,20 @@
 /**
  * 招财猫 agent 演示服务：浏览器 ↔ agent 运行时之间的那一段。
  *
- * 它做三件事：
+ * 它做四件事：
  *   1. **驱动 agent 运行时**（子进程 + stdio JSON-RPC，官方姿势）；
  *   2. 把会话事件流整理成 SSE，推给网页；
  *   3. **充当敏感操作的确认通道**：agent 插件把待确认事项 POST 到这里并挂住，
- *      等服务把用户在网页上的答复返回。
+ *      等服务把用户在网页上的答复返回；
+ *   4. **代为访问语音服务**（`/agent-api/asr`、`/agent-api/tts`）——密钥只在服务端，
+ *      浏览器永远拿不到它。
  *
  * 为什么支付密码只到这里、不到 agent：agent 进程里跑的是模型与工具，
  * 它只需要知道"这个人验证通过了"，不需要也不应该拿到密码。
  * 所以浏览器把密码交给本服务校验，agent 侧只收到一张"已验证"的答复。
  *
  * 真实后端上线时，把本文件换成后端即可：agent 侧的接口面（JSON-RPC 与确认通道的
- * JSON 形状）都不变。
+ * JSON 形状）都不变；语音那两个接口同理（形状见 `design/P8-VOICE.md`）。
  *
  * 用法：
  *   node bridge/demo-server.mjs
@@ -21,19 +23,31 @@
  * 环境变量：
  *   LUCKYCAT_DEMO_PORT  监听端口，默认 8788
  *   LUCKYCAT_PROVIDER   模型路由，默认 openrouter
- *   LUCKYCAT_MODEL      模型名，默认 inclusionai/ling-3.0-flash-vl:free
+ *   LUCKYCAT_MODEL      模型名，默认 qwen/qwen3.8-flash
  *   LUCKYCAT_DEMO_PASSWORD 演示用支付密码，默认 123456
  *   LUCKYCAT_DEMO_TOKEN    可选的访问口令；设了以后所有请求都要带
  *                          `x-luckycat-token` 头（演示服务默认只监听本机）
  *   LUCKYCAT_PATCHES       可选的额外 profile overlay（冒号或逗号分隔绝对路径），
  *                          用于端到端自检时改超时一类的参数
+ *   LUCKYCAT_TTS_MODEL   TTS 模型，默认 qwen/qwen-audio-3.0-tts-plus
+ *   LUCKYCAT_TTS_VOICE   TTS 音色，默认 longanlingxin（中文女声）
+ *   LUCKYCAT_VOLC_APP_ID / LUCKYCAT_VOLC_ACCESS_TOKEN  流式 TTS 的火山凭据
+ *                     （不设时退回 VOLC_APP_ID / VOLC_ACCESS_TOKEN；缺了就 502）
+ *   LUCKYCAT_VOLC_RESOURCE 流式 TTS 资源，默认 seed-tts-2.0
+ *   LUCKYCAT_VOLC_SPEAKER  流式 TTS 音色，默认 zh_female_xiaohe_uranus_bigtts
+ *   LUCKYCAT_VOLC_SAMPLE_RATE 流式 TTS 采样率，默认 24000
+ *   LUCKYCAT_ASR_MODEL   ASR 模型，默认 qwen/qwen3-asr-0.6b
+ *   LUCKYCAT_DISABLE_VOICE=1 关掉语音接口（用来验证"没有语音能力时页面怎么退让"）
  */
 
 import { createServer } from 'node:http'
+import { createHash } from 'node:crypto'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, randomBytes } from 'node:crypto'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
+import { streamVolcTTS } from './volc-stream.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -44,7 +58,7 @@ process.env.DSH_HOME = home
 
 const PORT = Number(process.env.LUCKYCAT_DEMO_PORT ?? 8788)
 const PROVIDER = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
-const MODEL = process.env.LUCKYCAT_MODEL ?? 'inclusionai/ling-3.0-flash-vl:free'
+const MODEL = process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash'
 const DEMO_PASSWORD = process.env.LUCKYCAT_DEMO_PASSWORD ?? '123456'
 const ACCESS_TOKEN = process.env.LUCKYCAT_DEMO_TOKEN ?? ''
 /** 可选的额外 overlay（冒号或逗号分隔绝对路径），端到端自检用。 */
@@ -57,17 +71,188 @@ const CONSENT_TIMEOUT_MS = Number(process.env.LUCKYCAT_CONSENT_TIMEOUT_MS ?? 180
 /** 请求体上限；防止有人往这里灌垃圾。 */
 const MAX_BODY_BYTES = 256 * 1024
 
+/* ------------------------------------------------------------------ 语音 */
+
+/** 语音接口的开关（自检时可以用它验证"没有语音能力时页面怎么退让"）。 */
+const VOICE_ENABLED = process.env.LUCKYCAT_DISABLE_VOICE !== '1'
+const TTS_MODEL = process.env.LUCKYCAT_TTS_MODEL ?? 'qwen/qwen-audio-3.0-tts-plus'
+const TTS_VOICE = process.env.LUCKYCAT_TTS_VOICE ?? 'longanlingxin'
+const ASR_MODEL = process.env.LUCKYCAT_ASR_MODEL ?? 'qwen/qwen3-asr-0.6b'
+
+/*
+ * 流式 TTS（火山引擎语音技术）的配置。
+ * 凭据只从这里来（环境变量），绝不打印、绝不入库：
+ *   LUCKYCAT_VOLC_APP_ID / LUCKYCAT_VOLC_ACCESS_TOKEN（或直接 VOLC_APP_ID / VOLC_ACCESS_TOKEN）
+ *   LUCKYCAT_VOLC_RESOURCE  → seed-tts-2.0（决定音色体系与计费）
+ *   LUCKYCAT_VOLC_SPEAKER   → 实测 zh_female_xiaohe_uranus_bigtts 可配 seed-tts-2.0
+ *   LUCKYCAT_VOLC_SAMPLE_RATE → 流式返回裸 PCM，采样率默认 24000
+ */
+const VOLC_APP_ID = process.env.LUCKYCAT_VOLC_APP_ID ?? process.env.VOLC_APP_ID ?? ''
+const VOLC_ACCESS_TOKEN = process.env.LUCKYCAT_VOLC_ACCESS_TOKEN ?? process.env.VOLC_ACCESS_TOKEN ?? ''
+const VOLC_RESOURCE = process.env.LUCKYCAT_VOLC_RESOURCE ?? 'seed-tts-2.0'
+const VOLC_SPEAKER = process.env.LUCKYCAT_VOLC_SPEAKER ?? 'zh_female_xiaohe_uranus_bigtts'
+const VOLC_SAMPLE_RATE = Number(process.env.LUCKYCAT_VOLC_SAMPLE_RATE ?? 24000)
+/**
+ * 语音请求体的上限，比普通接口大得多：一段 60 秒的 Opus 录音大约半兆，
+ * base64 之后还要再涨三分之一。用通用的 256KB 会在录音稍长时直接被拒。
+ */
+const MAX_AUDIO_BYTES = 12 * 1024 * 1024
+/**
+ * 一条消息里图片的 base64 上限。
+ *
+ * 比 `MAX_BODY_BYTES`（256KB）大得多，因为图片本来就是几百 KB 起；
+ * 但也不能不设——运行时那边的默认上限是单张 20MB，让这么长的 base64 走进来
+ * 只是把失败推迟到更贵的地方。
+ *
+ * 注意配套的 **body 上限**：`/messages` 那条路由必须用
+ * `MAX_IMAGE_BODY_BYTES` 去 `readBody`，不能用通用的 `MAX_BODY_BYTES`——
+ * 否则超过 256KB 的图会在读 body 那一步就把连接掐掉（客户端看到的是
+ * `ECONNRESET`，而不是下面那条清清楚楚的 413）。这是实测踩到的。
+ */
+/** 用户上传的图片放这里。**在 .dsh-home 下**（已被 gitignore），不混进仓库。 */
+const UPLOAD_ROOT = join(home, 'uploads')
+
+/**
+ * 账户目录名的白名单。
+ *
+ * 账户标识会**变成路径的一段**，所以绝不能直接拼进路径：
+ * `accountId = '../../../etc'` 就能把图片写到外面去（路径穿越）。
+ * 这里只放行字母数字和 `-` `_`，别的一律拒绝——不是"过滤掉危险字符"，
+ * 而是**不匹配就拒绝**（过滤的思路永远会漏，白名单不会）。
+ */
+const ACCOUNT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/
+
+/**
+ * 取某个账户的上传目录。
+ * @param accountId - 账户/用户标识，来自前端。
+ * @returns 该账户的目录绝对路径。
+ * @throws 标识不合法时抛错（调用方要转成 400，不能默默回退到公共目录——
+ *   那样"隔离"就变成了"大家都写同一处"）。
+ */
+function accountUploadDir(accountId) {
+  if (!ACCOUNT_ID_PATTERN.test(accountId)) {
+    throw new Error('账户标识不合法')
+  }
+  return join(UPLOAD_ROOT, accountId)
+}
+
+/**
+ * 一次问询最多等多久。到点回**空答复**（不是"用户拒绝"，见 `/agent-api/questions` 的注释）。
+ * 与插件侧的 `timeoutMs` 是两道独立的闸：插件那道先到的话，它会主动断开这个请求。
+ */
+const QUESTION_TIMEOUT_MS = Number(process.env.LUCKYCAT_QUESTION_TIMEOUT_MS ?? 180_000)
+/** 一次最多问几道题（与插件侧 `MAX_QUESTIONS` 对齐）。 */
+const MAX_QUESTIONS = 10
+/** 图片单张的 base64 上限。 */
+const MAX_IMAGE_BYTES = 6 * 1024 * 1024
+/**
+ * 带图消息的 **body** 上限（防洪闸），刻意**高于** `MAX_IMAGE_BYTES` 一倍。
+ *
+ * 两个上限管的是两件事，不能贴在一起：
+ *   · `MAX_IMAGE_BYTES` 是**策略**上限 —— 超了回一条清清楚楚的 413；
+ *   · 这个 body 上限是**防洪**闸 —— 超了直接掐连接（`req.destroy()`），
+ *     连状态码都不给（对方很可能根本不是在正常发消息）。
+ *
+ * 第一版把防洪闸设成 `MAX_IMAGE_BYTES + 1MB`，结果测试发的 7MB 先撞上它、
+ * 被掐成 `ECONNRESET`，那条 413 永远走不到——**策略上限形同虚设**。
+ * 所以防洪闸要留出足够余量，让所有"只是图太大"的请求都能被完整读进来、
+ * 然后由策略上限正式拒掉。
+ */
+const MAX_IMAGE_BODY_BYTES = MAX_IMAGE_BYTES * 2
+/** 认得的图片格式。不在这个名单里就明确拒绝，不猜。 */
+const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+/** 语音上游一次最多等多久。实测 TTS/ASR 各约 2~3 秒，给足余量但必须有上限。 */
+const VOICE_TIMEOUT_MS = 45_000
+/** 一次合成最多念多少字：按字数计费，而且长回复念起来没完。 */
+const TTS_MAX_CHARS = 600
+/**
+ * 一次录音最长多少秒。
+ *
+ * 不是为了省钱，是**上游的硬限制**：转录端点是"约 60 秒的处理时间"上限，
+ * 超了会直接失败。所以录音端就要卡住，而不是等用户说了两分钟再报错。
+ */
+const VOICE_MAX_SECONDS = Number(process.env.LUCKYCAT_VOICE_MAX_SECONDS ?? 60)
+/** 流式合成：总超时与帧间空闲超时。PCM 一帧通常几十到几百毫秒一帧，给足余量。 */
+const TTS_STREAM_TIMEOUT_MS = Number(process.env.LUCKYCAT_TTS_STREAM_TIMEOUT_MS ?? 60_000)
+const TTS_STREAM_IDLE_MS = Number(process.env.LUCKYCAT_TTS_STREAM_IDLE_MS ?? 15_000)
+
+/**
+ * 浏览器的录音 MIME 类型 → OpenRouter 要的格式名。
+ *
+ * 浏览器给的是一整串（`audio/webm;codecs=opus`），而 OpenRouter 只认那几个词。
+ *
+ * 不认识的**一律拒绝（415），不猜一个**。实测把这个宽容度量清楚了：
+ *   · 格式名完全不存在（如 `definitely-not-real`）→ 上游 400；
+ *   · 格式名**存在但写错**（webm 的字节标成 `mp3`）→ 上游照样正确转录，
+ *     它是按容器内容嗅探的，不看你写的那个词。
+ * 也就是说"猜错"不会立刻报错——这正是宁可拒绝也不猜的理由：这条路上一旦
+ * 出问题就是静默的，而静默的错误比一个 415 难查得多。
+ */
+const AUDIO_FORMATS = new Map([
+  ['audio/webm', 'webm'],
+  ['audio/ogg', 'ogg'],
+  ['audio/mp4', 'm4a'],
+  ['audio/mpeg', 'mp3'],
+  ['audio/wav', 'wav'],
+  ['audio/x-wav', 'wav'],
+  ['audio/flac', 'flac'],
+  ['audio/aac', 'aac'],
+])
+
+/**
+ * 把浏览器给的 MIME 类型映射成 OpenRouter 的格式名。
+ * @param mimeType - 例如 `audio/webm;codecs=opus`。
+ * @returns 格式名；不认识时返回 undefined。
+ */
+function audioFormatOf(mimeType) {
+  const base = String(mimeType ?? '').split(';')[0].trim().toLowerCase()
+  return AUDIO_FORMATS.get(base)
+}
+
+/** 语音上游的地址（与 agent 用同一个 key）。 */
+const OPENROUTER_BASE = (process.env.LUCKYCAT_OPENROUTER_BASE ?? 'https://openrouter.ai/api/v1').replace(/\/$/, '')
+
+/**
+ * 调一次语音上游。
+ * @param path - 相对路径，例如 `/audio/speech`。
+ * @param body - JSON 请求体。
+ * @returns 上游的原始响应。
+ */
+async function callVoiceUpstream(path, body) {
+  const key = process.env.OPENROUTER_API_KEY ?? ''
+  if (key === '') throw new Error('服务端没有配置 OPENROUTER_API_KEY，语音不可用')
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(new Error('语音上游超时')), VOICE_TIMEOUT_MS)
+  try {
+    return await fetch(`${OPENROUTER_BASE}${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+
 /* ------------------------------------------------------------------ 小工具 */
 
-/** 读请求体（有上限），返回字符串。 */
-function readBody(req) {
+/**
+ * 读请求体（有上限），返回字符串。
+ * @param req - 请求。
+ * @param maxBytes - 上限。默认是通用的 {@link MAX_BODY_BYTES}；
+ *   语音那条路要传 {@link MAX_AUDIO_BYTES}（一段录音比一条消息大三个数量级）。
+ * @returns 请求体文本。
+ */
+function readBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolvePromise, rejectPromise) => {
     let size = 0
     const chunks = []
     req.on('data', (chunk) => {
       size += chunk.length
-      if (size > MAX_BODY_BYTES) {
-        rejectPromise(new Error(`请求体超过 ${MAX_BODY_BYTES} 字节`))
+      if (size > maxBytes) {
+        rejectPromise(new Error(`请求体超过 ${maxBytes} 字节`))
         req.destroy()
         return
       }
@@ -79,8 +264,8 @@ function readBody(req) {
 }
 
 /** 读 JSON 请求体；空体返回 {}。 */
-async function readJson(req) {
-  const text = await readBody(req)
+async function readJson(req, maxBytes = MAX_BODY_BYTES) {
+  const text = await readBody(req, maxBytes)
   if (text.trim() === '') return {}
   try {
     return JSON.parse(text)
@@ -144,6 +329,36 @@ function settleConsent(challengeId, answer) {
   pendingConsents.delete(challengeId)
   clearTimeout(entry.timer)
   publish(entry.challenge.sessionId, { type: 'consent-resolved', challengeId, decision: answer?.decision ?? 'timeout' })
+  entry.resolve(answer)
+  return true
+}
+
+/* ------------------------------------------------- 提问通道（agent → 用户） */
+
+/**
+ * 待答复的问题表：questionId → { question, answers, resolve, timer }。
+ *
+ * 和确认通道**同一个形状**，但语义不同：确认是"这个操作能不能执行"（fail-closed），
+ * 提问只是"收集信息"，答不上来不会放行任何东西。所以这里没有票据、没有验证。
+ */
+const pendingQuestions = new Map()
+
+/** 问询 id：随机 nonce，答复必须带同一个才会被接受（防旧答复被重放给新问题）。 */
+function newQuestionId() {
+  return `q_${randomBytes(12).toString('hex')}`
+}
+
+/** 结束一次问询。 */
+function settleQuestion(questionId, answer) {
+  const entry = pendingQuestions.get(questionId)
+  if (entry === undefined) return false
+  pendingQuestions.delete(questionId)
+  clearTimeout(entry.timer)
+  publish(entry.sessionId, {
+    type: 'question-resolved',
+    questionId,
+    answered: answer !== undefined,
+  })
   entry.resolve(answer)
   return true
 }
@@ -249,7 +464,7 @@ function sessionOf(sessionId) {
  * 跑一轮对话：把事件推给 SSE，直到 agent 空闲。
  * 刻意**不** await 在 HTTP 处理器里——prompt 的语义是"入队"，与上游一致。
  */
-async function runTurn(sessionId, text) {
+async function runTurn(sessionId, input) {
   const entry = sessionOf(sessionId)
   if (entry.busy) {
     publish(sessionId, { type: 'error', message: '上一轮还在进行中，请等它结束。' })
@@ -262,7 +477,7 @@ async function runTurn(sessionId, text) {
     entry.handle ??= active.session(sessionId)
     // 递提示词之前打上标记：这一步之后运行时里就有这个会话了。
     entry.started = true
-    const result = await entry.handle.run(text, {
+    const result = await entry.handle.run(input, {
       onNotification: (notification) => {
         if (notification.method !== 'session.event') return
         const projected = projectEvent(sessionId, notification.params.event)
@@ -311,7 +526,26 @@ async function handle(req, res) {
 
   // 健康探测：网页据此决定走真 agent 还是回落固定话术。
   if (req.method === 'GET' && parts.join('/') === 'agent-api/health') {
-    sendJson(res, 200, { ok: true, provider: PROVIDER, model: MODEL, sessions: sessions.size })
+    /*
+     * 这个响应**不回模型名、厂商名、语音模型名**。
+     *
+     * 它是浏览器直接调的，用户在开发者工具里就能看到——"界面上不显示"
+     * 挡不住这一步。所以隐藏要在**源头**做：这里只回"服务在不在"和
+     * "有哪些能力"，模型与厂商只写进服务端启动日志（运维看得见，用户看不到）。
+     *
+     * 改这条路由时注意：`app/src/api/agent.ts` 的 `AgentHealth` 是配套的，
+     * 加了字段要一起改；`tools/check-persona.mjs` 断言这个响应里
+     * **不存在** `model` / `provider` 这类键。
+     */
+    sendJson(res, 200, {
+      ok: true,
+      sessions: sessions.size,
+      // 语音能力一并报出去：页面据此决定要不要显示「语音模式」，
+      // 而不是等用户按下去才发现服务端没配。只报"有没有"，不报"用的哪个模型"。
+      voice: VOICE_ENABLED
+        ? { asr: true, tts: true, maxSeconds: VOICE_MAX_SECONDS }
+        : { asr: false, tts: false },
+    })
     return
   }
 
@@ -340,14 +574,76 @@ async function handle(req, res) {
   // 发消息
   if (req.method === 'POST' && parts.length === 4 && parts[0] === 'agent-api' && parts[1] === 'sessions' && parts[3] === 'messages') {
     const sessionId = parts[2]
-    const body = await readJson(req)
+    const body = await readJson(req, MAX_IMAGE_BODY_BYTES)
     const text = typeof body.text === 'string' ? body.text.trim() : ''
-    if (text === '') {
+    const image = body.image
+    // 图片是选填的，但"文字和图片都空"没有意义
+    if (text === '' && image === undefined) {
       sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
+    let blocks
+    if (image !== undefined) {
+      const data = typeof image?.data === 'string' ? image.data : ''
+      const mimeType = typeof image?.mimeType === 'string' ? image.mimeType : ''
+      if (data === '') {
+        sendJson(res, 400, { error: '图片内容为空' })
+        return
+      }
+      if (data.length > MAX_IMAGE_BYTES) {
+        sendJson(res, 413, { error: `图片太大（上限 ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB）` })
+        return
+      }
+      if (!IMAGE_MIME_TYPES.has(mimeType)) {
+        sendJson(res, 415, { error: `不认识的图片格式：${mimeType}`, accepted: [...IMAGE_MIME_TYPES] })
+        return
+      }
+      /*
+       * 两件事都做，各管一头：
+       *
+       *   1) **内联图片块**进模型上下文 —— 这才是"真发给 agent"（A 方案）。
+       *      模型直接看见像素，不需要任何工具去取。
+       *   2) **落到本账户的上传目录** —— 审计留档 + 账户隔离。
+       *
+       * 之前只做了第 2 件，还叫 agent「用 read 工具读取它」——**这条是错的**：
+       * `read` 是读文本的，读图是另一个工具 `read_image`。实测模型照办后
+       * 拿到的是二进制乱码。改内联块之后就不存在这个错配。
+       *
+       * 内联块需要 `ctx.attachments` 才能登录（SDK 原文：`SDK image prompt
+       * requires an attachment store`），所以 profile 里挂上了官方
+       * `@deepseek-ai/dsh-attachment-local`。
+       */
+      const accountId = typeof body.accountId === 'string' ? body.accountId : ''
+      if (accountId === '') {
+        sendJson(res, 400, { error: '缺少 accountId（图片要按账户隔离存放）' })
+        return
+      }
+      let dir
+      try {
+        dir = accountUploadDir(accountId)
+      } catch {
+        sendJson(res, 400, { error: 'accountId 不合法' })
+        return
+      }
+      await mkdir(dir, { recursive: true, mode: 0o700 })
+      // 文件名用内容哈希：同一张图重复发不会堆一堆副本，也不怕同名覆盖
+      const digest = createHash('sha256').update(Buffer.from(data, 'base64')).digest('hex').slice(0, 16)
+      const extension = mimeType.split('/')[1] ?? 'bin'
+      const filePath = join(dir, `${digest}.${extension}`)
+      await writeFile(filePath, Buffer.from(data, 'base64'), { mode: 0o600 })
+      /*
+       * 这里**不**写任何路径提示。写了会诱导模型去调 `read`/`read_image`，
+       * 而图片已经内联在上下文里了；白名单也解释了这一点（只放行 read）。
+       * 归档路径只进服务端日志，不进模型上下文。
+       */
+      console.log(`[demo-server] 图片已归档：${filePath}`)
+      blocks = []
+      if (text !== '') blocks.push({ type: 'text', text })
+      blocks.push({ type: 'image', data, mimeType })
+    }
     sessionOf(sessionId)
-    void runTurn(sessionId, text)
+    // 只有文字时仍然按字符串递——那是走熟了的路，没必要为图片把它改掉
+    void runTurn(sessionId, blocks ?? text)
     sendJson(res, 202, { accepted: true })
     return
   }
@@ -428,6 +724,308 @@ async function handle(req, res) {
     }
     settleConsent(challengeId, { decision: 'approve', challengeId })
     sendJson(res, 200, { ok: true, decision })
+    return
+  }
+
+  /* ------------------------------------------------------------ 提问通道 */
+
+  /*
+   * 提问通道（agent 插件 → 这里，长轮询）。
+   *
+   * 和 `/consent/challenge` 完全同形：插件把问题 POST 过来，这个请求**挂住**，
+   * 我们通过 SSE 把卡片推给网页，等用户在卡片上答完再把这个响应写回去。
+   * agent 那边的 `ask_user_question` 就是被这一个请求挂住的。
+   *
+   * 参数形状**在这里就校验**：插件侧也校验（`channel.ts` 的 `parseQuestions`），
+   * 两边都查是刻意的——这条链上任何一侧单独失守都不该让一个畸形卡片出现在用户面前。
+   */
+  if (req.method === 'POST' && url.pathname === '/agent-api/questions') {
+    const body = await readJson(req, MAX_BODY_BYTES)
+    const questions = body.questions
+    if (!Array.isArray(questions) || questions.length === 0) {
+      sendJson(res, 400, { error: 'questions 必须是非空数组' })
+      return
+    }
+    if (questions.length > MAX_QUESTIONS) {
+      sendJson(res, 400, { error: `一次最多问 ${MAX_QUESTIONS} 道题` })
+      return
+    }
+    // sessionId 决定这张卡片推给谁。插件从 agent 会话里取，缺了就没人能收到卡片——
+    // 明确拒绝，而不是"挂住直到超时"（那样用户和模型都只会看到一个没头没尾的等待）。
+    const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
+    if (sessionId === '') {
+      sendJson(res, 400, { error: '缺少 sessionId（不知道该把卡片推给哪个会话）' })
+      return
+    }
+    const questionId = newQuestionId()
+    const now = Date.now()
+    const pending = {
+      questionId,
+      sessionId,
+      questions,
+      createdAt: now,
+      expiresAt: now + QUESTION_TIMEOUT_MS,
+    }
+    const answers = await new Promise((resolvePromise) => {
+      const timer = setTimeout(() => {
+        pendingQuestions.delete(questionId)
+        publish(sessionId, { type: 'question-resolved', questionId, answered: false })
+        // 超时回的是**空答复**，不是"用户拒绝了"。
+        // 这两件事对模型意义完全不同：拒绝是用户表了态，超时是用户没理。
+        // 混为一谈会让模型对用户说"您拒绝了"，而用户其实什么都没点。
+        resolvePromise(null)
+      }, QUESTION_TIMEOUT_MS)
+      // 插件侧放弃了等待（自身超时，或会话被取消）→ 立刻摘掉。
+      // 与确认通道同一处坑：必须监听 `res`，`req` 的 'close' 在读完后就到了。
+      const onClose = () => {
+        if (res.writableEnded) return
+        if (!pendingQuestions.has(questionId)) return
+        clearTimeout(timer)
+        pendingQuestions.delete(questionId)
+        publish(sessionId, { type: 'question-resolved', questionId, answered: false })
+        resolvePromise(null)
+      }
+      res.on('close', onClose)
+      pendingQuestions.set(questionId, { ...pending, resolve: resolvePromise, timer })
+      publish(sessionId, { type: 'question', question: pending })
+    })
+    if (!res.writableEnded && !res.destroyed) {
+      // 超时/放弃时回 `{ answers: [] }`：插件会把它判成"没答"（见 parseAnswer 的
+      // "每道题都必须有答复"），于是模型拿到一条明确的"用户没有回答"。
+      sendJson(res, 200, answers === null ? { answers: [] } : answers)
+    }
+    return
+  }
+
+  // 用户在卡片上的答复（浏览器 → 这里）
+  if (req.method === 'POST' && parts.length === 4 && parts[0] === 'agent-api'
+    && parts[1] === 'questions' && parts[3] === 'answer') {
+    const questionId = parts[2]
+    const entry = pendingQuestions.get(questionId)
+    if (entry === undefined) {
+      // 已经超时、已经被答复过、或者插件已经不等了。
+      sendJson(res, 404, { error: '这个问题不存在或已过期' })
+      return
+    }
+    const body = await readJson(req, MAX_BODY_BYTES)
+    if (!Array.isArray(body.answers)) {
+      sendJson(res, 400, { error: 'answers 必须是数组' })
+      return
+    }
+    // 只做**形状**校验（内容合法性由插件侧 `parseAnswer` 把关，那里才知道
+    // 每道题给过哪些选项）。但"每道题都要有答复"在这里也查一次：
+    // 让用户看到 400 比让模型拿到半份答复好。
+    const answered = new Set()
+    for (const item of body.answers) {
+      if (item === null || typeof item !== 'object') {
+        sendJson(res, 400, { error: 'answers 里有一项不是对象' })
+        return
+      }
+      const id = typeof item.id === 'string' ? item.id : ''
+      const asked = entry.questions.find(q => q.id === id)
+      if (id === '' || asked === undefined) {
+        sendJson(res, 400, { error: `答复里有没问过的问题 id：${JSON.stringify(item.id)}` })
+        return
+      }
+      const selected = item.selected
+      if (!Array.isArray(selected) || selected.some(label => typeof label !== 'string')) {
+        sendJson(res, 400, { error: `答复「${id}」的 selected 不是字符串数组` })
+        return
+      }
+      if ((asked.multiSelect ?? false) === false && selected.length > 1) {
+        sendJson(res, 400, { error: `「${id}」是单选，却收到了 ${selected.length} 个选项` })
+        return
+      }
+      /*
+       * **一道题必须有实质答复**：选了选项，或者自己写了非空白的字。
+       *
+       * 这条在插件侧（`channel.ts` 的 `parseAnswer`）也查一遍，这里再查是刻意的：
+       * 不查的话，一个 `custom: "   "` 的空答复会被**当成有效答复结算掉**——
+       * 问题关闭、模型收到一份什么都没说的答案，而用户在界面上看到的
+       * 可能只是"提交没反应"。实测踩到：正是因为这个漏洞，紧跟在后面的
+       * 正常答复会拿到 404（问题已经被空白答复消费了）。
+       */
+      const custom = typeof item.custom === 'string' ? item.custom : ''
+      if (selected.length === 0 && custom.trim() === '') {
+        sendJson(res, 400, { error: `「${id}」这道题既没选也没填` })
+        return
+      }
+      answered.add(id)
+    }
+    const missing = entry.questions.filter(q => !answered.has(q.id)).map(q => q.id)
+    if (missing.length > 0) {
+      sendJson(res, 400, { error: `还有题目没答：${missing.join(', ')}` })
+      return
+    }
+    settleQuestion(questionId, { answers: body.answers })
+    sendJson(res, 200, { ok: true })
+    return
+  }
+
+  /* ---------------------------------------------------------------- 语音 */
+
+  // 语音转文字：浏览器把录下来的音频整段发过来，这里换成文字还回去。
+  //
+  // 音频**不落盘、不留存**：只在内存里过一道就交给上游。银行场景里录音是敏感数据，
+  // 而演示服务没有任何理由留着它。
+  if (req.method === 'POST' && parts.join('/') === 'agent-api/asr') {
+    if (!VOICE_ENABLED) {
+      sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
+      return
+    }
+    const body = await readJson(req, MAX_AUDIO_BYTES)
+    const base64 = typeof body.audio === 'string' ? body.audio : ''
+    if (base64 === '') {
+      sendJson(res, 400, { error: 'audio 不能为空（base64）' })
+      return
+    }
+    const format = audioFormatOf(body.mimeType)
+    if (format === undefined) {
+      // 不猜格式：猜错的话上游会拿错误的解码方式解，可能返回一段"成功但乱码"的转录。
+      sendJson(res, 415, {
+        error: `不认识的录音格式：${String(body.mimeType)}`,
+        accepted: [...new Set(AUDIO_FORMATS.values())],
+      })
+      return
+    }
+    const upstream = await callVoiceUpstream('/audio/transcriptions', {
+      model: ASR_MODEL,
+      input_audio: { data: base64, format },
+      // 中文场景固定传语言提示：短句子里靠自动检测容易飘。
+      language: typeof body.language === 'string' ? body.language : 'zh',
+    })
+    const text = await upstream.text()
+    if (!upstream.ok) {
+      sendJson(res, 502, { error: `转录失败（上游 ${upstream.status}）：${text.slice(0, 200)}` })
+      return
+    }
+    let parsed
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      sendJson(res, 502, { error: '转录服务返回了非 JSON 内容' })
+      return
+    }
+    sendJson(res, 200, {
+      text: typeof parsed.text === 'string' ? parsed.text : '',
+      seconds: parsed.usage?.seconds ?? null,
+      cost: parsed.usage?.cost ?? null,
+    })
+    return
+  }
+
+  // 文字转语音（**流式**）：SSE 一帧一帧推裸 PCM，浏览器首帧到达就能出声，
+  // 不用等整段合成完。事件形状见 design/P8-VOICE.md。
+  if (req.method === 'POST' && parts.join('/') === 'agent-api/tts/stream') {
+    if (!VOICE_ENABLED) {
+      sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
+      return
+    }
+    const body = await readJson(req)
+    const text = typeof body.text === 'string' ? body.text.trim() : ''
+    if (text === '') {
+      sendJson(res, 400, { error: 'text 不能为空' })
+      return
+    }
+    // 与整段合成同一条截断规则：按字数计费，长回复也念不完。
+    const spoken = text.length > TTS_MAX_CHARS ? text.slice(0, TTS_MAX_CHARS) : text
+    const speaker = typeof body.voice === 'string' && body.voice !== '' ? body.voice : VOLC_SPEAKER
+
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-store',
+      'access-control-allow-origin': '*',
+      'x-accel-buffering': 'no',
+    })
+    res.flushHeaders()
+    // 先告诉浏览器这是什么格式，之后每个 audio 事件都是这个采样率的裸 PCM16
+    res.write(`event: start\ndata: ${JSON.stringify({ format: 'pcm', sampleRate: VOLC_SAMPLE_RATE })}\n\n`)
+
+    const ac = new AbortController()
+    // 浏览器断开 → 掐掉上游，别让一次没人听的合成白烧钱
+    // （用 res 的 close 并区分"正常回完"，跟确认通道同一套做法：req 的 close 在读完 body 后就来了）
+    const onClose = () => {
+      if (!res.writableEnded) ac.abort()
+    }
+    res.on('close', onClose)
+
+    try {
+      const stats = await streamVolcTTS({
+        text: spoken,
+        speaker,
+        sampleRate: VOLC_SAMPLE_RATE,
+        resourceId: VOLC_RESOURCE,
+        appId: VOLC_APP_ID,
+        accessToken: VOLC_ACCESS_TOKEN,
+        onAudio: (buf) => {
+          if (!res.writableEnded) res.write(`event: audio\ndata: ${buf.toString('base64')}\n\n`)
+        },
+        onEvent: (parsed, json) => {
+          // 句起止：现在只做日志与未来字幕的素材，浏览器可以忽略
+          if (!res.writableEnded && (parsed.event === 350 || parsed.event === 351)) {
+            res.write(`event: sentence\ndata: ${JSON.stringify({ type: parsed.event === 350 ? 'start' : 'end', text: json?.text ?? '' })}\n\n`)
+          }
+        },
+        signal: ac.signal,
+        timeoutMs: TTS_STREAM_TIMEOUT_MS,
+        idleMs: TTS_STREAM_IDLE_MS,
+      })
+      if (!res.writableEnded) {
+        res.write(`event: end\ndata: ${JSON.stringify({ frames: stats.frames, bytes: stats.bytes, truncated: spoken.length < text.length })}\n\n`)
+        res.end()
+      }
+    } catch (err) {
+      if (res.writableEnded) return
+      const message = err instanceof Error ? err.message : String(err)
+      if (message === 'aborted') {
+        // 客户端自己断的：静默收场，不算失败
+        res.end()
+      } else {
+        res.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`)
+        res.end()
+      }
+    } finally {
+      ac.abort()
+      res.off('close', onClose)
+    }
+    return
+  }
+
+  // 文字转语音：直接回**原始音频字节**（不是 JSON），与上游一致。
+  if (req.method === 'POST' && parts.join('/') === 'agent-api/tts') {
+    if (!VOICE_ENABLED) {
+      sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
+      return
+    }
+    const body = await readJson(req)
+    const text = typeof body.text === 'string' ? body.text.trim() : ''
+    if (text === '') {
+      sendJson(res, 400, { error: 'text 不能为空' })
+      return
+    }
+    // 按字数计费，长回复也念不完：截断而不是拒绝——用户要的是"听到要点"。
+    const spoken = text.length > TTS_MAX_CHARS ? text.slice(0, TTS_MAX_CHARS) : text
+    const upstream = await callVoiceUpstream('/audio/speech', {
+      model: TTS_MODEL,
+      input: spoken,
+      voice: typeof body.voice === 'string' && body.voice !== '' ? body.voice : TTS_VOICE,
+      response_format: 'mp3',
+    })
+    if (!upstream.ok) {
+      const detail = await upstream.text()
+      sendJson(res, 502, { error: `合成失败（上游 ${upstream.status}）：${detail.slice(0, 200)}` })
+      return
+    }
+    const audio = Buffer.from(await upstream.arrayBuffer())
+    res.writeHead(200, {
+      'content-type': 'audio/mpeg',
+      'content-length': audio.length,
+      'access-control-allow-origin': '*',
+      'cache-control': 'no-store',
+      // 让页面知道念的是不是完整文本（被截断时好提示）。
+      'x-luckycat-truncated': spoken.length < text.length ? '1' : '0',
+    })
+    res.end(audio)
     return
   }
 

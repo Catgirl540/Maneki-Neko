@@ -126,17 +126,37 @@ export function TransactionDetailPage() {
 
       {record.loading && <DetailSkeleton />}
 
-      {!record.loading && !tx && (
+      {/*
+        出错时**一律**走"查不到"，即使手上还留着上一笔的数据。
+        `useAsync` 是 stale-while-revalidate：拉取失败时会保留旧数据不清空
+        （对列表是对的——一次抖动不该把界面打空），但这一页是**凭证**：
+        把 A 的回单显示在 B 的编号下面，比空状态糟糕得多。
+        触发路径不是"网络抖了一下"，而是**换了一笔交易**——客户端从
+        `/transactions/txn_0007` 跳到 `/transactions/txn_9999` 时会复用组件，
+        于是旧数据还在，而新的取数 404 了。实测踩到。
+      */}
+      {!record.loading && record.error !== null && (
         <Card className="float-up">
           <EmptyState
             title="这笔交易查不到了"
-            description={record.error ?? '交易编号可能有误，或已超出可查询期限。'}
+            description={record.error}
             action={<Button onClick={goBack}>返回流水</Button>}
           />
         </Card>
       )}
 
-      {tx && detail && (
+      {/* 没有错、也没有数据：同样给空状态（不留白屏） */}
+      {!record.loading && record.error === null && !tx && (
+        <Card className="float-up">
+          <EmptyState
+            title="这笔交易查不到了"
+            description="交易编号可能有误，或已超出可查询期限。"
+            action={<Button onClick={goBack}>返回流水</Button>}
+          />
+        </Card>
+      )}
+
+      {record.error === null && tx && detail && (
         <>
           {/* —— 凭证头 —— */}
           <Card className="float-up print:rounded-none print:border-0 print:shadow-none print:break-inside-avoid">

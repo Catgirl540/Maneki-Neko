@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom'
 import { api } from '@/api'
 import type { SupportMessage } from '@/api/types'
 import { ConsentCard } from '@/components/agent/ConsentCard'
+import { EditMessageModal, MessageActions } from '@/components/agent/MessageActions'
+import { QuestionCard } from '@/components/agent/QuestionCard'
+import { SpeechPlayer } from '@/components/agent/SpeechPlayer'
 // 懒加载：Markdown + KaTeX 加起来约 430KB，只有这一页用得上，
 // 不该让全部页面（登录、总览、转账…）一起背。首次出现助手回复时才去取。
 const Markdown = lazy(() => import('@/components/agent/Markdown').then(m => ({ default: m.Markdown })))
@@ -16,32 +19,26 @@ import {
   AlertIcon,
   ArrowRightIcon,
   CheckIcon,
+  CloseIcon,
   HistoryIcon,
+  ImagePlusIcon,
+  MicIcon,
   RefreshIcon,
   SendIcon,
   SparkleIcon,
+  StopIcon,
   UserIcon,
+  WaveIcon,
 } from '@/components/ui/icons'
 import { cn } from '@/lib/cn'
+import { ASSISTANT } from '@/lib/assistant'
+import { preview, voiceLog } from '@/lib/voiceLog'
+import { ACCEPTED_MIME_TYPES, prepareImage, type PreparedImage } from '@/lib/image'
 import { STORAGE_KEYS, storage } from '@/lib/storage'
-import type { StoredConversation } from '@/lib/agentSessions'
+import { lastAssistantId, type MessageItem, type StoredConversation } from '@/lib/agentSessions'
+import { speechText } from '@/lib/speech'
 import { toolLabel, useAgentChat, type ChatItem } from '@/lib/useAgentChat'
-
-/**
- * 快捷问题。
- *
- * 刻意**不放**"帮我转 800 元给某人"这类**操作**入口：那是一键发起一笔资金操作，
- * 客户可能没看清收款人就点下去。要转账就自己把话说清楚——确认卡片是防误操作的
- * 第二道闸，不该让第一道闸（"要不要发起"）变成一个手滑就能碰到的按钮。
- * 「转账手续费怎么收？」是**咨询**不是操作，保留。
- */
-const QUICK_ASKS = [
-  '我的账户余额还有多少？',
-  '最近有哪些支出？',
-  '转账手续费怎么收？',
-  '有哪些理财产品？',
-  '卡丢了怎么办？',
-]
+import { useVoice, type VoicePlayback } from '@/lib/useVoice'
 
 export function SupportPage() {
   const agent = useAgentChat()
@@ -56,7 +53,26 @@ export function SupportPage() {
   const [renameTarget, setRenameTarget] = useState<StoredConversation | undefined>(undefined)
   const [renameValue, setRenameValue] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<StoredConversation | undefined>(undefined)
+  /** 正在编辑的那条用户消息，以及编辑框里的草稿。 */
+  const [editTarget, setEditTarget] = useState<ChatItem | undefined>(undefined)
+  const [editValue, setEditValue] = useState('')
+  /* 待发送的图片（已经压过的那份）与它的处理状态。 */
+  const [pendingImage, setPendingImage] = useState<PreparedImage | undefined>(undefined)
+  const [imageBusy, setImageBusy] = useState(false)
+  const [imageError, setImageError] = useState<string | undefined>(undefined)
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
   const scroller = useRef<HTMLDivElement | null>(null)
+
+  /**
+   * 语音模式。开着的时候助手回复会被念出来，并且显示"按住说话"的按钮。
+   *
+   * 它是**每一轮**的交互，不是全双工：按住说一句、松开、等回答、听。
+   * 理由写在 `lib/useVoice.ts` 顶上——最要紧的一条是银行场景下"想清楚再按"
+   * 比"抢话"更合适。
+   */
+  const [voiceMode, setVoiceMode] = useState(false)
+  const voice = useVoice(voiceMode, (text) => { agent.send(text) }, agent.voice?.maxSeconds)
+  const voiceUsable = voiceMode && voice.available
 
   const usingAgent = agent.status === 'ready'
   const probing = agent.status === 'probing'
@@ -64,6 +80,53 @@ export function SupportPage() {
   const items = agent.active?.items
   const itemCount = items?.length ?? 0
   const activeBusy = agent.activeId !== undefined && agent.busyIds.includes(agent.activeId)
+
+  // 语音模式下，agent 一开口说话就退出"等回答"状态（转圈该停了）。
+  useEffect(() => {
+    if (voice.state === 'thinking' && !activeBusy) voice.thinking()
+  }, [activeBusy, voice])
+
+  /**
+   * 语音模式下把**新出现的**助手回复念出来。
+   *
+   * 记 id 而不是记文本：重新渲染会拿到同一个数组，靠 id 才知道哪条是新的。
+   * 只念最后一条——一轮回答里助手可能先说一句再调工具再说一句，
+   * 全念会把同一件事念两遍。
+   *
+   * 念的时候把 id 一起交给 `speak`：这样那条消息上的按钮会变成"停止"，
+   * 而不是十条消息同时显示"朗读"、只有一条在响。
+   */
+  const spokenRef = useRef<string | undefined>(undefined)
+  const latestAssistant = lastAssistantId(items ?? [])
+  const latestAssistantText = items?.find(
+    item => item.id === latestAssistant && item.kind === 'assistant',
+  )?.text
+  useEffect(() => {
+    if (!voiceUsable || latestAssistant === undefined || latestAssistantText === undefined) return
+    if (spokenRef.current === latestAssistant) return
+    spokenRef.current = latestAssistant
+    /*
+     * 自动播报是 `stopSpeaking` 最常见的一个调用方（"下一条一来就把上一条掐掉"），
+     * 所以这里要留痕：闪一下到底是它干的，还是用户点的停止，看日志就分得清。
+     */
+    voiceLog('自动播报：念最新一条', { id: latestAssistant, 文本: preview(speechText(latestAssistantText)) })
+    // 念之前先把 Markdown 去掉：`**` 和 `|---|` 念出来是纯噪音。
+    voice.speak(speechText(latestAssistantText), latestAssistant)
+  }, [latestAssistant, latestAssistantText, voice, voiceUsable])
+
+  /**
+   * 出现待确认事项时**念一句提醒**，但绝不代答。
+   *
+   * 语音只能用来发起，不能用来确认：电视里的声音、放一段录音，都能骗过
+   * "用语音说同意"。所以这里只提醒"去屏幕上核对并输密码"，答复仍然只能手点。
+   * （`pendingChallengeId` 在下面确认卡片那段里声明，这里只留 ref。）
+   */
+  const announcedRef = useRef<string | undefined>(undefined)
+
+  // 关掉语音模式时把"念到哪了"清掉：下次打开时当前这一条要能重新念。
+  useEffect(() => {
+    if (!voiceMode) spokenRef.current = undefined
+  }, [voiceMode])
 
   useEffect(() => {
     storage.set(STORAGE_KEYS.agentHistoryOpen, historyOpen)
@@ -107,6 +170,42 @@ export function SupportPage() {
     consentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   }, [pendingChallengeId])
 
+  // 语音模式下，待确认事项出现时念一句提醒（但不代答，见上面 announcedRef 的说明）。
+  const pendingKind = agent.pending?.challenge.kind
+  useEffect(() => {
+    if (!voiceUsable || pendingChallengeId === undefined || pendingKind === undefined) return
+    if (announcedRef.current === pendingChallengeId) return
+    announcedRef.current = pendingChallengeId
+    voice.speak(
+      `需要你确认：${pendingKind}。请在屏幕上核对信息，并输入支付密码。语音不能代替这一步。`,
+      // 这条提醒不挂在任何一条消息上，给它一个自己的 key 就够了：
+      // 它代替不了确认卡片，所以消息上不会有"它是从哪来的"这个疑问。
+      `consent:${pendingChallengeId}`,
+    )
+  }, [pendingChallengeId, pendingKind, voice, voiceUsable])
+
+  /* ── 每条消息上的小动作（复制 / 朗读 / 重新生成 / 编辑） ────────────────
+     一次算好、整包传下去：这一段对话里每条消息拿到的都是同一套。
+     倒回重发会**丢掉后面几轮**，还在回答中、或者有一张待确认的卡片没处理时
+     一律冻住——前者会把正在写的那条抹掉，后者会绕过一笔还没执行的敏感操作。 */
+  const frozenReason = agent.pending !== undefined
+    ? '先处理上面的确认卡片'
+    : agent.ask !== undefined ? '先回答上面的问题'
+      : activeBusy ? '这一轮还在回答中' : undefined
+  const bubbleActions: BubbleActions = {
+    canSpeak: voice.available,
+    speakingId: voice.speakingKey,
+    playback: voice.playback,
+    regeneratableId: lastAssistantId(items ?? []),
+    frozen: activeBusy || agent.pending !== undefined || agent.ask !== undefined,
+    ...frozenReason === undefined ? {} : { frozenReason },
+    onRegenerate: (id) => { agent.rewind(id) },
+    onSpeak: (item) => { voice.speak(speechText(item.text), item.id) },
+    onStopSpeak: voice.stopSpeaking,
+    onSeek: (ratio) => { voice.seek(ratio) },
+    onEdit: (item) => { setEditTarget(item); setEditValue(item.text) },
+  }
+
   /** 固定话术那条路（agent 不在时的回落）。 */
   async function sendCanned(text: string) {
     const value = text.trim()
@@ -127,15 +226,41 @@ export function SupportPage() {
     }
   }
 
-  function send(text: string) {
+  function send(text: string, image?: PreparedImage) {
     const value = text.trim()
-    if (value === '') return
+    // 只发图不打字是允许的；两个都空才是真的没内容。
+    if (value === '' && image === undefined) return
     if (usingAgent) {
-      agent.send(value)
+      agent.send(value, image)
       setInput('')
       return
     }
+    // 固定话术那条路只认文字：它连的不是 agent，图片无处可去。
+    if (image !== undefined) {
+      setImageError('智能客服未接通，图片发不出去。')
+      return
+    }
     void sendCanned(value)
+  }
+
+  /**
+   * 用户选了一张图：先处理（压缩 + 缩略图），成功了才放进待发区。
+   *
+   * 处理失败的图**不进待发区**——半成品混进去，用户会以为发出去了，
+   * 而服务端那边其实什么也没收到。
+   * @param file - 用户选的文件。
+   */
+  async function pickImage(file: File) {
+    setImageBusy(true)
+    setImageError(undefined)
+    try {
+      setPendingImage(await prepareImage(file))
+    } catch (error) {
+      setPendingImage(undefined)
+      setImageError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setImageBusy(false)
+    }
   }
 
   function openRename(conversation: StoredConversation) {
@@ -160,26 +285,44 @@ export function SupportPage() {
             查余额、看流水、转账、看理财，都可以直接对话办理
           </p>
         </div>
-        <ModeTag status={agent.status} model={agent.model} />
+        <ModeTag status={agent.status} />
       </header>
 
       {/* 对话。高度跟着视口走：右侧两栏撤掉之后，聊天区可以占满一屏，
           确认卡片不用滚动就能看全（有 min-height 兜住小窗口）。 */}
       <Card padded={false} className="float-up flex h-[calc(100vh-240px)] min-h-[560px] overflow-hidden">
         {/* 历史对话是抽屉，不是常驻侧栏：默认收着，聊天窗独占整宽。 */}
-        {usingAgent && historyOpen && (
-          <aside aria-label="历史对话" className="hidden w-[236px] shrink-0 border-r border-line sm:block">
-            <SessionList
-              conversations={agent.conversations}
-              activeId={agent.activeId}
-              busyIds={agent.busyIds}
-              lostIds={agent.lostIds}
-              now={now}
-              onSelect={agent.select}
-              onCreate={agent.create}
-              onRename={openRename}
-              onDelete={setDeleteTarget}
-            />
+        {/* 抽屉用**宽度**动画而不是挂载/卸载：聊天区会跟着平滑重排，
+            和左侧主导航收起时是同一套动作（`transition-[width]` + 同一条缓动）。
+
+            关着的时候 `inert` + `aria-hidden` 两道一起上，缺一不可：
+            `inert` 管焦点与 Tab 顺序，`aria-hidden` 让它从无障碍树里消失。
+            只写 `inert` 的话，里面的按钮在**某些无障碍实现**里仍然读得到——
+            Playwright 的 role 选择器就还能查到抽屉里的「新对话」，
+            于是"新对话"变成两个同名按钮，实测踩到。 */}
+        {usingAgent && (
+          <aside
+            aria-label="历史对话"
+            inert={!historyOpen}
+            aria-hidden={!historyOpen}
+            className={cn(
+              'hidden shrink-0 overflow-hidden sm:block',
+              'transition-[width] duration-[var(--duration-state)] ease-[var(--ease-out-soft)]',
+              historyOpen ? 'w-[236px] border-r border-line' : 'w-0',
+            )}
+          >
+            <div className="w-[236px]">
+              <SessionList
+                conversations={agent.conversations}
+                activeId={agent.activeId}
+                busyIds={agent.busyIds}
+                lostIds={agent.lostIds}
+                now={now}
+                onSelect={agent.select}
+                onRename={openRename}
+                onDelete={setDeleteTarget}
+              />
+            </div>
           </aside>
         )}
 
@@ -190,14 +333,33 @@ export function SupportPage() {
             </span>
             <span className="min-w-0">
               <span className="block truncate text-[15px] font-medium text-ink">
-                {usingAgent && agent.active !== undefined ? agent.active.title : '招财猫智能助手'}
+                {usingAgent && agent.active !== undefined ? agent.active.title : ASSISTANT.title}
               </span>
               <span className="block text-[13px] text-ink-mute">
-                {usingAgent ? '真模型驱动 · 敏感操作需你确认' : '演示话术 · agent 未连接'}
+                {usingAgent ? '在线 · 敏感操作需你确认' : '演示话术 · 未连接'}
               </span>
             </span>
             {usingAgent && (
               <span className="ml-auto flex shrink-0 items-center gap-2">
+                {/* 语音模式开关。服务端没开语音能力时**不显示**这个按钮，
+                    而不是显示了再报错——用户点一个注定失败的东西没有意义。 */}
+                {voice.available && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={cn(voiceMode && 'bg-gold-wash text-gold-deep')}
+                    icon={<WaveIcon size={15} />}
+                    aria-pressed={voiceMode}
+                    onClick={() => {
+                      // 这里**只**管麦克风。朗读是每条消息自己的动作
+                      // （消息上就有播放/停止），关掉"语音输入"顺手把声音掐掉，
+                      // 会让"我只是不想说话"变成"我什么都听不到了"。
+                      setVoiceMode(on => !on)
+                    }}
+                  >
+                    语音
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="ghost"
@@ -213,7 +375,16 @@ export function SupportPage() {
                   历史对话
                   <span className="ml-1 text-ink-mute">{agent.conversations.length}</span>
                 </Button>
-                <Button size="sm" variant="ghost" icon={<RefreshIcon size={15} />} onClick={agent.create}>
+                {/* 当前已经是一段空对话时禁用：用户的意图是"给我一张白纸"，
+                    而白纸已经在这儿了，再建只会让列表里堆一串用不上的「新对话」。 */}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<RefreshIcon size={15} />}
+                  disabled={agent.activeIsEmpty}
+                  title={agent.activeIsEmpty ? '当前已经是一段空对话' : undefined}
+                  onClick={agent.create}
+                >
                   新对话
                 </Button>
               </span>
@@ -233,8 +404,13 @@ export function SupportPage() {
               </div>
             )}
 
+            {/* 只给**单条**气泡做入场，不给整块列表做。
+                滑进来的消息是"又来了一句话"，一次 220ms 的轻微上浮就够了；
+                整块再淡一次的话两层叠在一起，看着就是糊的。
+                切对话时这些气泡整体重挂，于是也顺便有一次统一的浮现——同一个动作
+                管两种情况，不用再分一套。 */}
             {usingAgent
-              ? (items ?? []).map((item) => <AgentBubble key={item.id} item={item} />)
+              ? (items ?? []).map((item) => <AgentBubble key={item.id} item={item} actions={bubbleActions} />)
               : messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
 
             {/* 待确认的敏感操作：工具此刻**还没有执行** */}
@@ -246,6 +422,17 @@ export function SupportPage() {
                   onReject={() => { agent.answer('reject') }}
                 />
               </div>
+            )}
+
+            {/* 模型的问题卡片。和确认卡片**并存**：可以先问清一件事，
+                问出来的答案再触发一笔需要确认的敏感操作——那是两步，不是一步。
+                两张卡同时出现时，确认卡在上面：它挂着的是"还没执行的操作"，
+                比"缺一句信息"更要紧。 */}
+            {agent.ask !== undefined && (
+              <QuestionCard
+                ask={agent.ask}
+                onSubmit={(answers) => { agent.answerAsk(answers) }}
+              />
             )}
 
             {(usingAgent ? activeBusy : thinking) && agent.pending === undefined && (
@@ -274,36 +461,215 @@ export function SupportPage() {
           </div>
 
           <div className="border-t border-line px-6 py-4">
-            <div className="mb-3 flex flex-wrap gap-2">
-              {QUICK_ASKS.map((q) => (
-                <button
-                  key={q}
-                  type="button"
-                  onClick={() => send(q)}
-                  className="h-8 rounded-chip border border-line px-3 text-[12px] text-ink-soft transition-colors hover:border-gold hover:text-gold-deep"
+            {/* 语音状态条：只在语音模式下出现。麦克风开着这件事必须**一直看得见**，
+                不能只在按钮上变个颜色——用户切到别的标签页回来就不知道还在不在录。 */}
+            {voiceUsable && (
+              <div className="mb-3 flex min-h-8 flex-wrap items-center gap-3 text-[12px]">
+                <span
+                  className={cn(
+                    'inline-flex items-center gap-2 rounded-chip px-3 py-1.5',
+                    voice.state === 'recording' ? 'bg-coral-wash text-coral' : 'bg-sunk text-ink-soft',
+                  )}
                 >
-                  {q}
-                </button>
-              ))}
-            </div>
+                  <span
+                    className={cn(
+                      'size-1.5 rounded-chip',
+                      voice.state === 'recording' ? 'animate-pulse bg-coral' : 'bg-ink-mute',
+                    )}
+                  />
+                  {voice.state === 'asking' && '正在请求麦克风权限…'}
+                  {voice.state === 'recording' && `正在录音 ${voice.seconds} / ${agent.voice?.maxSeconds ?? 60} 秒`}
+                  {voice.state === 'transcribing' && '正在识别…'}
+                  {voice.state === 'thinking' && '正在想…'}
+                  {voice.state === 'speaking' && '正在朗读'}
+                  {voice.state === 'idle' && '按住麦克风说话'}
+                </span>
+                {/* 状态栏只放进度条，不放波形：它是"一直在那"的指示，很窄；
+                    波形留给消息上那个播放器（那里才是用户盯着看的地方）。 */}
+                {voice.state === 'speaking' && voice.playback !== undefined && (
+                  <span className="inline-flex min-w-[80px] flex-1 items-center gap-2">
+                    {/* 这一条是**重复指示**（真正带无障碍语义的那条在消息上），
+                        所以标成 aria-hidden——不然同一页会有两个同名的 progressbar，
+                        读屏软件读不出哪个是哪个。文字上的「正在朗读」已经说明了状态。 */}
+                    <span
+                      aria-hidden="true"
+                      className="h-[3px] min-w-[60px] flex-1 overflow-hidden rounded-chip bg-line"
+                    >
+                      {/* 同 SpeechPlayer：动的是 transform 不是 width */}
+                      <span
+                        className="block h-full origin-left rounded-chip bg-gold-deep transition-transform duration-200 ease-linear"
+                        style={{ transform: `scaleX(${Math.min(1, Math.max(0, voice.playback.ratio))})` }}
+                      />
+                    </span>
+                    <span className="num shrink-0 text-ink-mute">
+                      {Math.floor(voice.playback.position)}s / {Math.floor(voice.playback.duration)}s
+                    </span>
+                  </span>
+                )}
+                {voice.state === 'speaking' && (
+                  <button
+                    type="button"
+                    onClick={voice.stopSpeaking}
+                    className="inline-flex items-center gap-1.5 rounded-chip border border-line px-3 py-1.5 text-ink-soft transition-colors hover:border-gold hover:text-gold-deep"
+                  >
+                    <StopIcon size={12} />
+                    停止朗读
+                  </button>
+                )}
+                {voice.error !== undefined && <span className="text-coral">{voice.error}</span>}
+              </div>
+            )}
+
+            {/* 播放失败的提示，**不分语音模式**。
+                
+                「朗读」按钮是只要服务端有 TTS 就显示的（判据是 `voice.available`，
+                和语音模式无关）。但错误原来只画在语音模式那个状态条里，
+                于是不在语音模式时点朗读、又失败了（浏览器挡自动播放、音频解不开），
+                用户看到的是"播放器闪一下就没" + **一句解释都没有**。
+                实测就是这么一例：模型先说了句「我查一下。」，合成出来 1 秒，
+                播放器活了 0.9 秒——那是正常结束，但用户没法分辨它和"失败"的区别。
+                所以这条提示要在任何模式下都在。 */}
+            {!voiceUsable && voice.error !== undefined && (
+              <p role="alert" className="mb-3 text-[13px] text-coral">
+                朗读失败：{voice.error}
+              </p>
+            )}
+
+            {/* 已选图片的预览条。放在输入框上面而不是里面：输入框是单行，
+                塞进去会把 placeholder 和光标挤得没法用。 */}
+            {(pendingImage !== undefined || imageError !== undefined || imageBusy) && (
+              <div className="mb-3 flex items-center gap-3 rounded-chip border border-line bg-sunk px-3 py-2">
+                {imageBusy && <span className="text-[13px] text-ink-soft">正在处理图片…</span>}
+                {!imageBusy && pendingImage !== undefined && (
+                  <>
+                    <img
+                      src={pendingImage.thumb}
+                      alt="待发送的图片预览"
+                      data-pending-image
+                      className="size-12 shrink-0 rounded-chip object-cover"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[13px] text-ink">{pendingImage.name}</p>
+                      {/* 敏感信息提示：这一句是**必须**的——图一旦发出去就进了
+                          助手的上下文，遮掉的只能是发之前。 */}
+                      <p className="mt-0.5 text-[12px] text-ink-soft">
+                        这张图会进助手的上下文。卡号、密码一类敏感信息请先遮掉。
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="移除已选图片"
+                      onClick={() => { setPendingImage(undefined); setImageError(undefined) }}
+                      className="grid size-7 shrink-0 place-items-center rounded-chip text-ink-soft transition-colors hover:bg-line hover:text-ink"
+                    >
+                      <CloseIcon size={15} />
+                    </button>
+                  </>
+                )}
+                {!imageBusy && imageError !== undefined && (
+                  <>
+                    <span role="alert" className="flex-1 text-[13px] text-coral">{imageError}</span>
+                    <button
+                      type="button"
+                      aria-label="移除已选图片"
+                      onClick={() => { setPendingImage(undefined); setImageError(undefined) }}
+                      className="grid size-7 shrink-0 place-items-center rounded-chip text-ink-soft transition-colors hover:bg-line hover:text-ink"
+                    >
+                      <CloseIcon size={15} />
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
             <form
               className="flex items-center gap-3"
               onSubmit={(e) => {
                 e.preventDefault()
-                send(input)
+                // 发完立刻清掉预览：拖到下一轮再清的话，回答期间用户会以为还能改。
+                const image = pendingImage
+                setPendingImage(undefined)
+                setImageError(undefined)
+                setInput('')
+                send(input, image)
               }}
             >
+              {/* 选图的入口。`accept` 和服务端认的类型对齐（见 lib/image.ts）。 */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={ACCEPTED_MIME_TYPES.join(',')}
+                className="hidden"
+                data-image-input
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  // 清掉 value：同一张图连选两次也要能再次触发 change。
+                  e.target.value = ''
+                  if (file !== undefined) void pickImage(file)
+                }}
+              />
+              <button
+                type="button"
+                aria-label="发送图片"
+                disabled={probing || !usingAgent}
+                title={usingAgent ? '发一张截图给客服' : '智能客服未接通时不能发图'}
+                onClick={() => { fileInputRef.current?.click() }}
+                className="grid size-12 shrink-0 place-items-center rounded-chip border border-line text-ink-soft transition-colors hover:border-gold hover:text-gold-deep disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ImagePlusIcon size={20} />
+              </button>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={probing ? '正在连接 agent…' : '描述你的需求，例如：帮我转 800 元给梁乐怡'}
+                placeholder={
+                  probing
+                    ? '正在连接…'
+                    : voiceUsable ? '也可以直接打字，或按住右边的麦克风说话' : '描述你的需求，例如：帮我转 800 元给梁乐怡'
+                }
                 disabled={probing}
                 className="h-12 flex-1 rounded-chip border border-line bg-surface px-4 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
               />
+              {voiceUsable && (
+                /* 按住说话。用 pointer 事件而不是 mouse/touch 两套：
+                   pointer 一次性覆盖鼠标、触摸和触控笔，而且松手/移出/取消都能收到。
+                   另外要 `touch-none select-none`——不然在手机上按住会触发页面滚动和选中。 */
+                <button
+                  type="button"
+                  aria-label="按住说话"
+                  aria-pressed={voice.state === 'recording'}
+                  onPointerDown={(e) => { e.preventDefault(); voice.start() }}
+                  onPointerUp={() => { voice.stop() }}
+                  onPointerLeave={() => { if (voice.state === 'recording') voice.stop() }}
+                  onPointerCancel={() => { voice.stop() }}
+                  onKeyDown={(e) => {
+                    // 键盘也要能用：空格/回车按住说话，重复触发要挡掉（按住会连发）。
+                    if (e.key !== ' ' && e.key !== 'Enter') return
+                    e.preventDefault()
+                    if (e.repeat) return
+                    voice.start()
+                  }}
+                  onKeyUp={(e) => {
+                    if (e.key !== ' ' && e.key !== 'Enter') return
+                    e.preventDefault()
+                    voice.stop()
+                  }}
+                  disabled={!voice.available}
+                  title={voice.available ? '按住说话，松开结束' : voice.unavailableReason}
+                  className={cn(
+                    'grid size-12 shrink-0 touch-none place-items-center rounded-chip transition-all select-none',
+                    voice.state === 'recording'
+                      ? 'scale-110 bg-coral text-ink-invert'
+                      : 'bg-gold text-ink hover:bg-gold-deep hover:text-ink-invert',
+                    'disabled:cursor-not-allowed disabled:bg-gold/30',
+                  )}
+                >
+                  <MicIcon size={20} />
+                </button>
+              )}
               <button
                 type="submit"
                 aria-label="发送"
-                disabled={(usingAgent ? activeBusy : thinking) || !input.trim() || probing}
+                disabled={(usingAgent ? activeBusy : thinking) || (!input.trim() && pendingImage === undefined) || probing || imageBusy}
                 className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert disabled:cursor-not-allowed disabled:bg-gold/40"
               >
                 <SendIcon size={20} />
@@ -312,6 +678,22 @@ export function SupportPage() {
           </div>
         </div>
       </Card>
+
+      <EditMessageModal
+        open={editTarget !== undefined}
+        value={editValue}
+        /* 这条之后还有几条内容会被删掉——数字要如实算出来给用户看，
+           不能只说"后面的会删掉"就让他按。 */
+        droppedCount={items === undefined || editTarget === undefined
+          ? 0
+          : Math.max(0, items.length - 1 - items.findIndex(item => item.id === editTarget.id))}
+        onChange={setEditValue}
+        onClose={() => { setEditTarget(undefined) }}
+        onSubmit={() => {
+          if (editTarget !== undefined) agent.rewind(editTarget.id, editValue)
+          setEditTarget(undefined)
+        }}
+      />
 
       <Modal
         open={renameTarget !== undefined}
@@ -361,36 +743,80 @@ export function SupportPage() {
   )
 }
 
-/** 顶部的通道状态标签：让用户一眼看出现在是真 agent 还是固定话术。 */
-function ModeTag({ status, model }: { status: 'probing' | 'off' | 'ready'; model?: string }) {
+/**
+ * 顶部的通道状态标签：让用户一眼看出现在是真 agent 还是固定话术。
+ *
+ * **刻意不显示模型名。** 这里以前是「Agent 已连接 · qwen/qwen3.8-flash」——
+ * 那对用户是噪音，对外是没必要的信息暴露。现在显示的是助手自己的名字，
+ * 而且这个名字和它人设里的自称是同一个（`lib/assistant.ts` 是唯一来源，
+ * `tools/check-persona.mjs` 盯着两处一致）。
+ *
+ * 外面套的那层 `data-agent-status` 是给检查用的**稳定锚点**。
+ * 之前几个门禁是按文案 `'Agent 已连接'` 找元素的，改一次文案就集体挂掉
+ * （实测：这一改挂了三处断言）。门禁该锚在"状态"上，不该锚在文案上——
+ * 文案随时会变，而状态只有三种。
+ */
+function ModeTag({ status }: { status: 'probing' | 'off' | 'ready' }) {
   if (status === 'probing') {
     return (
-      <Tag tone="neutral" className="h-8 px-3">
-        正在连接 agent…
-      </Tag>
+      <span data-agent-status="probing">
+        <Tag tone="neutral" className="h-8 px-3">
+          正在连接…
+        </Tag>
+      </span>
     )
   }
   if (status === 'ready') {
     return (
-      <Tag tone="blue" className="h-8 px-3">
-        <CheckIcon size={14} className="mr-1.5" />
-        Agent 已连接{model !== undefined ? ` · ${model}` : ''}
-      </Tag>
+      <span data-agent-status="ready">
+        <Tag tone="blue" className="h-8 px-3">
+          <CheckIcon size={14} className="mr-1.5" />
+          {ASSISTANT.name}在线
+        </Tag>
+      </span>
     )
   }
   return (
-    <Tag tone="gold" className="h-8 px-3">
-      <SparkleIcon size={14} className="mr-1.5" />
-      演示话术（未连接 agent）
-    </Tag>
+    <span data-agent-status="off">
+      <Tag tone="gold" className="h-8 px-3">
+        <SparkleIcon size={14} className="mr-1.5" />
+        演示话术（未连接）
+      </Tag>
+    </span>
   )
 }
 
+/**
+ * 一条消息上那几个小动作需要的全部东西。
+ *
+ * 打包传而不是一条消息传十个 prop：同一段对话里每条消息拿到的都是同一套，
+ * 只有 `speaking` / `regeneratable` 是按 id 比对出来的。
+ */
+interface BubbleActions {
+  /** 服务端报了语音能力才显示朗读按钮。 */
+  canSpeak: boolean
+  /** 正在念的是哪一条。 */
+  speakingId?: string | undefined
+  /** 正在念那一条的播放进度与波形（没在念时是 undefined）。 */
+  playback?: VoicePlayback | undefined
+  /** 哪一条助手回复可以"重新生成"（最后一条）。 */
+  regeneratableId?: string | undefined
+  /** 现在不能倒回重发。 */
+  frozen: boolean
+  frozenReason?: string | undefined
+  onRegenerate: (id: string) => void
+  onSpeak: (item: MessageItem) => void
+  onStopSpeak: () => void
+  /** 用户拖了/点了朗读进度条，跳到 `ratio`（0–1）。 */
+  onSeek: (ratio: number) => void
+  onEdit: (item: MessageItem) => void
+}
+
 /** agent 对话里的一条内容。 */
-function AgentBubble({ item }: { item: ChatItem }) {
+function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions }) {
   if (item.kind === 'notice') {
     return (
-      <div className="flex items-start gap-3">
+      <div className="pop-in flex items-start gap-3">
         <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-coral-wash">
           <AlertIcon size={16} className="text-coral" />
         </span>
@@ -403,7 +829,7 @@ function AgentBubble({ item }: { item: ChatItem }) {
 
   if (item.kind === 'tool') {
     return (
-      <div className="flex items-center gap-2 pl-11">
+      <div className="pop-in flex items-center gap-2 pl-11">
         <span
           className={cn(
             'inline-flex items-center gap-2 rounded-chip border px-3 py-1.5 text-[12px]',
@@ -426,7 +852,13 @@ function AgentBubble({ item }: { item: ChatItem }) {
 
   const isUser = item.kind === 'user'
   return (
-    <div className={cn('flex items-start gap-3', isUser && 'flex-row-reverse')}>
+    <div
+      className={cn('pop-in flex items-start gap-3', isUser && 'flex-row-reverse')}
+      /* 给浏览器检查用的锚点。`div.bg-ink` 那类选择器一旦调样式就会静默失配，
+         而失配的表现是"断言还在跑，但什么都没查到"——那是假通过。 */
+      data-message-kind={isUser ? 'user' : 'assistant'}
+      data-message-id={item.id}
+    >
       <span
         className={cn(
           'grid size-8 shrink-0 place-items-center rounded-chip',
@@ -439,22 +871,67 @@ function AgentBubble({ item }: { item: ChatItem }) {
           <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
         )}
       </span>
-      <div
-        className={cn(
-          'max-w-[85%] rounded-card px-4 py-3',
-          isUser ? 'text-[14px] leading-relaxed whitespace-pre-wrap bg-ink text-ink-invert' : 'bg-sunk text-ink',
-        )}
-      >
-        {/* 助手回复可能带 Markdown 表格与公式；用户自己说的话按纯文本显示，
-            免得他打的 `#` 或 `*` 被当成格式。
-            懒加载期间的兜底就是纯文本——和没有这个功能时的显示一致，不会闪空白。 */}
-        {isUser
-          ? item.text
-          : (
-            <Suspense fallback={<span className="whitespace-pre-wrap">{item.text}</span>}>
-              <Markdown text={item.text} />
-            </Suspense>
+      {/* 气泡和它下面那排小按钮竖着排。`items-start`/`items-end` 让气泡按内容宽度
+          贴合，而不是被拉满整列；`min-w-0` 是给长表格留的收缩余地。 */}
+      <div className={cn('flex min-w-0 max-w-[85%] flex-col', isUser && 'items-end')}>
+        <div
+          className={cn(
+            'rounded-card px-4 py-3',
+            isUser ? 'text-[14px] leading-relaxed whitespace-pre-wrap bg-ink text-ink-invert' : 'bg-sunk text-ink',
           )}
+        >
+          {/* 图片先显示，再显示文字：用户发图时那句话通常是"这是什么"，
+              先看图更接近他发消息时的样子。
+              这里贴的是**缩略图**（存档里存的就是它，见 `lib/image.ts`）。 */}
+          {isUser && item.kind === 'user' && item.thumb !== undefined && (
+            <img
+              src={item.thumb}
+              alt={item.imageName === undefined ? '你发的图片' : `你发的图片：${item.imageName}`}
+              data-sent-image
+              className={cn(
+                'max-h-56 w-auto max-w-full rounded-chip object-contain',
+                item.text.trim() !== '' && 'mb-2',
+              )}
+            />
+          )}
+          {/* 助手回复可能带 Markdown 表格与公式；用户自己说的话按纯文本显示，
+              免得他打的 `#` 或 `*` 被当成格式。
+              懒加载期间的兜底就是纯文本——和没有这个功能时的显示一致，不会闪空白。 */}
+          {isUser
+            ? item.text
+            : (
+              <Suspense fallback={<span className="whitespace-pre-wrap">{item.text}</span>}>
+                <Markdown text={item.text} />
+              </Suspense>
+            )}
+        </div>
+
+        {/* 正在念的这一条挂上播放器：波形 + 进度条 + 时间。
+            只挂在**正在念的那一条**上——十条消息各带一个播放器，既吵又没意义。 */}
+        {actions.speakingId === item.id && actions.playback !== undefined && (
+          <SpeechPlayer
+            className="mt-1.5 w-full"
+            onSeek={actions.onSeek}
+            position={actions.playback.position}
+            duration={actions.playback.duration}
+            ratio={actions.playback.ratio}
+            waveform={actions.playback.waveform}
+          />
+        )}
+
+        <MessageActions
+          text={item.text}
+          isUser={isUser}
+          canSpeak={actions.canSpeak}
+          speaking={actions.speakingId === item.id}
+          regeneratable={actions.regeneratableId === item.id}
+          frozen={actions.frozen}
+          frozenReason={actions.frozenReason}
+          onRegenerate={() => { actions.onRegenerate(item.id) }}
+          onSpeak={() => { actions.onSpeak(item) }}
+          onStopSpeak={actions.onStopSpeak}
+          onEdit={() => { actions.onEdit(item) }}
+        />
       </div>
     </div>
   )
@@ -463,7 +940,7 @@ function AgentBubble({ item }: { item: ChatItem }) {
 function MessageBubble({ message }: { message: SupportMessage }) {
   const isUser = message.role === 'user'
   return (
-    <div className={cn('flex items-start gap-3', isUser && 'flex-row-reverse')}>
+    <div className={cn('pop-in flex items-start gap-3', isUser && 'flex-row-reverse')}>
       <span
         className={cn(
           'grid size-8 shrink-0 place-items-center rounded-chip',

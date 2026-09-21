@@ -167,10 +167,29 @@ const agentDoc = await read('framework/design/P6-WEB-BRIDGE.md')
 /** 归一：`${...}` 与 `:id` 是同一个东西。 */
 const normAgentPath = (p) => p.replace(/\$\{[^}]*\}/g, ':p').replace(/:[A-Za-z_][\w]*/g, ':p')
 
-/** 前端实际调用的路径（只取真正发起请求的那两个调用点）。 */
+/**
+ * 前端实际调用的路径。
+ *
+ * 三种写法都要认，因为它们是**真的不同**、不是随手写的：
+ *   · `requestJson('…')` —— 普通的 JSON 接口；
+ *   · `EventSource(`${AGENT_BASE}…`)` —— SSE 只能用 EventSource；
+ *   · `fetch(`${AGENT_BASE}…`)` —— **回二进制**的接口（语音合成回音频字节），
+ *     塞不进 requestJson（那个会去 `JSON.parse`，拿到音频就是一段乱码错误）。
+ * 只认前两种的话，二进制那条路径会被漏判（实测：加了 /tts 之后这条断言直接报
+ * "文档有、前端没有"）。
+ *
+ * **必须以 `/` 开头**：`request()` 那个通用辅助函数体里也有
+ * `` fetch(`${AGENT_BASE}${path}`) ``，不卡这一下就会把 `${path}` 当成一条路由
+ * （归一之后变成 `:p`），于是报"前端有、文档没有"。
+ */
+const literalPath = (raw) => typeof raw === 'string' && raw.startsWith('/')
 const clientPaths = new Set([
-  ...[...agentClient.matchAll(/requestJson(?:<[^>]*>)?\(\s*[`'"]([^`'"]+)[`'"]/g)].map((m) => normAgentPath(m[1])),
-  ...[...agentClient.matchAll(/EventSource\(\s*`\$\{AGENT_BASE\}([^`]+)`/g)].map((m) => normAgentPath(m[1])),
+  ...[...agentClient.matchAll(/requestJson(?:<[^>]*>)?\(\s*[`'"]([^`'"]+)[`'"]/g)]
+    .map((m) => m[1]).filter(literalPath).map(normAgentPath),
+  ...[...agentClient.matchAll(/EventSource\(\s*`\$\{AGENT_BASE\}([^`]+)`/g)]
+    .map((m) => m[1]).filter(literalPath).map(normAgentPath),
+  ...[...agentClient.matchAll(/fetch\(\s*`\$\{AGENT_BASE\}([^`]+)`/g)]
+    .map((m) => m[1]).filter(literalPath).map(normAgentPath),
 ])
 
 /** 文档里写给后端看的路径表（去掉演示服务的 /agent-api 前缀）。 */

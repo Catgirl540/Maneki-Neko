@@ -8,6 +8,7 @@
  *   node tools/check-bank-logos.mjs [baseUrl]
  */
 import { chromium } from 'playwright-core'
+import { login, gotoInApp } from './lib/session.mjs'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -55,16 +56,9 @@ tab.on('response', (res) => {
   }
 })
 
-await tab.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' })
-await tab.evaluate(() => {
-  localStorage.setItem('luckycat.token', JSON.stringify('check.token'))
-  localStorage.setItem(
-    'luckycat.session.user',
-    JSON.stringify({ id: 'u_0001', name: '林小满', phone: '13800138000', memberLevel: '金卡会员', avatarInitial: '林' }),
-  )
-})
+await login(tab, BASE)
 
-await tab.goto(`${BASE}/transfer`, { waitUntil: 'networkidle' })
+await gotoInApp(tab, '/transfer')
 
 /** 展开银行选择器并滚到底，让懒加载的 <img> 全部真正去取图 */
 async function collect(region) {

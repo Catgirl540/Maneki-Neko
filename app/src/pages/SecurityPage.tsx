@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { SecurityOverview } from '@/api/types'
 import { Button } from '@/components/ui/Button'
+import { useResetOnOpen } from '@/lib/usePresence'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Field } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
@@ -232,40 +233,56 @@ export function SecurityPage() {
         </ul>
       </Card>
 
-      {/* 两个弹层都只在打开时挂载：表单状态天然是干净的，不需要 effect 里重置 */}
-      {passwordOpen && (
-        <PasswordModal
-          onClose={() => setPasswordOpen(false)}
-          onDone={() => {
-            setNotice('登录密码已更新，请在其他设备重新登录')
-            overview.reload()
-          }}
-        />
-      )}
+      {/* 弹层**常驻挂载**，靠 `open` 控制显隐 —— 不能写成 `{passwordOpen && <…/>}`。
+          条件挂载的话组件是被父级直接卸载的，`Modal` 里的退场动画永远没机会播，
+          关掉就是"啪"地一下没了。表单状态由下面的 key 负责重置。 */}
+      <PasswordModal
+        open={passwordOpen}
+        onClose={() => setPasswordOpen(false)}
+        onDone={() => {
+          setNotice('登录密码已更新，请在其他设备重新登录')
+          overview.reload()
+        }}
+      />
 
-      {phoneOpen && (
-        <PhoneModal
-          currentPhone={phone}
-          onClose={() => setPhoneOpen(false)}
-          onDone={(next) => {
-            updateUser({ phone: next })
-            setNotice(`登录手机号已更换为 ${maskPhone(next)}`)
-            overview.reload()
-          }}
-        />
-      )}
+      <PhoneModal
+        open={phoneOpen}
+        currentPhone={phone}
+        onClose={() => setPhoneOpen(false)}
+        onDone={(next) => {
+          updateUser({ phone: next })
+          setNotice(`登录手机号已更换为 ${maskPhone(next)}`)
+          overview.reload()
+        }}
+      />
     </div>
   )
 }
 
 /* ------------------------------------------------------------ 重置登录密码 */
 
-function PasswordModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+function PasswordModal({
+  open,
+  onClose,
+  onDone,
+}: {
+  open: boolean
+  onClose: () => void
+  onDone: () => void
+}) {
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // 弹层是常驻挂载的（为了退场动画），所以"重开时干净"要自己保证。
+  useResetOnOpen(open, () => {
+    setOldPassword('')
+    setNewPassword('')
+    setConfirm('')
+    setError(null)
+  })
 
   async function submit() {
     setError(null)
@@ -284,7 +301,7 @@ function PasswordModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
 
   return (
     <Modal
-      open
+      open={open}
       onClose={onClose}
       title="重置登录密码"
       description="演示环境中初始密码为 123456。"
@@ -340,10 +357,12 @@ function PasswordModal({ onClose, onDone }: { onClose: () => void; onDone: () =>
  * 它是敏感操作内部的一步，不是一个可以提前点掉的独立按钮。
  */
 function PhoneModal({
+  open,
   currentPhone,
   onClose,
   onDone,
 }: {
+  open: boolean
   currentPhone: string
   onClose: () => void
   onDone: (nextPhone: string) => void
@@ -357,6 +376,17 @@ function PhoneModal({
   const [smsHint, setSmsHint] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // 同上：人脸票据、验证码、倒计时都不能从上一次带过来。
+  useResetOnOpen(open, () => {
+    setFaceTicket('')
+    setNewPhone('')
+    setSmsCode('')
+    setCooldown(0)
+    setSmsHint(null)
+    setError(null)
+    setScanning(false)
+  })
 
   const counting = cooldown > 0
   useEffect(() => {
@@ -411,7 +441,7 @@ function PhoneModal({
 
   return (
     <Modal
-      open
+      open={open}
       onClose={onClose}
       width="max-w-[500px]"
       title="更换登录手机号"
