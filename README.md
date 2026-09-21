@@ -326,9 +326,28 @@ cd app && npm run dev          # http://localhost:5180
 | Markdown/公式渲染 + 安全退让（离线） | `node --import ./tools/ts-resolve-hook.mjs tools/check-markdown.mjs` |
 | 被 import 的源码都在 git 里（离线，防"推上去编译不过"） | `node tools/check-tracked.mjs` |
 | 交接文档里写的路径真的存在、插件都写进了文档（离线） | `node tools/check-handoff-doc.mjs` |
+| 动效：动画名没拼错、关键帧只动 transform/opacity（离线） | `node tools/check-motion.mjs` |
+| 动效：减少动态效果真的生效、退场动画真的会播（需前端 dev server） | `node tools/check-motion-browser.mjs` |
+| 语音：合成 → 喂回去识别，真音频往返（需联网 + 密钥，会花极少的钱） | `cd framework && bash scripts/e2e-voice.sh` |
+| 语音：浏览器接线（按住录音、转录进对话、真合成能解码；需两个服务） | `node tools/check-voice.mjs` |
+| Markdown → 可朗读文本（离线，不把 `**` `\|---\|` 念出来） | `node --import ./tools/ts-resolve-hook.mjs tools/check-speech.mjs` |
+| 消息动作：倒回重发切得准不准、回复→提问的换算（离线） | `node --import ./tools/ts-resolve-hook.mjs tools/check-message-actions.mjs` |
+| 路由：站内链接都指向真实路由、没有打不开的页面（离线） | `node tools/check-routes.mjs` |
+| 路由：官网公开、总览要登录、弹来弹去对不对（需前端 dev server） | `node tools/check-landing.mjs` |
+| 登录：验证码必填、填错被拒、码一次性、登录态不落盘（需前端 dev server） | `node tools/check-login.mjs` |
+| 朗读波形：分桶/归一化/静音不出 NaN（离线） | `node --import ./tools/ts-resolve-hook.mjs tools/check-waveform.mjs` |
+| 朗读缓存：去重、并发合并、LRU、不回收在播的（离线） | `node --import ./tools/ts-resolve-hook.mjs tools/check-speech-cache.mjs` |
+| 发图：校验/隔离/413/415、界面选图→预览→发送、以及**助手真的看见了图**（需两个服务 + 联网 + 密钥） | `node tools/check-image.mjs` |
+| 问用户：单选/多选/自由输入、防钓鱼守卫、模型真的弹卡片（需两个服务 + 联网 + 密钥） | `node tools/check-ask.mjs` |
+| 人设与隐藏模型名：人设四条硬规矩、health 不夹带模型、**追问也不自报**（需两个服务 + 联网 + 密钥） | `node --import ./tools/ts-resolve-hook.mjs tools/check-persona.mjs` |
+| 安卓客户端：桥接契约（SSE 解析、事件类型、确认通道 401 语义；离线 + 真桥接两层，不需要模拟器） | `bash android/scripts/gate.sh` |
 
 设计与边界：`framework/design/P5-CONSENT.md`（闸门）、`framework/design/P6-WEB-BRIDGE.md`（演示服务）、
-`framework/design/P7-SESSIONS.md`（会话管理）、
+`framework/design/P7-SESSIONS.md`（会话管理）、`framework/design/P8-VOICE.md`（语音）、
+`framework/design/P9-MESSAGE-ACTIONS.md`（消息上的复制/重新生成/朗读/编辑）、
+`framework/design/P10-IMAGE.md`（发图：内联图片块、账户隔离、tool-fs 怎么挂）、
+`framework/design/P11-PERSONA.md`（助手人设、隐藏模型名，以及"藏了界面模型自己会说"）、
+`framework/design/P12-ASK.md`（模型问用户：提问卡片、三种答法、防钓鱼守卫）、
 `design/backend-handoff/AGENT-RUNTIME-CONTRACT.md`（后端要实现的确认通道形状）。
 
 ## 3. 前后端分离怎么落地

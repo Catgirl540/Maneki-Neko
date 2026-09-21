@@ -35,3 +35,12 @@ reference/
 # 本地环境覆盖（.env.development / .env.production 是刻意提交的，见 README §3）
 .env.local
 .env.*.local
+
+# 安卓客户端（android/）
+# local.properties 写的是本机 SDK 路径（这台机器的 SDK 在 /data 那个盘上），不进仓库
+android/local.properties
+android/**/build/
+android/.gradle/
+android/.kotlin/
+*.apk
+*.aab
