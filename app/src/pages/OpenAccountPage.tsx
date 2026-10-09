@@ -71,8 +71,8 @@ export function OpenAccountStandalone() {
     finally { setSubmitting(false) }
   }
 
-  return <div className="min-h-svh bg-paper"><div className="mx-auto w-full max-w-[900px] px-6 py-10">
-    <div className="mb-8 flex items-center justify-between gap-4">
+  return <div className="min-h-svh bg-paper"><div className="mx-auto w-full max-w-[900px] px-4 py-7 sm:px-6 sm:py-10">
+    <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
       <Logo markClass="h-10 w-10" wordClass="text-[24px]" />
       <Link to="/login" className="inline-flex items-center text-[13px] font-medium text-gold-deep">已有账户？去登录 <ChevronRightIcon size={15} /></Link>
     </div>

@@ -1,9 +1,13 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { CloseIcon } from './icons'
 import { cn } from '@/lib/cn'
 import { usePresence } from '@/lib/usePresence'
 
 /** 退场动画时长，必须和 `.pop-out` / `.fade-out` 的 `--duration-press` 对上。 */
 const EXIT_MS = 140
+const dialogStack: HTMLElement[] = []
+let previousOverflow = ''
 
 /**
  * 轻量弹层：仅用于转入、二次确认等短流程。
@@ -57,23 +61,57 @@ export function Modal({
 }) {
   // 关掉之后还要留在 DOM 里把退场动画放完，所以不能直接用 open 决定渲不渲染。
   const { mounted, exiting } = usePresence(open, EXIT_MS)
+  const dialog = useRef<HTMLDivElement>(null)
+  const closeRef = useRef(onClose)
+  useEffect(() => { closeRef.current = onClose }, [onClose])
+  const titleId = useId()
+  const descriptionId = useId()
 
   useEffect(() => {
-    if (!open) return
+    if (!mounted || !dialog.current) return
+    const panel = dialog.current
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    if (dialogStack.length === 0) {
+      previousOverflow = document.body.style.overflow
+      document.body.style.overflow = 'hidden'
+    }
+    dialogStack.push(panel)
+    panel.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (dialogStack.at(-1) !== panel) return
+      if (e.key === 'Escape') { e.preventDefault(); closeRef.current(); return }
+      if (e.key !== 'Tab') return
+      const targets = Array.from(panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+        .filter(el => el.getClientRects().length > 0 && !el.closest('[inert]'))
+      const first = targets[0]
+      const last = targets.at(-1)
+      if (!first || !last) { e.preventDefault(); panel.focus(); return }
+      if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && (document.activeElement === last || document.activeElement === panel)) { e.preventDefault(); first.focus() }
+    }
+    const onFocus = (e: FocusEvent) => {
+      if (dialogStack.at(-1) === panel && e.target instanceof Node && !panel.contains(e.target)) panel.focus()
     }
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+    document.addEventListener('focusin', onFocus)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('focusin', onFocus)
+      const index = dialogStack.indexOf(panel)
+      if (index >= 0) dialogStack.splice(index, 1)
+      if (dialogStack.length === 0) document.body.style.overflow = previousOverflow
+      if (previousFocus?.isConnected) previousFocus.focus()
+    }
+  }, [mounted])
 
   if (!mounted) return null
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+  return createPortal(
+    <div className="modal-overlay fixed inset-0 z-[80] flex items-center justify-center overflow-y-auto p-3 sm:p-6">
       <button
         type="button"
-        aria-label="关闭"
+        aria-label="关闭弹窗背景"
+        tabIndex={-1}
         onClick={onClose}
         className={cn(
           'absolute inset-0 cursor-default bg-ink/25 backdrop-blur-[2px]',
@@ -81,21 +119,28 @@ export function Modal({
         )}
       />
       <div
+        ref={dialog}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         className={cn(
-          'relative w-full rounded-card border border-line bg-surface p-7',
+          'modal-panel relative w-full min-w-0 overflow-y-auto rounded-card border border-line bg-surface p-5 outline-none sm:p-7',
           'shadow-[0_18px_48px_rgba(14,27,38,0.14)]',
           exiting ? 'pop-out' : 'pop-in',
           width,
         )}
       >
-        <h2 className="text-[20px] leading-7 font-semibold text-ink">{title}</h2>
-        {description && <p className="mt-2 text-[14px] text-ink-soft">{description}</p>}
+        <div className="flex items-start justify-between gap-3">
+          <h2 id={titleId} className="pt-1 text-[20px] leading-7 font-semibold text-ink">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="关闭弹窗" className="grid size-10 shrink-0 place-items-center rounded-chip text-ink-soft transition-colors hover:bg-sunk hover:text-ink"><CloseIcon size={20} /></button>
+        </div>
+        {description && <p id={descriptionId} className="mt-2 text-[14px] text-ink-soft">{description}</p>}
         {children && <div className="mt-6">{children}</div>}
         {footer && <div className="mt-7 flex gap-3">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

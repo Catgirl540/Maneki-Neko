@@ -31,7 +31,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { CatMark, Logo } from '@/components/brand/Logo'
-import { Button } from '@/components/ui/Button'
 import {
   ArrowDownLeftIcon,
   ArrowRightIcon,
@@ -467,10 +466,10 @@ export function LandingPage() {
   return (
     <div className="min-h-svh bg-paper">
       {/* ── 吸顶导航 ─────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-line bg-paper/85 backdrop-blur-sm">
-        <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-8 px-6">
+      <header className="sticky top-7 z-30 border-b border-line bg-paper/95 backdrop-blur-sm">
+        <div className="mx-auto flex min-h-16 max-w-[1120px] flex-wrap items-center gap-2 px-4 py-3 sm:gap-8 sm:px-6">
           <Link to="/" aria-label="招财猫银行首页">
-            <Logo markClass="h-9 w-9" wordClass="text-[21px]" />
+            <Logo markClass="h-8 w-8 sm:h-9 sm:w-9" wordClass="text-[19px] sm:text-[21px]" />
           </Link>
           <nav className="hidden items-center gap-6 lg:flex">
             {NAV.map(({ href, label }) => (
@@ -483,14 +482,11 @@ export function LandingPage() {
             {/* 已登录时**只留一个**入口：并排放两个都指向同一处的按钮，
                 一主一辅看着像两件不同的事，其实一样 */}
             {!loggedIn && (
-              <Link to="/login">
-                <Button size="sm" variant="ghost">登录</Button>
-              </Link>
+              <Link to="/login" className="inline-flex min-h-10 items-center rounded-chip px-3 text-[13px] font-medium text-ink-soft hover:bg-sunk">登录</Link>
             )}
-            <Link to={loggedIn ? '/dashboard' : '/open-account'}>
-              <Button size="sm" variant="primary" trailing={<ArrowRightIcon size={15} />}>
+            <Link to={loggedIn ? '/dashboard' : '/open-account'} className="inline-flex min-h-10 items-center gap-1.5 rounded-chip bg-gold px-3 text-[13px] font-medium text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert">
                 {loggedIn ? '进入总览' : '注册并开户'}
-              </Button>
+              <ArrowRightIcon size={15} />
             </Link>
           </div>
         </div>
@@ -521,19 +517,16 @@ export function LandingPage() {
                 </p>
 
                 <div className="mt-9 flex flex-wrap gap-3">
-                  <Link to={loggedIn ? '/dashboard' : '/open-account'}>
-                    <Button size="lg" variant="primary" trailing={<ArrowRightIcon size={16} />}>
+                  <Link to={loggedIn ? '/dashboard' : '/open-account'} className="inline-flex h-14 items-center gap-2 rounded-chip bg-gold px-6 text-[15px] font-medium text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert">
                       {loggedIn ? '进入总览' : '注册并开户'}
-                    </Button>
+                    <ArrowRightIcon size={16} />
                   </Link>
-                  <a href="#assistant">
-                    <Button size="lg" variant="secondary">看它能做什么</Button>
-                  </a>
+                  <a href="#assistant" className="inline-flex h-14 items-center rounded-chip border border-line bg-surface px-6 text-[15px] font-medium text-ink transition-colors hover:bg-sunk">看它能做什么</a>
                 </div>
 
                 <p className="mt-6 max-w-[520px] text-[13px] leading-relaxed text-ink-mute">
-                  任意 11 位手机号 + 密码 <span className="num text-ink-soft">123456</span> 即可进入。
-                  涉及金额、卡号、流水的地方，界面上都会标明是占位数据。
+                  演示账号和登录方式可在登录页查看。
+                  涉及资金的操作，会先展示明细并等待你确认。
                 </p>
               </div>
 
@@ -589,10 +582,8 @@ export function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  <Link to={to} className="mt-7 inline-flex">
-                    <Button size="sm" variant="secondary" trailing={<ArrowRightIcon size={14} />}>
-                      {linkText}
-                    </Button>
+                  <Link to={to} className="mt-7 inline-flex min-h-10 items-center gap-1.5 rounded-chip border border-line bg-surface px-3.5 text-[13px] font-medium text-ink transition-colors hover:bg-sunk">
+                    {linkText}<ArrowRightIcon size={14} />
                   </Link>
                 </div>
                 <div className={cn(flip && 'lg:order-1')}>
@@ -656,15 +647,11 @@ export function LandingPage() {
             <div className="mt-10 flex flex-wrap items-center gap-4 rounded-card bg-sunk px-6 py-5">
               <p className="text-[14px] leading-relaxed text-ink">现在开户，然后去跟智能助手说第一句话。</p>
               <div className="ml-auto flex gap-3">
-                <Link to={loggedIn ? '/dashboard' : '/open-account'}>
-                  <Button size="sm" variant="primary" trailing={<ArrowRightIcon size={14} />}>
-                    {loggedIn ? '进入总览' : '注册并开户'}
-                  </Button>
+                <Link to={loggedIn ? '/dashboard' : '/open-account'} className="inline-flex min-h-10 items-center gap-1.5 rounded-chip bg-gold px-3.5 text-[13px] font-medium text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert">
+                  {loggedIn ? '进入总览' : '注册并开户'}<ArrowRightIcon size={14} />
                 </Link>
                 {!loggedIn && (
-                  <Link to="/login">
-                    <Button size="sm" variant="ghost">登录</Button>
-                  </Link>
+                  <Link to="/login" className="inline-flex min-h-10 items-center rounded-chip px-3.5 text-[13px] font-medium text-ink-soft hover:bg-sunk">登录</Link>
                 )}
               </div>
             </div>

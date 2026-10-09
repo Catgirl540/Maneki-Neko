@@ -438,7 +438,7 @@ function BankCardVisual({
     <div className="flex flex-col gap-3">
       <div
         className={cn(
-          'float-up flex aspect-[1.62/1] w-full max-w-[420px] flex-col justify-between rounded-card p-7',
+          'float-up flex aspect-[1.62/1] w-full max-w-[420px] flex-col justify-between rounded-card p-5 sm:p-7',
           dark ? 'bg-ink text-ink-invert' : 'bg-gold text-ink',
           card.status === 'locked' && 'opacity-60',
         )}

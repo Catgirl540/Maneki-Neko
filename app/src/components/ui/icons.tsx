@@ -424,3 +424,9 @@ export const CloseIcon = (p: IconProps) => (
     <path d="M6.5 6.5 17.5 17.5M17.5 6.5 6.5 17.5" />
   </Icon>
 )
+
+export const MenuIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </Icon>
+)

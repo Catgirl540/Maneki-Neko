@@ -36,8 +36,16 @@ export function AnalysisPage() {
   /** 支出构成的联动高亮：圆环与图例共用，鼠标停在任一边都能亮 */
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   // 顶栏全局搜索会带上 ?q=，这里直接接管
-  const [searchParams] = useSearchParams()
-  const [keyword, setKeyword] = useState(() => searchParams.get('q') ?? '')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const keyword = searchParams.get('q') ?? ''
+  const setKeyword = (value: string) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      if (value) next.set('q', value)
+      else next.delete('q')
+      return next
+    }, { replace: true })
+  }
 
   const spending = useAsync<SpendingAnalysis>(() => api.getSpending(), [])
   const autoDebits = useAsync<AutoDebit[]>(() => api.listAutoDebits(), [])

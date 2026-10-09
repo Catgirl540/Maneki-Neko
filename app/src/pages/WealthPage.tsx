@@ -330,7 +330,7 @@ export function WealthPage() {
                 key={p.code}
                 type="button"
                 onClick={() => setDetail(p)}
-                className="flex flex-col rounded-card border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong"
+                className="flex min-w-0 flex-col rounded-card border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong"
               >
                 <span className="flex items-start justify-between gap-3">
                   <span className="min-w-0 flex-1">

@@ -31,6 +31,7 @@ import {
   WaveIcon,
 } from '@/components/ui/icons'
 import { cn } from '@/lib/cn'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { ASSISTANT } from '@/lib/assistant'
 import { preview, voiceLog } from '@/lib/voiceLog'
 import { ACCEPTED_MIME_TYPES, prepareImage, type PreparedImage } from '@/lib/image'
@@ -41,6 +42,7 @@ import { toolLabel, useAgentChat, type ChatItem } from '@/lib/useAgentChat'
 import { useVoice, type VoicePlayback } from '@/lib/useVoice'
 
 export function SupportPage() {
+  const compact = useMediaQuery('(max-width: 1023px)')
   const agent = useAgentChat()
   const [messages, setMessages] = useState<SupportMessage[]>(() =>
     storage.get<SupportMessage[]>(STORAGE_KEYS.supportHistory, []),
@@ -290,7 +292,7 @@ export function SupportPage() {
 
       {/* 对话。高度跟着视口走：右侧两栏撤掉之后，聊天区可以占满一屏，
           确认卡片不用滚动就能看全（有 min-height 兜住小窗口）。 */}
-      <Card padded={false} className="float-up flex h-[calc(100vh-240px)] min-h-[560px] overflow-hidden">
+      <Card padded={false} className="chat-panel float-up relative flex min-h-0 overflow-hidden">
         {/* 历史对话是抽屉，不是常驻侧栏：默认收着，聊天窗独占整宽。 */}
         {/* 抽屉用**宽度**动画而不是挂载/卸载：聊天区会跟着平滑重排，
             和左侧主导航收起时是同一套动作（`transition-[width]` + 同一条缓动）。
@@ -306,12 +308,12 @@ export function SupportPage() {
             inert={!historyOpen}
             aria-hidden={!historyOpen}
             className={cn(
-              'hidden shrink-0 overflow-hidden sm:block',
+              'hidden h-full shrink-0 overflow-hidden lg:block',
               'transition-[width] duration-[var(--duration-state)] ease-[var(--ease-out-soft)]',
               historyOpen ? 'w-[236px] border-r border-line' : 'w-0',
             )}
           >
-            <div className="w-[236px]">
+            <div className="h-full w-[236px]">
               <SessionList
                 conversations={agent.conversations}
                 activeId={agent.activeId}
@@ -326,8 +328,8 @@ export function SupportPage() {
           </aside>
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center gap-3 border-b border-line px-6 py-5">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-4 sm:px-6">
             <span className="grid size-10 place-items-center rounded-chip bg-gold-wash">
               <CatMark className="size-6 text-gold-deep" cutout="var(--color-gold-wash)" />
             </span>
@@ -340,7 +342,7 @@ export function SupportPage() {
               </span>
             </span>
             {usingAgent && (
-              <span className="ml-auto flex shrink-0 items-center gap-2">
+              <span className="flex w-full flex-wrap items-center gap-1 border-t border-line pt-3 sm:ml-auto sm:w-auto sm:border-0 sm:pt-0">
                 {/* 语音模式开关。服务端没开语音能力时**不显示**这个按钮，
                     而不是显示了再报错——用户点一个注定失败的东西没有意义。 */}
                 {voice.available && (
@@ -391,7 +393,7 @@ export function SupportPage() {
             )}
           </div>
 
-          <div ref={scroller} className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
+          <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
             {/* 上下文没了这件事必须在**发言之前**就写在脸上。
                 否则用户看到的是一段完整的记录配一个答非所问的助手。 */}
             {usingAgent && agent.contextLost && (
@@ -436,7 +438,7 @@ export function SupportPage() {
             )}
 
             {(usingAgent ? activeBusy : thinking) && agent.pending === undefined && (
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
                   <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
                 </span>
@@ -460,7 +462,7 @@ export function SupportPage() {
             )}
           </div>
 
-          <div className="border-t border-line px-6 py-4">
+          <div className="shrink-0 border-t border-line px-3 py-3 sm:px-6 sm:py-4">
             {/* 语音状态条：只在语音模式下出现。麦克风开着这件事必须**一直看得见**，
                 不能只在按钮上变个颜色——用户切到别的标签页回来就不知道还在不在录。 */}
             {voiceUsable && (
@@ -583,7 +585,7 @@ export function SupportPage() {
             )}
 
             <form
-              className="flex items-center gap-3"
+              className="flex min-w-0 items-center gap-2 sm:gap-3"
               onSubmit={(e) => {
                 e.preventDefault()
                 // 发完立刻清掉预览：拖到下一轮再清的话，回答期间用户会以为还能改。
@@ -627,7 +629,8 @@ export function SupportPage() {
                     : voiceUsable ? '也可以直接打字，或按住右边的麦克风说话' : '描述你的需求，例如：帮我转 800 元给梁乐怡'
                 }
                 disabled={probing}
-                className="h-12 flex-1 rounded-chip border border-line bg-surface px-4 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
+                aria-label="聊天消息"
+                className="h-12 min-w-0 flex-1 rounded-chip border border-line bg-surface px-3 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
               />
               {voiceUsable && (
                 /* 按住说话。用 pointer 事件而不是 mouse/touch 两套：
@@ -678,6 +681,14 @@ export function SupportPage() {
           </div>
         </div>
       </Card>
+      <Modal open={usingAgent && historyOpen && compact} onClose={() => setHistoryOpen(false)} title="历史对话">
+        <div className="h-[min(55dvh,420px)]">
+          <SessionList conversations={agent.conversations} activeId={agent.activeId} busyIds={agent.busyIds} lostIds={agent.lostIds} now={now}
+            onSelect={id => { agent.select(id); setHistoryOpen(false) }}
+            onRename={conversation => { setHistoryOpen(false); openRename(conversation) }}
+            onDelete={conversation => { setHistoryOpen(false); setDeleteTarget(conversation) }} />
+        </div>
+      </Modal>
 
       <EditMessageModal
         open={editTarget !== undefined}

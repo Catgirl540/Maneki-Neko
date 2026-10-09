@@ -72,13 +72,13 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-svh bg-paper">
+    <div className="flex min-h-[calc(100svh-28px)] bg-paper">
       {/* 左：表单 */}
-      <div className="flex w-full flex-col justify-center px-8 py-14 lg:w-[52%] lg:px-20">
+      <div className="flex w-full flex-col justify-center px-5 py-9 sm:px-8 sm:py-14 lg:w-[52%] lg:px-20">
         <div className="mx-auto w-full max-w-[380px]">
           <Logo markClass="h-10 w-10" wordClass="text-[26px]" />
 
-          <h1 className="mt-14 text-[38px] leading-[1.15] font-bold tracking-[-0.02em] text-ink">
+          <h1 className="mt-9 text-[32px] leading-[1.15] font-bold tracking-[-0.02em] text-ink sm:mt-14 sm:text-[38px]">
             欢迎回来
           </h1>
           <p className="mt-3 text-[15px] text-ink-soft">

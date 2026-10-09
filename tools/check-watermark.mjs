@@ -80,8 +80,8 @@ for (const route of ROUTES) {
       return { found: false, domHasText: document.body.innerText.includes('非真实银行') }
     }
     let box = el
-    while (box && getComputedStyle(box).position !== 'fixed') box = box.parentElement
-    if (!box) return { found: false, domHasText: true, note: '找到元素但祖先里没有 fixed' }
+    while (box && !['fixed', 'sticky'].includes(getComputedStyle(box).position)) box = box.parentElement
+    if (!box) return { found: false, domHasText: true, note: '找到元素但没有固定或吸顶容器' }
 
     const r = box.getBoundingClientRect()
     const cs = getComputedStyle(box)
@@ -131,7 +131,7 @@ for (const route of ROUTES) {
   report(ok, `${route.path} 水印可见`, [
     probe.found
       ? `位置 top=${probe.rect.top} left=${probe.rect.left} ${probe.rect.w}×${probe.rect.h} · z=${probe.zIndex}`
-      : `未找到水印元素${probe.domHasText ? '（正文里有这些字，但定位不到 fixed 容器）' : '（整页都没有这些字）'}`,
+      : `未找到水印元素${probe.domHasText ? '（正文里有这些字，但定位不到固定或吸顶容器）' : '（整页都没有这些字）'}`,
     probe.found ? `视口内=${probe.inViewport} · visibility=${probe.visibility} · opacity=${probe.opacity}` : '',
     probe.found
       ? probe.headerBottom == null
@@ -141,6 +141,16 @@ for (const route of ROUTES) {
     probe.found ? `底色=${probe.background}（不透明底才能看清）` : '',
   ].filter(Boolean))
 
+  // 演示声明采用独立吸顶横条，滚动后也必须可见，且不能遮住导航。
+  await tab.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await tab.waitForTimeout(200)
+  const pinned = await tab.evaluate(() => {
+    const el = document.querySelector('[aria-label*="非真实银行"]')
+    if (!el) return false
+    const r = el.getBoundingClientRect()
+    return r.top >= 0 && r.bottom <= innerHeight && r.width > 0 && getComputedStyle(el).visibility === 'visible'
+  })
+  report(pinned, `${route.path} 滚动后演示声明仍在视口内`)
   await tab.close()
 }
 

@@ -14,7 +14,7 @@ export function Segmented<T extends string>({
   return (
     <div
       className={cn(
-        'inline-flex rounded-chip border border-line bg-surface p-1',
+        'inline-flex max-w-full flex-wrap rounded-field border border-line bg-surface p-1',
         className,
       )}
       role="tablist"
@@ -29,7 +29,7 @@ export function Segmented<T extends string>({
             aria-selected={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'h-9 rounded-chip px-4 text-[13px] font-medium transition-colors duration-200',
+              'min-h-10 rounded-chip px-3 text-[13px] font-medium whitespace-nowrap transition-colors duration-200 sm:px-4',
               active ? 'bg-gold-wash text-gold-deep' : 'text-ink-soft hover:text-ink',
             )}
           >

@@ -45,6 +45,7 @@ export default function App() {
       <ScrollToTop />
       <ToastProvider>
         <SessionProvider>
+          <DemoWatermark />
           {/* 兜在最外层：任何页面渲染崩了都给一张能读的错误页，而不是白屏 */}
           <ErrorBoundary>
             <Routes>
@@ -76,8 +77,6 @@ export default function App() {
             </Routes>
           </ErrorBoundary>
         </SessionProvider>
-        {/* 挂在路由之外：登录页、开户页这些没有应用外壳的页面也要有 */}
-        <DemoWatermark />
       </ToastProvider>
     </BrowserRouter>
   )
