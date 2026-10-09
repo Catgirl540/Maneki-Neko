@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>招财猫银行</title>
+  <g fill="#c8973c">
+    <path d="M13.6 22.5 L15.4 5.8 L29.6 14.2 Z"/>
+    <path d="M50.4 22.5 L48.6 5.8 L34.4 14.2 Z"/>
+    <circle cx="32" cy="36" r="19.6"/>
+  </g>
+  <g stroke="#c8973c" stroke-width="2.4" stroke-linecap="round">
+    <path d="M3.4 33.4 H13.2"/>
+    <path d="M2.2 39.6 H12.6"/>
+    <path d="M4.4 45.8 H14.4"/>
+    <path d="M60.6 33.4 H50.8"/>
+    <path d="M61.8 39.6 H51.4"/>
+    <path d="M59.6 45.8 H49.6"/>
+  </g>
+  <g fill="#fff">
+    <ellipse cx="25.4" cy="33.2" rx="2.9" ry="3.9"/>
+    <ellipse cx="38.6" cy="33.2" rx="2.9" ry="3.9"/>
+    <path d="M32 39.4 L35.2 43.6 H28.8 Z"/>
+  </g>
+</svg>
