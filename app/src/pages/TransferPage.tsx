@@ -53,12 +53,13 @@ import { useToast } from '@/components/ui/toast-context'
 import { useReveal } from '@/lib/useReveal'
 import { useAsync } from '@/lib/useAsync'
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2 | 3 | 4
 
 const STEPS = [
-  { id: 1, label: '填写信息' },
-  { id: 2, label: '信息确认' },
-  { id: 3, label: '完成' },
+  { id: 1, label: '付款' },
+  { id: 2, label: '收款' },
+  { id: 3, label: '确认' },
+  { id: 4, label: '完成' },
 ] as const
 
 const FPS_METHODS: { value: FpsMethod; label: string }[] = [
@@ -87,7 +88,6 @@ export function TransferPage() {
   })
   // 银行账户通道
   const [accountNo, setAccountNo] = useState('')
-  const [sourceAccountId, setSourceAccountId] = useState('')
   const [payeeName, setPayeeName] = useState('')
 
   // 转数快 / 跨境支付通通道
@@ -129,7 +129,8 @@ export function TransferPage() {
   const banks = useAsync<Bank[]>(() => api.listBanks(), [])
   const payees = useAsync<Payee[]>(() => api.listPayees(), [])
 
-  const account = accounts.data?.find((row) => row.id === sourceAccountId) ?? accounts.data?.[0] ?? null
+  // 付款账户：默认用第一个账户（页面不再让用户切换）
+  const account = accounts.data?.[0] ?? null
   const amount: Cents = toCents(amountText || '0')
   const isFps = channel === 'fps'
 
@@ -391,7 +392,28 @@ export function TransferPage() {
   }
 
   /**
-   * 进入「信息确认」。
+   * 第一步 → 第二步：只校验付款侧（金额）。
+   * 收款信息留到下一步校验 —— 一次只处理一部分，把错误挡在它所属的那一步。
+   */
+  function goToRecipient() {
+    setError(null)
+    if (amount <= 0) {
+      setError('请输入转账金额')
+      return
+    }
+    if (overLimit && quote) {
+      setError(`单笔上限 ¥${formatAmount(quote.singleLimit)}，请调整金额或分多笔转出`)
+      return
+    }
+    if (insufficient) {
+      setError('账户可用余额不足')
+      return
+    }
+    setStep(2)
+  }
+
+  /**
+   * 第二步 → 第三步（信息确认）。
    * 转数快标识方式在这一步向中央登记册解析收款人姓名 —— 与真实流程一致：
    * 姓名不是用户填的，是系统查出来给用户核对的。
    */
@@ -481,7 +503,7 @@ export function TransferPage() {
         setCheckingRecipient(false)
       }
     }
-    setStep(2)
+    setStep(3)
   }
 
   /** 最终落库的收款人姓名：标识方式下取系统解析结果 */
@@ -514,7 +536,7 @@ export function TransferPage() {
       })
       setResult(res)
       setConfirmOpen(false)
-      setStep(3)
+      setStep(4)
       accounts.reload()
       payees.reload()
     } catch (err) {
@@ -545,30 +567,7 @@ export function TransferPage() {
     <div className="flex flex-col gap-7">
       <header className="float-up">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">转账</h1>
-        <p className="mt-2 text-[14px] text-ink-mute">
-          银行账户转账支持境内外汇款；转数快 / 跨境支付通支持收款账户、手机号、电邮与 FPS ID
-        </p>
       </header>
-
-      {/* 转账通道 */}
-      {step === 1 && (
-        <div className="float-up grid gap-3 sm:grid-cols-2">
-          <ChannelCard
-            active={!isFps}
-            title="银行账户转账"
-            description="填写收款银行与收款账号，支持境内 / 境外"
-            badge="境内免手续费"
-            onClick={() => switchChannel('bank')}
-          />
-          <ChannelCard
-            active={isFps}
-            title="转数快 / 跨境支付通"
-            description="收款账户、手机号、电邮或 FPS ID 均可，款项路由至指定收款银行"
-            badge="实时到账 · 免手续费"
-            onClick={() => switchChannel('fps')}
-          />
-        </div>
-      )}
 
       {/* 步骤条 */}
       <ol className="float-up flex items-center gap-3">
@@ -599,52 +598,26 @@ export function TransferPage() {
       </ol>
 
       {step === 1 && (
-        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
-          <Card className="float-up">
-            <div className="mb-7 rounded-field border border-line bg-sunk px-4 py-3.5">
-              <p className="text-[12px] text-ink-mute">付款账户</p>
-              {accounts.loading ? (
-                <Skeleton className="mt-2 h-7 w-full" />
-              ) : account ? (
-                <div className="mt-1.5 flex items-end justify-between gap-4">
-                  <div>
-                    <p className="text-[15px] font-medium text-ink">{account.label}</p>
-                    <p className="num mt-0.5 text-[12px] text-ink-mute">
-                      尾号 {account.accountNo.slice(-4)}
-                    </p>
-                  </div>
-                  <p className="num text-right text-[14px] text-ink-soft">
-                    可用余额 {shown ? `¥${formatAmount(account.available)}` : '¥••••••'}
-                  </p>
-                </div>
-              ) : (
-                <p className="mt-1.5 text-[13px] text-coral">暂未找到可付款的储蓄账户</p>
-              )}
-              {(accounts.data?.length ?? 0) > 1 && (
-                <div className="mt-4 flex flex-wrap gap-2" aria-label="选择付款银行卡">
-                  {accounts.data?.map((row) => {
-                    const card = cards.data?.find((item) => item.accountId === row.id && item.status !== 'replaced')
-                    return (
-                      <button key={row.id} type="button" onClick={() => {
-                        setSourceAccountId(row.id)
-                        if (digitsOnly(accountNo) === row.accountNo) {
-                          setAccountNo('')
-                          setPayeeName('')
-                        }
-                      }}
-                        aria-pressed={account?.id === row.id}
-                        className={cn('rounded-chip border px-3 py-2 text-left text-[12px] transition-colors',
-                          account?.id === row.id ? 'border-gold bg-white text-gold-deep' : 'border-line bg-white text-ink-soft hover:border-gold')}>
-                        {card?.productName ?? row.label} · {card ? `卡尾号 ${card.last4}` : `账户尾号 ${row.accountNo.slice(-4)}`}
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
+        <div className="float-up mx-auto w-full max-w-[560px]">
+          <Card>
+            <p className="mb-3 text-[13px] font-medium text-ink-soft">转账方式</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <ChannelCard
+                active={!isFps}
+                title="银行账户转账"
+                badge="境内免手续费"
+                onClick={() => switchChannel('bank')}
+              />
+              <ChannelCard
+                active={isFps}
+                title="转数快 / 跨境支付通"
+                badge="实时到账 · 免手续费"
+                onClick={() => switchChannel('fps')}
+              />
             </div>
 
             {/* 金额 */}
-            <div className="flex flex-col items-center border-b border-line pb-8">
+            <div className="mt-7 flex flex-col items-center">
               <span className="text-[13px] text-ink-mute">转账金额</span>
               <div className="mt-3 flex items-baseline justify-center gap-2">
                 <span className="text-[28px] leading-none font-semibold text-ink-mute">¥</span>
@@ -667,9 +640,35 @@ export function TransferPage() {
               </span>
             </div>
 
-            {/* 常用收款人 */}
+            {error && (
+              <p className="mt-6 flex items-start gap-2 rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">
+                <AlertIcon size={16} className="mt-0.5 shrink-0" />
+                {error}
+              </p>
+            )}
+
+            <Button
+              variant="primary"
+              size="lg"
+              block
+              className="mt-7"
+              onClick={() => goToRecipient()}
+              disabled={accounts.loading}
+            >
+              下一步
+            </Button>
+            <p className="mt-3 text-center text-[12px] text-ink-mute">
+              转账即表示您已阅读并同意相关条款
+            </p>
+          </Card>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+          <Card className="float-up">
             {!isFps && scope === 'domestic' && (accounts.data?.length ?? 0) > 1 && (
-              <div className="mt-6">
+              <div className="mb-7">
                 <p className="mb-3 text-[13px] font-medium text-ink-soft">转给我的其他银行卡账户</p>
                 <div className="flex flex-wrap gap-2.5">
                   {accounts.data?.filter((row) => row.id !== account?.id).map((row) => {
@@ -691,7 +690,7 @@ export function TransferPage() {
             )}
 
             {quickPayees.length > 0 && (
-              <div className="mt-6">
+              <div className="mb-7">
                 <p className="mb-3 text-[13px] font-medium text-ink-soft">常用收款人</p>
                 <div className="flex flex-wrap gap-2.5">
                   {quickPayees.map((p) => (
@@ -718,7 +717,7 @@ export function TransferPage() {
             )}
 
             {/* 收款信息 */}
-            <div className="mt-7 grid gap-5">
+            <div className="grid gap-5">
               {isFps ? (
                 <>
                   <div className="flex items-center justify-between gap-4 border-b border-line pb-4">
@@ -895,17 +894,19 @@ export function TransferPage() {
               </p>
             )}
 
-            <Button
-              variant="primary"
-              size="lg"
-              block
-              className="mt-7"
-              loading={resolving || checkingRecipient}
-              onClick={() => void goReview()}
-              disabled={accounts.loading}
-            >
-              {resolving ? '正在查询转数快…' : checkingRecipient ? '正在核验收款账户…' : '下一步'}
-            </Button>
+            <div className="mt-7 flex gap-3">
+              <Button block onClick={() => { setError(null); setStep(1) }}>
+                上一步
+              </Button>
+              <Button
+                block
+                variant="primary"
+                loading={resolving || checkingRecipient}
+                onClick={() => void goReview()}
+              >
+                {resolving ? '正在查询转数快…' : checkingRecipient ? '正在核验收款账户…' : '下一步'}
+              </Button>
+            </div>
             <p className="mt-3 text-center text-[12px] text-ink-mute">
               转账即表示您已阅读并同意相关条款
             </p>
@@ -982,7 +983,7 @@ export function TransferPage() {
         </div>
       )}
 
-      {step === 2 && (
+      {step === 3 && (
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
           <Card className="float-up">
             <h2 className="text-[17px] leading-6 font-semibold text-ink">信息确认</h2>
@@ -1094,7 +1095,7 @@ export function TransferPage() {
             )}
 
             <div className="mt-8 flex gap-3">
-              <Button block onClick={() => setStep(1)}>
+              <Button block onClick={() => setStep(2)}>
                 返回修改
               </Button>
               <Button
@@ -1144,7 +1145,7 @@ export function TransferPage() {
         </div>
       )}
 
-      {step === 3 && result && (
+      {step === 4 && result && (
         <Card className="float-up mx-auto w-full max-w-[520px] text-center">
           <span className="mx-auto grid size-16 place-items-center rounded-chip bg-blue-wash text-blue">
             <CheckIcon size={30} />
@@ -1247,13 +1248,11 @@ export function TransferPage() {
 function ChannelCard({
   active,
   title,
-  description,
   badge,
   onClick,
 }: {
   active: boolean
   title: string
-  description: string
   badge: string
   onClick: () => void
 }) {
@@ -1277,7 +1276,6 @@ function ChannelCard({
           </span>
         )}
       </span>
-      <span className="text-[13px] leading-relaxed text-ink-soft">{description}</span>
       <span className="mt-1 inline-flex h-7 items-center rounded-chip bg-blue-wash px-2.5 text-[12px] font-medium text-blue">
         {badge}
       </span>

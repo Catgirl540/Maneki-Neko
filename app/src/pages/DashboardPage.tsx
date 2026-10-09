@@ -65,7 +65,6 @@ export function DashboardPage() {
         <div>
           <p className="mb-2 text-[12px] font-medium tracking-wider text-gold-deep">我的账户</p>
           <h1 className="text-[28px] leading-tight font-bold tracking-[-0.03em] text-ink sm:text-[32px]">财务总览</h1>
-          <p className="mt-2 text-[14px] text-ink-soft">账户、收支与最近交易，一目了然。</p>
         </div>
         <span className="rounded-chip border border-line bg-surface px-3 py-1.5 text-[12px] text-ink-soft">{new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())}</span>
       </header>

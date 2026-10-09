@@ -81,9 +81,6 @@ export function WealthPage() {
     <div className="flex flex-col gap-7">
       <header className="float-up">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">理财</h1>
-        <p className="mt-2 text-[14px] text-ink-mute">
-          产品净值与持仓收益每日更新；购买前需完成风险承受能力评估
-        </p>
       </header>
 
       {/* 风险揭示：监管要求在醒目位置提示 */}

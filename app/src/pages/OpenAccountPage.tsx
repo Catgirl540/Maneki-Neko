@@ -75,7 +75,7 @@ export function OpenAccountStandalone() {
       <Logo markClass="h-10 w-10" wordClass="text-[24px]" />
       <Link to="/login" className="inline-flex items-center text-[13px] font-medium text-gold-deep">已有账户？去登录 <ChevronRightIcon size={15} /></Link>
     </div>
-    <header className="mb-7"><h1 className="text-[32px] font-bold tracking-[-0.02em] text-ink">注册并开通储蓄账户</h1><p className="mt-2 text-[14px] text-ink-soft">使用身份证、短信和人脸核身完成开户，无需已有银行卡或选择账户类别。</p></header>
+    <header className="mb-7"><h1 className="text-[32px] font-bold tracking-[-0.02em] text-ink">注册并开通储蓄账户</h1></header>
     <div className="grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
       <div className="flex flex-col gap-5">
         <Card><CardHeader title="1. 基本资料与登录密码" /><div className="mt-5 grid gap-4 sm:grid-cols-2">

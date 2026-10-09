@@ -103,7 +103,6 @@ export function AgentPage() {
           <span className="grid size-11 place-items-center rounded-chip bg-gold"><CatMark className="size-7 text-ink" cutout="var(--color-gold)" /></span>
           <div><p className="flex items-center gap-2 text-[13px] text-gold"><SparkleIcon size={15} /> AI BANKING AGENT</p><h1 className="text-[27px] font-bold leading-tight">招财猫 AI 助手</h1></div>
         </div>
-        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-white/80">用一句话发起任务。助手会识别意图、读取演示账户数据并安排操作；涉及资金和卡片状态的动作需要你核对或确认。</p>
       </header>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px]">
         <section className="flex min-h-[580px] flex-col overflow-hidden rounded-card border border-line bg-surface" aria-label="与 AI 助手对话">

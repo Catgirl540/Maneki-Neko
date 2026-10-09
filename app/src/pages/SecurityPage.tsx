@@ -66,9 +66,6 @@ export function SecurityPage() {
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
           安全中心
         </h1>
-        <p className="mt-2 text-[14px] text-ink-mute">
-          登录手机号与登录密码、交易风控、登录设备都在这里
-        </p>
       </header>
 
       {notice && (

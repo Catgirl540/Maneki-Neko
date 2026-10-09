@@ -40,7 +40,7 @@ function LoginRoute() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       {/* 路由切换要回到顶部，否则新页面会继承上一页的滚动位置 */}
       <ScrollToTop />
       <ToastProvider>

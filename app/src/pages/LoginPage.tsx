@@ -81,9 +81,6 @@ export function LoginPage() {
           <h1 className="mt-9 text-[32px] leading-[1.15] font-bold tracking-[-0.02em] text-ink sm:mt-14 sm:text-[38px]">
             欢迎回来
           </h1>
-          <p className="mt-3 text-[15px] text-ink-soft">
-            欢迎回到招财猫银行，安心开启每一天
-          </p>
 
           <form className="mt-9 flex flex-col gap-5" onSubmit={onSubmit}>
             <Field

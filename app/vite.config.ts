@@ -13,7 +13,10 @@ export default defineConfig(({ mode }) => {
   const appRoot = fileURLToPath(new URL('.', import.meta.url))
   const env = loadEnv(mode, appRoot, 'VITE_')
   const useMock = (process.env.VITE_USE_MOCK ?? env.VITE_USE_MOCK) === 'true'
+  // 部署到子路径（如裸 IP 的 /bank/）时用 VITE_BASE_PATH 指定；默认根路径，不影响本地开发。
+  const base = process.env.VITE_BASE_PATH ?? env.VITE_BASE_PATH ?? '/'
   return {
+    base,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

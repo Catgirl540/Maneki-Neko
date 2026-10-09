@@ -43,7 +43,7 @@ import { toolLabel, useAgentChat, type ChatItem } from '@/lib/useAgentChat'
 import { useVoice, type VoicePlayback } from '@/lib/useVoice'
 
 export function SupportPage() {
-  const compact = useMediaQuery('(max-width: 1023px)')
+  const compact = useMediaQuery('(max-width: 959px)')
   const agent = useAgentChat()
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [supportError, setSupportError] = useState<string | null>(null)
@@ -281,9 +281,6 @@ export function SupportPage() {
           <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
             智能客服
           </h1>
-          <p className="mt-2 text-[14px] text-ink-mute">
-            查余额、看流水、转账、看理财，都可以直接对话办理
-          </p>
         </div>
         <ModeTag status={agent.status} />
       </header>

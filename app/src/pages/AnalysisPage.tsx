@@ -124,9 +124,6 @@ export function AnalysisPage() {
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
           消费分析
         </h1>
-        <p className="mt-2 text-[14px] text-ink-mute">
-          按分类看本月支出结构，并管理所有周期性自动扣款
-        </p>
       </header>
 
       {/* 概览数字。

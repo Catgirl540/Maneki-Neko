@@ -158,14 +158,6 @@ export function CardsPage() {
           <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
             银行卡
           </h1>
-          <p className="mt-2 text-[14px] text-ink-mute">
-            这里管理的是<strong className="font-medium text-ink-soft">卡</strong>
-            （支付工具）；资金存在
-            <Link to="/open-account" className="mx-0.5 font-medium text-gold-deep hover:text-ink">
-              账户
-            </Link>
-            里，刷卡时从卡所绑定的账户扣款
-          </p>
         </div>
         <Button
           variant="primary"
@@ -188,7 +180,6 @@ export function CardsPage() {
         <Card>
           <EmptyState
             title="还没有银行卡"
-            description="卡是支付工具、账户才装钱 —— 先开立账户，再申请一张卡。"
             action={
               <Link to="/open-account">
                 <Button>去开立账户</Button>
