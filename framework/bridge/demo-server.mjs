@@ -34,7 +34,8 @@
  *                          用于端到端自检时改超时一类的参数
  *   LUCKYCAT_TTS_MODEL   TTS 模型，默认 qwen/qwen-audio-3.0-tts-plus
  *   LUCKYCAT_TTS_VOICE   TTS 音色，默认 longanlingxin（中文女声）
- *   LUCKYCAT_VOLC_APP_ID / LUCKYCAT_VOLC_ACCESS_TOKEN  流式 TTS 的火山凭据
+ *   LUCKYCAT_VOLC_API_KEY  豆包语音单 Key（新版，走 X-Api-Key）；设置后优先使用
+ *   LUCKYCAT_VOLC_APP_ID / LUCKYCAT_VOLC_ACCESS_TOKEN  旧版火山凭据
  *                     （不设时退回 VOLC_APP_ID / VOLC_ACCESS_TOKEN；缺了就 502）
  *   LUCKYCAT_VOLC_RESOURCE 流式 TTS 资源，默认 seed-tts-2.0
  *   LUCKYCAT_VOLC_SPEAKER  流式 TTS 音色，默认 zh_female_xiaohe_uranus_bigtts
@@ -104,6 +105,7 @@ const ASR_MODEL = process.env.LUCKYCAT_ASR_MODEL ?? 'qwen/qwen3-asr-0.6b'
  *   LUCKYCAT_VOLC_SPEAKER   → 实测 zh_female_xiaohe_uranus_bigtts 可配 seed-tts-2.0
  *   LUCKYCAT_VOLC_SAMPLE_RATE → 流式返回裸 PCM，采样率默认 24000
  */
+const VOLC_API_KEY = process.env.LUCKYCAT_VOLC_API_KEY ?? process.env.VOLC_API_KEY ?? ''
 const VOLC_APP_ID = process.env.LUCKYCAT_VOLC_APP_ID ?? process.env.VOLC_APP_ID ?? ''
 const VOLC_ACCESS_TOKEN = process.env.LUCKYCAT_VOLC_ACCESS_TOKEN ?? process.env.VOLC_ACCESS_TOKEN ?? ''
 const VOLC_RESOURCE = process.env.LUCKYCAT_VOLC_RESOURCE ?? 'seed-tts-2.0'
@@ -632,7 +634,7 @@ async function handle(req, res) {
       // 语音能力一并报出去：页面据此决定要不要显示「语音模式」，
       // 而不是等用户按下去才发现服务端没配。只报"有没有"，不报"用的哪个模型"。
       voice: VOICE_ENABLED && Boolean(process.env.OPENROUTER_API_KEY)
-        ? { asr: true, tts: true, stream: Boolean(VOLC_APP_ID && VOLC_ACCESS_TOKEN), maxSeconds: VOICE_MAX_SECONDS }
+        ? { asr: true, tts: true, stream: Boolean(VOLC_API_KEY || (VOLC_APP_ID && VOLC_ACCESS_TOKEN)), maxSeconds: VOICE_MAX_SECONDS }
         : { asr: false, tts: false },
     })
     return
@@ -1076,6 +1078,7 @@ async function handle(req, res) {
         speaker,
         sampleRate: VOLC_SAMPLE_RATE,
         resourceId: VOLC_RESOURCE,
+        apiKey: VOLC_API_KEY,
         appId: VOLC_APP_ID,
         accessToken: VOLC_ACCESS_TOKEN,
         onAudio: (buf) => {
