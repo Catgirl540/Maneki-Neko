@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
@@ -534,6 +535,11 @@ export function TransferPage() {
     setResult(null)
     setError(null)
   }
+
+  const requests = [accounts, cards, profile, banks, payees]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
     <div className="flex flex-col gap-7">

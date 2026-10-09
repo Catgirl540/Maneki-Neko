@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { SecurityOverview } from '@/api/types'
@@ -53,6 +54,11 @@ export function SecurityPage() {
       toast.show(err instanceof ApiError ? err.message : '操作失败，请稍后重试', 'error')
     }
   }
+
+  const requests = [overview]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
     <div className="flex flex-col gap-7">
@@ -304,7 +310,7 @@ function PasswordModal({
       open={open}
       onClose={onClose}
       title="重置登录密码"
-      description="演示环境中初始密码为 123456。"
+      description="输入当前密码，再设置新的登录密码。"
       footer={
         <>
           <Button block onClick={onClose}>

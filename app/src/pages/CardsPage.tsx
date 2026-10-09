@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
@@ -144,6 +145,11 @@ export function CardsPage() {
       setBusy(false)
     }
   }
+
+  const requests = [cards, products, accounts]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
     <div className="flex flex-col gap-7">

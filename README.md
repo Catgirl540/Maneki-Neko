@@ -4,7 +4,7 @@
 
 > Maneki-Neko(招财猫)是一个集成的AI banking智能体，为了解决团队四人如何拿下10w的现实问题
 
-本仓库当前的内容是**前端**（含一套纯前端 mock 后端，用于在后端就绪前把全部业务跑通）。
+本仓库包含**网页前端与 Node.js + SQLite HTTP 后端**。开发与生产默认从 `/api` 读取业务数据；浏览器 mock 仅用于显式开启的开发测试。
 前后端之间只有 `app/src/api/contract.ts` 一个接口面，后端按它实现即可，前端零改动；
 接口清单、错误码表、业务不变量与**待后端拍板的开放问题**都整理在
 `design/backend-handoff/API-CONTRACT.md`。本仓根目录留了位置，后端代码放 `server/` 或 `backend/` 都行。
@@ -13,7 +13,7 @@
 
 ## 招财猫银行 · luckycat BANK
 
-虚拟（模拟）银行的**前端 MVP**。前后端分离架构，当前阶段所有数据由前端 mock 层提供，
+虚拟（模拟）银行的网页版。前后端分离架构，业务数据由 SQLite 后端通过 HTTP 提供，
 后端就绪后只需切一个环境变量，业务代码零改动。
 
 - 品牌：招财猫银行 / luckycat BANK
@@ -361,7 +361,7 @@ cd app && npm run dev          # http://localhost:5180
 | 阶段 | 配置 |
 | --- | --- |
 | 当前（纯前端） | `VITE_USE_MOCK=true` |
-| 后端已就绪 | `VITE_USE_MOCK=false` + `VITE_API_BASE_URL=https://api.example.com` |
+| 默认开发 / 生产 | `VITE_USE_MOCK=false` + `VITE_API_BASE_URL=https://api.example.com` |
 
 `src/api/contract.ts` 里的 `routes` 就是给后端的接口清单，
 `types.ts` 就是返回体结构。后端按这套约定实现即可，前端一行不用改。
@@ -389,6 +389,7 @@ POST   /api/cards/bin               卡 BIN 查询：卡号前 6 位 → 发卡�
 GET    /api/receiving               我的收款信息（户名 / 账户 / 转数快标识，见 §12.5）
 GET    /api/payees                  常用收款人
 POST   /api/fps/resolve            转数快标识解析（返回登记姓名与收款银行）
+POST   /api/transfers/recipient     核对本行收款账户与户名
 POST   /api/transfers/quote         转账询价（手续费/到账时间/单笔上限/是否需二次确认/换汇报价）
 POST   /api/transfers               提交转账（channel=bank 走卡号；channel=fps 走四种汇款方式）
 
@@ -1325,7 +1326,7 @@ if (agreement !== WEALTH_INVESTMENT_AGREEMENT) → 400 AGREEMENT_REQUIRED
 **线上地址：https://bank.waveflow.cn**（HTTP 会 301 到 HTTPS）
 
 这个项目是**纯前端**：数据全在浏览器 localStorage 里，服务端只负责发静态文件。
-所以「部署」= 构建 → 上传 → 让 nginx 指向新目录。没有后端要起、没有数据库要迁。
+生产构建默认使用 HTTP 后端。部署需先启动 `server/index.mjs` 并配置 nginx 的 `/api/` 代理，再上传前端构建。只上传静态文件会导致银行接口不可用。
 
 ### 19.1 一次性配置
 
@@ -1392,3 +1393,19 @@ Let's Encrypt 证书，certbot 是现成的，不用装。
 
 - 提交只能在**本目录内**操作
 - **绝对不要在 `~/文档` 里 `git add -A`** —— 那会把几十 G 的无关文件一起提交
+
+## HTTP 数据源与占位数据清理
+
+开发与生产均默认使用 `VITE_USE_MOCK=false`；生产走同源 `/api`，反代配置见 `design/deploy/bank.waveflow.cn.conf`。独立后端域名可在构建时设置 `VITE_API_BASE_URL`（仅源地址，不附加 `/api`）。已有服务器数据库应保留；此修改不删除服务端记录。
+
+HTTP 版本不会打包浏览器模拟数据库。启动时清理旧 mock 缓存和 mock 登录令牌；真实 HTTP 令牌、界面偏好与助手对话保留。新注册用户不会继承演示收款人或其他用户的支付密码状态。登录框不再预填账号密码，公开页不展示编造的余额、交易或收益；模拟入账与重置演示数据按钮仅在显式 mock 模式可见。接口不可达或返回 HTML 时会提示错误，不切回 mock；失效会话会返回登录页。
+
+本地联调：按 `README-START.md` 启动 Node.js 24 后端和前端。若要运行历史 mock 测试，显式使用 `VITE_USE_MOCK=true npm run dev --prefix app`。生产 nginx 的 HTTPS 配置也需要同样的 `/api/` 代理；提交的配置模板不会自动修改公网服务器。`deploy-bank.sh` 会先检查后端健康及 `/api/accounts` 的未登录 401 响应，未就绪时不会覆盖当前站点。
+
+端到端 HTTP 联调检查（临时 SQLite 数据库，不修改现有数据）：
+
+```sh
+node tools/check-http-frontend.mjs
+```
+
+项目后端仍是虚拟银行业务服务，并非真实银行清算系统；智能助手的示例工具仍使用独立演示数据，HTTP 网页会拒绝启用此类占位工具，改用银行 HTTP 客服消息接口。未来账户助手需在健康信息声明 `bankDataSource: "http"`，并完成用户会话与确认流程对接后才能启用。

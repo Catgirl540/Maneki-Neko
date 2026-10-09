@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import type { SupportMessage } from '@/api/types'
 import { ConsentCard } from '@/components/agent/ConsentCard'
 import { EditMessageModal, MessageActions } from '@/components/agent/MessageActions'
@@ -44,9 +44,8 @@ import { useVoice, type VoicePlayback } from '@/lib/useVoice'
 export function SupportPage() {
   const compact = useMediaQuery('(max-width: 1023px)')
   const agent = useAgentChat()
-  const [messages, setMessages] = useState<SupportMessage[]>(() =>
-    storage.get<SupportMessage[]>(STORAGE_KEYS.supportHistory, []),
-  )
+  const [messages, setMessages] = useState<SupportMessage[]>([])
+  const [supportError, setSupportError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(() =>
@@ -142,21 +141,18 @@ export function SupportPage() {
     return () => { clearInterval(timer) }
   }, [historyOpen])
 
-  // 仅当本地没有历史时才拉一次，避免在 effect 里同步 setState
+  // 客服记录从当前用户的银行服务读取，不沿用浏览器中的旧占位记录。
   useEffect(() => {
-    if (messages.length > 0) return
     let cancelled = false
     void api.listSupportMessages().then((history) => {
       if (!cancelled) setMessages(history)
+    }).catch((error: unknown) => {
+      if (!cancelled) setSupportError(error instanceof ApiError ? error.message : '客服记录暂时无法加载')
     })
     return () => {
       cancelled = true
     }
-  }, [messages.length])
-
-  useEffect(() => {
-    if (messages.length) storage.set(STORAGE_KEYS.supportHistory, messages)
-  }, [messages])
+  }, [])
 
   // 有 agent 时，滚动跟随 agent 的内容；没有时跟随固定话术。
   useEffect(() => {
@@ -212,17 +208,17 @@ export function SupportPage() {
   async function sendCanned(text: string) {
     const value = text.trim()
     if (!value || thinking) return
-    setMessages((prev) => [...prev, {
-      id: `local_${Date.now()}`,
-      role: 'user',
-      text: value,
-      createdAt: new Date().toISOString(),
-    }])
-    setInput('')
+    setSupportError(null)
     setThinking(true)
     try {
       const { message } = await api.sendSupportMessage(value)
-      setMessages((prev) => [...prev, message])
+      setMessages(prev => [...prev, {
+        id: `local_${Date.now()}`, role: 'user', text: value, createdAt: new Date().toISOString(),
+      }, message])
+      setInput('')
+    } catch (error) {
+      setSupportError(error instanceof ApiError ? error.message : '消息未发送，请稍后重试')
+      setInput(value)
     } finally {
       setThinking(false)
     }
@@ -338,7 +334,7 @@ export function SupportPage() {
                 {usingAgent && agent.active !== undefined ? agent.active.title : ASSISTANT.title}
               </span>
               <span className="block text-[13px] text-ink-mute">
-                {usingAgent ? '在线 · 敏感操作需你确认' : '演示话术 · 未连接'}
+                {usingAgent ? '在线 · 敏感操作需你确认' : '账户客服 · 消息服务'}
               </span>
             </span>
             {usingAgent && (
@@ -393,6 +389,7 @@ export function SupportPage() {
             )}
           </div>
 
+          {supportError && !usingAgent && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
           <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
             {/* 上下文没了这件事必须在**发言之前**就写在脸上。
                 否则用户看到的是一段完整的记录配一个答非所问的助手。 */}
@@ -791,7 +788,7 @@ function ModeTag({ status }: { status: 'probing' | 'off' | 'ready' }) {
     <span data-agent-status="off">
       <Tag tone="gold" className="h-8 px-3">
         <SparkleIcon size={14} className="mr-1.5" />
-        演示话术（未连接）
+        智能助手未连接账户服务
       </Tag>
     </span>
   )

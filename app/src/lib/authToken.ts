@@ -15,14 +15,14 @@
  *
  * ## 这不是安全边界，别误会
  *
- * 令牌只是个字符串，前端没有任何东西可以验它（纯前端没有后端可验）。
+ * 令牌由后端签发与校验，前端收到未授权响应后会清除会话。
  * `RequireAuth` 挡的是**迷路的用户**，不是攻击者：能在 devtools 里执行代码的人，
  * 一样能把这两个值塞进 sessionStorage。真正的边界必须在后端——见
  * `design/backend-handoff/AGENT-RUNTIME-CONTRACT.md` §5。
  *
  * ## 业务数据**不在这里**
  *
- * 账户、流水、卡片、聊天记录仍然走 `localStorage`（见 `lib/storage.ts` 的
+ * HTTP 模式下账户、流水和银行卡均由服务端保存，助手对话走 `localStorage`（见 `lib/storage.ts` 的
  * `storage`）——"关掉浏览器"不该把用户的聊天记录也清掉。
  * 这条界线很容易搞混，所以两边各写一句。
  *
@@ -34,6 +34,7 @@ import type { User } from '@/api/types'
 
 /** 用户信息在 sessionStorage 里的键（与令牌分开存，但同生共死）。 */
 const USER_KEY = 'session.user'
+export const AUTH_EXPIRED_EVENT = 'luckycat:auth-expired'
 
 /**
  * 记住这次登录。

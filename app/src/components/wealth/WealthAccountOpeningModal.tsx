@@ -20,7 +20,6 @@ import { RiskQuestionnaire } from './RiskAssessmentModal'
 
 type Step = 'risk' | 'identity' | 'agreement' | 'done'
 
-const DEMO_ID = '310101199001011234'
 
 /**
  * 开立理财账户（投资账户）。
@@ -242,7 +241,6 @@ export function WealthAccountOpeningModal({
             inputMode="numeric"
             onChange={(e) => setIdNumber(e.target.value.replace(/[^\dXx]/g, '').slice(0, 18))}
             placeholder="18 位身份证号"
-            hint={`演示环境可用 ${DEMO_ID}`}
           />
 
           <div className="flex items-end gap-2.5">

@@ -1,18 +1,11 @@
 import type { BankApi } from './contract'
-import { createHttpApi } from './http'
-import { createMockApi } from './mock'
+import { createBackend } from '@/api/runtime'
+import { clearLegacyMockData, isMockMode } from '@/lib/dataMode'
 
-/**
- * 前后端分离的切换点：
- *   VITE_USE_MOCK=true  → 浏览器本地模拟数据
- *   VITE_USE_MOCK=false → HTTP 演示后端，配合 VITE_API_BASE_URL / vite proxy
- * 组件永远只 import { api }，切换时业务代码零改动。
- */
-const useMock = (import.meta.env.VITE_USE_MOCK ?? 'true') !== 'false'
+// 默认只从服务端读取业务数据，mock 仅用于显式开启的本地开发和回归测试。
+clearLegacyMockData()
+export const api: BankApi = createBackend()
 
-export const api: BankApi = useMock ? createMockApi() : createHttpApi()
-
-export const isMockMode = useMock
-
+export { isMockMode }
 export * from './contract'
 export type * from './types'

@@ -9,7 +9,6 @@ import { ChevronRightIcon } from '@/components/ui/icons'
 import { ACCOUNT_OPENING_PLEDGE } from '@/lib/account-opening'
 import { useSession } from '@/store/session-context'
 
-const DEMO_ID = '310101199001011234'
 const maskId = (v: string) => v.length === 18 ? `${v.slice(0, 3)}***********${v.slice(-4)}` : '待填写'
 const maskPhone = (v: string) => v.length === 11 ? `${v.slice(0, 3)}****${v.slice(-4)}` : '待填写'
 
@@ -81,7 +80,7 @@ export function OpenAccountStandalone() {
       <div className="flex flex-col gap-5">
         <Card><CardHeader title="1. 基本资料与登录密码" /><div className="mt-5 grid gap-4 sm:grid-cols-2">
           <Field label="姓名" value={holderName} onChange={(e) => setHolderName(e.target.value)} placeholder="请填写本人姓名" />
-          <Field label="身份证号" value={idNumber} onChange={(e) => setIdNumber(e.target.value.trim().slice(0, 18))} placeholder={DEMO_ID} />
+          <Field label="身份证号" value={idNumber} onChange={(e) => setIdNumber(e.target.value.trim().slice(0, 18))} placeholder="请输入身份证号" />
           <Field label="登录密码" type="password" value={password} onChange={(e) => setPassword(e.target.value)} error={passwordError ? '请输入 6-20 个字符' : undefined} />
           <Field label="确认登录密码" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} error={confirmError ? '两次输入的密码不一致' : undefined} />
         </div></Card>

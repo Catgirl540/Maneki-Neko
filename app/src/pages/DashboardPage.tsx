@@ -1,6 +1,7 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, ApiError } from '@/api'
+import { api, ApiError, isMockMode } from '@/api'
 import { CopyButton } from '@/components/ui/CopyButton'
 import type {
   Account,
@@ -52,6 +53,11 @@ export function DashboardPage() {
   const opening = current ? current.balance - netChange : 0
   const ratio = opening > 0 ? netChange / opening : 0
   const netPositive = netChange >= 0
+
+  const requests = [accounts, cashFlow, spending, transactions]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
     <div className="flex flex-col gap-6">
@@ -352,9 +358,9 @@ function MoneyInModal({
       footer={
         mode === 'info' ? (
           <>
-            <Button block onClick={() => setMode('demo')}>
+            {isMockMode && <Button block onClick={() => setMode('demo')}>
               模拟一笔转入
-            </Button>
+            </Button>}
             <Button
               block
               variant="primary"

@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useState } from 'react'
 import { api } from '@/api'
 import type {
@@ -70,6 +71,11 @@ export function WealthPage() {
   const redeemHolding = holdings.find((h) => h.id === redeemTarget) ?? null
   const redeemProduct = products.data?.find((p) => p.code === redeemHolding?.productCode) ?? null
   const list = (products.data ?? []).filter((p) => filter === 'all' || p.category === filter)
+
+  const requests = [overview, products, questions, accounts]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
     <div className="flex flex-col gap-7">

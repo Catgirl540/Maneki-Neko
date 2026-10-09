@@ -11,6 +11,7 @@
  * @module app/api/agent
  */
 
+import { isMockMode } from '@/lib/dataMode'
 import { blobToBase64 } from '@/lib/audio'
 
 /** agent 服务地址。留空 = 关闭 agent（回到纯前端固定话术）。 */
@@ -111,6 +112,8 @@ export type AgentEvent =
  */
 export interface AgentHealth {
   ok: boolean
+  /** 只有连接同一银行账户服务的助手，才能在 HTTP 网页上提供账户工具。 */
+  bankDataSource?: 'http' | 'demo'
   /** 服务端的语音能力；服务端没开就是 `{ asr: false, tts: false }`。 */
   voice?: VoiceCapability
 }
@@ -184,6 +187,7 @@ export async function probeAgent(): Promise<AgentHealth | null> {
   if (!agentEnabled) return null
   try {
     const health = await requestJson<AgentHealth>('/health', {}, 3_000)
+    if (!isMockMode && health.bankDataSource !== 'http') return null
     return health.ok === true ? health : null
   } catch {
     return null

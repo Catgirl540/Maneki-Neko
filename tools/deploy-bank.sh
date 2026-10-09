@@ -30,6 +30,18 @@ DOMAIN="${BANK_DOMAIN:-bank.waveflow.cn}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SSH=(ssh -F /dev/null -i "$KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$HOST")
 
+# HTTP 版本发布前必须确认银行服务和同源代理已就绪，避免覆盖可用站点后才发现接口未接通。
+echo "▶ 验证银行后端与 /api 代理"
+"${SSH[@]}" "
+  set -e
+  health=\$(curl --max-time 10 -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health)
+  api=\$(curl --max-time 10 -s -o /dev/null -w '%{http_code}' --resolve '$DOMAIN:443:127.0.0.1' https://$DOMAIN/api/accounts)
+  if [ \"\$health\" != 200 ] || [ \"\$api\" != 401 ]; then
+    echo '银行后端或 /api 代理未就绪：先启动 server/index.mjs 并配置 nginx，再发布前端。' >&2
+    exit 1
+  fi
+"
+
 echo "▶ 构建"
 cd "$ROOT/app"
 npm run build

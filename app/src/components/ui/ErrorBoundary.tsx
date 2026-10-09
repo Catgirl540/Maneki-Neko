@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { Button } from './Button'
 import { Card } from './Card'
+import { isMockMode } from '@/lib/dataMode'
 import { AlertIcon } from './icons'
 
 interface Props {
@@ -59,7 +60,7 @@ export class ErrorBoundary extends Component<Props, State> {
             {/* 「总览」在 `/dashboard`：`/` 是公开的官网首页，跳过去等于没回到应用里 */}
             <Button onClick={() => window.location.assign('/dashboard')}>回到总览</Button>
             <Button onClick={() => window.location.reload()}>重新加载</Button>
-            <Button
+            {isMockMode && <Button
               variant="ghost"
               onClick={() => {
                 // 清掉的是**业务数据**（localStorage）。登录态在 sessionStorage 里，
@@ -69,13 +70,13 @@ export class ErrorBoundary extends Component<Props, State> {
               }}
             >
               重置演示数据
-            </Button>
+            </Button>}
           </div>
 
-          <p className="mt-5 text-[12px] leading-relaxed text-ink-mute">
+          {isMockMode && <p className="mt-5 text-[12px] leading-relaxed text-ink-mute">
             如果刚刚更新过版本，多半是本地存的模拟库还是旧结构 ——
             「重置演示数据」会清掉它并按新结构重新播种。
-          </p>
+          </p>}
         </Card>
       </div>
     )

@@ -13,8 +13,8 @@ const RESEND_SECONDS = 60
 
 export function LoginPage() {
   const { login } = useSession()
-  const [phone, setPhone] = useState('13800138000')
-  const [password, setPassword] = useState('123456')
+  const [phone, setPhone] = useState('')
+  const [password, setPassword] = useState('')
   const [smsCode, setSmsCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -176,7 +176,7 @@ export function LoginPage() {
 
           {isMockMode && (
             <p className="mt-9 border-t border-line pt-5 text-[13px] text-ink-mute">
-              演示环境 · 任意 11 位手机号 + 密码 <span className="num text-ink-soft">123456</span>
+              本地 mock 环境 · 使用演示账号登录
               ，验证码点「获取验证码」后会直接显示在下方
               <span className="mt-1 block text-[12px] text-ink-mute">
                 本作品为比赛演示用途，非真实银行，不提供任何金融服务，所有数据均为模拟

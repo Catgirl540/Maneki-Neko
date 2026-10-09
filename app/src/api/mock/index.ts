@@ -80,6 +80,7 @@ import type {
 } from '../types'
 import {
   CARD_PAYMENT_METHOD,
+  DEFAULT_PAY_PASSWORD,
   CARD_PRODUCTS,
   USER_FPS_ID,
   cardPan,
@@ -606,6 +607,10 @@ export function createMockApi(): BankApi {
       next.passwordDigest = await passwordDigest(req.password)
       next.accounts = [account]
       next.transactions = []
+      // 新用户不能继承当前档案的演示收款人或支付密码状态。
+      next.payees = []
+      next.payPassword = DEFAULT_PAY_PASSWORD
+      next.payPasswordFailures = 0
       next.cards = []
       next.cardSecrets = {}
       next.autoDebits = []

@@ -14,30 +14,48 @@ import type {
   TransferRequest,
   User,
 } from './types'
-import { getAuthToken } from '@/lib/authToken'
+import { AUTH_EXPIRED_EVENT, forgetSession, getAuthToken } from '@/lib/authToken'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '')
+const REQUEST_TIMEOUT_MS = 12_000
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  // 令牌只存在内存里（不落盘）：刷新即失效，见 lib/authToken.ts
   const token = getAuthToken()
-  const res = await fetch(BASE_URL + path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  })
-
-  const text = await res.text()
-  const payload = text ? (JSON.parse(text) as unknown) : null
-
-  if (!res.ok) {
-    const body = payload as { message?: string; code?: string } | null
-    throw new ApiError(body?.message ?? `请求失败（${res.status}）`, res.status, body?.code)
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+  try {
+    const res = await fetch(BASE_URL + path, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init.headers ?? {}),
+      },
+    })
+    const text = await res.text()
+    let payload: unknown = null
+    if (text) {
+      try { payload = JSON.parse(text) }
+      catch {
+        throw new ApiError('银行接口返回了无效响应，请检查后端服务与 /api 代理配置', res.status || 502, 'INVALID_RESPONSE')
+      }
+    }
+    if (!res.ok) {
+      const body = payload as { message?: string; code?: string } | null
+      if (res.status === 401 && token && (body?.code === 'UNAUTHORIZED' || (!body?.code && path !== routes.login()))) {
+        forgetSession()
+        window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+      }
+      throw new ApiError(body?.message ?? `请求失败（${res.status}）`, res.status, body?.code)
+    }
+    return payload as T
+  } catch (error) {
+    if (error instanceof ApiError) throw error
+    throw new ApiError(controller.signal.aborted ? '银行服务响应超时，请稍后重试' : '无法连接银行服务，请检查网络或后端是否启动', 0, controller.signal.aborted ? 'TIMEOUT' : 'NETWORK_ERROR')
+  } finally {
+    window.clearTimeout(timer)
   }
-  return payload as T
 }
 
 const post = <T,>(path: string, body?: unknown) =>

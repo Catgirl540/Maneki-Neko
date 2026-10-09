@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '@/api'
@@ -111,6 +112,11 @@ export function AnalysisPage() {
     })) ?? []
 
   const top = spending.data?.categories[0]
+
+  const requests = [spending, autoDebits, account, cards, transactions]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
     <div className="flex flex-col gap-7">
