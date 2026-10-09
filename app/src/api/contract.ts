@@ -39,6 +39,8 @@ import type {
   RiskQuestion,
   TransactionRecord,
   TransferQuote,
+  TransferRecipientLookup,
+  TransferRecipientResult,
   TransferQuoteRequest,
   TransferRequest,
   TransferResult,
@@ -81,6 +83,7 @@ export const routes = {
   payees: () => '/api/payees',
   fpsResolve: () => '/api/fps/resolve',
   transferQuote: () => '/api/transfers/quote',
+  transferRecipient: () => '/api/transfers/recipient',
   transfers: () => '/api/transfers',
 
   cards: () => '/api/cards',
@@ -165,6 +168,7 @@ export interface BankApi {
   /** 转数快标识解析：查收款人姓名与收款银行 */
   resolveFps(idType: FpsIdType, fpsId: string): Promise<FpsResolveResult>
   quoteTransfer(req: TransferQuoteRequest): Promise<TransferQuote>
+  resolveTransferRecipient(req: TransferRecipientLookup): Promise<TransferRecipientResult>
   submitTransfer(req: TransferRequest): Promise<TransferResult>
 
   // —— 银行卡 ——

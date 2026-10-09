@@ -74,6 +74,7 @@ const ROUTES = [
   ['GET', 'payees', 'listPayees', () => []],
   ['POST', 'fpsResolve', 'resolveFps', (id, b) => [b.idType, b.fpsId]],
   ['POST', 'transferQuote', 'quoteTransfer', (id, b) => [b]],
+  ['POST', 'transferRecipient', 'resolveTransferRecipient', (id, b) => [b]],
   ['POST', 'transfers', 'submitTransfer', (id, b) => [b]],
 
   // —— 银行卡 ——
@@ -141,7 +142,20 @@ function exportQuery(q) {
  *
  * 必须在**动态 import mock 之前**装好——`db.ts` 在模块顶层就会去读。
  */
-function installBrowserShim(stateFile) {
+function installBrowserShim(stateFile, storageAdapter) {
+  if (storageAdapter) {
+    const memory = new Map()
+    globalThis.window = {
+      localStorage: storageAdapter,
+      sessionStorage: {
+        getItem: (key) => memory.get(key) ?? null,
+        setItem: (key, value) => { memory.set(key, String(value)) },
+        removeItem: (key) => { memory.delete(key) },
+        clear: () => { memory.clear() },
+      },
+    }
+    return { backing: { clear: () => storageAdapter.clear() }, flush: () => {} }
+  }
   const backing = new Map()
 
   if (stateFile && existsSync(stateFile)) {
@@ -282,9 +296,11 @@ function findAssetRoot(start) {
  *
  * @param options.stateFile - 状态落盘路径；不传就纯内存（测试用）。
  * @param options.searchFrom - 从哪个目录开始向上找 app 源码与转译钩子。
+ * @param options.auth - 可选的服务端会话适配器；不传时保留原演示桥接行为。
+ * @param options.storage - 可选的 localStorage 适配器，供 SQLite 后端持久化。
  * @returns `{ handle, reset, stats }`
  */
-export async function createDemoBank({ stateFile, searchFrom }) {
+export async function createDemoBank({ stateFile, searchFrom, auth, storage } = {}) {
   const start = searchFrom ?? fileURLToPath(new URL('../..', import.meta.url))
   const root = findAssetRoot(start)
   if (root === null) {
@@ -298,7 +314,7 @@ export async function createDemoBank({ stateFile, searchFrom }) {
   const dbPath = join(root, 'app/src/api/mock/db.ts')
   const contractPath = join(root, 'app/src/api/contract.ts')
 
-  const shim = installBrowserShim(stateFile)
+  const shim = installBrowserShim(stateFile, storage)
 
   // 运行时注册转译钩子：必须在 import .ts **之前**
   await import(pathToFileURL(hookPath).href)
@@ -313,6 +329,7 @@ export async function createDemoBank({ stateFile, searchFrom }) {
   const { createMockApi } = mockModule
   const { routes, ApiError } = contractModule
   const { resetDb, findProfileByPhone, activateDb } = dbModule
+  dbModule.loadDb()
 
   const api = createMockApi()
   const patterns = compilePatterns(routes)
@@ -325,7 +342,16 @@ export async function createDemoBank({ stateFile, searchFrom }) {
     return next
   }
 
-  function activateRequestProfile(req) {
+  async function activateRequestProfile(req, routeName) {
+    if (auth) {
+      const phone = await auth.resolve(req, routeName)
+      const profile = phone === null ? dbModule.loadDb() : findProfileByPhone(phone)
+      if (profile === null) {
+        throw Object.assign(new Error('用户不存在'), { status: 401, code: 'UNAUTHORIZED' })
+      }
+      activateDb(profile)
+      return phone
+    }
     const value = req.headers.authorization ?? ''
     const match = /^Bearer mock\.([^.]+)\./.exec(value)
     if (match === null) return
@@ -409,17 +435,38 @@ export async function createDemoBank({ stateFile, searchFrom }) {
 
     try {
       const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : {}
+      if (auth && entry.bankMethod === 'updateCardSettings' && body.dailyLimit !== undefined) {
+        const allowed = [200_000, 500_000, 1_000_000, 5_000_000]
+        if (!allowed.includes(body.dailyLimit)) {
+          sendJson(res, 400, { message: '请选择有效的单日限额档位', code: 'INVALID_DAILY_LIMIT' })
+          return true
+        }
+      }
       // 有意偏离前端 mock：退出登录**不**清空共享数据（否则一个人退出 = 所有人被重置）
-      const result = entry.bankMethod === 'logout' ? undefined : await exclusive(async () => {
-        activateRequestProfile(req)
-        return api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+      const result = await exclusive(async () => {
+        const phone = await activateRequestProfile(req, entry.routeName)
+        if (entry.bankMethod === 'logout') {
+          if (auth) await auth.logout(req)
+          return undefined
+        }
+        const value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+        if (auth && entry.bankMethod === 'changePhone') {
+          await auth.phoneChanged(phone, value.phone)
+        }
+        if (auth && (entry.bankMethod === 'login' || entry.bankMethod === 'register')) {
+          return { ...value, token: await auth.issue(value.user) }
+        }
+        return value
       })
       sendJson(res, 200, result === undefined ? { ok: true } : result)
     } catch (e) {
       if (ApiError !== undefined && e instanceof ApiError) {
         sendJson(res, e.status ?? 500, { message: e.message, code: e.code })
       } else {
-        sendJson(res, 500, { message: e?.message ?? '占位后端内部错误', code: 'DEMO_BACKEND_ERROR' })
+        sendJson(res, e?.status ?? 500, {
+          message: e?.message ?? '占位后端内部错误',
+          code: e?.code ?? 'DEMO_BACKEND_ERROR',
+        })
       }
     }
     return true

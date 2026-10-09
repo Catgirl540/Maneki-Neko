@@ -1,6 +1,7 @@
 # 依赖与构建产物：不进仓库（前者体积大且可重装，后者每次构建都变）
 node_modules/
 dist/
+server/data/
 
 # 本机 npm 缓存（之前为了让 npm 在只读缓存环境下能跑，指到了仓库里）
 .npm-cache/

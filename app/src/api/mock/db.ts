@@ -1160,6 +1160,28 @@ function seed(): MockDb {
       interestRate: 0.0155,
       monthNetChange: 0,
     },
+    {
+      id: nextId('acc'),
+      kind: 'savings',
+      label: '云闪付联名卡账户',
+      accountNo: '8820000000112233366',
+      currency: 'CNY',
+      balance: 0,
+      available: 0,
+      interestRate: 0.0155,
+      monthNetChange: 0,
+    },
+    {
+      id: nextId('acc'),
+      kind: 'savings',
+      label: 'Visa 全球借记卡账户',
+      accountNo: '8820000000112232046',
+      currency: 'CNY',
+      balance: 0,
+      available: 0,
+      interestRate: 0.0155,
+      monthNetChange: 0,
+    },
   ]
 
   const db: MockDb = {
@@ -1308,7 +1330,7 @@ function seed(): MockDb {
       },
       {
         id: nextId('card'),
-        accountId: currentAccountId,
+        accountId: accounts[1].id,
         productName: '招财猫 · 云闪付联名卡',
         last4: '3366',
         cardholder: 'LIN XIAOMAN',
@@ -1324,7 +1346,7 @@ function seed(): MockDb {
       // 在制卡中的 Visa 卡：让「邮寄地址 + 已收制卡费」这两个状态一进页面就看得到
       {
         id: nextId('card'),
-        accountId: currentAccountId,
+        accountId: accounts[2].id,
         productName: '招财猫 · Visa 全球借记卡',
         last4: '2046',
         cardholder: 'LIN XIAOMAN',
@@ -1399,6 +1421,60 @@ function profiles(): Record<string, MockDb> {
   return storage.get<Record<string, MockDb>>(PROFILES_KEY, {})
 }
 
+/** 演示收款人也有自己的登录档案、资金账户和可收款银行卡。 */
+function ensureDemoRecipient(): void {
+  const all = profiles()
+  if (all['13600136000']) return
+  const demo = seed()
+  demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberLevel: '普通会员', avatarInitial: '陈' }
+  demo.accounts = [{
+    id: 'acc_demo_chen', kind: 'savings', label: '储蓄账户',
+    accountNo: '8820000000124471', currency: 'CNY',
+    balance: 800_000, available: 800_000, interestRate: 0.0155, monthNetChange: 0,
+  }]
+  demo.transactions = []
+  demo.cards = [{
+    id: 'card_demo_chen', accountId: demo.accounts[0].id,
+    productName: '招财猫 · 云闪付借记卡', last4: '4471',
+    cardholder: 'CHEN JIAHE', expiry: '09/30', theme: 'gold',
+    network: 'unionpay', kind: 'debit', status: 'active',
+    onlinePayment: true, overseasPayment: false, dailyLimit: 2_000_000,
+  }]
+  demo.cardSecrets = { card_demo_chen: { cvv: '641', pan: cardPan('unionpay', '4471') } }
+  demo.payees = []
+  demo.holdings = []
+  demo.autoDebits = []
+  demo.pendingSms = null
+  storage.set(PROFILES_KEY, { ...all, [demo.user.phone]: demo })
+}
+
+/** 按本行账户号或已激活银行卡号查收款账户，扫描所有演示用户档案。 */
+export function findRecipientByNumber(number: string): { profile: MockDb; account: Account; card: BankCard | null } | null {
+  const normalized = number.replace(/\D/g, '')
+  const all = { ...profiles(), [loadDb().user.phone]: loadDb() }
+  for (const profile of Object.values(all)) {
+    const account = profile.accounts.find((row) => row.accountNo === normalized)
+    if (account) return { profile, account, card: null }
+    const card = profile.cards.find((row) => row.status === 'active' && profile.cardSecrets[row.id]?.pan === normalized)
+    if (card) {
+      const bound = profile.accounts.find((row) => row.id === card.accountId)
+      if (bound) return { profile, account: bound, card }
+    }
+  }
+  return null
+}
+
+/** 一次保存付款人与收款人的档案；SQLite 存储适配器负责落盘。 */
+export function persistRelatedProfiles(related: MockDb[]): void {
+  const current = loadDb()
+  const all = profiles()
+  all[current.user.phone] = current
+  for (const profile of related) all[profile.user.phone] = profile
+  if (!storage.setMany([[STORAGE_KEYS.mockDb, current], [PROFILES_KEY, all]])) {
+    throw new Error('转账账务写入失败，请重试')
+  }
+}
+
 /** 按手机号找一个独立演示档案，不切换当前用户。 */
 export function findProfileByPhone(phone: string): MockDb | null {
   const normalized = phone.replace(/\D/g, '')
@@ -1407,10 +1483,60 @@ export function findProfileByPhone(phone: string): MockDb | null {
   return profiles()[normalized] ?? null
 }
 
+/** 换绑手机号后移除旧索引，避免旧号码继续指向该用户档案。 */
+export function forgetProfilePhone(phone: string): void {
+  const all = profiles()
+  delete all[phone.replace(/\D/g, '')]
+  storage.set(PROFILES_KEY, all)
+}
+
 /** 注册/登录成功后切换到该用户的独立数据档案。 */
 export function activateDb(next: MockDb): void {
   cache = next
+  ensureCardAccounts(cache)
+  syncSeq(cache)
+  for (const profile of Object.values(profiles())) syncSeq(profile)
   persist()
+}
+
+function syncSeq(db: MockDb): void {
+  const ids = [
+    ...db.accounts.map((row) => row.id), ...db.cards.map((row) => row.id),
+    ...db.transactions.map((row) => row.id), ...db.payees.map((row) => row.id),
+  ]
+  for (const id of ids) {
+    const match = /_(\d+)$/.exec(id)
+    if (match) seq = Math.max(seq, Number(match[1]))
+  }
+}
+
+/** 给既有演示档案中的三张卡补上独立账户，保留原账户余额及历史流水。 */
+function ensureCardAccounts(db: MockDb): void {
+  const primary = db.cards.find((card) => card.last4 === '8888')
+  if (!primary) return
+  for (const [last4, label, accountNo] of [
+    ['3366', '云闪付联名卡账户', '8820000000112233366'],
+    ['2046', 'Visa 全球借记卡账户', '8820000000112232046'],
+  ] as const) {
+    const card = db.cards.find((row) => row.last4 === last4)
+    if (!card || card.accountId !== primary.accountId) continue
+    let account = db.accounts.find((row) => row.accountNo === accountNo)
+    if (!account) {
+      account = {
+        id: `acc_demo_${last4}`,
+        kind: 'savings',
+        label,
+        accountNo,
+        currency: 'CNY',
+        balance: 0,
+        available: 0,
+        interestRate: 0.0155,
+        monthNetChange: 0,
+      }
+      db.accounts.push(account)
+    }
+    card.accountId = account.id
+  }
 }
 
 export function loadDb(): MockDb {
@@ -1423,6 +1549,10 @@ export function loadDb(): MockDb {
   // 结构对不上就丢弃重建：localStorage 里的旧载荷不会有新字段，
   // 继续用只会让页面在某个 undefined 上炸掉
   cache = stored && stored.schema === MOCK_SCHEMA ? stored : seed()
+  ensureCardAccounts(cache)
+  ensureDemoRecipient()
+  syncSeq(cache)
+  for (const profile of Object.values(profiles())) syncSeq(profile)
   persist()
   return cache
 }

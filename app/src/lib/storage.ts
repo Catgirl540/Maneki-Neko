@@ -31,6 +31,20 @@ export const storage = {
   set(key: string, value: unknown): void {
     trySet(key, value)
   },
+  /** 服务端适配器可把多份用户档案放进同一个 SQLite 事务。 */
+  setMany(entries: [string, unknown][]): boolean {
+    try {
+      const raw = entries.map(([key, value]) => [PREFIX + key, JSON.stringify(value)] as [string, string])
+      const target = window.localStorage as Storage & {
+        setItemsAtomically?: (items: [string, string][]) => void
+      }
+      if (target.setItemsAtomically) target.setItemsAtomically(raw)
+      else for (const [key, value] of raw) target.setItem(key, value)
+      return true
+    } catch {
+      return false
+    }
+  },
   remove(key: string): void {
     try {
       window.localStorage.removeItem(PREFIX + key)

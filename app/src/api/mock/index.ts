@@ -94,6 +94,9 @@ import {
   fxRate,
   loadDb,
   findProfileByPhone,
+  findRecipientByNumber,
+  persistRelatedProfiles,
+  forgetProfilePhone,
   activateDb,
   makeReferenceNo,
   monthKey,
@@ -320,6 +323,7 @@ function newCardCvv(): string {
 function pushTransaction(
   tx: Omit<Transaction, 'id'>,
   detail: Omit<TransactionDetail, 'referenceNo' | 'balanceBefore' | 'balanceAfter'>,
+  save = true,
 ): TransactionRecord {
   const db = loadDb()
   const id = nextId('txn')
@@ -329,7 +333,7 @@ function pushTransaction(
     detail: { ...detail, referenceNo: makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
   }
   db.transactions.unshift(created)
-  persist()
+  if (save) persist()
   return created
 }
 
@@ -576,11 +580,15 @@ export function createMockApi(): BankApi {
       }
 
       const now = new Date().toISOString()
+      let newAccountNo: string
+      do {
+        newAccountNo = `882000${String(Math.floor(1e12 + Math.random() * 9e12))}`
+      } while (findRecipientByNumber(newAccountNo))
       const account: Account = {
         id: `acc_${Date.now()}`,
         kind: 'savings',
         label: '储蓄账户',
-        accountNo: `6222${String(Math.floor(1e12 + Math.random() * 8e12))}`.slice(0, 19),
+        accountNo: newAccountNo,
         currency: 'CNY',
         balance: 0,
         available: 0,
@@ -898,13 +906,37 @@ export function createMockApi(): BankApi {
       }
     },
 
+    async resolveTransferRecipient(req) {
+      await delay(180)
+      const digits = digitsOnly(req.accountOrCardNo ?? '')
+      const error = validateBankAccount(digits)
+      if (error) throw new ApiError(error, 400, 'INVALID_ACCOUNT_NO')
+      if (req.bankCode === 'LCB' && req.bankRegion === 'CN') {
+        const found = findRecipientByNumber(digits)
+        if (!found) throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND')
+        if (req.payeeName?.trim() && req.payeeName.trim() !== found.profile.user.name) {
+          throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH')
+        }
+        const name = found.profile.user.name
+        return {
+          kind: 'internal' as const,
+          holderNameMasked: name.length > 1 ? `${name[0]}*${name.slice(-1)}` : name,
+          accountNoMasked: maskBankAccount(digits),
+          ...(found.card ? { cardLast4: found.card.last4 } : {}),
+        }
+      }
+      return { kind: 'external' as const, accountNoMasked: maskBankAccount(digits) }
+    },
+
     async submitTransfer(req: TransferRequest): Promise<TransferResult> {
       await delay(420)
       const db = loadDb()
       const account = findAccount(req.fromAccountId)
       const isFps = req.channel === 'fps'
 
-      if (req.amount <= 0) throw new ApiError('转账金额必须大于 0', 400, 'INVALID_AMOUNT')
+      if (!Number.isSafeInteger(req.amount) || req.amount <= 0) {
+        throw new ApiError('转账金额必须是大于 0 的整数分', 400, 'INVALID_AMOUNT')
+      }
 
       // —— 收款标识校验 ——
       // 跨境支付通无论用哪种汇款方式都要指定收款银行（款项要路由到具体收款行）
@@ -954,6 +986,84 @@ export function createMockApi(): BankApi {
         throw new ApiError('账户可用余额不足', 400, 'INSUFFICIENT_FUNDS')
       }
 
+      // 同一客户名下的本行账户划转：两边余额和台账在一次持久化中更新。
+      const recipient = !isFps && req.scope === 'domestic' &&
+        req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN'
+        ? findRecipientByNumber(req.payeeAccountNo ?? '')
+        : null
+      if (!isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' &&
+          req.payeeBankRegion === 'CN' && !recipient) {
+        throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND')
+      }
+      if (recipient) {
+        if (recipient.account.id === account.id && recipient.profile.user.id === db.user.id) {
+          throw new ApiError('付款和收款账户不能相同', 400, 'SAME_ACCOUNT')
+        }
+        if (recipient.account.currency !== account.currency) {
+          throw new ApiError('本行账户币种不一致', 400, 'CURRENCY_MISMATCH')
+        }
+        if (req.payeeName.trim() !== recipient.profile.user.name) {
+          throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH')
+        }
+        const sender = db.accounts.find((row) => row.id === account.id)!
+        sender.balance -= req.amount
+        sender.available -= req.amount
+        recipient.account.balance += req.amount
+        recipient.account.available += req.amount
+        const isOwnAccount = recipient.profile.user.id === db.user.id
+        const createdAt = new Date().toISOString()
+        const outgoing = pushTransaction({
+          accountId: sender.id, direction: 'out', amount: req.amount,
+          signedAmount: -req.amount, counterparty: `转账 · ${req.payeeName.trim()}`,
+          memo: req.memo || `本行转账至尾号 ${recipient.account.accountNo.slice(-4)}`,
+          category: 'transfer', createdAt, status: 'success',
+        }, {
+          channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: sender.label,
+          accountLabel: sender.label, accountNo: sender.accountNo,
+          settleCurrency: sender.currency, counterpartyName: req.payeeName.trim(),
+          counterpartyAccountNo: maskBankAccount(req.payeeAccountNo ?? ''),
+          counterpartyBank: '招财猫银行', location: '招财猫银行 App',
+          remark: req.memo.trim() || undefined,
+        }, false)
+        const incomingId = nextId('txn')
+        recipient.profile.transactions.unshift({
+          id: incomingId,
+          accountId: recipient.account.id, direction: 'in', amount: req.amount,
+          signedAmount: req.amount, counterparty: `本行转入 · ${db.user.name}`,
+          memo: req.memo || `本行转入自尾号 ${sender.accountNo.slice(-4)}`,
+          category: 'transfer', createdAt, status: 'success',
+          detail: {
+            referenceNo: makeReferenceNo(incomingId), balanceBefore: 0, balanceAfter: 0,
+            channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: recipient.account.label,
+            accountLabel: recipient.account.label, accountNo: recipient.account.accountNo,
+            settleCurrency: recipient.account.currency, counterpartyName: db.user.name,
+            counterpartyAccountNo: maskBankAccount(sender.accountNo),
+            counterpartyBank: '招财猫银行', location: '招财猫银行 App',
+            remark: req.memo.trim() || undefined,
+          },
+        })
+        try {
+          persistRelatedProfiles(isOwnAccount ? [] : [recipient.profile])
+        } catch (error) {
+          sender.balance += req.amount
+          sender.available += req.amount
+          recipient.account.balance -= req.amount
+          recipient.account.available -= req.amount
+          db.transactions.splice(db.transactions.findIndex((row) => row.id === outgoing.id), 1)
+          recipient.profile.transactions.splice(
+            recipient.profile.transactions.findIndex((row) => row.id === incomingId), 1,
+          )
+          throw error
+        }
+        return {
+          transactionId: outgoing.id,
+          referenceNo: outgoing.detail.referenceNo,
+          amount: req.amount, fee: 0, channel: req.channel,
+          identifier: maskBankAccount(req.payeeAccountNo ?? ''), createdAt,
+          settlementStatus: 'success',
+        }
+      }
+
       // 需要换汇时按**成交时**的汇率再算一次（不是复用询价结果）：
       // 真实系统在这里校验锁价票据是否还在有效期内，过期就报错让前端重新询价
       const fx = buildFxQuote(account.currency, req.payeeCurrency ?? account.currency, req.amount)
@@ -974,7 +1084,7 @@ export function createMockApi(): BankApi {
               : `${req.scope === 'overseas' ? '境外' : '境内'}转账至${bank?.shortName ?? '对方银行'}`),
           category: 'transfer',
           createdAt: new Date().toISOString(),
-          status: 'success',
+          status: isFps ? 'success' : 'pending',
         },
         {
           channel: 'transfer',
@@ -1071,6 +1181,7 @@ export function createMockApi(): BankApi {
         channel: req.channel,
         identifier,
         createdAt: tx.createdAt,
+        settlementStatus: isFps ? 'success' : 'pending',
         ...(fx ? { fx } : {}),
       }
     },
@@ -1555,7 +1666,8 @@ export function createMockApi(): BankApi {
       const db = loadDb()
       const target = month ?? monthKey()
       const prev = monthKey(-1)
-      const out = db.transactions.filter((t) => t.direction === 'out')
+      const out = db.transactions.filter((t) => t.direction === 'out' && t.status === 'success' &&
+        !(t.category === 'transfer' && t.detail.channel === 'account'))
 
       const inMonth = (iso: string, key: string) => iso.slice(0, 7) === key
       const monthRows = out.filter((t) => inMonth(t.createdAt, target))
@@ -1612,7 +1724,8 @@ export function createMockApi(): BankApi {
 
         const rows = db.transactions.filter((t) => {
           const at = new Date(t.createdAt).getTime()
-          return at >= start.getTime() && at < end.getTime()
+          return at >= start.getTime() && at < end.getTime() &&
+            !(t.category === 'transfer' && t.detail.channel === 'account')
         })
 
         points.push({
@@ -1679,6 +1792,9 @@ export function createMockApi(): BankApi {
       if (next === db.user.phone) {
         throw new ApiError('新手机号与当前登录手机号相同', 400, 'SAME_PHONE')
       }
+      if (findProfileByPhone(next) !== null) {
+        throw new ApiError('该手机号已注册', 409, 'PHONE_EXISTS')
+      }
       // 换号是高危操作：先核身
       if (!req.faceTicket) throw new ApiError('请先完成人脸识别', 400, 'FACE_REQUIRED')
 
@@ -1700,6 +1816,7 @@ export function createMockApi(): BankApi {
       const previous = db.user.phone
       db.pendingSms = null
       db.user.phone = next
+      forgetProfilePhone(previous)
       // 换绑手机号要留痕：这类操作在安全日志里必须是 warn 级
       db.security.logs.unshift({
         id: nextId('log'),

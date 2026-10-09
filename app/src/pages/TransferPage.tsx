@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
 import type {
   Account,
+  BankCard,
   Bank,
   BankRegion,
   CardBinResolution,
@@ -13,8 +14,10 @@ import type {
   Payee,
   TransferChannel,
   TransferQuote,
+  TransferRecipientResult,
   TransferResult,
   TransferScope,
+  User,
 } from '@/api/types'
 import { BankPicker } from '@/components/ui/BankPicker'
 import { Button } from '@/components/ui/Button'
@@ -83,6 +86,7 @@ export function TransferPage() {
   })
   // 银行账户通道
   const [accountNo, setAccountNo] = useState('')
+  const [sourceAccountId, setSourceAccountId] = useState('')
   const [payeeName, setPayeeName] = useState('')
 
   // 转数快 / 跨境支付通通道
@@ -92,6 +96,8 @@ export function TransferPage() {
   const [fpsAddress, setFpsAddress] = useState('')
   const [resolved, setResolved] = useState<FpsResolveResult | null>(null)
   const [resolving, setResolving] = useState(false)
+  const [checkingRecipient, setCheckingRecipient] = useState(false)
+  const [recipientCheck, setRecipientCheck] = useState<TransferRecipientResult | null>(null)
 
   const [amountText, setAmountText] = useState('')
   const [memo, setMemo] = useState('')
@@ -117,10 +123,12 @@ export function TransferPage() {
   } | null>(null)
 
   const accounts = useAsync<Account[]>(() => api.listAccounts(), [])
+  const cards = useAsync<BankCard[]>(() => api.listCards(), [])
+  const profile = useAsync<User>(() => api.profile(), [])
   const banks = useAsync<Bank[]>(() => api.listBanks(), [])
   const payees = useAsync<Payee[]>(() => api.listPayees(), [])
 
-  const account = accounts.data?.[0] ?? null
+  const account = accounts.data?.find((row) => row.id === sourceAccountId) ?? accounts.data?.[0] ?? null
   const amount: Cents = toCents(amountText || '0')
   const isFps = channel === 'fps'
 
@@ -389,6 +397,7 @@ export function TransferPage() {
   async function goReview() {
     setError(null)
     setResolved(null)
+    setRecipientCheck(null)
     if (amount <= 0) {
       setError('请输入转账金额')
       return
@@ -453,6 +462,23 @@ export function TransferPage() {
     if (insufficient) {
       setError('账户可用余额不足')
       return
+    }
+    if (!isFps) {
+      setCheckingRecipient(true)
+      try {
+        const checked = await api.resolveTransferRecipient({
+          bankCode: activeBankCode,
+          bankRegion: activeBankRegion,
+          accountOrCardNo: accountNo,
+          payeeName,
+        })
+        setRecipientCheck(checked)
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : '收款账户核验失败，请稍后重试')
+        return
+      } finally {
+        setCheckingRecipient(false)
+      }
     }
     setStep(2)
   }
@@ -576,7 +602,7 @@ export function TransferPage() {
               ) : account ? (
                 <div className="mt-1.5 flex items-end justify-between gap-4">
                   <div>
-                    <p className="text-[15px] font-medium text-ink">储蓄账户</p>
+                    <p className="text-[15px] font-medium text-ink">{account.label}</p>
                     <p className="num mt-0.5 text-[12px] text-ink-mute">
                       尾号 {account.accountNo.slice(-4)}
                     </p>
@@ -587,6 +613,27 @@ export function TransferPage() {
                 </div>
               ) : (
                 <p className="mt-1.5 text-[13px] text-coral">暂未找到可付款的储蓄账户</p>
+              )}
+              {(accounts.data?.length ?? 0) > 1 && (
+                <div className="mt-4 flex flex-wrap gap-2" aria-label="选择付款银行卡">
+                  {accounts.data?.map((row) => {
+                    const card = cards.data?.find((item) => item.accountId === row.id && item.status !== 'replaced')
+                    return (
+                      <button key={row.id} type="button" onClick={() => {
+                        setSourceAccountId(row.id)
+                        if (digitsOnly(accountNo) === row.accountNo) {
+                          setAccountNo('')
+                          setPayeeName('')
+                        }
+                      }}
+                        aria-pressed={account?.id === row.id}
+                        className={cn('rounded-chip border px-3 py-2 text-left text-[12px] transition-colors',
+                          account?.id === row.id ? 'border-gold bg-white text-gold-deep' : 'border-line bg-white text-ink-soft hover:border-gold')}>
+                        {card?.productName ?? row.label} · {card ? `卡尾号 ${card.last4}` : `账户尾号 ${row.accountNo.slice(-4)}`}
+                      </button>
+                    )
+                  })}
+                </div>
               )}
             </div>
 
@@ -615,6 +662,28 @@ export function TransferPage() {
             </div>
 
             {/* 常用收款人 */}
+            {!isFps && scope === 'domestic' && (accounts.data?.length ?? 0) > 1 && (
+              <div className="mt-6">
+                <p className="mb-3 text-[13px] font-medium text-ink-soft">转给我的其他银行卡账户</p>
+                <div className="flex flex-wrap gap-2.5">
+                  {accounts.data?.filter((row) => row.id !== account?.id).map((row) => {
+                    const card = cards.data?.find((item) => item.accountId === row.id && item.status !== 'replaced')
+                    return <button key={row.id} type="button"
+                      onClick={() => {
+                        setBankSelection((prev) => ({ ...prev, CN: 'LCB' }))
+                        setAccountNo(formatBankAccount(row.accountNo))
+                        setPayeeName(profile.data?.name ?? '')
+                        setError(null)
+                      }}
+                      className="rounded-chip border border-line px-3.5 py-2.5 text-left text-[13px] text-ink-soft transition-colors hover:border-gold hover:text-gold-deep">
+                      {card?.productName ?? row.label} · 尾号 {card?.last4 ?? row.accountNo.slice(-4)}
+                    </button>
+                  })}
+                </div>
+                <p className="mt-2 text-[12px] text-ink-mute">本行账户实时到账，付款和收款账户各生成一笔流水。</p>
+              </div>
+            )}
+
             {quickPayees.length > 0 && (
               <div className="mt-6">
                 <p className="mb-3 text-[13px] font-medium text-ink-soft">常用收款人</p>
@@ -825,11 +894,11 @@ export function TransferPage() {
               size="lg"
               block
               className="mt-7"
-              loading={resolving}
+              loading={resolving || checkingRecipient}
               onClick={() => void goReview()}
               disabled={accounts.loading}
             >
-              {resolving ? '正在查询转数快…' : '下一步'}
+              {resolving ? '正在查询转数快…' : checkingRecipient ? '正在核验收款账户…' : '下一步'}
             </Button>
             <p className="mt-3 text-center text-[12px] text-ink-mute">
               转账即表示您已阅读并同意相关条款
@@ -936,6 +1005,14 @@ export function TransferPage() {
                     </span>
                   )}
                 </span>
+              </div>
+            )}
+
+            {!isFps && recipientCheck && (
+              <div className="mt-6 rounded-field border border-blue-wash bg-blue-tint px-4 py-3.5 text-[13px] leading-relaxed text-ink">
+                {recipientCheck.kind === 'internal'
+                  ? `已核对本行收款人：${recipientCheck.holderNameMasked} · ${recipientCheck.cardLast4 ? `银行卡尾号 ${recipientCheck.cardLast4}` : '资金账户'} · 实时入账`
+                  : '收款行为其他银行：本演示仅模拟转出与清算提交，对方银行余额无法在本系统查询。'}
               </div>
             )}
 
@@ -1066,12 +1143,16 @@ export function TransferPage() {
           <span className="mx-auto grid size-16 place-items-center rounded-chip bg-blue-wash text-blue">
             <CheckIcon size={30} />
           </span>
-          <h2 className="mt-5 text-[22px] font-bold tracking-[-0.01em] text-ink">转账已提交</h2>
+          <h2 className="mt-5 text-[22px] font-bold tracking-[-0.01em] text-ink">
+            {result.settlementStatus === 'pending' ? '已提交模拟清算' : '转账成功'}
+          </h2>
           <p className="num mt-3 text-[34px] leading-none font-bold text-ink">
             ¥{formatAmount(result.amount)}
           </p>
           <p className="mt-3 text-[14px] text-ink-soft">
-            已转给 {finalPayeeName} · {etaText}
+            {result.settlementStatus === 'pending'
+              ? `转往 ${finalPayeeName} · 外行收款账户不在本演示数据库内`
+              : `已转给 ${finalPayeeName} · ${etaText}`}
           </p>
 
           <dl className="mt-8 flex flex-col gap-3.5 border-t border-line pt-6 text-left text-[14px]">

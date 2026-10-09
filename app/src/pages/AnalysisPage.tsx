@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '@/api'
-import type { AutoDebit, SpendingAnalysis, Transaction, TransactionCategory } from '@/api/types'
+import type { AutoDebit, BankCard, SpendingAnalysis, Transaction, TransactionCategory } from '@/api/types'
 import { Donut, DonutLegend, type DonutSegment } from '@/components/charts/Donut'
 import { TrendBars } from '@/components/charts/TrendBars'
 import { Button } from '@/components/ui/Button'
@@ -31,6 +31,7 @@ const FILTERS: { value: TransactionCategory | 'all'; label: string }[] = [
 export function AnalysisPage() {
   const toast = useToast()
   const [category, setCategory] = useState<TransactionCategory | 'all'>('all')
+  const [selectedAccountId, setSelectedAccountId] = useState('')
   const [exporting, setExporting] = useState(false)
   /** 支出构成的联动高亮：圆环与图例共用，鼠标停在任一边都能亮 */
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -41,7 +42,8 @@ export function AnalysisPage() {
   const spending = useAsync<SpendingAnalysis>(() => api.getSpending(), [])
   const autoDebits = useAsync<AutoDebit[]>(() => api.listAutoDebits(), [])
   const account = useAsync(() => api.listAccounts(), [])
-  const accountId = account.data?.[0]?.id
+  const cards = useAsync<BankCard[]>(() => api.listCards(), [])
+  const accountId = account.data?.find((row) => row.id === selectedAccountId)?.id ?? account.data?.[0]?.id
 
   const transactions = useAsync<{ items: Transaction[]; total: number }>(
     () =>
@@ -271,6 +273,21 @@ export function AnalysisPage() {
             </div>
           }
         />
+
+        {(account.data?.length ?? 0) > 1 && (
+          <div className="mt-5 flex flex-wrap gap-2" aria-label="选择流水账户">
+            {account.data?.map((row) => {
+              const card = cards.data?.find((item) => item.accountId === row.id && item.status !== 'replaced')
+              return <button key={row.id} type="button" onClick={() => setSelectedAccountId(row.id)}
+                aria-pressed={accountId === row.id}
+                className={`rounded-chip border px-3 py-2 text-[12px] transition-colors ${accountId === row.id
+                  ? 'border-gold bg-gold-wash text-gold-deep'
+                  : 'border-line text-ink-soft hover:border-gold'}`}>
+                {card?.productName ?? row.label} · 尾号 {card?.last4 ?? row.accountNo.slice(-4)}
+              </button>
+            })}
+          </div>
+        )}
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <Segmented value={category} options={FILTERS} onChange={setCategory} />

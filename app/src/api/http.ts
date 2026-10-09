@@ -89,6 +89,7 @@ export function createHttpApi(): BankApi {
     listPayees: () => request<Payee[]>(routes.payees()),
     resolveFps: (idType, fpsId) => post(routes.fpsResolve(), { idType, fpsId }),
     quoteTransfer: (req: TransferQuoteRequest) => post(routes.transferQuote(), req),
+    resolveTransferRecipient: (req) => post(routes.transferRecipient(), req),
     submitTransfer: (req: TransferRequest) => post(routes.transfers(), req),
 
     listCards: () => request<BankCard[]>(routes.cards()),

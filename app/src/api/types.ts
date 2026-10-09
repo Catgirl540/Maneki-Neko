@@ -381,6 +381,21 @@ export interface TransferRequest {
   payeeAddress?: string
 }
 
+export interface TransferRecipientLookup {
+  bankCode: string
+  bankRegion: BankRegion
+  accountOrCardNo: string
+  payeeName?: string
+}
+
+export interface TransferRecipientResult {
+  /** 本行可真实入账的演示用户；其他行由演示清算流程处理。 */
+  kind: 'internal' | 'external'
+  holderNameMasked?: string
+  accountNoMasked: string
+  cardLast4?: string
+}
+
 export interface TransferResult {
   transactionId: string
   referenceNo: string
@@ -390,6 +405,8 @@ export interface TransferResult {
   /** 脱敏后的收款标识，用于回执展示 */
   identifier: string
   createdAt: string
+  /** 本行收款实时成功；外行演示汇款仅进入模拟清算队列。 */
+  settlementStatus?: 'success' | 'pending'
   /** 实际成交的换汇信息（含成交汇率）。锁价成功的凭证就是这里的 rate */
   fx?: FxQuote
 }

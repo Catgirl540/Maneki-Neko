@@ -47,7 +47,7 @@ export function lookupCardBin(
   const bin = clean.slice(0, CARD_BIN_LENGTH)
 
   // 本行账号优先判：它的前缀不在公开码表里，但确实是本行的号
-  if (bin === INTERNAL_ACCOUNT_PREFIX) {
+  if (bin === INTERNAL_ACCOUNT_PREFIX || bin === '620522' || bin === '402688') {
     const own = banks.find((b) => b.internal && b.region === 'CN')
     if (own) return { status: 'matched', bin, bank: own }
   }

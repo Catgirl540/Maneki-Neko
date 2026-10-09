@@ -44,6 +44,7 @@ const LIMIT_PRESETS: Cents[] = [200_000, 500_000, 1_000_000, 5_000_000]
 
 export function CardsPage() {
   const toast = useToast()
+  const { shown: balanceShown, toggle: toggleBalanceShown } = useReveal()
   const cards = useAsync<BankCard[]>(() => api.listCards(), [])
   const products = useAsync<CardProduct[]>(() => api.listCardProducts(), [])
   // 卡片要显示它绑的是哪个资金账户 —— 卡是支付工具，钱在账户里
@@ -227,6 +228,18 @@ export function CardsPage() {
                 onUnlockCvv={() => setSecretsFor(card)}
                 onHideCvv={() => hideCardCvv(card.id)}
               />
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-line bg-sunk px-4 py-3 text-[13px]">
+                <span className="text-ink-soft">此卡资金账户可用余额</span>
+                <span className="flex items-center gap-2">
+                  <strong className="num text-ink">{balanceShown
+                    ? `¥${formatAmount(accounts.data?.find((a) => a.id === card.accountId)?.available ?? 0)}`
+                    : '¥••••••'}</strong>
+                  <RevealToggle shown={balanceShown} onToggle={toggleBalanceShown} />
+                </span>
+              </div>
+              <Link to="/transfer" className="text-[13px] font-medium text-gold-deep hover:underline">
+                在这些卡的账户间转账 →
+              </Link>
               {error && (
                 <p className="rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">
                   {error}
