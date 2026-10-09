@@ -22,6 +22,8 @@ node server/index.mjs
 服务默认监听 `127.0.0.1:8080`；`GET /health` 可检查状态。数据库文件为
 `server/data/bank.sqlite`，可用 `BANK_DB_FILE` 覆盖。第一次启动时若存在旧版
 `server/data/demo-bank-state.json`，会自动导入 SQLite；之后以 SQLite 为准。
+仓库里的 [`demo-database/`](../demo-database/README.md) 保存一份可供队友复现的
+虚拟银行卡和账户状态快照；请按其中说明复制到本地运行目录。
 `BANK_HOST` 和 `BANK_PORT` 可改监听地址与端口。会话令牌只存于进程内存，
 重启服务后需要重新登录。
 
