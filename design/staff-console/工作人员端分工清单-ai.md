@@ -33,21 +33,29 @@
 
 ## 2. 阶段定义
 
-### Phase 0 — 骨架（半天，**仅 A 执行**，B 只读不写）
+### M0 — 书面对齐（**10-10 前**，人类动作）
+
+- [ ] 客户端转账挂起方案书面确认（谁改 `app/**`、阈值取值）——功能清单 §9
+- [ ] agent 对接面冻结稿（§4）发给 agent 负责人并取得回执
+
+### Phase 0 — 骨架（半天，**A 主导**；B 不空等，领并行任务）
 
 A 必须产出且 B 可依赖的稳定物：
 
 | # | 产物 | 路径 | 验收 |
 |---|---|---|---|
-| 1 | 员工端前端骨架 | `Maneki-Neko/staff/`（或与人类确认的等价目录） | 登录页可开、菜单渲染、路由可达 |
-| 2 | 接口契约 | `staff/src/api/contract.ts` + `types.ts` | 覆盖功能清单 §2 的全部 P0/P1 接口签名 |
+| 1 | 员工端前端骨架 | `Maneki-Neko/staff/`（或与人类确认的等价目录） | 登录页可开、菜单渲染、路由可达；角色枚举 `csr`/`supervisor`（禁用 `agent`） |
+| 2 | 接口契约 | `staff/src/api/contract.ts` + `types.ts` | 覆盖功能清单 §2 的全部 P0/P1 接口签名；文件顶部带版本号，每次 `[contract]` commit 版本号 +1 |
 | 3 | 公共 HTTP 封装 | `staff/src/api/http/base.ts` 的 `request()` | 统一携带员工 token、统一解析 `{message, code}` 错误体、统一超时；mock/http 实现均经由它 |
-| 4 | mock 层 | `staff/src/api/mock/` | 前端可在 `VITE_USE_MOCK=true` 下跑通全部 P0 页面 |
-| 5 | 后端空壳 | `server/` 内新增 `staff_` 前缀路由 + `staff_users` 表 + 鉴权中间件 + `writeAudit()` | `GET /staff-api/health` 200 |
+| 4 | mock 层**最小版** | `staff/src/api/mock/` | 每接口一份写死样例数据，页面不白屏即可——**禁止**在 Phase 0 做完整业务模拟 |
+| 5 | 后端空壳 | `server/` 内新增 `staff_` 前缀路由 + `staff_users` 等表 + 鉴权中间件 + `writeAudit()` | `GET /staff-api/health` 200；`tickets` 表含 `priority` 字段 |
 | 6 | 部署/代理方案 | `design/staff-console/DEPLOY.md` | 写明：本地双前端+后端的端口分配与 Vite 代理；nginx 独立员工端站点/子路径 + `/staff-api` 反代配置样例 |
-| 7 | agent 对接面冻结稿 | 见 §4 | 文本发给人类，转交 agent 负责人 |
+| 7 | demo 重置脚本 | `tools/reset-demo.mjs` | 一键回到演示种子数据（员工账号/待接工单/待审单/聊天样例） |
+| 8 | agent 对接面冻结稿 | 见 §4（含第 6 条审批闭环） | 文本发给人类，转交 agent 负责人，需回执 |
 
 Phase 0 完成判定：B 无需向 A 提问即可开始模块开发。
+
+**B 在 Phase 0 半天的并行任务**（不空等）：① 精读 `app/src/api/mock/` 客户/流水/卡业务规则；② 冒烟脚本骨架三条（列表渲染/状态流转/审计落库）；③ 演示种子数据（2 员工、1 待接工单、1 待审单、客户聊天样例）。
 
 ### Phase 1 — 并行（约 2.5 天）
 
@@ -96,10 +104,11 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 | POST | `/staff-api/tickets/:id/messages` | 员工/agent 对话回写 | `{messageId}` |
 
 约束：
-- 鉴权：`X-Agent-Token: <shared-secret>`（demo 固定值），与员工 Bearer 令牌分离。
+- 鉴权：`X-Agent-Token` 取自环境变量（demo 固定值），与员工 Bearer 令牌分离，token 不进代码。
 - 幂等：客户端可传 `Idempotency-Key`；同键重复 POST 返回原单，不重复建单。
 - 错误体与客户端一致：`{ message: string(中文), code: string }`，HTTP status 判成败。
 - 请求/响应字段定义以 `工作人员端清单.md` §5 为准，实现前与该节逐字段核对。
+- **审批闭环（第 6 条，2026-10-09 钉死）**：`POST /tickets/:id/messages` 为 **P0**（demo 第 4 步依赖）。裁决通过后的钱动作**归服务端放行**（对已挂起转账单结算扣款；余额不足 → 流水 `failed` + 自动回写工单消息），**不归 agent**。agent 职责止于：提审 → 轮询 `GET /approvals/:id` → 通报结果。**禁止 agent 在 approved 后再调转账接口**（防双重执行）；员工端同样永不发起新转账。若 agent 负责人已实现「approved 后执行」路径，双方二选一切换，需书面确认。
 
 ---
 
@@ -108,7 +117,7 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 1. 角色校验在后端逐接口执行；前端显隐仅为 UX，不构成安全边界。
 2. 工单状态机：`open→processing→waiting⇄processing→resolved`；`→suspended→processing`。非法流转 → 400 + 中文文案。终态 `resolved` 不可变。
 3. 审批状态机：`pending→approved|rejected`，一次性；重复裁决 → 409；驳回必须非空 `reason`。
-4. 转账挂起（功能清单 §9）：金额 < 阈值 → 立即成功（无审核）；金额 ≥ 阈值 → 流水 `status='pending'` + 自动建 `biz_type='transfer'` 审批单（不经 agent）；`approved` → 流水翻 `success`，`rejected` → 翻 `failed`。阈值为 server 配置项（demo ¥5,000），禁止在前端写死。
+4. 转账挂起（功能清单 §9）：金额 < 阈值 → 立即成功（无审核、无感）；金额 ≥ 阈值 → **挂单不扣款**，流水 `status='pending'` + 自动建 `biz_type='transfer'` 审批单（不经 agent）；`approved` = 服务端放行结算 → 流水 `success`（余额不足则 `failed` + 自动工单消息）；`rejected` → `failed` + 理由。阈值为 server 配置项（demo ¥5,000），禁止在前端写死。
 5. 所有写操作经过 `writeAudit()` 落 `audit_logs`；漏记视为缺陷。
 6. 客户敏感字段默认脱敏；完整视图访问必落审计（`customer_access_logs` 或等价 action）。
 7. 代客办理走白名单动作，内部调用客户端既有业务规则，不复制校验逻辑；结果与客户端自办一致（同一 SQLite 数据源）。
@@ -140,12 +149,13 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 
 ---
 
-## 8. 当前状态速查（2026-10-09 队友反馈对齐后）
+## 8. 当前状态速查（2026-10-09，吸收队友 4 条 + xpy 建议版后）
 
-- [x] 功能清单已定稿：`工作人员端清单.md`（含 §9 转账挂起/审核放行）
+- [x] 功能清单已定稿：`工作人员端清单.md`（含 §9 转账挂起/审核放行，挂单不扣款）
 - [x] 分工已定稿（本文件）
 - [x] 队友 4 条反馈已吸收：转账挂起设计 / 清单入库 `design/staff-console/` / Phase 0 增 HTTP 封装+部署代理 / Git 规矩写死
+- [x] xpy 建议 6 条已裁决：M0 里程碑、角色改 `csr`、messages 升 P0、mock 最小版+`reset-demo.mjs`、B 并行任务、审批闭环归服务端放行（agent 禁重复执行）
+- [ ] M0 未完成：客户端书面答复（谁改 `app/**`、阈值）；agent 冻结稿回执
 - [ ] Phase 0 未开始
-- [ ] agent 对接面尚未发给 agent 负责人（**最先做的人类动作**）
-- [ ] 演示账号未预置（`staff_users`：王小明/客服、李主管/主管）
+- [ ] 演示账号未预置（`staff_users`：王小明/csr、李主管/supervisor）
 - [ ] 转账审核客户端文案补丁未打（归属见功能清单 §9.3，认领人待客户端作者回复）
