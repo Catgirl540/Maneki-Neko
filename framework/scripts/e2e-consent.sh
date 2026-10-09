@@ -42,7 +42,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "== 启动演示服务（端口 $PORT） =="
-LUCKYCAT_DEMO_PORT="$PORT" \
+LUCKYCAT_BANK_MODE=demo LUCKYCAT_DEMO_PORT="$PORT" \
 LUCKYCAT_PATCHES="$LUCKYCAT_HOME/profiles/luckycat/consent-fast-timeout.patch.yml" \
   node "$LUCKYCAT_ROOT/bridge/demo-server.mjs" >"$LUCKYCAT_HOME/e2e-consent-server.log" 2>&1 &
 server_pid=$!

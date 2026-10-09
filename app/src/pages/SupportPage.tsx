@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
 import type { SupportMessage } from '@/api/types'
+import { AgentCardSecret } from '@/components/agent/AgentCardSecret'
 import { ConsentCard } from '@/components/agent/ConsentCard'
 import { EditMessageModal, MessageActions } from '@/components/agent/MessageActions'
 import { QuestionCard } from '@/components/agent/QuestionCard'
@@ -274,6 +275,7 @@ export function SupportPage() {
 
   return (
     <div className="flex flex-col gap-7">
+      <AgentCardSecret />
       <header className="float-up flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
@@ -417,7 +419,7 @@ export function SupportPage() {
               <div ref={consentRef}>
                 <ConsentCard
                   pending={agent.pending}
-                  onApprove={(password) => { agent.answer('approve', password) }}
+                  onApprove={(password, acknowledgement) => { agent.answer('approve', password, acknowledgement) }}
                   onReject={() => { agent.answer('reject') }}
                 />
               </div>

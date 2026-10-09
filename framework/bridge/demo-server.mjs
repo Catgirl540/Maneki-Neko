@@ -13,8 +13,9 @@
  * 它只需要知道"这个人验证通过了"，不需要也不应该拿到密码。
  * 所以浏览器把密码交给本服务校验，agent 侧只收到一张"已验证"的答复。
  *
- * 真实后端上线时，把本文件换成后端即可：agent 侧的接口面（JSON-RPC 与确认通道的
- * JSON 形状）都不变；语音那两个接口同理（形状见 `design/P8-VOICE.md`）。
+ * 默认通过 bank-agent.mjs 绑定登录客户并访问独立 SQLite HTTP 银行。
+ * 旧演示工具仅由 LUCKYCAT_BANK_MODE=demo 显式启用。
+ * 网页请求与 SSE 使用银行 Bearer，内部插件通道使用进程间随机口令。
  *
  * 用法：
  *   node bridge/demo-server.mjs
@@ -24,7 +25,9 @@
  *   LUCKYCAT_DEMO_PORT  监听端口，默认 8788
  *   LUCKYCAT_PROVIDER   模型路由，默认 openrouter
  *   LUCKYCAT_MODEL      模型名，默认 qwen/qwen3.8-flash
- *   LUCKYCAT_DEMO_PASSWORD 演示用支付密码，默认 123456
+ *   LUCKYCAT_BANK_URL  银行 HTTP 地址，默认 http://127.0.0.1:8080
+ *   LUCKYCAT_BANK_MODE demo 才启用独立占位工具；默认 http
+ *   LUCKYCAT_DEMO_PASSWORD 仅旧 demo 模式支付密码，默认 123456
  *   LUCKYCAT_DEMO_TOKEN    可选的访问口令；设了以后所有请求都要带
  *                          `x-luckycat-token` 头（演示服务默认只监听本机）
  *   LUCKYCAT_PATCHES       可选的额外 profile overlay（冒号或逗号分隔绝对路径），
@@ -49,6 +52,7 @@ import { randomUUID, randomBytes } from 'node:crypto'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
 import { streamVolcTTS } from './volc-stream.mjs'
 import { createDemoBank } from './demo-bank.mjs'
+import { createBankAgent, bankError } from './bank-agent.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -62,6 +66,18 @@ const PROVIDER = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
 const MODEL = process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash'
 const DEMO_PASSWORD = process.env.LUCKYCAT_DEMO_PASSWORD ?? '123456'
 const ACCESS_TOKEN = process.env.LUCKYCAT_DEMO_TOKEN ?? ''
+// 默认连接独立 SQLite 银行；旧演示工具只能显式启用。
+const HTTP_BANK = process.env.LUCKYCAT_BANK_MODE !== 'demo'
+process.env.LUCKYCAT_BANK_MODE = HTTP_BANK ? 'http' : 'demo'
+const INTERNAL_TOKEN = randomBytes(32).toString('base64url')
+process.env.LUCKYCAT_INTERNAL_TOKEN = INTERNAL_TOKEN
+process.env.LUCKYCAT_BANK_TOOL_URL = `http://127.0.0.1:${PORT}/internal/bank-tool`
+process.env.LUCKYCAT_CONSENT_URL = `http://127.0.0.1:${PORT}/consent/challenge`
+process.env.LUCKYCAT_QUESTION_URL = `http://127.0.0.1:${PORT}/agent-api/questions`
+if (HTTP_BANK) {
+  process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX ??= '只用中文办理业务。账户、余额、金额、产品和回执一律以当前客户的银行工具返回为准。需要信息时调用 ask_user_question，不得猜测账户或收款人，不得仅凭尾号转账。扣款必须提供明确付款账户、完整收款账号、登记姓名和银行地区/代码。风险确认语句必须由客户本人提供。确认和支付密码由独立卡片收集，禁止索要密码或把密码写入工具参数。工具成功返回前不得声称操作成功。失败或受理中的业务要如实说明。卡号和 CVV 只在临时窗口展示，不要在对话中复述。不要透露模型名称或内部实现。'
+}
+
 /** 可选的额外 overlay（冒号或逗号分隔绝对路径），端到端自检用。 */
 const PATCHES = (process.env.LUCKYCAT_PATCHES ?? '')
   .split(/[:,]/)
@@ -306,15 +322,21 @@ const streams = new Map()
 
 /** 把一条 SSE 事件推给某个会话的所有订阅者。 */
 function publish(sessionId, event) {
+  const entry = sessions.get(sessionId)
+  // 保留可重放事件，敏感卡信息仅发送一次且不进入缓冲。
+  const replayable = event.type !== 'card-secret'
+  let id
+  if (HTTP_BANK && entry && replayable) {
+    id = String(entry.eventSeq = (entry.eventSeq ?? 0) + 1)
+    entry.events ??= []
+    entry.events.push({ id, event })
+    if (entry.events.length > 256) entry.events.shift()
+  }
   const subscribers = streams.get(sessionId)
   if (subscribers === undefined) return
-  const frame = `data: ${JSON.stringify(event)}\n\n`
+  const frame = `${id ? `id: ${id}\n` : ''}data: ${JSON.stringify(event)}\n\n`
   for (const res of subscribers) {
-    try {
-      res.write(frame)
-    } catch {
-      subscribers.delete(res)
-    }
+    try { res.write(frame) } catch { subscribers.delete(res) }
   }
 }
 
@@ -330,6 +352,7 @@ function settleConsent(challengeId, answer) {
   pendingConsents.delete(challengeId)
   clearTimeout(entry.timer)
   publish(entry.challenge.sessionId, { type: 'consent-resolved', challengeId, decision: answer?.decision ?? 'timeout' })
+  if (HTTP_BANK && answer?.decision !== 'approve') bankAgent.forget(entry.challenge)
   entry.resolve(answer)
   return true
 }
@@ -368,9 +391,11 @@ function settleQuestion(questionId, answer) {
 
 /** 会话表：我们的 sessionId → { harness 会话句柄, 忙碌标志, 工具调用轨迹 }。 */
 const sessions = new Map()
+const bankAgent = HTTP_BANK ? createBankAgent({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish }) : null
 
 /** 共享的 harness（一个进程带多个会话）。 */
 let harness
+let harnessStarting
 
 /** 从会话事件里抽出给网页看的东西。 */
 function projectEvent(sessionId, event) {
@@ -431,17 +456,20 @@ function safeParse(text) {
 
 /** 确保 harness 已启动。 */
 async function ensureHarness() {
-  if (harness !== undefined) return harness
-  harness = new DeepSeekHarness({
-    dshBin: join(ROOT, 'node_modules', '.bin', 'dsh'),
-    profile: 'luckycat',
-    provider: PROVIDER,
-    model: MODEL,
-    initializeTimeoutMs: 30_000,
+  if (harnessStarting) return harnessStarting
+  const candidate = new DeepSeekHarness({
+    dshBin: join(ROOT, 'node_modules', '.bin', 'dsh'), profile: 'luckycat',
+    provider: PROVIDER, model: MODEL, initializeTimeoutMs: 30_000,
     ...PATCHES.length === 0 ? {} : { patches: PATCHES },
   })
-  await harness.start()
-  return harness
+  harness = candidate
+  harnessStarting = candidate.start().then(() => candidate).catch(async error => {
+    harnessStarting = undefined
+    harness = undefined
+    await candidate.close().catch(() => {})
+    throw error
+  })
+  return harnessStarting
 }
 
 /**
@@ -531,7 +559,7 @@ function demoBank() {
 
 const server = createServer((req, res) => {
   void handle(req, res).catch((error) => {
-    if (!res.headersSent) sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+    if (!res.headersSent) sendJson(res, error?.status ?? 500, { error: error instanceof Error ? error.message : String(error), code: error?.code })
     else res.end()
   })
 })
@@ -540,8 +568,12 @@ async function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   const parts = pathParts(url.pathname)
 
+  const internal = url.pathname === '/consent/challenge' || url.pathname === '/agent-api/questions' || url.pathname === '/internal/bank-tool'
+  if (HTTP_BANK && internal && req.headers['x-luckycat-internal'] !== INTERNAL_TOKEN) {
+    throw bankError('内部通道禁止外部访问', 403, 'FORBIDDEN')
+  }
   // 访问口令（可选）：设了就一律要带对，否则拒绝。
-  if (ACCESS_TOKEN !== '' && req.headers['x-luckycat-token'] !== ACCESS_TOKEN) {
+  if (!HTTP_BANK && !internal && ACCESS_TOKEN !== '' && req.headers['x-luckycat-token'] !== ACCESS_TOKEN) {
     sendJson(res, 401, { error: '缺少或错误的 x-luckycat-token' })
     return
   }
@@ -550,12 +582,37 @@ async function handle(req, res) {
     res.writeHead(204, {
       'access-control-allow-origin': '*',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
-      'access-control-allow-headers': 'content-type,x-luckycat-token',
+      'access-control-allow-headers': 'content-type,authorization,x-luckycat-token',
     })
     res.end()
     return
   }
 
+  let identity
+  if (HTTP_BANK && url.pathname.startsWith('/agent-api/') && !internal) {
+    identity = await bankAgent.authenticate(req.headers.authorization)
+    if (parts[1] === 'sessions' && parts[2]) {
+      const entry = sessions.get(parts[2])
+      // 重启后无会话时，状态探测明确返回失忆；其他路由仍拒绝未知会话。
+      if (!entry && req.method === 'GET' && parts.length === 3) {
+        sendJson(res, 200, { sessionId: parts[2], known: false, started: false, busy: false })
+        return
+      }
+      await bankAgent.owned(entry, identity)
+    }
+    if (parts[1] === 'consent' && parts[2]) {
+      const pending = pendingConsents.get(parts[2])
+      await bankAgent.owned(sessions.get(pending?.challenge.sessionId), identity)
+    }
+    if (parts[1] === 'questions' && parts[2]) {
+      await bankAgent.owned(sessions.get(pendingQuestions.get(parts[2])?.sessionId), identity)
+    }
+  }
+  if (HTTP_BANK && url.pathname === '/internal/bank-tool' && req.method === 'POST') {
+    const result = await bankAgent.execute(await readJson(req))
+    sendJson(res, 200, result)
+    return
+  }
   // 健康探测：网页据此决定走真 agent 还是回落固定话术。
   if (req.method === 'GET' && parts.join('/') === 'agent-api/health') {
     /*
@@ -570,12 +627,12 @@ async function handle(req, res) {
      * **不存在** `model` / `provider` 这类键。
      */
     sendJson(res, 200, {
-      ok: true,
-      sessions: sessions.size,
+      ok: PROVIDER !== 'openrouter' || Boolean(process.env.OPENROUTER_API_KEY),
+      bankDataSource: HTTP_BANK ? 'http' : 'demo',
       // 语音能力一并报出去：页面据此决定要不要显示「语音模式」，
       // 而不是等用户按下去才发现服务端没配。只报"有没有"，不报"用的哪个模型"。
-      voice: VOICE_ENABLED
-        ? { asr: true, tts: true, maxSeconds: VOICE_MAX_SECONDS }
+      voice: VOICE_ENABLED && Boolean(process.env.OPENROUTER_API_KEY)
+        ? { asr: true, tts: true, stream: Boolean(VOLC_APP_ID && VOLC_ACCESS_TOKEN), maxSeconds: VOICE_MAX_SECONDS }
         : { asr: false, tts: false },
     })
     return
@@ -583,8 +640,10 @@ async function handle(req, res) {
 
   // 建会话
   if (req.method === 'POST' && parts.join('/') === 'agent-api/sessions') {
+    if (HTTP_BANK && (sessions.size >= 1000 || [...sessions.values()].filter(entry => entry.ownerId === identity.user.id).length >= 50)) throw bankError('会话数量已达上限，请稍后重试', 429)
     const sessionId = `web-${randomUUID()}`
-    sessionOf(sessionId)
+    const entry = sessionOf(sessionId)
+    if (identity) { entry.ownerId = identity.user.id; entry.bankToken = identity.token }
     sendJson(res, 200, { sessionId })
     return
   }
@@ -645,7 +704,7 @@ async function handle(req, res) {
        * requires an attachment store`），所以 profile 里挂上了官方
        * `@deepseek-ai/dsh-attachment-local`。
        */
-      const accountId = typeof body.accountId === 'string' ? body.accountId : ''
+      const accountId = HTTP_BANK ? identity.user.id : typeof body.accountId === 'string' ? body.accountId : ''
       if (accountId === '') {
         sendJson(res, 400, { error: '缺少 accountId（图片要按账户隔离存放）' })
         return
@@ -692,17 +751,39 @@ async function handle(req, res) {
       'x-accel-buffering': 'no',
     })
     res.write(`data: ${JSON.stringify({ type: 'hello', sessionId })}\n\n`)
+    if (HTTP_BANK) {
+      const entry = sessions.get(sessionId)
+      const cursor = Number(req.headers['last-event-id'] ?? 0)
+      if (cursor > 0) {
+        for (const item of entry.events ?? []) {
+          if (Number(item.id) > cursor) res.write(`id: ${item.id}\ndata: ${JSON.stringify(item.event)}\n\n`)
+        }
+      } else {
+        // 新页面已有本地消息存档，只恢复仍有效的交互卡片。
+        for (const { challenge } of pendingConsents.values()) {
+          if (challenge.sessionId === sessionId) res.write(`data: ${JSON.stringify({ type: 'consent', challenge })}\n\n`)
+        }
+        for (const pending of pendingQuestions.values()) {
+          if (pending.sessionId === sessionId) {
+            const { resolve, timer, ...question } = pending
+            res.write(`data: ${JSON.stringify({ type: 'question', question })}\n\n`)
+          }
+        }
+      }
+      res.write(`data: ${JSON.stringify({ type: 'status', status: entry.busy ? 'running' : 'idle' })}\n\n`)
+    }
     const subscribers = streams.get(sessionId) ?? new Set()
     subscribers.add(res)
     streams.set(sessionId, subscribers)
     // 心跳：让中间层与浏览器知道连接还活着。
     const beat = setInterval(() => {
-      try {
-        res.write(': ping\n\n')
-      } catch {
-        clearInterval(beat)
-      }
-    }, 15_000)
+      void (async () => {
+        try {
+          if (HTTP_BANK) await bankAgent.authenticate(req.headers.authorization)
+          res.write(': ping\n\n')
+        } catch { clearInterval(beat); res.end() }
+      })()
+    }, 10_000)
     req.on('close', () => {
       clearInterval(beat)
       subscribers.delete(res)
@@ -723,6 +804,13 @@ async function handle(req, res) {
     const decision = body.decision === 'approve' ? 'approve' : 'reject'
     if (decision === 'reject') {
       settleConsent(challengeId, { decision: 'reject', challengeId })
+      sendJson(res, 200, { ok: true, decision })
+      return
+    }
+    if (HTTP_BANK) {
+      await bankAgent.approve(entry.challenge, typeof body.paymentPassword === 'string' ? body.paymentPassword : '', body.riskAcknowledgement)
+      const verification = entry.challenge.verification ? { method: 'payment-password', verified: true, ticket: `pw-${randomUUID()}` } : undefined
+      settleConsent(challengeId, { decision: 'approve', challengeId, ...(verification ? { verification } : {}) })
       sendJson(res, 200, { ok: true, decision })
       return
     }
@@ -789,6 +877,7 @@ async function handle(req, res) {
       sendJson(res, 400, { error: '缺少 sessionId（不知道该把卡片推给哪个会话）' })
       return
     }
+    if (HTTP_BANK) await bankAgent.current(sessionId)
     const questionId = newQuestionId()
     const now = Date.now()
     const pending = {
@@ -1063,7 +1152,8 @@ async function handle(req, res) {
 
   // 确认通道（agent 插件 → 这里，长轮询）
   if (req.method === 'POST' && url.pathname === '/consent/challenge') {
-    const challenge = await readJson(req)
+    let challenge = await readJson(req)
+    if (HTTP_BANK) challenge = await bankAgent.prepare(challenge)
     if (typeof challenge.challengeId !== 'string' || challenge.challengeId === '') {
       sendJson(res, 400, { error: 'challenge 缺少 challengeId' })
       return
@@ -1072,6 +1162,7 @@ async function handle(req, res) {
       const id = challenge.challengeId
       const timer = setTimeout(() => {
         pendingConsents.delete(id)
+        if (HTTP_BANK) bankAgent.forget(challenge)
         publish(challenge.sessionId, { type: 'consent-resolved', challengeId: id, decision: 'timeout' })
         resolvePromise({ decision: 'reject', challengeId: id })
       }, CONSENT_TIMEOUT_MS)
@@ -1087,6 +1178,7 @@ async function handle(req, res) {
         if (!pendingConsents.has(id)) return
         clearTimeout(timer)
         pendingConsents.delete(id)
+        if (HTTP_BANK) bankAgent.forget(challenge)
         publish(challenge.sessionId, { type: 'consent-resolved', challengeId: id, decision: 'abandoned' })
         resolvePromise({ decision: 'reject', challengeId: id })
       }
@@ -1109,6 +1201,7 @@ async function handle(req, res) {
   // 这个服务的主业，**绝不能因为银行数据起不来就一起挂掉**，所以这里
   // 捕获失败、`/api/*` 回 503，其余接口照常。
   if (url.pathname.startsWith('/api/')) {
+    if (HTTP_BANK) { sendJson(res, 404, { error: '银行接口请使用独立银行服务' }); return }
     const bank = await demoBank()
     if (bank === null) {
       sendJson(res, 503, {
@@ -1133,6 +1226,7 @@ server.listen(PORT, '127.0.0.1', () => {
 
 /** 优雅退出：结束所有待确认事项与 SSE 连接，再关 harness。 */
 async function shutdown() {
+  bankAgent?.close()
   for (const [challengeId, entry] of pendingConsents) {
     clearTimeout(entry.timer)
     entry.resolve({ decision: 'reject', challengeId })

@@ -268,7 +268,7 @@ export function createHttpPollChannel(options: { url: string; timeoutMs: number 
         try {
           response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'content-type': 'application/json' },
+            headers: { 'content-type': 'application/json', ...(process.env.LUCKYCAT_INTERNAL_TOKEN ? { 'x-luckycat-internal': process.env.LUCKYCAT_INTERNAL_TOKEN } : {}) },
             body: JSON.stringify({ sessionId, questions }),
             signal: fused.signal,
             // 凭据不进通道：它只需要题目。

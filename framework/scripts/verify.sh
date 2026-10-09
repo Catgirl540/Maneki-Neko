@@ -4,6 +4,8 @@
 #
 # 刻意不使用 set -e：我们要跑完全部断言再汇总，而不是第一条失败就退出。
 set -uo pipefail
+# 此门验收独立演示 profile；HTTP 银行联调由 tools/check-agent-http.mjs 覆盖。
+export LUCKYCAT_BANK_MODE=demo
 source "$(dirname "${BASH_SOURCE[0]}")/_home.sh"
 
 fail=0
@@ -149,8 +151,7 @@ fi
 # 它是**整套注册**的，没有"只挂 read"的配置开关。而 DSH 的工具面遮罩
 # （`ctx.tools.restrict`）只在 **agent 作用域**可用（官方源码原话：context-global
 # 会 "mask every agent"），profile 层拿不到这个口子。所以这 4 个**会出现在工具面上**，
-# 但只有 `read` 在 hardening 白名单里——另外 3 个一调就被拒。
-# 下面两组断言钉的就是这件事：面**完全已知**，且白名单**只放行 read**。
+# 文件类工具均不在白名单；图片通过 SDK 的内联块传入。
 expected_names='ask_user_question,bank_get_balance,bank_get_transaction_detail,bank_list_transactions,bank_reveal_card_secret,bank_transfer,bank_wealth_quote,bank_wealth_redeem,bank_wealth_subscribe,edit,knowledge_lookup,luckycat_ping,luckycat_probe_secret,read,read_image,write'
 if grep -q "^\[luckycat-probe\] names=$expected_names$" <<<"$probe_out"; then
   ok "工具面集合完全匹配（生产 15 个 + 探针 1 个）"
@@ -171,13 +172,8 @@ if grep -Eq 'names=.*(bash|shell|exec|spawn|apply_patch|web_search|web_fetch|fet
 else
   ok "工具面里没有任何 shell / 联网类工具"
 fi
-# 白名单**只**放行 read 这一个文件类工具。
+# 图片以内联块传入模型，不放行读取服务端文件的工具。
 allowed_block="$(entry_block luckycat-hardening)"
-if grep -q '^ *- read$' <<<"$allowed_block"; then
-  ok "白名单放行了 read（原版读文件的工具）"
-else
-  bad "白名单里没有 read（那是唯一一个文件类工具，必须显式写）"
-fi
 # 提问工具**必须**在白名单里，否则模型一调就被拒——而"缺信息时问用户"
 # 是这个助手的正常行为，不是可选能力。
 if grep -q '^ *- ask_user_question$' <<<"$allowed_block"; then
@@ -185,7 +181,7 @@ if grep -q '^ *- ask_user_question$' <<<"$allowed_block"; then
 else
   bad "白名单里没有 ask_user_question（模型一提问就会被守卫拒掉）"
 fi
-for t in read_image write edit; do
+for t in read read_image write edit; do
   if grep -q "^ *- $t\$" <<<"$allowed_block"; then
     bad "白名单意外放行了 $t"
   else

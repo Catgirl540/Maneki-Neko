@@ -16,6 +16,7 @@
  */
 
 import { STORAGE_KEYS, storage, trySet } from '@/lib/storage'
+const historyKey = (ownerId?: string) => ownerId ? `${STORAGE_KEYS.agentSessions}.${ownerId}` : STORAGE_KEYS.agentSessions
 
 /** 对话里的一条内容。 */
 export type ChatItem =
@@ -332,10 +333,10 @@ export function sanitizeConversations(raw: unknown): StoredConversation[] {
 }
 
 /** 读存档。 */
-export function loadConversations(): StoredConversation[] {
+export function loadConversations(ownerId?: string): StoredConversation[] {
   // 先洗（认不出来的丢掉）再裁（多余的空白对话丢掉）：两件事分开，
   // 因为"合法"和"该留"不是一回事。
-  return pruneEmptyConversations(sanitizeConversations(storage.get<unknown>(STORAGE_KEYS.agentSessions, [])))
+  return pruneEmptyConversations(sanitizeConversations(storage.get<unknown>(historyKey(ownerId), [])))
 }
 
 /* ----------------------------------------------------------------- 存回去 */
@@ -395,12 +396,12 @@ export function trimConversations(list: StoredConversation[]): StoredConversatio
  * @param list - 要存的对话。
  * @returns 实际存下来的对话；调用方可以据此知道有没有被裁。
  */
-export function saveConversations(list: StoredConversation[]): StoredConversation[] {
+export function saveConversations(list: StoredConversation[], ownerId?: string): StoredConversation[] {
   let pending = trimConversations(list)
   while (pending.length > 0) {
-    if (trySet(STORAGE_KEYS.agentSessions, pending)) return pending
+    if (trySet(historyKey(ownerId), pending)) return pending
     pending = pending.slice(0, -1)
   }
-  storage.remove(STORAGE_KEYS.agentSessions)
+  storage.remove(historyKey(ownerId))
   return []
 }

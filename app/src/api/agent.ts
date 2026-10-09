@@ -12,6 +12,7 @@
  */
 
 import { isMockMode } from '@/lib/dataMode'
+import { AUTH_EXPIRED_EVENT, forgetSession, getAuthToken } from '@/lib/authToken'
 import { blobToBase64 } from '@/lib/audio'
 
 /** agent 服务地址。留空 = 关闭 agent（回到纯前端固定话术）。 */
@@ -37,6 +38,7 @@ export interface ConsentChallenge {
   callId: string
   toolName: string
   kind: string
+  riskAcknowledgementText?: string
   fields: ConsentFieldInfo[]
   verification?: VerificationMethod
   consequence?: string
@@ -91,6 +93,8 @@ export interface QuestionAnswerItem {
 /** 服务端推送的事件。 */
 export type AgentEvent =
   | { type: 'hello'; sessionId: string }
+  | { type: 'bank-updated' }
+  | { type: 'card-secret'; cardId: string; field: string; value: string; expiresAt: number }
   | { type: 'status'; status: 'running' | 'idle' }
   | { type: 'assistant'; text: string }
   | { type: 'tool-call'; callId: string; name: string; arguments: unknown }
@@ -122,6 +126,8 @@ export interface AgentHealth {
 export interface VoiceCapability {
   asr: boolean
   tts: boolean
+  /** 流式播放器需要此能力；没有配置时不开启语音模式。 */
+  stream?: boolean
   /** 一次录音最长多少秒（上游转录有约 60 秒的处理上限）。 */
   maxSeconds?: number
 }
@@ -140,11 +146,23 @@ export class AgentError extends Error {
 }
 
 /** 带超时的 fetch：agent 服务是本机的，连不上要快点失败，不能让界面一直转圈。 */
+function authHeaders(headers?: HeadersInit): Headers {
+  const result = new Headers(headers)
+  const token = getAuthToken()
+  if (!isMockMode && token) result.set('Authorization', `Bearer ${token}`)
+  return result
+}
+function checkExpired(response: Response, code?: string): void {
+  if (response.status === 401 && code === 'UNAUTHORIZED' && !isMockMode) {
+    forgetSession()
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  }
+}
 async function request(path: string, init: RequestInit = {}, timeoutMs = 10_000): Promise<Response> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(new Error('请求超时')), timeoutMs)
   try {
-    return await fetch(`${AGENT_BASE}${path}`, { ...init, signal: controller.signal })
+    return await fetch(`${AGENT_BASE}${path}`, { ...init, headers: authHeaders(init.headers), signal: controller.signal })
   } finally {
     clearTimeout(timer)
   }
@@ -170,6 +188,7 @@ async function requestJson<T>(path: string, init: RequestInit = {}, timeoutMs?: 
     throw new AgentError(`agent 服务返回了非 JSON 内容：${text.slice(0, 120)}`, response.status, 'MALFORMED')
   }
   if (!response.ok) {
+    checkExpired(response, (parsed as { code?: string }).code)
     const message = (parsed as { error?: unknown }).error
     throw new AgentError(
       typeof message === 'string' ? message : `agent 服务返回 ${response.status}`,
@@ -256,7 +275,7 @@ export async function sendAgentMessage(
   }
   await requestJson(`/sessions/${encodeURIComponent(sessionId)}/messages`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify(body),
     // 带图的 base64 比一句话大得多，默认 10 秒在慢网络下不够。
   }, image === undefined ? 10_000 : 30_000)
@@ -274,16 +293,54 @@ export function openAgentStream(
   onEvent: (event: AgentEvent) => void,
   onError?: (error: Event) => void,
 ): () => void {
-  const source = new EventSource(`${AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/stream`)
-  source.onmessage = (message) => {
-    try {
-      onEvent(JSON.parse(message.data) as AgentEvent)
-    } catch {
-      // 单条事件坏了不该把整条流干掉；忽略它，让后续事件继续。
+  const controller = new AbortController()
+  let lastId = ''
+  void (async () => {
+    while (!controller.signal.aborted) {
+      try {
+        const headers = authHeaders({ Accept: 'text/event-stream' })
+        if (lastId) headers.set('Last-Event-ID', lastId)
+        const response = await fetch(`${AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/stream`, { headers, signal: controller.signal })
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({})) as { code?: string }
+          checkExpired(response, detail.code)
+          onError?.(new Event('error'))
+          if ([401, 403, 404].includes(response.status)) return
+          throw new Error('事件流不可用')
+        }
+        if (!response.body) throw new Error('事件流响应为空')
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+          for (;;) {
+            const match = /\r?\n\r?\n/.exec(buffer)
+            if (!match || match.index === undefined) break
+            const block = buffer.slice(0, match.index)
+            buffer = buffer.slice(match.index + match[0].length)
+            const lines = block.split(/\r?\n/)
+            const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n')
+            const id = lines.find(line => line.startsWith('id:'))?.slice(3).trim()
+            if (id) lastId = id
+            if (data) { try { onEvent(JSON.parse(data) as AgentEvent) } catch { /* 忽略坏帧 */ } }
+          }
+        }
+        if (!controller.signal.aborted) onError?.(new Event('error'))
+      } catch {
+        if (controller.signal.aborted) return
+        onError?.(new Event('error'))
+      }
+      await new Promise<void>(resolve => {
+        const timer = window.setTimeout(() => { controller.signal.removeEventListener('abort', cancel); resolve() }, 1_500)
+        const cancel = () => { window.clearTimeout(timer); resolve() }
+        controller.signal.addEventListener('abort', cancel, { once: true })
+      })
     }
-  }
-  if (onError) source.onerror = onError
-  return () => { source.close() }
+  })()
+  return () => { controller.abort() }
 }
 
 /** 对一次待确认事项的答复结果。 */
@@ -307,14 +364,16 @@ export async function answerConsent(
   challengeId: string,
   decision: 'approve' | 'reject',
   paymentPassword?: string,
+  riskAcknowledgement?: string,
 ): Promise<ConsentAnswerResult> {
   try {
     await requestJson(`/consent/${encodeURIComponent(challengeId)}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: authHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify({
         decision,
         ...paymentPassword === undefined ? {} : { paymentPassword },
+        ...riskAcknowledgement === undefined ? {} : { riskAcknowledgement },
       }),
     }, 20_000)
     return { ok: true }
@@ -343,7 +402,7 @@ export async function answerQuestion(
   try {
     await requestJson(`/questions/${encodeURIComponent(questionId)}/answer`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: authHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify({ answers }),
     }, 15_000)
     return { ok: true }
@@ -381,7 +440,7 @@ export async function transcribeAudio(audio: Blob): Promise<TranscriptionResult>
   }
   const result = await requestJson<{ text?: string; seconds?: number | null }>('/asr', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: authHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify(payload),
   }, 60_000)
   return {
@@ -413,7 +472,7 @@ export async function synthesizeSpeech(text: string): Promise<SpeechResult> {
   try {
     response = await fetch(`${AGENT_BASE}/tts`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: authHeaders({ 'content-type': 'application/json' }),
       body: JSON.stringify({ text }),
       signal: controller.signal,
     })
@@ -476,7 +535,7 @@ export function synthesizeSpeechStream(
       try {
         response = await fetch(`${AGENT_BASE}/tts/stream`, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: authHeaders({ 'content-type': 'application/json' }),
           body: JSON.stringify({ text }),
           signal,
         })
@@ -581,7 +640,7 @@ export async function probeVoiceAvailable(): Promise<VoiceCapability | null> {
   try {
     const health = await requestJson<AgentHealth>('/health', {}, 3_000)
     const voice = health.voice
-    if (voice === undefined || !voice.asr || !voice.tts) return null
+    if (voice === undefined || !voice.asr || !voice.tts || voice.stream === false) return null
     return voice
   } catch {
     return null

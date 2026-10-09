@@ -319,4 +319,11 @@ eq(globalThis.window.localStorage.getItem('luckycat.agent.sessions.v1'), null,
 /* -------------------------------------------------------------------- 汇总 */
 
 console.log(failures === 0 ? '\n全部通过' : `\n失败 ${failures} 项`)
+
+// HTTP 助手记录按客户隔离，旧版未绑定客户记录不进入客户存档。
+installStorage()
+saveConversations([conversation({ id: 'owner-a', items: [{ kind: 'user', id: 'a-message', text: '客户 A' }] })], 'a')
+saveConversations([conversation({ id: 'owner-b', items: [{ kind: 'user', id: 'b-message', text: '客户 B' }] })], 'b')
+eq(loadConversations('a').map(c => c.id), ['owner-a'], '客户 A 仅加载自己的对话')
+eq(loadConversations('b').map(c => c.id), ['owner-b'], '客户 B 仅加载自己的对话')
 process.exit(failures === 0 ? 0 : 1)

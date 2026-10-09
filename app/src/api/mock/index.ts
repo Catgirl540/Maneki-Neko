@@ -20,6 +20,7 @@ import {
   canBuyRisk,
   suitabilityMessage,
 } from '@/lib/wealth'
+export { RISK_ACKNOWLEDGEMENT }
 import { ACCOUNT_OPENING_PLEDGE } from '@/lib/account-opening'
 import {
   formatAmount,
@@ -437,7 +438,7 @@ function cannedReply(text: string): SupportReply {
  * 付钱这一步必须单独验证：登录密码泄露不等于能扣钱。
  * 连续输错达阈值即锁定，要求重新登录（真实系统还会要求去柜台或人脸解锁）。
  */
-function verifyPayPassword(input: string): void {
+export function verifyPayPassword(input: string): void {
   const db = loadDb()
   if (db.payPasswordFailures >= PAY_PASSWORD_MAX_ATTEMPTS) {
     throw new ApiError('支付密码已锁定，请重新登录后再试', 423, 'PAY_PASSWORD_LOCKED')
