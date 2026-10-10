@@ -10,11 +10,14 @@ import { spawn } from 'node:child_process'
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 
 const PORT = 8711
 const bank = `http://127.0.0.1:${PORT}`
 const staffBase = `${bank}/staff-api`
 const dbFile = join(tmpdir(), 'transfer-hold-smoke.sqlite')
+/** 后端入口按脚本位置推导，别写死本机绝对路径（换机器/换系统就跑不起来） */
+const SERVER_ENTRY = fileURLToPath(new URL('../server/index.mjs', import.meta.url))
 /** 演示/冒烟用短窗口：5 秒够触发自动到账，又不至于把脚本拖太长 */
 const HOLD_SECONDS = '5'
 
@@ -50,7 +53,7 @@ async function main() {
 
   const server = spawn(
     process.execPath,
-    ['D:/Github/maneki-neko/Maneki-Neko/server/index.mjs'],
+    [SERVER_ENTRY],
     {
       env: {
         ...process.env,
