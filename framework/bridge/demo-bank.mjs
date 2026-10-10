@@ -538,10 +538,17 @@ export async function createDemoBank({
     /** 查在途中的转账指令（员工端/agent 提审用）。走同一队列，避免切档串号。 */
     getHeldTransfer({ customerId, transactionId }) {
       return exclusive(async () => {
+        // 切档只为读这份指令，读完还原——否则会把「当前登录档案」留成这个客户，
+        // 未登录的短信/登录请求就会串档（验证码对不上 → SMS_NOT_SENT）。
+        const before = dbModule.loadDb()
         const profile = findProfileByUserId(customerId)
         if (profile === null) return null
-        activateDb(profile)
-        return mockGetHeldTransfer(transactionId)
+        try {
+          activateDb(profile)
+          return mockGetHeldTransfer(transactionId)
+        } finally {
+          activateDb(before)
+        }
       })
     },
 
@@ -551,16 +558,21 @@ export async function createDemoBank({
      */
     settleHeldTransfer({ customerId, transactionId, outcome, reason }) {
       return exclusive(async () => {
+        const before = dbModule.loadDb()
         const profile = findProfileByUserId(customerId)
         if (profile === null) {
           throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
         }
-        activateDb(profile)
-        const result = await mockSettleHeldTransfer(transactionId, outcome, reason)
-        if (onHoldClosed) {
-          await onHoldClosed({ customerId, transactionId, outcome, reason })
+        try {
+          activateDb(profile)
+          const result = await mockSettleHeldTransfer(transactionId, outcome, reason)
+          if (onHoldClosed) {
+            await onHoldClosed({ customerId, transactionId, outcome, reason })
+          }
+          return result
+        } finally {
+          activateDb(before)
         }
-        return result
       })
     },
 
@@ -571,6 +583,11 @@ export async function createDemoBank({
      */
     tickHolds() {
       return exclusive(async () => {
+        // 记录扫描前的当前档案，扫完还原。
+        // listAllProfiles() 以「当前档案」开头，若扫完不还原，当前档会随每次扫描
+        // 在多个客户之间来回翻转；未登录的短信/登录请求正读这个当前档，
+        // 一旦翻转就串档（fresh 库上表现为验证码对不上 → SMS_NOT_SENT）。
+        const before = dbModule.loadDb()
         const closed = []
         for (const profile of listAllProfiles()) {
           activateDb(profile)
@@ -579,6 +596,7 @@ export async function createDemoBank({
             closed.push({ customerId: profile.user.id, transactionId })
           }
         }
+        activateDb(before)
         if (onHoldClosed) {
           for (const item of closed) {
             await onHoldClosed({ ...item, outcome: 'settled', reason: '窗口到点，自动到账' })
