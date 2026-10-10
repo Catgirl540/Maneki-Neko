@@ -54,6 +54,7 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    scroll-padding-top: 112px;
   }
 
   body {
@@ -91,6 +92,80 @@
     border: 1px solid var(--color-line);
     border-radius: var(--radius-card);
   }
+
+  .balance-card {
+    background-image: linear-gradient(135deg, var(--color-gold-tint), var(--color-surface) 72%);
+    border-color: var(--color-gold-wash);
+  }
+
+  .skip-link {
+    position: fixed;
+    top: 36px;
+    left: 16px;
+    z-index: 100;
+    padding: 10px 16px;
+    border-radius: var(--radius-chip);
+    background: var(--color-ink);
+    color: var(--color-ink-invert);
+    transform: translateY(calc(-100% - 48px));
+  }
+
+  .skip-link:focus {
+    transform: none;
+  }
+
+  .modal-panel {
+    max-height: calc(100dvh - 48px);
+    overscroll-behavior: contain;
+  }
+
+  .mobile-navigation {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .chat-panel {
+    height: clamp(440px, calc(100dvh - 280px), 840px);
+  }
+}
+
+@media (max-width: 959px) {
+  .app-content {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+  .chat-panel {
+    height: max(360px, calc(100dvh - 350px));
+  }
+}
+
+/* 侧栏与双列卡片同时出现时，收支数字仍需足够的排版宽度。 */
+@media (min-width: 960px) and (max-width: 1399px) {
+  .balance-summary {
+    display: flex;
+  }
+  .balance-summary > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-left: 0;
+    padding-left: 0;
+  }
+  .balance-summary dd {
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']), select, textarea {
+    font-size: 16px;
+  }
+  .modal-panel {
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media print {
+  .app-content { padding-bottom: 0; }
+  .skip-link { display: none; }
 }
 
 /* ==========================================================================

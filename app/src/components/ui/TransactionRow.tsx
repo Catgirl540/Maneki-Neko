@@ -15,7 +15,7 @@ export function TransactionRow({ tx, showAccount }: { tx: Transaction; showAccou
     <Link
       to={`/transactions/${tx.id}`}
       // 负边距 + 等量内边距：hover 底色铺满一点，文字仍与卡片对齐
-      className="-mx-3 flex items-center gap-4 rounded-tile px-3 py-4 transition-colors duration-200 hover:bg-sunk"
+      className="-mx-2 flex items-center gap-2 sm:-mx-3 sm:gap-4 rounded-tile px-3 py-4 transition-colors duration-200 hover:bg-sunk"
     >
       <span
         className={cn(
@@ -38,7 +38,7 @@ export function TransactionRow({ tx, showAccount }: { tx: Transaction; showAccou
 
       <span
         className={cn(
-          'num shrink-0 text-[15px] font-semibold',
+          'num shrink-0 text-[13px] font-semibold sm:text-[15px]',
           income ? 'text-blue' : 'text-ink',
         )}
       >

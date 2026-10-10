@@ -14,6 +14,7 @@ import type {} from '@luckycat/dsh-consent'
 import { loadDemoData } from './data.ts'
 import { SENSITIVE_OPERATIONS } from './specs.ts'
 import { BANK_TOOL_NAMES, registerBankTools } from './tools.ts'
+import { registerHttpBankTools, HTTP_OPERATIONS } from './http-tools.ts'
 import type { BankDemoConfig } from './types.ts'
 
 export type * from './types.ts'
@@ -43,6 +44,11 @@ export const Config: z<BankDemoConfig> = z.object({
  * @param config - 数据路径与限额。
  */
 export function apply(ctx: Context, config: BankDemoConfig): void {
+  if (process.env.LUCKYCAT_BANK_MODE !== 'demo') {
+    registerHttpBankTools(ctx)
+    for (const spec of HTTP_OPERATIONS) ctx.consent.declare(spec)
+    return
+  }
   // 加载期同步读盘：数据文件坏了立刻报错（fail loud）。
   const data = loadDemoData(config.dataPath)
 

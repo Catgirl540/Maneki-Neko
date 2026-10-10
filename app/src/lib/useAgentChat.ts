@@ -1,3 +1,4 @@
+import { isMockMode } from '@/lib/dataMode'
 /**
  * agent 对话状态：多段对话并存，并把 SSE 事件整理成界面能直接渲染的东西。
  *
@@ -159,7 +160,7 @@ export interface AgentChat {
    */
   rewind: (itemId: string, text?: string) => void
   /** 答复当前对话待确认的事项。 */
-  answer: (decision: 'approve' | 'reject', paymentPassword?: string) => void
+  answer: (decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string) => void
   /**
    * 答复当前对话的问题卡片。
    * @param answers - 每道题的答复（选中的选项 + 可能的自由输入）。
@@ -183,7 +184,7 @@ export function useAgentChat(): AgentChat {
   const [status, setStatus] = useState<AgentStatus>(agentEnabled ? 'probing' : 'off')
   const [voice, setVoice] = useState<VoiceCapability | undefined>(undefined)
   const [conversations, setConversations] = useState<StoredConversation[]>(() => {
-    const loaded = loadConversations()
+    const loaded = loadConversations(isMockMode ? undefined : restoreSession()?.user.id)
     // 列表里最少留一段：一段都没有的时候直接给一段空的，
     // 省得用户先点「新对话」才能开口。
     return loaded.length === 0 ? [makeConversation()] : loaded
@@ -297,6 +298,12 @@ export function useAgentChat(): AgentChat {
 
   const handleEvent = useCallback((convId: string, event: AgentEvent) => {
     switch (event.type) {
+      case 'bank-updated':
+        window.dispatchEvent(new Event('luckycat:bank-updated'))
+        return
+      case 'card-secret':
+        window.dispatchEvent(new CustomEvent('luckycat:agent-card-secret', { detail: event }))
+        return
       case 'hello':
         return
       case 'status':
@@ -573,7 +580,7 @@ export function useAgentChat(): AgentChat {
     dispatch(convId, last.text.trim())
   }, [dispatch, patch, pendings, status])
 
-  const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string) => {
+  const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string) => {
     const convId = activeIdRef.current
     if (convId === undefined) return
     const current = pendings[convId]
@@ -589,7 +596,7 @@ export function useAgentChat(): AgentChat {
       return
     }
     setPendings(prev => ({ ...prev, [convId]: { ...current, submitting: true, error: undefined } }))
-    void answerConsent(challengeId, 'approve', paymentPassword).then((result) => {
+    void answerConsent(challengeId, 'approve', paymentPassword, riskAcknowledgement).then((result) => {
       if (!mountedRef.current) return
       // 成功时真正的移除交给 consent-resolved 事件；这里只收起"提交中"。
       setPendings(prev => {
@@ -736,7 +743,7 @@ export function useAgentChat(): AgentChat {
 
   // 存回本地。不防抖：一轮对话只产生几条内容，而防抖会在关标签页时丢掉最后一段。
   useEffect(() => {
-    saveConversations(conversations)
+    saveConversations(conversations, isMockMode ? undefined : accountIdRef.current)
   }, [conversations])
 
   const active = useMemo(
@@ -790,6 +797,21 @@ function summarize(name: string, text: string): string {
     // 不是 JSON：只取第一行、限长，避免把一大段原文塞进标签。
     const firstLine = trimmed.split('\n')[0] ?? ''
     return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine
+  }
+
+  if (parsed['dataSource'] === 'http') {
+    if (name === 'bank_reveal_card_secret') return '已在临时窗口展示'
+    if (name === 'bank_get_balance') return Array.isArray(parsed['accounts']) ? `已查询 ${parsed['accounts'].length} 个账户` : '已完成'
+    const result = parsed['result']
+    if (Array.isArray(result)) return name === 'bank_wealth_quote' ? `${result.length} 个理财产品` : '已完成'
+    if (result && typeof result === 'object') {
+      parsed = result as Record<string, unknown>
+      if (typeof parsed['referenceNo'] === 'string') return `回执号 ${parsed['referenceNo']}`
+      if (name === 'bank_list_transactions' && Array.isArray(parsed['items'])) return `${parsed['items'].length} 条流水`
+      if (name === 'bank_wealth_subscribe') return '银行已确认申购'
+      if (name === 'bank_wealth_redeem') return '银行已受理赎回'
+      if (name === 'bank_wealth_quote' && typeof parsed['name'] === 'string') return parsed['name']
+    }
   }
 
   // 失败信息始终如实显示——那是客户需要知道的。

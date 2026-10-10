@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { fileURLToPath, URL } from 'node:url'
@@ -8,33 +8,42 @@ import { fileURLToPath, URL } from 'node:url'
 // 后端就绪后把 VITE_API_BASE_URL 指过去即可，业务代码零改动。
 //
 // /agent-api 是**另一条通道**：本地 agent 演示服务（framework/bridge/demo-server.mjs）。
-// 它不是银行后端，只负责把网页接到 agent 运行时；不启动它时前端自动回落固定话术。
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+// 它独立于银行后端；HTTP 网页只启用已声明接入账户服务的助手。
+export default defineConfig(({ mode }) => {
+  const appRoot = fileURLToPath(new URL('.', import.meta.url))
+  const env = loadEnv(mode, appRoot, 'VITE_')
+  const useMock = (process.env.VITE_USE_MOCK ?? env.VITE_USE_MOCK) === 'true'
+  // 部署到子路径（如裸 IP 的 /bank/）时用 VITE_BASE_PATH 指定；默认根路径，不影响本地开发。
+  const base = process.env.VITE_BASE_PATH ?? env.VITE_BASE_PATH ?? '/'
+  return {
+    base,
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@/api/runtime': fileURLToPath(new URL(useMock ? './src/api/mock/backend.ts' : './src/api/runtime.ts', import.meta.url)),
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
     },
-  },
-  server: {
-    port: 5180,
-    proxy: {
-      '/agent-api': {
-        target: process.env.VITE_AGENT_TARGET ?? 'http://127.0.0.1:8788',
-        changeOrigin: true,
-        // SSE 必须关掉缓冲，否则事件会被攒着不发。
-        configure: (proxy) => {
-          proxy.on('proxyRes', (proxyRes) => {
-            if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
-              proxyRes.headers['x-accel-buffering'] = 'no'
-            }
-          })
+    server: {
+      port: 5180,
+      proxy: {
+        '/agent-api': {
+          target: process.env.VITE_AGENT_TARGET ?? env.VITE_AGENT_TARGET ?? 'http://127.0.0.1:8788',
+          changeOrigin: true,
+          // SSE 必须关掉缓冲，否则事件会被攒着不发。
+          configure: (proxy) => {
+            proxy.on('proxyRes', (proxyRes) => {
+              if (proxyRes.headers['content-type']?.includes('text/event-stream')) {
+                proxyRes.headers['x-accel-buffering'] = 'no'
+              }
+            })
+          },
+        },
+        '/api': {
+          target: process.env.VITE_PROXY_TARGET ?? env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8080',
+          changeOrigin: true,
         },
       },
-      '/api': {
-        target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8080',
-        changeOrigin: true,
-      },
     },
-  },
+  }
 })

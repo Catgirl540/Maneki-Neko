@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 /**
  * 官网首页（`/`）。
  *
@@ -22,33 +23,23 @@
  * 下面每一句仍然必须是这个项目真的做到的（`tools/check-landing.mjs` 里有反向断言：
  * 一旦出现"百万用户""年度数字银行"这种编造的背书就会失败）。
  *
- * **3. 界面图都是画出来的 HTML，且标了「界面示意」。** 不用截图：改了界面没人回来换图，
- * 而且图片没有深色值。用的色板与排版和应用里完全一致，所以看起来和被截图一样。
+ * **3. 公开页只展示服务说明，不展示编造的余额、交易或收益数据。**
  *
  * @module app/pages/LandingPage
  */
 
-import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { CatMark, Logo } from '@/components/brand/Logo'
-import { Button } from '@/components/ui/Button'
+import { Logo } from '@/components/brand/Logo'
 import {
-  ArrowDownLeftIcon,
   ArrowRightIcon,
-  ArrowUpRightIcon,
+  ArrowDownLeftIcon,
   BoltIcon,
   CardIcon,
   ChartIcon,
   CheckIcon,
-  FoodIcon,
-  GlobalIcon,
-  HouseIcon,
-  LockIcon,
-  MicIcon,
   PhoneIcon,
   PigIcon,
   ShieldIcon,
-  ShopIcon,
   SparkleIcon,
   TransferIcon,
   WalletIcon,
@@ -56,283 +47,56 @@ import {
 import { cn } from '@/lib/cn'
 import { useSession } from '@/store/session-context'
 
-/* ══════════════════════════════════════════════════════════ 界面示意图零件 ══
-   都是纯 HTML，用的是应用里同一套 token，所以它们和被截图的真实界面长得一样。 */
-
-/** 示意图外面那层壳：标明这是示意，避免被当成实时数据。 */
-function Mock({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
+/** 公开页只介绍服务，不构造账户、交易、持仓或收益数据。 */
+function ServicePreview({ title, Icon, rows }: { title: string; Icon: typeof CardIcon; rows: [string, string][] }) {
   return (
-    <div className={cn('card overflow-hidden', className)}>
-      <div className="flex items-center gap-2 border-b border-line bg-sunk px-4 py-2.5">
-        <span className="size-2 rounded-chip bg-line-strong" />
-        <span className="size-2 rounded-chip bg-line-strong" />
-        <span className="ml-1.5 text-[11px] text-ink-mute">界面示意 · {label}</span>
+    <div className="card overflow-hidden">
+      <div className="flex items-center gap-3 border-b border-line bg-sunk px-5 py-4">
+        <span className="grid size-10 place-items-center rounded-chip bg-gold-wash text-gold-deep"><Icon size={22} /></span>
+        <span className="text-[15px] font-semibold text-ink">{title}</span>
       </div>
-      <div className="p-5">{children}</div>
-    </div>
-  )
-}
-
-/** 账户概览：首屏右侧的主视觉，一眼看出"这是一家银行"。 */
-function AccountMock() {
-  return (
-    <div className="rounded-card border border-line bg-surface p-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-[12px] text-ink-mute">总资产</p>
-          <p className="num mt-1 text-[28px] leading-none font-semibold text-ink">¥42,864.50</p>
-          <p className="mt-1 text-[11px] text-ink-mute">CNY · 含理财持仓</p>
-        </div>
-        <span className="grid size-9 place-items-center rounded-chip bg-gold-wash">
-          <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
-        </span>
-      </div>
-
-      <div className="mt-5 space-y-2">
-        {[
-          ['储蓄账户', '¥284,640.55', '**** 3445'],
-          ['稳健增利 90 天', '¥30,000.00', 'R2'],
-        ].map(([name, amount, tail]) => (
-          <div key={name} className="flex items-baseline justify-between gap-3 rounded-chip bg-sunk px-3.5 py-2.5">
-            <span className="text-[12px] text-ink-soft">{name}</span>
-            <span className="num text-[13px] font-medium text-ink">{amount}</span>
-            <span className="num text-[11px] text-ink-mute">{tail}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* 最近一笔：银行首页几乎都会放，也让"这是一本账"这件事一眼成立 */}
-      <div className="mt-4 flex items-center gap-3 border-t border-line pt-4">
-        <span className="grid size-8 place-items-center rounded-chip bg-blue-wash">
-          <ArrowUpRightIcon size={15} className="text-blue" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[12px] text-ink">转账 · 梁乐怡</p>
-          <p className="num text-[11px] text-ink-mute">今天 14:03</p>
-        </div>
-        <p className="num text-[13px] font-medium text-ink">-¥800.00</p>
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        {([['转账', TransferIcon], ['理财', PigIcon], ['账单', ChartIcon]] as const).map(([label, Icon]) => (
-          <span
-            key={label}
-            className="flex flex-col items-center gap-1.5 rounded-chip bg-sunk py-2.5 text-[11px] text-ink-soft"
-          >
-            <Icon size={16} className="text-ink-mute" />
-            {label}
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-/** 智能助手：一轮对话 + 它调了工具 + 确认卡片。 */
-function AssistantMock() {
-  return (
-    <Mock label="智能客服">
-      <div className="space-y-3">
-        <div className="flex justify-end">
-          <p className="max-w-[88%] rounded-card bg-ink px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-invert">
-            帮我看看上个月的账单
-          </p>
-        </div>
-        <div className="flex items-start gap-2.5">
-          <span className="grid size-7 shrink-0 place-items-center rounded-chip bg-gold-wash">
-            <CatMark className="size-4 text-gold-deep" cutout="var(--color-gold-wash)" />
-          </span>
-          <p className="rounded-card bg-sunk px-3.5 py-2.5 text-[12px] leading-relaxed text-ink">
-            上个月共 27 笔支出，合计 6,412.30 CNY。最大一笔是 2,800.00 CNY 的房租。
-          </p>
-        </div>
-        <div className="flex items-center gap-2 pl-9">
-          <span className="inline-flex items-center gap-2 rounded-chip border border-blue-wash bg-blue-wash px-2.5 py-1 text-[11px] text-blue">
-            查询交易流水
-            <span className="text-blue/70">已完成</span>
-          </span>
-        </div>
-      </div>
-
-      {/* 确认卡片：这个助手的核心不是"能聊"，而是"该停的时候会停" */}
-      <div className="mt-4 rounded-card border border-line bg-surface p-4">
-        <p className="text-[13px] font-semibold text-ink">需要你确认：转账</p>
-        <p className="mt-0.5 text-[11px] text-ink-soft">在你确认之前，这笔操作不会执行。</p>
-        <dl className="mt-2.5 divide-y divide-line rounded-chip border border-line">
-          {[
-            ['收款人', '梁乐怡'],
-            ['转账金额', '800.00 CNY'],
-            ['收款账号', '**** 9123'],
-          ].map(([label, value]) => (
-            <div key={label} className="flex items-baseline justify-between gap-3 px-3 py-2">
-              <dt className="text-[11px] text-ink-mute">{label}</dt>
-              <dd className="num text-[12px] font-medium text-ink">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="mt-2.5 flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded-chip bg-blue-wash px-2 py-0.5 text-[10px] text-blue">
-            <LockIcon size={10} />
-            支付密码
-          </span>
-          <span className="ml-auto inline-flex items-center gap-1 rounded-chip bg-gold px-2.5 py-1 text-[11px] font-medium text-ink">
-            <CheckIcon size={11} />
-            确认并验证
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-4 flex items-center gap-2 border-t border-line pt-4">
-        <span className="grid size-8 place-items-center rounded-chip bg-gold text-ink">
-          <MicIcon size={15} />
-        </span>
-        <span className="text-[11px] text-ink-soft">按住说话，松手就发出去</span>
-      </div>
-    </Mock>
-  )
-}
-
-/** 投资理财：净值曲线 + 风险等级 + 费用与适当性。 */
-function WealthMock() {
-  const spark = 'M0 46 L18 40 L36 43 L54 31 L72 34 L90 22 L108 25 L126 14'
-  return (
-    <Mock label="理财">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[13px] font-medium text-ink">招财猫稳健增利 90 天</p>
-          <p className="num mt-1 text-[11px] text-ink-mute">LC-WM-001 · 持有 90 天</p>
-        </div>
-        <span className="rounded-chip bg-coral-wash px-2.5 py-1 text-[11px] text-coral">R2 稳健型</span>
-      </div>
-      <svg viewBox="0 0 126 60" className="mt-4 h-16 w-full" aria-hidden="true">
-        <path d={spark} fill="none" stroke="var(--color-gold-deep)" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-      <p className="num mt-1 text-[10px] text-ink-mute">业绩比较基准 2.85% · 非预期收益，不承诺保本</p>
-      <div className="mt-3 space-y-2 text-[11px]">
-        {[
-          ['管理费', '0.30% / 年（按日计提）'],
-          ['认购费', '0.00%'],
-          ['赎回费', '持有满 90 天免收'],
-        ].map(([label, value]) => (
-          <div key={label} className="flex items-baseline justify-between gap-3">
-            <span className="text-ink-mute">{label}</span>
-            <span className="num text-ink-soft">{value}</span>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 flex items-start gap-2 rounded-chip bg-sunk px-3 py-2.5 text-[11px] text-ink-soft">
-        <ShieldIcon size={13} className="mt-0.5 shrink-0 text-ink-mute" />
-        <span>风险测评结果与产品风险等级不匹配时会被硬拦截，买不进去。</span>
-      </div>
-    </Mock>
-  )
-}
-
-/** 账单分析：分类占比环形图 + 近 6 月走势 + 分类明细。 */
-function AnalysisMock() {
-  const slices: [string, number, string][] = [
-    ['房租', 42, 'var(--color-blue)'],
-    ['餐饮', 23, 'var(--color-gold)'],
-    ['购物', 19, 'var(--color-coral)'],
-    ['其它', 16, 'var(--color-line-strong)'],
-  ]
-  // 用 stroke-dasharray 画环：周长 2πr ≈ 226（r=36），每段按占比切。
-  const circumference = 226
-  let offset = 0
-  return (
-    <Mock label="消费分析">
-      <div className="flex items-center gap-6">
-        <svg viewBox="0 0 96 96" className="size-24 shrink-0 -rotate-90" aria-hidden="true">
-          <circle cx="48" cy="48" r="36" fill="none" stroke="var(--color-sunk)" strokeWidth="14" />
-          {slices.map(([label, percent, color]) => {
-            const length = (percent / 100) * circumference
-            const element = (
-              <circle
-                key={label}
-                cx="48"
-                cy="48"
-                r="36"
-                fill="none"
-                stroke={color}
-                strokeWidth="14"
-                strokeDasharray={`${length} ${circumference - length}`}
-                strokeDashoffset={-offset}
-              />
-            )
-            offset += length
-            return element
-          })}
-        </svg>
-        <div className="min-w-0 flex-1 space-y-2">
-          {slices.map(([label, percent, color]) => (
-            <div key={label} className="flex items-center gap-2 text-[11px]">
-              <span className="size-2 shrink-0 rounded-chip" style={{ backgroundColor: color }} />
-              <span className="text-ink-soft">{label}</span>
-              <span className="num ml-auto text-ink-mute">{percent}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4 border-t border-line pt-4">
-        <p className="text-[11px] text-ink-mute">近 6 个月支出</p>
-        {/* 柱高写死：这是示意图，不假装是实时数据 */}
-        <div className="mt-2 flex h-14 items-end gap-2">
-          {[58, 72, 46, 64, 80, 67].map((height, index) => (
-            <span key={index} className="flex-1 rounded-t-[3px] bg-blue-wash" style={{ height: `${height}%` }} />
-          ))}
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-2 text-[11px]">
-        {([
-          [HouseIcon, '房租', '-¥2,800.00'],
-          [FoodIcon, '餐饮', '-¥1,474.20'],
-          [ShopIcon, '购物', '-¥1,218.10'],
-        ] as const).map(([Icon, label, amount]) => (
-          <div key={label} className="flex items-center gap-2.5">
-            <span className="grid size-6 place-items-center rounded-chip bg-sunk">
-              <Icon size={12} className="text-ink-mute" />
-            </span>
-            <span className="text-ink-soft">{label}</span>
-            <span className="num ml-auto text-ink">{amount}</span>
-          </div>
-        ))}
-      </div>
-    </Mock>
-  )
-}
-
-/** 转账与回单：一笔转账做完的样子。 */
-function TransferMock() {
-  return (
-    <Mock label="电子回单">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-[13px] text-ink-soft">转账 · 梁乐怡</p>
-          <p className="num mt-1 text-[24px] leading-none font-semibold text-ink">-¥800.00</p>
-        </div>
-        <span className="rounded-chip bg-gold-wash px-2.5 py-1 text-[11px] text-gold-deep">已完成</span>
-      </div>
-      <dl className="mt-4 space-y-2 text-[11px]">
-        {[
-          ['交易编号', 'LCB-DEMO-8F2A41'],
-          ['授权码', 'A7K39215'],
-          ['交易前余额', '¥13,664.50'],
-          ['交易后余额', '¥12,864.50'],
-        ].map(([label, value]) => (
-          <div key={label} className="flex items-baseline justify-between gap-3">
-            <dt className="text-ink-mute">{label}</dt>
-            <dd className="num text-ink-soft">{value}</dd>
-          </div>
-        ))}
+      <dl className="divide-y divide-line px-5">
+        {rows.map(([label, description]) => <div key={label} className="py-5"><dt className="text-[14px] font-medium text-ink">{label}</dt><dd className="mt-2 text-[13px] leading-relaxed text-ink-soft">{description}</dd></div>)}
       </dl>
-      <div className="mt-4 flex items-start gap-2 rounded-chip bg-sunk px-3 py-2.5 text-[11px] text-ink-soft">
-        <GlobalIcon size={13} className="mt-0.5 shrink-0 text-ink-mute" />
-        <span>转数快 / 跨境支付通：收款人姓名按登记册核对过才让你确认。</span>
-      </div>
-    </Mock>
+      <p className="border-t border-line px-5 py-3 text-[12px] text-ink-mute">登录后查看账户信息与服务记录</p>
+    </div>
   )
+}
+
+function AccountPreview() {
+  return <ServicePreview title="你的账户" Icon={WalletIcon} rows={[
+    ['余额与可用金额', '由账户服务提供，登录后按当前账户展示。'],
+    ['收支与交易记录', '查看已入账的收支及每笔交易明细。'],
+    ['银行卡与持仓', '在对应页面查看卡片状态与理财账户。'],
+  ]} />
+}
+function AssistantPreview() {
+  return <ServicePreview title="智能客服" Icon={SparkleIcon} rows={[
+    ['提出需求', '用文字、语音或截图描述你需要的帮助。'],
+    ['读取账户信息', '通过服务接口查询账单、账户和银行卡。'],
+    ['核对操作', '敏感操作先展示明细，等待你确认与验证。'],
+  ]} />
+}
+function WealthPreview() {
+  return <ServicePreview title="投资理财" Icon={PigIcon} rows={[
+    ['产品信息', '产品净值、费用与风险等级以接口返回为准。'],
+    ['风险测评', '完成适当性评估，了解可购买的产品范围。'],
+    ['持仓记录', '查看持有份额、收益与赎回条件。'],
+  ]} />
+}
+function AnalysisPreview() {
+  return <ServicePreview title="消费分析" Icon={ChartIcon} rows={[
+    ['分类收支', '按账户交易记录汇总支出与收入。'],
+    ['筛选流水', '搜索商户、备注和交易分类。'],
+    ['导出账单', '导出接口提供的流水，便于核对和记录。'],
+  ]} />
+}
+function TransferPreview() {
+  return <ServicePreview title="转账与银行卡" Icon={TransferIcon} rows={[
+    ['选择付款账户', '从已开通的账户选择付款卡。'],
+    ['核对收款信息', '确认收款人、金额、费用与到账方式。'],
+    ['查询交易状态', '提交后按服务端返回的状态与回执展示。'],
+  ]} />
 }
 
 /* ══════════════════════════════════════════════════════════════ 页面内容 ══ */
@@ -365,7 +129,7 @@ const FEATURES: {
   title: string
   lead: string
   points: [string, string][]
-  Mock: () => ReactNode
+  Preview: () => ReactNode
   flip?: boolean
 }[] = [
   {
@@ -380,7 +144,7 @@ const FEATURES: {
       ['敏感操作会停下来', '涉及资金和敏感信息时，先把交易信息摆出来，等你确认、验过支付密码才执行。'],
       ['能听也能念', '按住说话发消息，回复可以朗读出来。'],
     ],
-    Mock: AssistantMock,
+    Preview: AssistantPreview,
   },
   {
     id: 'wealth',
@@ -394,7 +158,7 @@ const FEATURES: {
       ['费用分开列', '按日计提和一次性费用不混成一个数。'],
       ['申购要三样', '抄录风险确认原文、支付密码、确认卡片。'],
     ],
-    Mock: WealthMock,
+    Preview: WealthPreview,
     flip: true,
   },
   {
@@ -409,7 +173,7 @@ const FEATURES: {
       ['看趋势不看单点', '近 6 个月走势，支出突然变高一眼就能发现。'],
       ['从分类钻到单笔', '点进分类看流水，再从流水进单笔电子回单。'],
     ],
-    Mock: AnalysisMock,
+    Preview: AnalysisPreview,
   },
   {
     id: 'transfer',
@@ -423,7 +187,7 @@ const FEATURES: {
       ['姓名核对后才放行', '登记册对不上就不让确认。'],
       ['每笔都有回单', '交易编号、授权码、交易前后余额对账，可直接打印。'],
     ],
-    Mock: TransferMock,
+    Preview: TransferPreview,
     flip: true,
   },
 ]
@@ -467,10 +231,10 @@ export function LandingPage() {
   return (
     <div className="min-h-svh bg-paper">
       {/* ── 吸顶导航 ─────────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-30 border-b border-line bg-paper/85 backdrop-blur-sm">
-        <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-8 px-6">
+      <header className="sticky top-7 z-30 border-b border-line bg-paper/95 backdrop-blur-sm">
+        <div className="mx-auto flex min-h-16 max-w-[1120px] flex-wrap items-center gap-2 px-4 py-3 sm:gap-8 sm:px-6">
           <Link to="/" aria-label="招财猫银行首页">
-            <Logo markClass="h-9 w-9" wordClass="text-[21px]" />
+            <Logo markClass="h-8 w-8 sm:h-9 sm:w-9" wordClass="text-[19px] sm:text-[21px]" />
           </Link>
           <nav className="hidden items-center gap-6 lg:flex">
             {NAV.map(({ href, label }) => (
@@ -483,14 +247,11 @@ export function LandingPage() {
             {/* 已登录时**只留一个**入口：并排放两个都指向同一处的按钮，
                 一主一辅看着像两件不同的事，其实一样 */}
             {!loggedIn && (
-              <Link to="/login">
-                <Button size="sm" variant="ghost">登录</Button>
-              </Link>
+              <Link to="/login" className="inline-flex min-h-10 items-center rounded-chip px-3 text-[13px] font-medium text-ink-soft hover:bg-sunk">登录</Link>
             )}
-            <Link to={loggedIn ? '/dashboard' : '/open-account'}>
-              <Button size="sm" variant="primary" trailing={<ArrowRightIcon size={15} />}>
+            <Link to={loggedIn ? '/dashboard' : '/open-account'} className="inline-flex min-h-10 items-center gap-1.5 rounded-chip bg-gold px-3 text-[13px] font-medium text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert">
                 {loggedIn ? '进入总览' : '注册并开户'}
-              </Button>
+              <ArrowRightIcon size={15} />
             </Link>
           </div>
         </div>
@@ -521,25 +282,22 @@ export function LandingPage() {
                 </p>
 
                 <div className="mt-9 flex flex-wrap gap-3">
-                  <Link to={loggedIn ? '/dashboard' : '/open-account'}>
-                    <Button size="lg" variant="primary" trailing={<ArrowRightIcon size={16} />}>
+                  <Link to={loggedIn ? '/dashboard' : '/open-account'} className="inline-flex h-14 items-center gap-2 rounded-chip bg-gold px-6 text-[15px] font-medium text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert">
                       {loggedIn ? '进入总览' : '注册并开户'}
-                    </Button>
+                    <ArrowRightIcon size={16} />
                   </Link>
-                  <a href="#assistant">
-                    <Button size="lg" variant="secondary">看它能做什么</Button>
-                  </a>
+                  <a href="#assistant" className="inline-flex h-14 items-center rounded-chip border border-line bg-surface px-6 text-[15px] font-medium text-ink transition-colors hover:bg-sunk">看它能做什么</a>
                 </div>
 
                 <p className="mt-6 max-w-[520px] text-[13px] leading-relaxed text-ink-mute">
-                  任意 11 位手机号 + 密码 <span className="num text-ink-soft">123456</span> 即可进入。
-                  涉及金额、卡号、流水的地方，界面上都会标明是占位数据。
+                  登录后查看账户与服务记录。
+                  涉及资金的操作，会先展示明细并等待你确认。
                 </p>
               </div>
 
               <div className="float-up" style={{ animationDelay: '90ms' }}>
-                <AccountMock />
-                <p className="mt-3 text-center text-[11px] text-ink-mute">界面示意 · 账户总览</p>
+                <AccountPreview />
+                <p className="mt-3 text-center text-[11px] text-ink-mute">服务概览 · 账户总览</p>
               </div>
             </div>
           </div>
@@ -564,7 +322,7 @@ export function LandingPage() {
 
         {/* ── 图文交替的功能板块 ─────────────────────────────────────── */}
         <div className="mx-auto max-w-[1120px] px-6">
-          {FEATURES.map(({ id, to, linkText, eyebrow, title, lead, points, Mock: Panel, flip }) => (
+          {FEATURES.map(({ id, to, linkText, eyebrow, title, lead, points, Preview: Panel, flip }) => (
             <section
               key={id}
               id={id}
@@ -589,10 +347,8 @@ export function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  <Link to={to} className="mt-7 inline-flex">
-                    <Button size="sm" variant="secondary" trailing={<ArrowRightIcon size={14} />}>
-                      {linkText}
-                    </Button>
+                  <Link to={to} className="mt-7 inline-flex min-h-10 items-center gap-1.5 rounded-chip border border-line bg-surface px-3.5 text-[13px] font-medium text-ink transition-colors hover:bg-sunk">
+                    {linkText}<ArrowRightIcon size={14} />
                   </Link>
                 </div>
                 <div className={cn(flip && 'lg:order-1')}>
@@ -640,7 +396,7 @@ export function LandingPage() {
             <div className="mt-10 grid gap-5 sm:grid-cols-3">
               {[
                 { step: '1', title: '注册开户', desc: '设置登录密码，默认开通唯一的储蓄账户。' },
-                { step: '2', title: '跟智能助手说一句', desc: '「我的账户余额还有多少？」或者「帮我转 800 元给梁乐怡，账号尾号 9123」。' },
+                { step: '2', title: '跟智能助手说一句', desc: '「我的账户余额还有多少？」或者「查询账户余额」。' },
                 { step: '3', title: '核对确认卡片', desc: '涉及资金的操作会停下来等你。核对完点确认并输入支付密码，它才会执行。' },
               ].map(({ step, title, desc }) => (
                 <div key={step} className="rounded-card border border-line bg-paper p-6">
@@ -656,15 +412,11 @@ export function LandingPage() {
             <div className="mt-10 flex flex-wrap items-center gap-4 rounded-card bg-sunk px-6 py-5">
               <p className="text-[14px] leading-relaxed text-ink">现在开户，然后去跟智能助手说第一句话。</p>
               <div className="ml-auto flex gap-3">
-                <Link to={loggedIn ? '/dashboard' : '/open-account'}>
-                  <Button size="sm" variant="primary" trailing={<ArrowRightIcon size={14} />}>
-                    {loggedIn ? '进入总览' : '注册并开户'}
-                  </Button>
+                <Link to={loggedIn ? '/dashboard' : '/open-account'} className="inline-flex min-h-10 items-center gap-1.5 rounded-chip bg-gold px-3.5 text-[13px] font-medium text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert">
+                  {loggedIn ? '进入总览' : '注册并开户'}<ArrowRightIcon size={14} />
                 </Link>
                 {!loggedIn && (
-                  <Link to="/login">
-                    <Button size="sm" variant="ghost">登录</Button>
-                  </Link>
+                  <Link to="/login" className="inline-flex min-h-10 items-center rounded-chip px-3.5 text-[13px] font-medium text-ink-soft hover:bg-sunk">登录</Link>
                 )}
               </div>
             </div>
@@ -679,7 +431,7 @@ export function LandingPage() {
             <div>
               <Logo markClass="h-8 w-8" wordClass="text-[17px]" />
               <p className="mt-3 max-w-[440px] text-[12px] leading-relaxed text-ink-mute">
-                账户、流水与对话记录都存在这台设备的浏览器里，不往服务器存。
+                账户、银行卡与流水由服务端保存；助手对话可保存在当前设备上。
               </p>
             </div>
             <nav className="flex flex-wrap gap-x-6 gap-y-2 text-[12px] text-ink-soft">

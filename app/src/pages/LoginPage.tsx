@@ -13,8 +13,8 @@ const RESEND_SECONDS = 60
 
 export function LoginPage() {
   const { login } = useSession()
-  const [phone, setPhone] = useState('13800138000')
-  const [password, setPassword] = useState('123456')
+  const [phone, setPhone] = useState('')
+  const [password, setPassword] = useState('')
   const [smsCode, setSmsCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -72,18 +72,15 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-svh bg-paper">
+    <div className="flex min-h-[calc(100svh-28px)] bg-paper">
       {/* 左：表单 */}
-      <div className="flex w-full flex-col justify-center px-8 py-14 lg:w-[52%] lg:px-20">
+      <div className="flex w-full flex-col justify-center px-5 py-9 sm:px-8 sm:py-14 lg:w-[52%] lg:px-20">
         <div className="mx-auto w-full max-w-[380px]">
           <Logo markClass="h-10 w-10" wordClass="text-[26px]" />
 
-          <h1 className="mt-14 text-[38px] leading-[1.15] font-bold tracking-[-0.02em] text-ink">
+          <h1 className="mt-9 text-[32px] leading-[1.15] font-bold tracking-[-0.02em] text-ink sm:mt-14 sm:text-[38px]">
             欢迎回来
           </h1>
-          <p className="mt-3 text-[15px] text-ink-soft">
-            欢迎回到招财猫银行，安心开启每一天
-          </p>
 
           <form className="mt-9 flex flex-col gap-5" onSubmit={onSubmit}>
             <Field
@@ -176,7 +173,7 @@ export function LoginPage() {
 
           {isMockMode && (
             <p className="mt-9 border-t border-line pt-5 text-[13px] text-ink-mute">
-              演示环境 · 任意 11 位手机号 + 密码 <span className="num text-ink-soft">123456</span>
+              本地 mock 环境 · 使用演示账号登录
               ，验证码点「获取验证码」后会直接显示在下方
               <span className="mt-1 block text-[12px] text-ink-mute">
                 本作品为比赛演示用途，非真实银行，不提供任何金融服务，所有数据均为模拟

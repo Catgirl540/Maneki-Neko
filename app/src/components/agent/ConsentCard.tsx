@@ -43,13 +43,14 @@ export function ConsentCard({
 }: {
   pending: PendingConsent
   /** 用户确认（可能带支付密码）。 */
-  onApprove: (paymentPassword?: string) => void
+  onApprove: (paymentPassword?: string, riskAcknowledgement?: string) => void
   /** 用户取消。 */
   onReject: () => void
 }) {
   const { challenge, submitting, error } = pending
   const needsVerification = challenge.verification !== undefined
   const [password, setPassword] = useState('')
+  const [acknowledgement, setAcknowledgement] = useState('')
   const [now, setNow] = useState(() => Date.now())
 
   // 倒计时：让用户知道这次确认不是无限期的（超时后 agent 就不等了）。
@@ -60,7 +61,7 @@ export function ConsentCard({
 
   const expired = now > challenge.expiresAt
   const verified = /^\d{6}$/.test(password)
-  const canApprove = !submitting && !expired && (!needsVerification || verified)
+  const canApprove = !submitting && !expired && (!needsVerification || verified) && (!challenge.riskAcknowledgementText || acknowledgement.trim() === challenge.riskAcknowledgementText)
   const secondsLeft = Math.ceil((challenge.expiresAt - now) / 1000)
   // 只剩 30 秒就把倒计时染红：这张卡过期之后工具就**永远不执行**了，
   // 用户得重新发起一次。仅仅"数字在变小"不足以表达这件事。
@@ -109,6 +110,13 @@ export function ConsentCard({
         </p>
       )}
 
+      {challenge.riskAcknowledgementText && (
+        <label className="mt-4 block rounded-field border border-line bg-surface p-4 text-sm">
+          <span className="block font-medium">请完整抄录风险确认语句</span>
+          <span className="mt-2 block text-ink-soft">{challenge.riskAcknowledgementText}</span>
+          <textarea aria-label="风险确认语句" className="mt-3 min-h-20 w-full rounded-field border border-line p-3" value={acknowledgement} onChange={event => setAcknowledgement(event.target.value)} disabled={submitting || expired} />
+        </label>
+      )}
       {/* 身份验证：需要验的时候才出现 */}
       {needsVerification && (
         <div className="mt-4 rounded-field border border-line bg-surface p-4">
@@ -158,7 +166,7 @@ export function ConsentCard({
             disabled={!canApprove}
             loading={submitting}
             icon={<CheckIcon size={15} />}
-            onClick={() => { onApprove(needsVerification ? password : undefined) }}
+            onClick={() => { onApprove(needsVerification ? password : undefined, acknowledgement) }}
           >
             {needsVerification ? '确认并验证' : '确认'}
           </Button>

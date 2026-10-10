@@ -108,11 +108,33 @@ const server = createServer(async (req, res) => {
   }
   try {
     if (await staffApi.handle(req, res, url)) return
+    if (url.pathname === '/api/agent/wealth/requirements' && req.method === 'GET') {
+      const value = await bank.wealthRequirements(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/auth/payment-password/verify' && req.method === 'POST') {
+      let size = 0
+      const chunks = []
+      for await (const chunk of req) {
+        size += chunk.length
+        if (size > 4096) throw Object.assign(new Error('请求体过大'), { status: 413 })
+        chunks.push(chunk)
+      }
+      let body
+      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')) }
+      catch { throw Object.assign(new Error('请求体不是合法 JSON'), { status: 400 }) }
+      await bank.verifyPaymentPassword(req, typeof body.paymentPassword === 'string' ? body.paymentPassword : '')
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ ok: true }))
+      return
+    }
     if (await bank.handle(req, res, url)) return
   } catch (error) {
     if (res.writableEnded) return
-    res.writeHead(500, { 'content-type': 'application/json; charset=utf-8' })
-    res.end(JSON.stringify({ message: error?.message ?? '服务异常', code: 'INTERNAL_ERROR' }))
+    res.writeHead(error?.status ?? 500, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+    res.end(JSON.stringify({ message: error?.message ?? '服务异常', code: error?.code ?? 'INTERNAL_ERROR' }))
     return
   }
   res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })

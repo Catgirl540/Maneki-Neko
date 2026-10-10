@@ -44,6 +44,7 @@ export function createChallenge(
     toolName: spec.toolName,
     kind: spec.kind,
     fields,
+    ...spec.bindArguments ? { arguments: args } : {},
     ...spec.verification === undefined ? {} : { verification: spec.verification },
     ...spec.consequence === undefined ? {} : { consequence: spec.consequence },
     createdAt: now,

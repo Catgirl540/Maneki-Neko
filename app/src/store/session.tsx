@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { api } from '@/api'
 import type { User } from '@/api/types'
-import { forgetSession, rememberSession, rememberUser, restoreSession } from '@/lib/authToken'
+import { AUTH_EXPIRED_EVENT, forgetSession, rememberSession, rememberUser, restoreSession } from '@/lib/authToken'
 import { SessionContext, useSession } from './session-context'
 
 /**
@@ -16,12 +16,17 @@ import { SessionContext, useSession } from './session-context'
  *   · **关掉标签页 / 浏览器** = 没了，下次要重新登录
  *   · **新开标签页** = 空的
  *
- * 业务数据（账户、流水、聊天记录）仍然在 localStorage 里，两者互不影响。
+ * 银行业务数据由后端保存；助手对话可保存在本机，两者互不影响。
  */
 export function SessionProvider({ children }: { children: ReactNode }) {
   // 初值从 sessionStorage 恢复：同一个标签页刷新之后不该再登一次
   const [user, setUser] = useState<User | null>(() => restoreSession()?.user ?? null)
   const ready = true
+  useEffect(() => {
+    const expired = () => setUser(null)
+    window.addEventListener(AUTH_EXPIRED_EVENT, expired)
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expired)
+  }, [])
 
   const login = useCallback(async (phone: string, password: string, smsCode: string) => {
     const { token, user: nextUser } = await api.login(phone, password, smsCode)
@@ -35,9 +40,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
-    await api.logout()
-    forgetSession()
-    setUser(null)
+    try { await api.logout() }
+    catch { /* 后端不可达时仍允许退出本机会话。 */ }
+    finally { forgetSession(); setUser(null) }
   }, [])
 
   const updateUser = useCallback((patch: Partial<User>) => {

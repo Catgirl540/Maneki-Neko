@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api } from '@/api'
+import { api, ApiError } from '@/api'
 import type { SupportMessage } from '@/api/types'
+import { AgentCardSecret } from '@/components/agent/AgentCardSecret'
 import { ConsentCard } from '@/components/agent/ConsentCard'
 import { EditMessageModal, MessageActions } from '@/components/agent/MessageActions'
 import { QuestionCard } from '@/components/agent/QuestionCard'
@@ -31,6 +32,7 @@ import {
   WaveIcon,
 } from '@/components/ui/icons'
 import { cn } from '@/lib/cn'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { ASSISTANT } from '@/lib/assistant'
 import { preview, voiceLog } from '@/lib/voiceLog'
 import { ACCEPTED_MIME_TYPES, prepareImage, type PreparedImage } from '@/lib/image'
@@ -41,10 +43,10 @@ import { toolLabel, useAgentChat, type ChatItem } from '@/lib/useAgentChat'
 import { useVoice, type VoicePlayback } from '@/lib/useVoice'
 
 export function SupportPage() {
+  const compact = useMediaQuery('(max-width: 959px)')
   const agent = useAgentChat()
-  const [messages, setMessages] = useState<SupportMessage[]>(() =>
-    storage.get<SupportMessage[]>(STORAGE_KEYS.supportHistory, []),
-  )
+  const [messages, setMessages] = useState<SupportMessage[]>([])
+  const [supportError, setSupportError] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(() =>
@@ -140,21 +142,18 @@ export function SupportPage() {
     return () => { clearInterval(timer) }
   }, [historyOpen])
 
-  // 仅当本地没有历史时才拉一次，避免在 effect 里同步 setState
+  // 客服记录从当前用户的银行服务读取，不沿用浏览器中的旧占位记录。
   useEffect(() => {
-    if (messages.length > 0) return
     let cancelled = false
     void api.listSupportMessages().then((history) => {
       if (!cancelled) setMessages(history)
+    }).catch((error: unknown) => {
+      if (!cancelled) setSupportError(error instanceof ApiError ? error.message : '客服记录暂时无法加载')
     })
     return () => {
       cancelled = true
     }
-  }, [messages.length])
-
-  useEffect(() => {
-    if (messages.length) storage.set(STORAGE_KEYS.supportHistory, messages)
-  }, [messages])
+  }, [])
 
   // 有 agent 时，滚动跟随 agent 的内容；没有时跟随固定话术。
   useEffect(() => {
@@ -210,17 +209,17 @@ export function SupportPage() {
   async function sendCanned(text: string) {
     const value = text.trim()
     if (!value || thinking) return
-    setMessages((prev) => [...prev, {
-      id: `local_${Date.now()}`,
-      role: 'user',
-      text: value,
-      createdAt: new Date().toISOString(),
-    }])
-    setInput('')
+    setSupportError(null)
     setThinking(true)
     try {
       const { message } = await api.sendSupportMessage(value)
-      setMessages((prev) => [...prev, message])
+      setMessages(prev => [...prev, {
+        id: `local_${Date.now()}`, role: 'user', text: value, createdAt: new Date().toISOString(),
+      }, message])
+      setInput('')
+    } catch (error) {
+      setSupportError(error instanceof ApiError ? error.message : '消息未发送，请稍后重试')
+      setInput(value)
     } finally {
       setThinking(false)
     }
@@ -276,21 +275,19 @@ export function SupportPage() {
 
   return (
     <div className="flex flex-col gap-7">
+      <AgentCardSecret />
       <header className="float-up flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
             智能客服
           </h1>
-          <p className="mt-2 text-[14px] text-ink-mute">
-            查余额、看流水、转账、看理财，都可以直接对话办理
-          </p>
         </div>
         <ModeTag status={agent.status} />
       </header>
 
       {/* 对话。高度跟着视口走：右侧两栏撤掉之后，聊天区可以占满一屏，
           确认卡片不用滚动就能看全（有 min-height 兜住小窗口）。 */}
-      <Card padded={false} className="float-up flex h-[calc(100vh-240px)] min-h-[560px] overflow-hidden">
+      <Card padded={false} className="chat-panel float-up relative flex min-h-0 overflow-hidden">
         {/* 历史对话是抽屉，不是常驻侧栏：默认收着，聊天窗独占整宽。 */}
         {/* 抽屉用**宽度**动画而不是挂载/卸载：聊天区会跟着平滑重排，
             和左侧主导航收起时是同一套动作（`transition-[width]` + 同一条缓动）。
@@ -306,12 +303,12 @@ export function SupportPage() {
             inert={!historyOpen}
             aria-hidden={!historyOpen}
             className={cn(
-              'hidden shrink-0 overflow-hidden sm:block',
+              'hidden h-full shrink-0 overflow-hidden lg:block',
               'transition-[width] duration-[var(--duration-state)] ease-[var(--ease-out-soft)]',
               historyOpen ? 'w-[236px] border-r border-line' : 'w-0',
             )}
           >
-            <div className="w-[236px]">
+            <div className="h-full w-[236px]">
               <SessionList
                 conversations={agent.conversations}
                 activeId={agent.activeId}
@@ -326,8 +323,8 @@ export function SupportPage() {
           </aside>
         )}
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center gap-3 border-b border-line px-6 py-5">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-4 sm:px-6">
             <span className="grid size-10 place-items-center rounded-chip bg-gold-wash">
               <CatMark className="size-6 text-gold-deep" cutout="var(--color-gold-wash)" />
             </span>
@@ -336,11 +333,11 @@ export function SupportPage() {
                 {usingAgent && agent.active !== undefined ? agent.active.title : ASSISTANT.title}
               </span>
               <span className="block text-[13px] text-ink-mute">
-                {usingAgent ? '在线 · 敏感操作需你确认' : '演示话术 · 未连接'}
+                {usingAgent ? '在线 · 敏感操作需你确认' : '账户客服 · 消息服务'}
               </span>
             </span>
             {usingAgent && (
-              <span className="ml-auto flex shrink-0 items-center gap-2">
+              <span className="flex w-full flex-wrap items-center gap-1 border-t border-line pt-3 sm:ml-auto sm:w-auto sm:border-0 sm:pt-0">
                 {/* 语音模式开关。服务端没开语音能力时**不显示**这个按钮，
                     而不是显示了再报错——用户点一个注定失败的东西没有意义。 */}
                 {voice.available && (
@@ -391,7 +388,8 @@ export function SupportPage() {
             )}
           </div>
 
-          <div ref={scroller} className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
+          {supportError && !usingAgent && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
+          <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
             {/* 上下文没了这件事必须在**发言之前**就写在脸上。
                 否则用户看到的是一段完整的记录配一个答非所问的助手。 */}
             {usingAgent && agent.contextLost && (
@@ -418,7 +416,7 @@ export function SupportPage() {
               <div ref={consentRef}>
                 <ConsentCard
                   pending={agent.pending}
-                  onApprove={(password) => { agent.answer('approve', password) }}
+                  onApprove={(password, acknowledgement) => { agent.answer('approve', password, acknowledgement) }}
                   onReject={() => { agent.answer('reject') }}
                 />
               </div>
@@ -436,7 +434,7 @@ export function SupportPage() {
             )}
 
             {(usingAgent ? activeBusy : thinking) && agent.pending === undefined && (
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
                   <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
                 </span>
@@ -460,7 +458,7 @@ export function SupportPage() {
             )}
           </div>
 
-          <div className="border-t border-line px-6 py-4">
+          <div className="shrink-0 border-t border-line px-3 py-3 sm:px-6 sm:py-4">
             {/* 语音状态条：只在语音模式下出现。麦克风开着这件事必须**一直看得见**，
                 不能只在按钮上变个颜色——用户切到别的标签页回来就不知道还在不在录。 */}
             {voiceUsable && (
@@ -583,7 +581,7 @@ export function SupportPage() {
             )}
 
             <form
-              className="flex items-center gap-3"
+              className="flex min-w-0 items-center gap-2 sm:gap-3"
               onSubmit={(e) => {
                 e.preventDefault()
                 // 发完立刻清掉预览：拖到下一轮再清的话，回答期间用户会以为还能改。
@@ -627,7 +625,8 @@ export function SupportPage() {
                     : voiceUsable ? '也可以直接打字，或按住右边的麦克风说话' : '描述你的需求，例如：帮我转 800 元给梁乐怡'
                 }
                 disabled={probing}
-                className="h-12 flex-1 rounded-chip border border-line bg-surface px-4 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
+                aria-label="聊天消息"
+                className="h-12 min-w-0 flex-1 rounded-chip border border-line bg-surface px-3 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
               />
               {voiceUsable && (
                 /* 按住说话。用 pointer 事件而不是 mouse/touch 两套：
@@ -678,6 +677,14 @@ export function SupportPage() {
           </div>
         </div>
       </Card>
+      <Modal open={usingAgent && historyOpen && compact} onClose={() => setHistoryOpen(false)} title="历史对话">
+        <div className="h-[min(55dvh,420px)]">
+          <SessionList conversations={agent.conversations} activeId={agent.activeId} busyIds={agent.busyIds} lostIds={agent.lostIds} now={now}
+            onSelect={id => { agent.select(id); setHistoryOpen(false) }}
+            onRename={conversation => { setHistoryOpen(false); openRename(conversation) }}
+            onDelete={conversation => { setHistoryOpen(false); setDeleteTarget(conversation) }} />
+        </div>
+      </Modal>
 
       <EditMessageModal
         open={editTarget !== undefined}
@@ -780,7 +787,7 @@ function ModeTag({ status }: { status: 'probing' | 'off' | 'ready' }) {
     <span data-agent-status="off">
       <Tag tone="gold" className="h-8 px-3">
         <SparkleIcon size={14} className="mr-1.5" />
-        演示话术（未连接）
+        智能助手未连接账户服务
       </Tag>
     </span>
   )

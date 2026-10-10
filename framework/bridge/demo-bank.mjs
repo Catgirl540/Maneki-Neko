@@ -524,6 +524,14 @@ export async function createDemoBank({
 
   return {
     handle,
+    wealthRequirements: (req) => exclusive(async () => {
+      await activateRequestProfile(req, "profile")
+      return { riskAcknowledgementText: mockModule.RISK_ACKNOWLEDGEMENT }
+    }),
+    verifyPaymentPassword: (req, password) => exclusive(async () => {
+      await activateRequestProfile(req, "profile")
+      mockModule.verifyPayPassword(password)
+    }),
     reset,
     stats: () => ({ routes: ROUTES.length, staticRoutes: patterns.staticOnes.length, stateFile }),
 

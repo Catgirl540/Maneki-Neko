@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '@/api'
@@ -36,8 +37,16 @@ export function AnalysisPage() {
   /** 支出构成的联动高亮：圆环与图例共用，鼠标停在任一边都能亮 */
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   // 顶栏全局搜索会带上 ?q=，这里直接接管
-  const [searchParams] = useSearchParams()
-  const [keyword, setKeyword] = useState(() => searchParams.get('q') ?? '')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const keyword = searchParams.get('q') ?? ''
+  const setKeyword = (value: string) => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      if (value) next.set('q', value)
+      else next.delete('q')
+      return next
+    }, { replace: true })
+  }
 
   const spending = useAsync<SpendingAnalysis>(() => api.getSpending(), [])
   const autoDebits = useAsync<AutoDebit[]>(() => api.listAutoDebits(), [])
@@ -104,15 +113,17 @@ export function AnalysisPage() {
 
   const top = spending.data?.categories[0]
 
+  const requests = [spending, autoDebits, account, cards, transactions]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
+
   return (
     <div className="flex flex-col gap-7">
       <header className="float-up">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
           消费分析
         </h1>
-        <p className="mt-2 text-[14px] text-ink-mute">
-          按分类看本月支出结构，并管理所有周期性自动扣款
-        </p>
       </header>
 
       {/* 概览数字。

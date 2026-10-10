@@ -67,6 +67,10 @@ export function useAsync<T>(
   }, [...deps, nonce])
 
   const reload = useCallback(() => setNonce((n) => n + 1), [])
+  useEffect(() => {
+    window.addEventListener('luckycat:bank-updated', reload)
+    return () => window.removeEventListener('luckycat:bank-updated', reload)
+  }, [reload])
 
   /** 本地直接写入（乐观更新 / 接口已返回最新值时可省掉一次回查） */
   const setData = useCallback((next: T) => {

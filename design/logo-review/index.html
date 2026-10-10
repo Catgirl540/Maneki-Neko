@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>招财猫银行 · Logo 方案评审</title>
+    <meta name="description" content="招财猫银行 logo 方案征集意见" />
+    <style>
+      :root {
+        --gold: #c8973c; --gold-deep: #9c7226; --gold-wash: #f0e4cb; --gold-tint: #faf5ea;
+        --ink: #0e1b26; --ink-soft: #5c6b77; --ink-mute: #8a949c;
+        --line: #eae6dc; --paper: #f7f5f0; --surface: #fff;
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        background: #0d0d0f; color: var(--ink);
+        font: 15px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+          'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; -webkit-font-smoothing: antialiased;
+      }
+
+      /* —— feed —— */
+      #feed {
+        position: fixed; inset: 0; margin: 0 auto; max-width: 480px; overflow-y: auto;
+        scroll-snap-type: y mandatory; scrollbar-width: none; background: var(--paper);
+      }
+      #feed::-webkit-scrollbar { display: none; }
+      .slide {
+        position: relative; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 74px 78px 118px; background: var(--paper);
+      }
+      .slide .stage { width: 100%; flex: 1; display: grid; place-items: center; min-height: 0; }
+      .slide .stage img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 18px; }
+      .slide .stage img.round { background: var(--surface); box-shadow: 0 8px 30px rgba(14,27,38,.06); }
+
+      .meta { position: absolute; left: 18px; right: 92px; bottom: 34px; }
+      .meta .tag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--gold-deep); background: var(--gold-wash); border-radius: 999px; padding: 2px 10px; }
+      .meta h2 { margin: 8px 0 2px; font-size: 19px; letter-spacing: -.01em; }
+      .meta .sub { font-size: 13px; color: var(--ink-soft); }
+
+      /* —— 右侧操作列（抖音风）—— */
+      .actions { position: absolute; right: 14px; bottom: 40px; display: flex; flex-direction: column; gap: 20px; align-items: center; }
+      .act { display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; cursor: pointer; color: var(--ink); }
+      .act .ico { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); border: 1px solid var(--line); transition: .15s; }
+      .act:hover .ico { border-color: var(--gold); transform: translateY(-1px); }
+      .act .n { font-size: 12px; font-weight: 700; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+      .act.voted .ico { background: var(--gold); border-color: var(--gold); color: var(--ink); }
+      .act.voted .ico svg { fill: currentColor; }
+      .act .ico svg { width: 22px; height: 22px; }
+
+      /* —— 顶部 —— */
+      .topbar { position: fixed; top: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; z-index: 20;
+        display: flex; align-items: center; justify-content: space-between; padding: 14px 16px;
+        padding-top: calc(14px + env(safe-area-inset-top, 0px)); pointer-events: none; }
+      .topbar .brand { pointer-events: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: var(--gold-deep); }
+      .topbar .add { pointer-events: auto; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); font-size: 22px; line-height: 1; color: var(--ink); cursor: pointer; }
+      .topbar .add:hover { border-color: var(--gold); color: var(--gold-deep); }
+
+      .hint { position: fixed; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); z-index: 5;
+        font-size: 11px; color: var(--ink-mute); background: rgba(255,255,255,.75); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; pointer-events: none; }
+
+      /* —— 评论底部面板 —— */
+      .backdrop { position: fixed; inset: 0; background: rgba(14,27,38,.35); opacity: 0; pointer-events: none; transition: .2s; z-index: 30; }
+      .backdrop.show { opacity: 1; pointer-events: auto; }
+      .sheet { position: fixed; left: 50%; transform: translate(-50%, 100%); bottom: 0; width: 100%; max-width: 480px; height: 72dvh;
+        background: var(--surface); border-radius: 18px 18px 0 0; z-index: 40; display: flex; flex-direction: column;
+        transition: transform .26s cubic-bezier(.4,0,.2,1); box-shadow: 0 -10px 40px rgba(14,27,38,.18); }
+      .sheet.show { transform: translate(-50%, 0); }
+      .sheet header { flex: 0 0 auto; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; }
+      .sheet header b { font-size: 14px; }
+      .sheet header button { border: 0; background: none; font-size: 22px; line-height: 1; color: var(--ink-mute); cursor: pointer; }
+      .sheet .list { flex: 1; overflow-y: auto; padding: 8px 16px; }
+      .sheet .list .empty { color: var(--ink-mute); font-size: 14px; text-align: center; padding: 40px 0; }
+      .cmt { display: flex; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+      .cmt .av { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 50%; background: var(--gold-tint); color: var(--gold-deep);
+        display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+      .cmt .who { font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+      .cmt .when { font-size: 11px; color: var(--ink-mute); margin-left: 6px; font-weight: 400; }
+      .cmt p { margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; }
+      .sheet .input { flex: 0 0 auto; display: flex; gap: 8px; padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--surface); }
+      .sheet .input input { font: inherit; border: 1px solid var(--line); background: var(--paper); border-radius: 999px; padding: 10px 14px; outline: none; min-width: 0; }
+      .sheet .input input.nm { flex: 0 0 96px; }
+      .sheet .input input.tx { flex: 1; }
+      .sheet .input input:focus { border-color: var(--gold); background: #fff; }
+      .sheet .input button { flex: 0 0 auto; border: 0; background: var(--gold); color: var(--ink); font-weight: 700; border-radius: 999px; padding: 0 18px; cursor: pointer; }
+      .sheet .input button:disabled { opacity: .5; }
+      .sheet .msg { font-size: 12px; padding: 0 16px 8px; color: #c0392b; }
+
+      /* —— 上传弹窗 —— */
+      .modal { position: fixed; inset: 0; z-index: 50; display: none; place-items: center; background: rgba(14,27,38,.4); padding: 20px; }
+      .modal.show { display: grid; }
+      .modal .box { width: 100%; max-width: 380px; background: var(--surface); border-radius: 18px; padding: 20px; }
+      .modal h3 { margin: 0 0 14px; font-size: 17px; }
+      .modal label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color: var(--ink-soft); margin-bottom: 12px; }
+      .modal input { font: inherit; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; padding: 10px 12px; outline: none; }
+      .modal input[type=file] { padding: 8px; }
+      .modal .row { display: flex; gap: 10px; justify-content: flex-end; margin-top: 6px; }
+      .modal .row button { font: inherit; font-weight: 700; border-radius: 12px; padding: 10px 18px; cursor: pointer; border: 1px solid var(--line); background: var(--surface); }
+      .modal .row button.p { border: 0; background: var(--gold); color: var(--ink); }
+      .modal .msg { font-size: 13px; min-height: 18px; }
+      .modal .msg.err { color: #c0392b; } .modal .msg.ok { color: #2c7a4b; }
+    </style>
+  </head>
+  <body>
+    <div id="feed"></div>
+
+    <div class="topbar">
+      <span class="brand">招财猫银行 · Logo 评审</span>
+      <button class="add" id="openUpload" aria-label="上传方案">＋</button>
+    </div>
+    <div class="hint" id="hint">上下滑动看方案 · 点右侧评论 / 投票</div>
+
+    <div class="backdrop" id="backdrop"></div>
+    <aside class="sheet" id="sheet" aria-label="评论">
+      <header><b id="sheetTitle">评论</b><button id="closeSheet" aria-label="关闭">×</button></header>
+      <div class="list" id="sheetList"></div>
+      <div class="msg" id="sheetMsg"></div>
+      <form class="input" id="commentForm">
+        <input class="nm" name="name" maxlength="40" placeholder="昵称(选填)" />
+        <input class="tx" name="text" maxlength="1000" placeholder="说点什么…" required />
+        <button type="submit">发送</button>
+      </form>
+    </aside>
+
+    <div class="modal" id="uploadModal">
+      <div class="box">
+        <h3>上传你的 Logo 方案</h3>
+        <label>方案名（选填）<input name="title" maxlength="40" placeholder="例如：猫爪金币 · 改" /></label>
+        <label>你的昵称（选填）<input name="by" maxlength="40" placeholder="怎么称呼你" /></label>
+        <label>图片（PNG / JPG / GIF / WebP / SVG，≤6MB）<input type="file" name="file" accept="image/png,image/jpeg,image/gif,image/webp,image/svg+xml" required /></label>
+        <div class="msg" id="uploadMsg"></div>
+        <div class="row"><button type="button" id="cancelUpload">取消</button><button type="button" class="p" id="doUpload">上传</button></div>
+      </div>
+    </div>
+
+    <script>
+      const BASE = '/logo-review'
+      const feed = document.getElementById('feed')
+      let candidates = []
+      let votes = {}
+      let commentCounts = {}
+      let currentId = null
+      const myVotes = new Set(JSON.parse(localStorage.getItem('logoVotes') || '[]'))
+      const myName = localStorage.getItem('reviewerName') || ''
+
+      const esc = (s) => { const d = document.createElement('div'); d.textContent = s; return d.innerHTML }
+      const imgSrc = (c) => (c.url ? BASE + c.url : BASE + '/img/' + c.file)
+      const when = (iso) => { try { return new Date(iso).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) } catch { return '' } }
+      const initial = (n) => (n || '匿').slice(0, 1)
+
+      const HEART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-4.35-9.5-8.5C.8 9.2 2.3 5.5 5.8 5.5c2 0 3.2 1.2 4.2 2.3 1-1.1 2.2-2.3 4.2-2.3 3.5 0 5 3.7 3.3 7C19 16.65 12 21 12 21z"/></svg>'
+      const BUBBLE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-5A8 8 0 1 1 21 12z"/></svg>'
+
+      async function load() {
+        const s = await (await fetch(BASE + '/api/state')).json()
+        candidates = s.candidates
+        votes = s.votes || {}
+        commentCounts = s.commentCounts || {}
+        render()
+      }
+
+      function render() {
+        feed.innerHTML = candidates.map((c) => {
+          const voted = myVotes.has(c.id)
+          return '<section class="slide" data-id="' + c.id + '">' +
+            '<div class="stage"><img class="round" loading="lazy" src="' + imgSrc(c) + '" alt="' + esc(c.title) + '"></div>' +
+            '<div class="meta"><span class="tag">' + esc(c.tag) + '</span><h2>' + esc(c.title) + '</h2>' +
+            '<div class="sub">' + (c.by ? 'by ' + esc(c.by) + ' · ' : '') + (c.id === 'current' ? '本次想换掉它' : '这个方案怎么样？') + '</div></div>' +
+            '<div class="actions">' +
+            '<button class="act vote' + (voted ? ' voted' : '') + '" data-vote="' + c.id + '" aria-label="投票">' +
+            '<span class="ico">' + HEART + '</span><span class="n" data-count="' + c.id + '">' + (votes[c.id] || 0) + '</span></button>' +
+            '<button class="act" data-comment="' + c.id + '" aria-label="评论">' +
+            '<span class="ico">' + BUBBLE + '</span><span class="n">' + (commentCounts[c.id] || 0) + '</span></button>' +
+            '</div></section>'
+        }).join('')
+
+        feed.querySelectorAll('[data-vote]').forEach((b) => b.onclick = () => vote(b.dataset.vote, b))
+        feed.querySelectorAll('[data-comment]').forEach((b) => b.onclick = () => openSheet(b.dataset.comment))
+      }
+
+      feed.addEventListener('scroll', () => {
+        const h = feed.clientHeight
+        const idx = Math.round(feed.scrollTop / h)
+        const el = feed.children[idx]
+        if (el) currentId = el.dataset.id
+      }, { passive: true })
+
+      async function vote(id, btn) {
+        if (myVotes.has(id)) return
+        const res = await fetch(BASE + '/api/vote', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id }) })
+        if (!res.ok) return
+        const data = await res.json()
+        myVotes.add(id); localStorage.setItem('logoVotes', JSON.stringify([...myVotes]))
+        btn.classList.add('voted')
+        const n = feed.querySelector('[data-count="' + id + '"]')
+        if (n) n.textContent = data.votes[id] || 0
+      }
+
+      /* —— 评论面板 —— */
+      const sheet = document.getElementById('sheet')
+      const backdrop = document.getElementById('backdrop')
+      const sheetList = document.getElementById('sheetList')
+      const sheetTitle = document.getElementById('sheetTitle')
+      const sheetMsg = document.getElementById('sheetMsg')
+      const commentForm = document.getElementById('commentForm')
+      commentForm.querySelector('.nm').value = myName
+
+      function closeSheet() { sheet.classList.remove('show'); backdrop.classList.remove('show'); }
+      backdrop.onclick = closeSheet
+      document.getElementById('closeSheet').onclick = closeSheet
+
+      async function openSheet(id) {
+        currentId = id
+        const c = candidates.find((x) => x.id === id)
+        sheetTitle.textContent = '评论 · ' + (c ? c.title : '')
+        sheetMsg.textContent = ''
+        sheetList.innerHTML = '<div class="empty">加载中…</div>'
+        sheet.classList.add('show'); backdrop.classList.add('show')
+        await loadComments(id)
+        commentForm.querySelector('.tx').focus()
+      }
+
+      async function loadComments(id) {
+        const res = await fetch(BASE + '/api/comments?id=' + encodeURIComponent(id))
+        const data = await res.json().catch(() => ({ comments: [] }))
+        const list = data.comments || []
+        sheetTitle.textContent = '评论 ' + list.length + ' 条'
+        sheetList.innerHTML = list.length
+          ? list.map((c) => '<div class="cmt"><div class="av">' + esc(initial(c.name)) + '</div><div><div class="who">' + esc(c.name) +
+              '<span class="when">' + esc(when(c.at)) + '</span></div><p>' + esc(c.text) + '</p></div></div>').join('')
+          : '<div class="empty">还没有评论，来说第一句吧。</div>'
+      }
+
+      commentForm.onsubmit = async (e) => {
+        e.preventDefault()
+        const fd = new FormData(commentForm)
+        const text = String(fd.get('text') || '').trim()
+        if (!text) return
+        const name = String(fd.get('name') || '').trim()
+        if (name) { localStorage.setItem('reviewerName', name) }
+        const btn = commentForm.querySelector('button')
+        btn.disabled = true
+        const res = await fetch(BASE + '/api/comment', { method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ candidateId: currentId, name, text }) })
+        const data = await res.json().catch(() => ({}))
+        btn.disabled = false
+        if (!res.ok) { sheetMsg.textContent = data.error || '发送失败'; return }
+        commentForm.querySelector('.tx').value = ''
+        const nEl = feed.querySelector('[data-comment="' + currentId + '"] .n')
+        if (nEl) nEl.textContent = Number(nEl.textContent) + 1
+        await loadComments(currentId)
+      }
+
+      /* —— 上传 —— */
+      const modal = document.getElementById('uploadModal')
+      const uploadMsg = document.getElementById('uploadMsg')
+      document.getElementById('openUpload').onclick = () => { uploadMsg.textContent = ''; uploadMsg.className = 'msg'; modal.classList.add('show') }
+      document.getElementById('cancelUpload').onclick = () => modal.classList.remove('show')
+      document.getElementById('doUpload').onclick = async () => {
+        const box = modal.querySelector('.box')
+        const file = box.querySelector('input[type=file]').files[0]
+        if (!file) { uploadMsg.className = 'msg err'; uploadMsg.textContent = '请先选一张图片'; return }
+        if (file.size > 6 * 1024 * 1024) { uploadMsg.className = 'msg err'; uploadMsg.textContent = '文件太大（上限 6MB）'; return }
+        uploadMsg.className = 'msg'; uploadMsg.textContent = '上传中…'
+        const q = new URLSearchParams({ title: box.querySelector('[name=title]').value, by: box.querySelector('[name=by]').value })
+        const res = await fetch(BASE + '/api/upload?' + q, { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream' }, body: file })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok) { uploadMsg.className = 'msg err'; uploadMsg.textContent = data.error || '上传失败'; return }
+        uploadMsg.className = 'msg ok'; uploadMsg.textContent = '上传成功，已加入 feed！'
+        box.querySelectorAll('input').forEach((i) => { if (i.type !== 'file') i.value = '' })
+        box.querySelector('input[type=file]').value = ''
+        await load()
+        modal.classList.remove('show')
+        feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' })
+      }
+
+      load().then(() => { const el = feed.children[0]; if (el) currentId = el.dataset.id })
+        .catch(() => { document.getElementById('hint').textContent = '加载失败，刷新试试' })
+    </script>
+  </body>
+</html>

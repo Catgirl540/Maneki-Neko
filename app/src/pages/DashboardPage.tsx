@@ -1,6 +1,7 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, ApiError } from '@/api'
+import { api, ApiError, isMockMode } from '@/api'
 import { CopyButton } from '@/components/ui/CopyButton'
 import type {
   Account,
@@ -53,11 +54,23 @@ export function DashboardPage() {
   const ratio = opening > 0 ? netChange / opening : 0
   const netPositive = netChange >= 0
 
+  const requests = [accounts, cashFlow, spending, transactions]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
+
   return (
     <div className="flex flex-col gap-6">
+      <header className="float-up flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="mb-2 text-[12px] font-medium tracking-wider text-gold-deep">我的账户</p>
+          <h1 className="text-[28px] leading-tight font-bold tracking-[-0.03em] text-ink sm:text-[32px]">财务总览</h1>
+        </div>
+        <span className="rounded-chip border border-line bg-surface px-3 py-1.5 text-[12px] text-ink-soft">{new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())}</span>
+      </header>
       {/* 第一行：余额 + 现金流 */}
       <div className="grid gap-6 lg:grid-cols-[1fr_1.08fr]">
-        <Card className="float-up flex flex-col">
+        <Card className="balance-card float-up flex flex-col">
           <p className="text-[13px] text-ink-mute">储蓄账户余额</p>
 
           {accounts.loading || !current ? (
@@ -69,7 +82,7 @@ export function DashboardPage() {
             <>
               <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
                 <span className="flex items-center gap-2">
-                  <span className="num text-[clamp(30px,4.2vw,46px)] leading-none font-bold tracking-[-0.03em] text-ink">
+                  <span className="num text-[clamp(26px,4vw,44px)] leading-none font-bold tracking-[-0.03em] text-ink">
                     {balance.shown ? `¥${formatAmount(current.balance)}` : '¥••••••'}
                   </span>
                   {/* 只管这块余额，不跟卡片页或账户速览联动 */}
@@ -99,7 +112,7 @@ export function DashboardPage() {
                 不可断行的数字缩不了，于是会溢出轨道、压过竖线、冲出卡片。
                 所以窄屏落成一列「标签在左、金额在右」的行，sm 以上才回到三栏。
               */}
-              <dl className="mt-auto flex flex-col gap-4 border-t border-line pt-6 sm:grid sm:grid-cols-3 sm:gap-4">
+              <dl className="balance-summary mt-6 flex flex-col gap-4 border-t border-line pt-6 sm:grid sm:grid-cols-3 sm:gap-4">
                 <div className="flex items-baseline justify-between gap-4 sm:block">
                   <dt className="shrink-0 text-[12px] text-ink-mute">本月收入</dt>
                   <dd className="num text-[17px] font-semibold text-blue sm:mt-1.5">
@@ -344,9 +357,9 @@ function MoneyInModal({
       footer={
         mode === 'info' ? (
           <>
-            <Button block onClick={() => setMode('demo')}>
+            {isMockMode && <Button block onClick={() => setMode('demo')}>
               模拟一笔转入
-            </Button>
+            </Button>}
             <Button
               block
               variant="primary"

@@ -14,7 +14,7 @@ export function Card({
   ...rest
 }: CardProps) {
   return (
-    <Tag className={cn('card', padded && 'p-7', className)} {...rest}>
+    <Tag className={cn('card min-w-0', padded && 'p-5 sm:p-7', className)} {...rest}>
       {children}
     </Tag>
   )
@@ -30,7 +30,7 @@ export function CardHeader({
   className?: string
 }) {
   return (
-    <div className={cn('flex items-center justify-between gap-4', className)}>
+    <div className={cn('flex flex-wrap items-center justify-between gap-3', className)}>
       <h2 className="text-[17px] leading-6 font-semibold text-ink">{title}</h2>
       {action}
     </div>

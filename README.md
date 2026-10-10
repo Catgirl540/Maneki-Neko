@@ -4,7 +4,7 @@
 
 > Maneki-Neko(招财猫)是一个集成的AI banking智能体，为了解决团队四人如何拿下10w的现实问题
 
-本仓库当前的内容是**前端**（含一套纯前端 mock 后端，用于在后端就绪前把全部业务跑通）。
+本仓库包含**网页前端与 Node.js + SQLite HTTP 后端**。开发与生产默认从 `/api` 读取业务数据；浏览器 mock 仅用于显式开启的开发测试。
 前后端之间只有 `app/src/api/contract.ts` 一个接口面，后端按它实现即可，前端零改动；
 接口清单、错误码表、业务不变量与**待后端拍板的开放问题**都整理在
 `design/backend-handoff/API-CONTRACT.md`。本仓根目录留了位置，后端代码放 `server/` 或 `backend/` 都行。
@@ -13,7 +13,7 @@
 
 ## 招财猫银行 · luckycat BANK
 
-虚拟（模拟）银行的**前端 MVP**。前后端分离架构，当前阶段所有数据由前端 mock 层提供，
+虚拟（模拟）银行的网页版。前后端分离架构，业务数据由 SQLite 后端通过 HTTP 提供，
 后端就绪后只需切一个环境变量，业务代码零改动。
 
 - 品牌：招财猫银行 / luckycat BANK
@@ -115,30 +115,43 @@ source ~/.zshrc                # 提供 OPENROUTER_API_KEY
 python3 scripts/gen_images.py design/brand/image-spec.json
 ```
 
-## 2.1 接上 agent（可选，不接后端）
+## 2.1 接上 Agent 与当前银行账户
 
-智能客服可以接**真的 agent**（本地演示服务驱动，不需要银行后端；所有工具返回占位数据）。
-**不启动它也能用**：页面会自动回落固定话术，并在右上角标明「演示话术（未连接）」。
+智能客服默认调用独立 SQLite 银行后端，使用网页当前登录用户的权限。服务不可用时，页面使用银行 HTTP 客服消息接口，并标明智能助手未连接。
 
 ```bash
-# 终端 1：agent 演示服务（首次先装依赖：cd framework && npm install）
-source ~/.zshrc                # 提供 OPENROUTER_API_KEY
-cd framework
-bash scripts/build.sh          # 编译插件（改过插件就要重跑）
-bash scripts/bootstrap.sh      # 生成仓库内隔离的 DSH_HOME 并装插件（幂等）
-node bridge/demo-server.mjs    # 监听 127.0.0.1:8788
+# 终端 1：仓库根目录，Node.js 24
+node server/index.mjs
 
-# 终端 2：前端
-cd app && npm run dev          # http://localhost:5180
+# 终端 2：Agent（模型密钥只通过服务端环境变量或受保护的环境文件提供）
+cd framework
+npm ci
+bash scripts/link-local.sh
+bash scripts/build.sh
+bash scripts/bootstrap.sh
+LUCKYCAT_BANK_URL=http://127.0.0.1:8080 node bridge/demo-server.mjs
+
+# 终端 3：前端
+npm run dev --prefix app
 ```
 
-然后打开「智能客服」，试试：
+Agent 需要服务端 `OPENROUTER_API_KEY`；模型与知识库配置仍由框架 profile 管理。生产沿用桥接端口 8898 时设置 `LUCKYCAT_DEMO_PORT=8898`，同时配置 `LUCKYCAT_BANK_URL`。更新源码后必须重新编译插件、运行 bootstrap 并重启桥接服务；只部署静态前端不会更新 Agent。
 
-> 帮我转 800 元给梁乐怡，账号尾号 9123，备注房租
+登录后可以查询余额、流水、交易详情、理财产品与持仓。转账必须明确付款账户、收款人、**完整收款账号**及银行代码/地区；不能仅凭尾号扣款。确认卡展示后端核对的信息和费用，支付密码由当前银行账户校验，返回同一 SQLite 后端的实际业务回执。当前 Agent 转账支持境内人民币银行转账，FPS、跨境与换汇请使用转账页面。
 
-会看到：agent 调用工具 → 弹出**确认卡片**（逐条列出收款人 / 金额 / 尾号 / 手续费）
-→ 输入支付密码 `123456` → 才执行，并返回演示回执号 `LCB-DEMO-…`。
-点「取消」或不管它，**操作不会执行**。
+理财申购需要先在理财页面开户和完成风险测评，并在确认卡中手动抄录风险语句。赎回使用实际持仓编号和份额；后端仍校验封闭期及可赎回份额。卡号/CVV 只在短时窗口展示，关闭、切到后台或到期会清除，不进入模型与对话存档。
+
+网页请求和 SSE 都携带银行登录令牌；会话、确认和问询按客户校验归属。内部工具通道使用进程间随机口令，不暴露到浏览器。授权绑定会话、调用、参数和有效期，执行前再次检查登录，一次授权只执行一次。银行令牌与支付密码不进入模型进程。对话存档按客户区分，旧的未绑定客户记录不会导入。
+
+只有显式设置 `LUCKYCAT_BANK_MODE=demo` 才会使用旧独立占位工具；HTTP 网页拒绝此模式，旧框架演示测试须配合 `VITE_USE_MOCK=true`。
+
+无需外部模型费用的联调验证（模型协议使用本机 fixture，银行服务与 Harness 均实际运行）：
+
+```bash
+node tools/check-agent-bank.mjs
+node tools/check-agent-http.mjs
+node tools/check-agent-http.mjs --browser # 需要 Chromium，可指定 CHROME_PATH
+```
 
 助手回复会按 **Markdown + KaTeX** 渲染（表格、粗体、列表、行内/块级公式），
 用户自己说的话仍是纯文本。原始 HTML 不会被注入、图片不会被加载、`javascript:` 链接不成链。
@@ -306,7 +319,7 @@ cd app && npm run dev          # http://localhost:5180
 一段对话在回答时切到别的对话**不会打断它**——回答照样写回它自己那一段，
 列表上那一行会标「回答中」。
 
-记录只存在**这台设备的浏览器本地**（`luckycat.agent.sessions.v1`），刷新和关掉重开都还在；
+记录只存在**这台设备的浏览器本地**（HTTP 模式按 `luckycat.agent.sessions.v1.<客户编号>` 区分），刷新和关掉重开都还在；
 一段都不留时自动给一段空的，不用先点「新对话」。删除只是从本地列表里拿掉，
 **服务端与审计日志里的记录会保留**。
 
@@ -361,7 +374,7 @@ cd app && npm run dev          # http://localhost:5180
 | 阶段 | 配置 |
 | --- | --- |
 | 当前（纯前端） | `VITE_USE_MOCK=true` |
-| 后端已就绪 | `VITE_USE_MOCK=false` + `VITE_API_BASE_URL=https://api.example.com` |
+| 默认开发 / 生产 | `VITE_USE_MOCK=false` + `VITE_API_BASE_URL=https://api.example.com` |
 
 `src/api/contract.ts` 里的 `routes` 就是给后端的接口清单，
 `types.ts` 就是返回体结构。后端按这套约定实现即可，前端一行不用改。
@@ -389,6 +402,7 @@ POST   /api/cards/bin               卡 BIN 查询：卡号前 6 位 → 发卡�
 GET    /api/receiving               我的收款信息（户名 / 账户 / 转数快标识，见 §12.5）
 GET    /api/payees                  常用收款人
 POST   /api/fps/resolve            转数快标识解析（返回登记姓名与收款银行）
+POST   /api/transfers/recipient     核对本行收款账户与户名
 POST   /api/transfers/quote         转账询价（手续费/到账时间/单笔上限/是否需二次确认/换汇报价）
 POST   /api/transfers               提交转账（channel=bank 走卡号；channel=fps 走四种汇款方式）
 
@@ -1325,7 +1339,7 @@ if (agreement !== WEALTH_INVESTMENT_AGREEMENT) → 400 AGREEMENT_REQUIRED
 **线上地址：https://bank.waveflow.cn**（HTTP 会 301 到 HTTPS）
 
 这个项目是**纯前端**：数据全在浏览器 localStorage 里，服务端只负责发静态文件。
-所以「部署」= 构建 → 上传 → 让 nginx 指向新目录。没有后端要起、没有数据库要迁。
+生产构建默认使用 HTTP 后端。部署需先启动 `server/index.mjs` 并配置 nginx 的 `/api/` 代理，再上传前端构建。只上传静态文件会导致银行接口不可用。
 
 ### 19.1 一次性配置
 
@@ -1392,3 +1406,21 @@ Let's Encrypt 证书，certbot 是现成的，不用装。
 
 - 提交只能在**本目录内**操作
 - **绝对不要在 `~/文档` 里 `git add -A`** —— 那会把几十 G 的无关文件一起提交
+
+## HTTP 数据源与占位数据清理
+
+开发与生产均默认使用 `VITE_USE_MOCK=false`；生产走同源 `/api`，反代配置见 `design/deploy/bank.waveflow.cn.conf`。独立后端域名可在构建时设置 `VITE_API_BASE_URL`（仅源地址，不附加 `/api`）。已有服务器数据库应保留；此修改不删除服务端记录。
+
+HTTP 版本不会打包浏览器模拟数据库。启动时清理旧 mock 缓存和 mock 登录令牌；真实 HTTP 令牌、界面偏好与助手对话保留。新注册用户不会继承演示收款人或其他用户的支付密码状态。登录框不再预填账号密码，公开页不展示编造的余额、交易或收益；模拟入账与重置演示数据按钮仅在显式 mock 模式可见。接口不可达或返回 HTML 时会提示错误，不切回 mock；失效会话会返回登录页。
+
+本地联调：按 `README-START.md` 启动 Node.js 24 后端和前端。若要运行历史 mock 测试，显式使用 `VITE_USE_MOCK=true npm run dev --prefix app`。生产 nginx 的 HTTPS 配置也需要同样的 `/api/` 代理；提交的配置模板不会自动修改公网服务器。`deploy-bank.sh` 会先检查后端健康及 `/api/accounts` 的未登录 401 响应，未就绪时不会覆盖当前站点。
+
+端到端 HTTP 联调检查（临时 SQLite 数据库，不修改现有数据）：
+
+```sh
+node tools/check-http-frontend.mjs
+```
+
+项目后端仍是虚拟银行业务服务，并非真实银行清算系统。Agent 已接同一登录账户与 SQLite HTTP 服务，健康响应声明 `bankDataSource: "http"`；启动和部署条件见 §2.1。真实模型及语音上游仍需服务端凭据，本机 fixture 联调不代表已验证公网供应商。
+
+另有两条账户认证的助手辅助接口：`POST /api/auth/payment-password/verify` 校验支付密码，`GET /api/agent/wealth/requirements` 返回后端风险抄录语句。它们不进入通用页面 BankApi 的路由数量验收。

@@ -9,7 +9,6 @@ import { ChevronRightIcon } from '@/components/ui/icons'
 import { ACCOUNT_OPENING_PLEDGE } from '@/lib/account-opening'
 import { useSession } from '@/store/session-context'
 
-const DEMO_ID = '310101199001011234'
 const maskId = (v: string) => v.length === 18 ? `${v.slice(0, 3)}***********${v.slice(-4)}` : '待填写'
 const maskPhone = (v: string) => v.length === 11 ? `${v.slice(0, 3)}****${v.slice(-4)}` : '待填写'
 
@@ -71,17 +70,17 @@ export function OpenAccountStandalone() {
     finally { setSubmitting(false) }
   }
 
-  return <div className="min-h-svh bg-paper"><div className="mx-auto w-full max-w-[900px] px-6 py-10">
-    <div className="mb-8 flex items-center justify-between gap-4">
+  return <div className="min-h-svh bg-paper"><div className="mx-auto w-full max-w-[900px] px-4 py-7 sm:px-6 sm:py-10">
+    <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
       <Logo markClass="h-10 w-10" wordClass="text-[24px]" />
       <Link to="/login" className="inline-flex items-center text-[13px] font-medium text-gold-deep">已有账户？去登录 <ChevronRightIcon size={15} /></Link>
     </div>
-    <header className="mb-7"><h1 className="text-[32px] font-bold tracking-[-0.02em] text-ink">注册并开通储蓄账户</h1><p className="mt-2 text-[14px] text-ink-soft">使用身份证、短信和人脸核身完成开户，无需已有银行卡或选择账户类别。</p></header>
+    <header className="mb-7"><h1 className="text-[32px] font-bold tracking-[-0.02em] text-ink">注册并开通储蓄账户</h1></header>
     <div className="grid gap-6 lg:grid-cols-[1.15fr_.85fr]">
       <div className="flex flex-col gap-5">
         <Card><CardHeader title="1. 基本资料与登录密码" /><div className="mt-5 grid gap-4 sm:grid-cols-2">
           <Field label="姓名" value={holderName} onChange={(e) => setHolderName(e.target.value)} placeholder="请填写本人姓名" />
-          <Field label="身份证号" value={idNumber} onChange={(e) => setIdNumber(e.target.value.trim().slice(0, 18))} placeholder={DEMO_ID} />
+          <Field label="身份证号" value={idNumber} onChange={(e) => setIdNumber(e.target.value.trim().slice(0, 18))} placeholder="请输入身份证号" />
           <Field label="登录密码" type="password" value={password} onChange={(e) => setPassword(e.target.value)} error={passwordError ? '请输入 6-20 个字符' : undefined} />
           <Field label="确认登录密码" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} error={confirmError ? '两次输入的密码不一致' : undefined} />
         </div></Card>

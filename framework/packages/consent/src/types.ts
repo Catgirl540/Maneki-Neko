@@ -38,6 +38,8 @@ export interface SensitiveOperationSpec {
    * @returns 按展示顺序排列的字段。
    */
   describe(args: unknown): ConsentField[]
+  /** 将参数绑定到后端的一次性授权；仅用于可信确认通道，不展示给浏览器。 */
+  bindArguments?: boolean
   /**
    * 需要哪种身份验证；省略表示**只确认、不验身份**。
    * 这是业务决定，由消费者插件给值，框架不设默认值（对齐 DSH 的
@@ -62,6 +64,7 @@ export interface ConsentChallenge {
   kind: string
   /** 展示给用户的信息。 */
   fields: ConsentField[]
+  arguments?: unknown
   /** 需要哪种身份验证；省略表示不需要。 */
   verification?: VerificationMethod
   /** 补充说明。 */

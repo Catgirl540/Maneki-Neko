@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useState } from 'react'
 import { api } from '@/api'
 import type {
@@ -71,13 +72,15 @@ export function WealthPage() {
   const redeemProduct = products.data?.find((p) => p.code === redeemHolding?.productCode) ?? null
   const list = (products.data ?? []).filter((p) => filter === 'all' || p.category === filter)
 
+  const requests = [overview, products, questions, accounts]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
+
   return (
     <div className="flex flex-col gap-7">
       <header className="float-up">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">理财</h1>
-        <p className="mt-2 text-[14px] text-ink-mute">
-          产品净值与持仓收益每日更新；购买前需完成风险承受能力评估
-        </p>
       </header>
 
       {/* 风险揭示：监管要求在醒目位置提示 */}
@@ -330,7 +333,7 @@ export function WealthPage() {
                 key={p.code}
                 type="button"
                 onClick={() => setDetail(p)}
-                className="flex flex-col rounded-card border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong"
+                className="flex min-w-0 flex-col rounded-card border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong"
               >
                 <span className="flex items-start justify-between gap-3">
                   <span className="min-w-0 flex-1">

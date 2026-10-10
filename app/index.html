@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      // 手机浏览器「请求桌面版」的兼容处理：
+      //  · 安卓 Chrome 会忽略 viewport，直接按 980px 布局 → 命中 960px 桌面断点；
+      //  · iOS Safari 只改 UA、仍用设备宽度 → 桌面模式会落到手机版。
+      // 这里按「桌面 UA」把 viewport 固定成 980px，让 iOS 的桌面模式也渲染成桌面版。
+      // 真桌面浏览器本就忽略 viewport 的 width，设置它没有任何影响。
+      (function () {
+        var ua = navigator.userAgent || ''
+        var desktopUA =
+          /Windows NT|Macintosh|X11|CrOS/.test(ua) && !/Android|iPhone|iPod|Mobile/.test(ua)
+        if (desktopUA) {
+          var meta = document.querySelector('meta[name="viewport"]')
+          if (meta) meta.setAttribute('content', 'width=980')
+        }
+      })()
+    </script>
     <meta name="theme-color" content="#F7F5F0" />
     <meta name="description" content="招财猫银行 · luckycat BANK —— 虚拟（模拟）银行 MVP" />
     <title>招财猫银行 · luckycat BANK</title>

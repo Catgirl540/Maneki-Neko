@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { BellIcon, SearchIcon } from '@/components/ui/icons'
+import { CatMark } from '@/components/brand/Logo'
+import { Modal } from '@/components/ui/Modal'
+import { Button } from '@/components/ui/Button'
 import { formatDateTime } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
 import { api } from '@/api'
 
-/** 顶栏：全局搜索 + 通知。搜索直接跳到流水的关键词筛选。 */
+/** 搜索与通知共用响应式顶栏，通知使用可滚动、可键盘操作的弹窗。 */
 export function TopBar() {
   const navigate = useNavigate()
   const [keyword, setKeyword] = useState('')
@@ -14,79 +17,34 @@ export function TopBar() {
   const alerts = security.data?.logs.slice(0, 3) ?? []
 
   return (
-    <header className="sticky top-0 z-30 flex h-[76px] items-center gap-4 border-b border-line bg-paper/85 px-10 backdrop-blur print:hidden">
-      <form
-        className="flex h-12 max-w-[440px] flex-1 items-center gap-3 rounded-chip border border-line bg-surface px-5 transition-colors focus-within:border-gold"
-        onSubmit={(e) => {
+    <>
+      <header className="sticky top-7 z-30 flex h-16 items-center gap-3 border-b border-line bg-paper/95 px-4 backdrop-blur lg:h-[76px] lg:gap-4 lg:px-8 print:hidden">
+        <Link to="/dashboard" aria-label="招财猫银行总览" className="shrink-0 lg:hidden"><CatMark className="size-8 text-gold" /></Link>
+        <form role="search" className="flex h-11 min-w-0 max-w-[440px] flex-1 items-center gap-2 rounded-chip border border-line bg-surface px-3 transition-colors focus-within:border-gold sm:gap-3 sm:px-5" onSubmit={(e) => {
           e.preventDefault()
           navigate(keyword.trim() ? `/analysis?q=${encodeURIComponent(keyword.trim())}` : '/analysis')
-        }}
-      >
-        <SearchIcon size={19} className="shrink-0 text-ink-mute" />
-        <input
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          placeholder="搜索交易、收款人或备注"
-          aria-label="全局搜索"
-          className="h-full w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-mute"
-        />
-      </form>
-
-      <div className="relative ml-auto">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-label="通知"
-          aria-expanded={open}
-          className="relative grid size-12 place-items-center rounded-chip border border-line bg-surface text-ink-soft transition-colors hover:border-line-strong hover:text-ink"
-        >
+        }}>
+          <SearchIcon size={18} className="shrink-0 text-ink-mute" />
+          <input type="search" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索交易、收款人或备注" aria-label="全局搜索" className="h-full min-w-0 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-mute" />
+          <button type="submit" className="sr-only">搜索</button>
+        </form>
+        <span className="ml-auto hidden text-[12px] text-ink-soft xl:block">每一笔收支，都心中有数</span>
+        <button type="button" onClick={() => setOpen(true)} aria-label="通知" aria-haspopup="dialog" aria-expanded={open} className="relative ml-auto grid size-11 shrink-0 place-items-center rounded-chip border border-line bg-surface text-ink-soft transition-colors hover:border-line-strong hover:text-ink xl:ml-0">
           <BellIcon size={20} />
-          {alerts.length > 0 && (
-            <span className="absolute top-2.5 right-3 size-2 rounded-chip bg-coral" />
-          )}
+          {alerts.length > 0 && <span className="absolute top-2 right-2.5 size-2 rounded-chip bg-coral" />}
         </button>
-
-        {open && (
-          <>
-            <button
-              type="button"
-              aria-label="关闭通知"
-              onClick={() => setOpen(false)}
-              className="fixed inset-0 z-40 cursor-default"
-            />
-            <div className="absolute right-0 z-50 mt-2 w-[330px] rounded-card border border-line bg-surface p-2 shadow-[0_18px_40px_rgba(14,27,38,0.12)]">
-              <p className="px-3 py-2 text-[13px] font-medium text-ink-soft">最新动态</p>
-              <ul>
-                {alerts.map((log) => (
-                  <li key={log.id} className="flex items-start gap-3 rounded-tile px-3 py-3 hover:bg-sunk">
-                    <span
-                      className={`mt-1.5 size-2 shrink-0 rounded-chip ${
-                        log.level === 'warn' ? 'bg-coral' : 'bg-blue'
-                      }`}
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-[14px] font-medium text-ink">{log.action}</span>
-                      <span className="mt-0.5 block text-[12px] text-ink-mute">
-                        {formatDateTime(log.createdAt)} · {log.detail}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(false)
-                  navigate('/security')
-                }}
-                className="mt-1 w-full rounded-tile px-3 py-2.5 text-left text-[13px] font-medium text-gold-deep transition-colors hover:bg-gold-tint"
-              >
-                查看全部安全日志
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </header>
+      </header>
+      <Modal open={open} onClose={() => setOpen(false)} title="最新动态" description="最近的账户与安全记录" footer={<Button block onClick={() => { setOpen(false); navigate('/security') }}>查看全部安全日志</Button>}>
+        {security.loading && <p className="py-4 text-[14px] text-ink-soft">正在加载通知…</p>}
+        {security.error && <div role="alert" className="rounded-field bg-coral-wash p-4 text-[14px] text-ink"><p>{security.error}</p><Button size="sm" className="mt-3" onClick={security.reload}>重新加载</Button></div>}
+        {!security.loading && !security.error && alerts.length === 0 && <p className="py-4 text-[14px] text-ink-soft">暂无新动态，账户记录会显示在这里。</p>}
+        <ul className="divide-y divide-line">
+          {alerts.map(log => <li key={log.id} className="flex items-start gap-3 py-4">
+            <span className={`mt-1.5 size-2 shrink-0 rounded-chip ${log.level === 'warn' ? 'bg-coral' : 'bg-blue'}`} />
+            <span className="min-w-0"><span className="block text-[14px] font-medium text-ink">{log.action}</span><span className="mt-1 block text-[12px] leading-relaxed break-words text-ink-soft">{formatDateTime(log.createdAt)} · {log.detail}</span></span>
+          </li>)}
+        </ul>
+      </Modal>
+    </>
   )
 }

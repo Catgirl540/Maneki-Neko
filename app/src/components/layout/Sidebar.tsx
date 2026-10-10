@@ -1,30 +1,15 @@
 import { NavLink } from 'react-router-dom'
 import {
-  CardIcon,
-  ChartIcon,
-  ChatIcon,
-  HomeIcon,
   LogoutIcon,
-  PigIcon,
   ShieldIcon,
   SidebarCollapseIcon,
   SidebarExpandIcon,
-  TransferIcon,
 } from '@/components/ui/icons'
 import { CatMark, Logo } from '@/components/brand/Logo'
 import { useSession } from '@/store/session-context'
 import { cn } from '@/lib/cn'
 import { greeting } from '@/lib/format'
-
-const NAV = [
-  { to: '/dashboard', label: '总览', Icon: HomeIcon },
-  { to: '/transfer', label: '转账', Icon: TransferIcon },
-  { to: '/cards', label: '银行卡', Icon: CardIcon },
-  { to: '/analysis', label: '消费分析', Icon: ChartIcon },
-  { to: '/wealth', label: '理财', Icon: PigIcon },
-  { to: '/security', label: '安全中心', Icon: ShieldIcon },
-  { to: '/support', label: '智能客服', Icon: ChatIcon },
-]
+import { navigationItems } from './navigation'
 
 interface SidebarProps {
   collapsed: boolean
@@ -38,7 +23,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
     // h-svh + sticky：侧栏永远只有一屏高，内容再长也不会被拉长、底部用户区不会跑出屏幕
     <aside
       className={cn(
-        'sticky top-0 flex h-svh shrink-0 flex-col border-r border-line bg-sunk py-6 print:hidden',
+        'sticky top-7 hidden h-[calc(100svh-28px)] shrink-0 flex-col border-r border-line bg-surface py-6 lg:flex print:hidden',
         'transition-[width,padding] duration-200 ease-[cubic-bezier(.4,0,.2,1)]',
         collapsed ? 'w-[84px] px-3.5' : 'w-[252px] px-6',
       )}
@@ -86,12 +71,13 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           负边距 + 等量内边距把滚动容器的可见区补到侧栏边缘，
           否则外挂在边缘的金色指示条会被 overflow 裁掉。 */}
       <nav
+        aria-label="桌面主导航"
         className={cn(
           'flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto',
           collapsed ? 'mt-6 -mx-3.5 px-3.5' : 'mt-7 -mx-6 px-6',
         )}
       >
-        {NAV.map(({ to, label, Icon }) => (
+        {navigationItems.map(({ to, label, Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -103,7 +89,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
                 'relative flex h-12 shrink-0 items-center rounded-tile text-[15px] transition-colors duration-200',
                 collapsed ? 'justify-center' : 'gap-3 px-3.5',
                 isActive
-                  ? 'font-medium text-gold-deep'
+                  ? 'bg-gold-tint font-semibold text-gold-deep'
                   : 'text-ink-soft hover:bg-paper hover:text-ink',
               )
             }
@@ -138,9 +124,9 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           <div className="mb-4 flex gap-3 rounded-field border border-gold-wash bg-gold-tint p-3.5">
             <ShieldIcon size={20} className="mt-0.5 shrink-0 text-gold-deep" />
             <span>
-              <span className="block text-[13px] font-medium text-ink">银行级安全</span>
+              <span className="block text-[13px] font-medium text-ink">操作先确认</span>
               <span className="mt-0.5 block text-[12px] leading-snug text-ink-soft">
-                保障您的资金与信息安全
+                涉及资金的操作由您确认
               </span>
             </span>
           </div>

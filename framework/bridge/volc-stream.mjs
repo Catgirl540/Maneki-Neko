@@ -133,7 +133,9 @@ export function jsonPayload(parsed) {
  *   - `speaker` 音色 id。
  *   - `sampleRate` 请求的采样率（默认 24000）。
  *   - `resourceId` 资源 id（默认 seed-tts-2.0）。
- *   - `appId` / `accessToken` 火山旧版控制台凭据（必填）。
+ *   - `apiKey` 豆包语音**单 Key**（新版，走 `X-Api-Key`）。
+ *   - `appId` / `accessToken` 火山旧版控制台凭据（走 `X-Api-App-Id`/`X-Api-Access-Key`）。
+ *     两种二选一：给了 `apiKey` 就优先用它，否则用 `appId` + `accessToken`。
  *   - `onAudio(buffer)` 每收到一个 352 帧调一次。
  *   - `onEvent(parsed, json)` 每个事件帧调一次（350/351/152 等，方便日志/字幕）。
  *   - `signal` AbortSignal：客户端断开时用来掐断上游。
@@ -145,6 +147,7 @@ export function streamVolcTTS({
   speaker,
   sampleRate = 24000,
   resourceId = 'seed-tts-2.0',
+  apiKey,
   appId,
   accessToken,
   onAudio,
@@ -154,14 +157,18 @@ export function streamVolcTTS({
   idleMs = 15_000,
 }) {
   return new Promise((resolvePromise, rejectPromise) => {
-    if (appId === '' || accessToken === '') {
-      rejectPromise(new Error('服务端没有配置火山语音凭据（VOLC_APP_ID / VOLC_ACCESS_TOKEN）'))
+    const useApiKey = typeof apiKey === 'string' && apiKey !== ''
+    if (!useApiKey && (appId === '' || accessToken === '')) {
+      rejectPromise(new Error('服务端没有配置火山语音凭据（LUCKYCAT_VOLC_API_KEY 或 VOLC_APP_ID/VOLC_ACCESS_TOKEN）'))
       return
     }
+    // 新版豆包语音用单个 API Key（X-Api-Key）；旧版控制台是 AppId + AccessKey。
+    const authHeaders = useApiKey
+      ? { 'X-Api-Key': apiKey }
+      : { 'X-Api-App-Id': appId, 'X-Api-Access-Key': accessToken }
     const ws = new WebSocket(VOLC_WSS_URL, {
       headers: {
-        'X-Api-App-Id': appId,
-        'X-Api-Access-Key': accessToken,
+        ...authHeaders,
         'X-Api-Resource-Id': resourceId,
         'X-Api-Request-Id': `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         'X-Control-Require-Usage-Tokens-Return': '*',

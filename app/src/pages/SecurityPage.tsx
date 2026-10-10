@@ -1,3 +1,4 @@
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { SecurityOverview } from '@/api/types'
@@ -54,15 +55,17 @@ export function SecurityPage() {
     }
   }
 
+  const requests = [overview]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
+
   return (
     <div className="flex flex-col gap-7">
       <header className="float-up">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
           安全中心
         </h1>
-        <p className="mt-2 text-[14px] text-ink-mute">
-          登录手机号与登录密码、交易风控、登录设备都在这里
-        </p>
       </header>
 
       {notice && (
@@ -304,7 +307,7 @@ function PasswordModal({
       open={open}
       onClose={onClose}
       title="重置登录密码"
-      description="演示环境中初始密码为 123456。"
+      description="输入当前密码，再设置新的登录密码。"
       footer={
         <>
           <Button block onClick={onClose}>
