@@ -308,10 +308,28 @@ export function useAgentChat(): AgentChat {
         return
       case 'status':
         setBusy(convId, event.status === 'running')
-        if (event.status !== 'running') closeIfIdle(convId)
+        if (event.status !== 'running') {
+          patch(convId, conversation => ({ ...conversation, items: conversation.items.map(item =>
+            item.kind === 'assistant' && item.streaming ? { ...item, streaming: false } : item) }))
+          closeIfIdle(convId)
+        }
         return
+      case 'assistant-update':
       case 'assistant':
-        pushItem(convId, { kind: 'assistant', id: nextId(), text: event.text })
+        patch(convId, conversation => {
+          const existing = event.messageId === undefined ? undefined : conversation.items.find(item =>
+            item.kind === 'assistant' && item.messageId === event.messageId)
+          // 完成后迟到或重复的快照不覆盖最终回复。
+          if (event.type === 'assistant-update' && existing?.kind === 'assistant' && !existing.streaming) return conversation
+          const item: ChatItem = { kind: 'assistant', id: existing?.id ?? nextId(), text: event.text,
+            ...(event.messageId === undefined ? {} : { messageId: event.messageId }), streaming: event.type === 'assistant-update' }
+          return { ...conversation, updatedAt: Date.now(), items: existing
+            ? conversation.items.map(row => row.id === existing.id ? item : row) : [...conversation.items, item] }
+        })
+        return
+      case 'assistant-reset':
+        patch(convId, conversation => ({ ...conversation, items: conversation.items.filter(item =>
+          item.kind !== 'assistant' || item.messageId !== event.messageId || !item.streaming) }))
         return
       case 'tool-call': {
         const id = nextId()
@@ -381,7 +399,7 @@ export function useAgentChat(): AgentChat {
         settled = true
         close()
         reject(new Error('事件流连接超时'))
-      }, 8_000)
+      }, 15_000)
       close = openAgentStream(agentSessionId, (event) => {
         if (event.type === 'hello') {
           if (settled) return
@@ -392,7 +410,7 @@ export function useAgentChat(): AgentChat {
         }
         handleEvent(convId, event)
       }, () => {
-        // 握手失败必须取消底层重连，否则失败的连接仍会占用浏览器连接池。
+        // 两种接收方式都失败时取消底层连接，避免占用浏览器连接池。
         if (settled) return
         settled = true
         clearTimeout(timer)
@@ -747,9 +765,14 @@ export function useAgentChat(): AgentChat {
     })
   }, [activeId, openForViewing, prepare, status])
 
-  // 存回本地。不防抖：一轮对话只产生几条内容，而防抖会在关标签页时丢掉最后一段。
+  // 生成期间节流写盘，完成时立即保存；关标签页前补存当前快照。
   useEffect(() => {
-    saveConversations(conversations, isMockMode ? undefined : accountIdRef.current)
+    const save = () => saveConversations(conversationsRef.current, isMockMode ? undefined : accountIdRef.current)
+    const streaming = conversations.some(c => c.items.some(item => item.kind === 'assistant' && item.streaming))
+    if (!streaming) { save(); return }
+    const timer = window.setTimeout(save, 300)
+    window.addEventListener('pagehide', save)
+    return () => { window.clearTimeout(timer); window.removeEventListener('pagehide', save) }
   }, [conversations])
 
   const active = useMemo(

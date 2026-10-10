@@ -172,8 +172,8 @@ const normAgentPath = (p) => p.replace(/\$\{[^}]*\}/g, ':p').replace(/:[A-Za-z_]
  *
  * 三种写法都要认，因为它们是**真的不同**、不是随手写的：
  *   · `requestJson('…')` —— 普通的 JSON 接口；
- *   · `EventSource(`${AGENT_BASE}…`)` —— SSE 只能用 EventSource；
- *   · `fetch(`${AGENT_BASE}…`)` —— **回二进制**的接口（语音合成回音频字节），
+ *   · 以 `${AGENT_BASE}` 开头的模板 —— fetch / EventSource 或 URL 对象；
+ *     覆盖事件流、短请求接收和**回二进制**的接口（语音合成回音频字节），
  *     塞不进 requestJson（那个会去 `JSON.parse`，拿到音频就是一段乱码错误）。
  * 只认前两种的话，二进制那条路径会被漏判（实测：加了 /tts 之后这条断言直接报
  * "文档有、前端没有"）。
@@ -186,9 +186,7 @@ const literalPath = (raw) => typeof raw === 'string' && raw.startsWith('/')
 const clientPaths = new Set([
   ...[...agentClient.matchAll(/requestJson(?:<[^>]*>)?\(\s*[`'"]([^`'"]+)[`'"]/g)]
     .map((m) => m[1]).filter(literalPath).map(normAgentPath),
-  ...[...agentClient.matchAll(/EventSource\(\s*`\$\{AGENT_BASE\}([^`]+)`/g)]
-    .map((m) => m[1]).filter(literalPath).map(normAgentPath),
-  ...[...agentClient.matchAll(/fetch\(\s*`\$\{AGENT_BASE\}([^`]+)`/g)]
+  ...[...agentClient.matchAll(/`\$\{AGENT_BASE\}([^`]+)`/g)]
     .map((m) => m[1]).filter(literalPath).map(normAgentPath),
 ])
 

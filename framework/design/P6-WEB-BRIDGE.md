@@ -29,6 +29,7 @@ dsh 子进程（profile luckycat，DSH_HOME=framework/.dsh-home）
 | GET | `/agent-api/sessions/:id` | **只读**问这段会话还在不在 → `{ sessionId, known, started, busy }`（见下） |
 | POST | `/agent-api/sessions/:id/messages` | `{ text }` → 202 + `{ accepted: true }`（**入队回执，不代表回答完成**） |
 | GET | `/agent-api/sessions/:id/stream` | SSE 事件流 |
+| GET | `/agent-api/sessions/:id/events` | SSE 不可用时短请求接收；可带 `after` 游标，返回 `{ cursor, events }` |
 | POST | `/agent-api/consent/:challengeId` | `{ decision, paymentPassword? }` → 校验后放行长轮询 |
 | POST | `/agent-api/questions/:questionId/answer` | `{ answers }` → 校验后放行提问那边挂住的长轮询 |
 | POST | `/agent-api/asr` | `{ audio: 裸 base64, mimeType, language? }` → `{ text, seconds?, cost? }`（语音转文字） |
@@ -48,13 +49,19 @@ dsh 子进程（profile luckycat，DSH_HOME=framework/.dsh-home）
 `framework/scripts/e2e-consent.sh` 用例 7 断言了这个语义与只读性
 （连问三次不存在的会话，服务端会话数不许变）。
 
-SSE 事件的形状（`data:` 一行一个 JSON）：
+网页优先使用 SSE；4 秒未收到 `hello` 或流断开后，自动改用短请求接收同一会话的事件。
+`events` 不带 `after` 时返回握手、当前待确认事项与运行状态；后续请求带返回的游标，只领取新增事件。
+两条通道使用相同的银行登录及会话归属校验，不重发用户消息。卡密不进入可重放事件；短请求模式下仅暂存至展示到期（最多 60 秒），领取一次后立即清除，响应禁止缓存。
+
+SSE 与短请求的事件形状相同（SSE 的 `data:` 一行一个 JSON）：
 
 | type | 载荷 | 界面上的意义 |
 | --- | --- | --- |
 | `hello` | `{ sessionId }` | 订阅已建立（前端据此确认"订阅早于发言"） |
 | `status` | `{ status: 'running' \| 'idle' }` | 转圈 / 停下 |
-| `assistant` | `{ text }` | 助手文本 |
+| `assistant-update` | `{ messageId, text }` | 正在生成的累计正文，覆盖同一气泡 |
+| `assistant` | `{ messageId?, text }` | 权威完成文本，合并同一气泡；兼容旧服务 |
+| `assistant-reset` | `{ messageId }` | 撤回失败或放弃的生成草稿 |
 | `tool-call` | `{ callId, name, arguments }` | 工具调用轨迹（"执行中…"） |
 | `tool-result` | `{ callId, isError, text }` | 工具结果（"已完成 / 未执行" + 一行摘要） |
 | `consent` | `{ challenge }` | **待确认卡片**（展示交易信息 + 身份验证输入） |
@@ -63,6 +70,10 @@ SSE 事件的形状（`data:` 一行一个 JSON）：
 | `question` | `{ question: { questionId, sessionId, questions, createdAt, expiresAt } }` | **提问卡片**（单选/多选/自由输入） |
 | `question-resolved` | `{ questionId, answered }` | 卡片收起（`answered=false` = 超时或插件已不等了） |
 | `error` | `{ message }` | 运行失败（含上游模型失败） |
+
+`assistant-stream-plugin.mjs` 通过树外 overlay 订阅运行时 `agent/assistant-stream`，以自定义 JSON-RPC 通知沿 SDK 原有 stdio 通道转发正文，保持与完成消息的顺序。不转发推理或工具参数。桥接每 40ms 合并累计正文，使用会话、turn、step 组成稳定 `messageId`；完成后用规范消息替换草稿。短请求共享这些快照和游标，恢复时不重复拼接文本。生成期间隐藏消息操作与自动朗读，完成后恢复。
+
+运行 `node tools/check-agent-streaming.mjs` 可验证真实 Harness、分段模型 fixture、SSE、断线切换、最终合并及刷新后的历史记录。
 
 ## 3. 为什么工具结果是占位
 

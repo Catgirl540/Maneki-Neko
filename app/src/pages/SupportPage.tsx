@@ -97,9 +97,11 @@ export function SupportPage() {
    */
   const spokenRef = useRef<string | undefined>(undefined)
   const latestAssistant = lastAssistantId(items ?? [])
-  const latestAssistantText = items?.find(
+  const latestAssistantItem = items?.find(
     item => item.id === latestAssistant && item.kind === 'assistant',
-  )?.text
+  )
+  const latestAssistantText = latestAssistantItem?.kind === 'assistant' && !latestAssistantItem.streaming
+    ? latestAssistantItem.text : undefined
   useEffect(() => {
     if (!voiceUsable || latestAssistant === undefined || latestAssistantText === undefined) return
     if (spokenRef.current === latestAssistant) return
@@ -154,8 +156,8 @@ export function SupportPage() {
 
   // 有 agent 时，滚动跟随 agent 的内容；没有时跟随固定话术。
   useEffect(() => {
-    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, thinking, items, agent.pending, agent.activeId])
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: activeBusy ? 'auto' : 'smooth' })
+  }, [messages, thinking, items, agent.pending, agent.activeId, activeBusy])
 
   // 确认卡片出现时把它滚进视野：卡片是"必须看一眼才能决定"的东西，
   // 半截露在滚动区外面等于没展示交易信息。
@@ -423,7 +425,7 @@ export function SupportPage() {
               />
             )}
 
-            {(usingAgent ? activeBusy : thinking) && agent.pending === undefined && (
+            {(usingAgent ? activeBusy && !items?.some(item => item.kind === 'assistant' && item.streaming) : thinking) && agent.pending === undefined && (
               <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
                   <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
@@ -848,6 +850,7 @@ function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions
          而失配的表现是"断言还在跑，但什么都没查到"——那是假通过。 */
       data-message-kind={isUser ? 'user' : 'assistant'}
       data-message-id={item.id}
+      data-streaming={item.kind === 'assistant' && item.streaming ? 'true' : undefined}
     >
       <span
         className={cn(
@@ -894,6 +897,9 @@ function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions
                 <Markdown text={item.text} />
               </Suspense>
             )}
+          {item.kind === 'assistant' && item.streaming && (
+            <span aria-label="正在生成回复" className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-gold-deep align-middle" />
+          )}
         </div>
 
         {/* 正在念的这一条挂上播放器：波形 + 进度条 + 时间。
@@ -909,7 +915,7 @@ function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions
           />
         )}
 
-        <MessageActions
+        {!(item.kind === 'assistant' && item.streaming) && <MessageActions
           text={item.text}
           isUser={isUser}
           canSpeak={actions.canSpeak}
@@ -921,7 +927,7 @@ function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions
           onSpeak={() => { actions.onSpeak(item) }}
           onStopSpeak={actions.onStopSpeak}
           onEdit={() => { actions.onEdit(item) }}
-        />
+        />}
       </div>
     </div>
   )

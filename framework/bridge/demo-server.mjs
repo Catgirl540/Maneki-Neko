@@ -55,6 +55,8 @@ import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
 import { streamVolcTTS } from './volc-stream.mjs'
 import { createDemoBank } from './demo-bank.mjs'
 import { createBankAgent, bankError } from './bank-agent.mjs'
+import { createEventPolling } from './event-polling.mjs'
+import { createAssistantStream } from './assistant-stream.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -322,10 +324,12 @@ const pendingConsents = new Map()
 
 /** 每个会话的 SSE 订阅者：sessionId → Set<res>。 */
 const streams = new Map()
+const eventPolling = createEventPolling()
 
 /** 把一条 SSE 事件推给某个会话的所有订阅者。 */
 function publish(sessionId, event) {
   const entry = sessions.get(sessionId)
+  if (HTTP_BANK && entry) eventPolling.remember(entry, event)
   // 保留可重放事件，敏感卡信息仅发送一次且不进入缓冲。
   const replayable = event.type !== 'card-secret'
   let id
@@ -403,10 +407,6 @@ let harnessStarting
 /** 从会话事件里抽出给网页看的东西。 */
 function projectEvent(sessionId, event) {
   switch (event.type) {
-    case 'assistant/message': {
-      const text = textOf(event.data?.message?.content ?? [])
-      return text === '' ? undefined : { type: 'assistant', text }
-    }
     case 'tool/call':
       return {
         type: 'tool-call',
@@ -460,22 +460,30 @@ function safeParse(text) {
 /** 确保 harness 已启动。 */
 async function ensureHarness() {
   if (harnessStarting) return harnessStarting
-  // 当前适配器没有 extra_body 配置；仅给这个子进程加载请求适配层。
-  const fallbackImport = new URL('./model-fallback-fetch.mjs', import.meta.url).href
-  const fallbackEnv = PROVIDER === 'openrouter' && process.env.LUCKYCAT_FALLBACK_MODELS
-    ? { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${fallbackImport}`.trim() }
-    : undefined
-  const candidate = new DeepSeekHarness({
-    dshBin: join(ROOT, 'node_modules', '.bin', 'dsh'), profile: 'luckycat',
-    provider: PROVIDER, model: MODEL, initializeTimeoutMs: 30_000,
-    ...fallbackEnv === undefined ? {} : { env: fallbackEnv },
-    ...PATCHES.length === 0 ? {} : { patches: PATCHES },
-  })
-  harness = candidate
-  harnessStarting = candidate.start().then(() => candidate).catch(async error => {
+  harnessStarting = (async () => {
+    // SDK 0.1.6 只公开完成消息；用树外插件扩展通知，不修改运行时依赖。
+    const streamPatch = join(home, 'assistant-stream.patch.yml')
+    await mkdir(home, { recursive: true })
+    await writeFile(streamPatch, JSON.stringify([{ insert: [{ id: 'luckycat-assistant-stream', name: join(ROOT, 'bridge/assistant-stream-plugin.mjs') }] }]))
+    // 当前适配器没有 extra_body 配置；仅给这个子进程加载请求适配层。
+    const fallbackImport = new URL('./model-fallback-fetch.mjs', import.meta.url).href
+    const fallbackEnv = PROVIDER === 'openrouter' && process.env.LUCKYCAT_FALLBACK_MODELS
+      ? { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${fallbackImport}`.trim() }
+      : undefined
+    const candidate = new DeepSeekHarness({
+      dshBin: join(ROOT, 'node_modules', '.bin', 'dsh'), profile: 'luckycat',
+      provider: PROVIDER, model: MODEL, initializeTimeoutMs: 30_000,
+      ...fallbackEnv === undefined ? {} : { env: fallbackEnv },
+      patches: [streamPatch, ...PATCHES],
+    })
+    harness = candidate
+    await candidate.start()
+    return candidate
+  })().catch(async error => {
+    const failed = harness
     harnessStarting = undefined
     harness = undefined
-    await candidate.close().catch(() => {})
+    await failed?.close().catch(() => {})
     throw error
   })
   return harnessStarting
@@ -509,6 +517,7 @@ async function runTurn(sessionId, input) {
     return
   }
   entry.busy = true
+  const assistantStream = createAssistantStream(sessionId, event => publish(sessionId, event))
   publish(sessionId, { type: 'status', status: 'running' })
   try {
     const active = await ensureHarness()
@@ -517,8 +526,15 @@ async function runTurn(sessionId, input) {
     entry.started = true
     const result = await entry.handle.run(input, {
       onNotification: (notification) => {
+        if (notification.params.sessionId !== sessionId) return
+        if (notification.method === 'luckycat.assistant-stream') {
+          assistantStream.frame(notification.params.frame)
+          return
+        }
         if (notification.method !== 'session.event') return
-        const projected = projectEvent(sessionId, notification.params.event)
+        const event = notification.params.event
+        const projected = event.type === 'assistant/message' || event.type === 'assistant/attempt'
+          ? assistantStream.settle(event) : projectEvent(sessionId, event)
         if (projected !== undefined) publish(sessionId, projected)
       },
     })
@@ -528,6 +544,7 @@ async function runTurn(sessionId, input) {
   } catch (error) {
     publish(sessionId, { type: 'error', message: `agent 运行失败：${error instanceof Error ? error.message : String(error)}` })
   } finally {
+    assistantStream.close()
     entry.busy = false
     publish(sessionId, { type: 'status', status: 'idle' })
   }
@@ -748,18 +765,36 @@ async function handle(req, res) {
     return
   }
 
+  // 短请求事件通道：沿用上方银行登录与会话归属校验，不执行或重发消息。
+  if (HTTP_BANK && req.method === 'GET' && parts.length === 4 && parts[0] === 'agent-api' && parts[1] === 'sessions' && parts[3] === 'events') {
+    const sessionId = parts[2]
+    const entry = sessions.get(sessionId)
+    const initial = [{ type: 'hello', sessionId }]
+    for (const { challenge } of pendingConsents.values()) {
+      if (challenge.sessionId === sessionId) initial.push({ type: 'consent', challenge })
+    }
+    for (const { resolve, timer, ...question } of pendingQuestions.values()) {
+      if (question.sessionId === sessionId) initial.push({ type: 'question', question })
+    }
+    initial.push({ type: 'status', status: entry.busy ? 'running' : 'idle' })
+    sendJson(res, 200, eventPolling.read(entry, url.searchParams.get('after'), initial))
+    return
+  }
+
   // SSE 事件流
   if (req.method === 'GET' && parts.length === 4 && parts[0] === 'agent-api' && parts[1] === 'sessions' && parts[3] === 'stream') {
     const sessionId = parts[2]
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
-      'cache-control': 'no-store',
+      'cache-control': 'no-store, no-transform',
       connection: 'keep-alive',
       'access-control-allow-origin': '*',
       // 关掉 nginx 一类中间层的缓冲，否则事件会被攒着不发。
       'x-accel-buffering': 'no',
     })
-    res.write(`data: ${JSON.stringify({ type: 'hello', sessionId })}\n\n`)
+    const baseline = HTTP_BANK ? `id: ${sessions.get(sessionId).eventSeq ?? 0}\n` : ''
+    // 部分代理攒满小响应才交给浏览器。注释填充不产生业务事件，旧版页面也能忽略。
+    res.write(`:${' '.repeat(4096)}\n\n${baseline}data: ${JSON.stringify({ type: 'hello', sessionId })}\n\n`)
     if (HTTP_BANK) {
       const entry = sessions.get(sessionId)
       const cursor = Number(req.headers['last-event-id'] ?? 0)
@@ -1236,6 +1271,7 @@ server.listen(PORT, '127.0.0.1', () => {
 
 /** 优雅退出：结束所有待确认事项与 SSE 连接，再关 harness。 */
 async function shutdown() {
+  eventPolling.close()
   bankAgent?.close()
   for (const [challengeId, entry] of pendingConsents) {
     clearTimeout(entry.timer)

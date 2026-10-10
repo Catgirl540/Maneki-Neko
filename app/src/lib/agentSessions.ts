@@ -25,7 +25,7 @@ export type ChatItem =
    * 见 `lib/image.ts` 的 `prepareImage`——它返回的两份数据是分开的。
    */
   | { kind: 'user'; id: string; text: string; thumb?: string; imageName?: string }
-  | { kind: 'assistant'; id: string; text: string }
+  | { kind: 'assistant'; id: string; text: string; messageId?: string; streaming?: boolean }
   | { kind: 'tool'; id: string; name: string; state: 'running' | 'done' | 'error'; text?: string }
   | { kind: 'notice'; id: string; text: string; tone: 'info' | 'error' }
 
@@ -247,7 +247,8 @@ function sanitizeItem(raw: unknown, index: number): ChatItem | undefined {
   if (kind === 'user' || kind === 'assistant') {
     const text = raw['text']
     if (typeof text !== 'string') return undefined
-    if (kind === 'assistant') return { kind, id, text }
+    if (kind === 'assistant') return { kind, id, text,
+      ...(typeof raw['messageId'] === 'string' ? { messageId: raw['messageId'] } : {}) }
     // 缩略图是可选的；存坏了就丢掉它，不能让整条消息消失。
     const thumb = typeof raw['thumb'] === 'string' && raw['thumb'].startsWith('data:image/')
       ? raw['thumb']

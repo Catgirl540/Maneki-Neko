@@ -96,7 +96,9 @@ export type AgentEvent =
   | { type: 'bank-updated' }
   | { type: 'card-secret'; cardId: string; field: string; value: string; expiresAt: number }
   | { type: 'status'; status: 'running' | 'idle' }
-  | { type: 'assistant'; text: string }
+  | { type: 'assistant'; text: string; messageId?: string }
+  | { type: 'assistant-update'; messageId: string; text: string }
+  | { type: 'assistant-reset'; messageId: string }
   | { type: 'tool-call'; callId: string; name: string; arguments: unknown }
   | { type: 'tool-result'; callId: string; isError: boolean; text: string }
   | { type: 'consent'; challenge: ConsentChallenge }
@@ -282,11 +284,8 @@ export async function sendAgentMessage(
 }
 
 /**
- * 打开事件流（SSE）。返回一个关闭函数。
- * @param sessionId - 会话 id。
- * @param onEvent - 每条事件的回调。
- * @param onError - 连接断开时的回调（浏览器会自动重连，所以这里只是提示）。
- * @returns 关闭函数。
+ * 优先 SSE；首帧被代理缓冲或连接断开时，改用有游标的短请求接收事件。
+ * 两种接收方式共用同一会话，不重新提交消息或银行操作。
  */
 export function openAgentStream(
   sessionId: string,
@@ -295,49 +294,105 @@ export function openAgentStream(
 ): () => void {
   const controller = new AbortController()
   let lastId = ''
+  let busy = false
+  const receive = (event: AgentEvent) => {
+    if (controller.signal.aborted) return
+    if (event.type === 'status') busy = event.status === 'running'
+    onEvent(event)
+  }
+  const pause = (ms: number): Promise<void> => new Promise(resolve => {
+    if (controller.signal.aborted) { resolve(); return }
+    const cancel = () => { window.clearTimeout(timer); resolve() }
+    const timer = window.setTimeout(() => {
+      controller.signal.removeEventListener('abort', cancel)
+      resolve()
+    }, ms)
+    controller.signal.addEventListener('abort', cancel, { once: true })
+  })
+  const rejected = async (response: Response): Promise<boolean> => {
+    if (response.ok) return false
+    const detail = await response.json().catch(() => ({})) as { code?: string }
+    checkExpired(response, detail.code)
+    return [401, 403, 404].includes(response.status)
+  }
+
   void (async () => {
-    while (!controller.signal.aborted) {
-      try {
-        const headers = authHeaders({ Accept: 'text/event-stream' })
-        if (lastId) headers.set('Last-Event-ID', lastId)
-        const response = await fetch(`${AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/stream`, { headers, signal: controller.signal })
-        if (!response.ok) {
-          const detail = await response.json().catch(() => ({})) as { code?: string }
-          checkExpired(response, detail.code)
-          onError?.(new Event('error'))
-          if ([401, 403, 404].includes(response.status)) return
-          throw new Error('事件流不可用')
-        }
-        if (!response.body) throw new Error('事件流响应为空')
-        const reader = response.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
+    const attempt = new AbortController()
+    const cancel = () => attempt.abort()
+    controller.signal.addEventListener('abort', cancel, { once: true })
+    // 首帧超时不直接判定发送失败：释放长连接后尝试有限长度的 JSON 响应。
+    const handshake = window.setTimeout(cancel, 4_000)
+    try {
+      const response = await fetch(`${AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/stream`, {
+        headers: authHeaders({ Accept: 'text/event-stream' }),
+        signal: attempt.signal,
+        cache: 'no-store',
+      })
+      if (await rejected(response)) { onError?.(new Event('error')); return }
+      if (!response.ok || !response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
+        throw new Error('事件流不可用')
+      }
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
         for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-          for (;;) {
-            const match = /\r?\n\r?\n/.exec(buffer)
-            if (!match || match.index === undefined) break
-            const block = buffer.slice(0, match.index)
-            buffer = buffer.slice(match.index + match[0].length)
-            const lines = block.split(/\r?\n/)
-            const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n')
-            const id = lines.find(line => line.startsWith('id:'))?.slice(3).trim()
-            if (id) lastId = id
-            if (data) { try { onEvent(JSON.parse(data) as AgentEvent) } catch { /* 忽略坏帧 */ } }
+          const match = /\r?\n\r?\n/.exec(buffer)
+          if (!match || match.index === undefined) break
+          const block = buffer.slice(0, match.index)
+          buffer = buffer.slice(match.index + match[0].length)
+          const lines = block.split(/\r?\n/)
+          const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trim()).join('\n')
+          if (!data) continue
+          let event: AgentEvent
+          try { event = JSON.parse(data) as AgentEvent } catch { continue }
+          const id = lines.find(line => line.startsWith('id:'))?.slice(3).trim()
+          if (id) lastId = id
+          if (event.type === 'hello') {
+            window.clearTimeout(handshake)
+            // 老版本服务没有 hello 游标；从零续取，避免首条回答在切换时丢失。
+            if (!lastId) lastId = '0'
           }
+          receive(event)
         }
-        if (!controller.signal.aborted) onError?.(new Event('error'))
+      }
+    } catch {
+      // 等待首帧、网络中断和不支持流式读取，都由下面的短请求通道继续接收。
+    } finally {
+      window.clearTimeout(handshake)
+      controller.signal.removeEventListener('abort', cancel)
+      attempt.abort()
+    }
+
+    while (!controller.signal.aborted) {
+      const poll = new AbortController()
+      const stop = () => poll.abort()
+      controller.signal.addEventListener('abort', stop, { once: true })
+      const timeout = window.setTimeout(stop, 7_000)
+      try {
+        const url = new URL(`${AGENT_BASE}/sessions/${encodeURIComponent(sessionId)}/events`, window.location.origin)
+        if (lastId !== '') url.searchParams.set('after', lastId)
+        const response = await fetch(url, {
+          headers: authHeaders({ Accept: 'application/json' }), signal: poll.signal, cache: 'no-store',
+        })
+        if (await rejected(response)) { onError?.(new Event('error')); return }
+        if (!response.ok) throw new Error('事件接收失败')
+        const body = await response.json() as { cursor: string; events: AgentEvent[] }
+        if (!/^\d+$/.test(body.cursor) || !Array.isArray(body.events)) throw new Error('事件响应无效')
+        if (controller.signal.aborted) return
+        lastId = body.cursor
+        for (const event of body.events) receive(event)
       } catch {
         if (controller.signal.aborted) return
         onError?.(new Event('error'))
+      } finally {
+        window.clearTimeout(timeout)
+        controller.signal.removeEventListener('abort', stop)
       }
-      await new Promise<void>(resolve => {
-        const timer = window.setTimeout(() => { controller.signal.removeEventListener('abort', cancel); resolve() }, 1_500)
-        const cancel = () => { window.clearTimeout(timer); resolve() }
-        controller.signal.addEventListener('abort', cancel, { once: true })
-      })
+      await pause(busy ? 750 : 2_500)
     }
   })()
   return () => { controller.abort() }
