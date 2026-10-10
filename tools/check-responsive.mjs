@@ -21,7 +21,7 @@ async function chromePath() {
 }
 const browser = await chromium.launch({ executablePath: await chromePath() })
 const errors = []
-const routes = ['/dashboard', '/transfer', '/cards', '/analysis', '/wealth', '/security', '/support']
+const routes = ['/dashboard', '/cards', '/analysis', '/analysis/statistics', '/analysis/autodebits', '/wealth', '/security', '/support']
 async function checkWidth(page, label) {
   await page.waitForTimeout(350)
   const sizes = await page.evaluate(() => ({ viewport: innerWidth, content: document.documentElement.scrollWidth }))
@@ -33,9 +33,9 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.route('**/agent-api/**', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"test offline"}' }))
   await login(page, base)
-  await page.getByLabel('全局搜索').waitFor()
-  assert.equal(await page.getByLabel('全局搜索').count(), 1)
-  for (const width of [320, 390, 768, 1024, 1440]) {
+  await page.getByLabel('交易搜索').waitFor()
+  assert.equal(await page.getByLabel('交易搜索').count(), 1)
+  for (const width of [320, 390, 768, 959, 960, 980, 1440]) {
     await page.setViewportSize({ width, height: width < 600 ? 844 : 1000 })
     for (const route of routes) {
       await gotoInApp(page, route)
@@ -44,51 +44,95 @@ try {
         if (await reveal.count()) await reveal.click()
       }
       await checkWidth(page, `${width}px ${route}`)
+      if (route === '/support') {
+        const chat = await page.evaluate(() => {
+          const panel = document.querySelector('.chat-panel').getBoundingClientRect()
+          const input = document.querySelector('input[aria-label="聊天消息"]').getBoundingClientRect()
+          const bottom = innerWidth < 960 ? document.querySelector('.mobile-navigation').getBoundingClientRect().top : innerHeight
+          return { top: panel.top, bottom: panel.bottom, expectedBottom: bottom, inputBottom: input.bottom, pageHeight: document.documentElement.scrollHeight, viewportHeight: innerHeight }
+        })
+        assert.equal(chat.top, 28, '聊天区应紧贴演示声明')
+        assert(Math.abs(chat.bottom - chat.expectedBottom) <= 1, '聊天区应铺满主导航以外的可用空间')
+        assert(chat.inputBottom <= chat.bottom, '输入栏不能被主导航遮挡')
+        assert(chat.pageHeight <= chat.viewportHeight + 1, '聊天页面应只滚动消息区域')
+      }
+      const nav = page.getByRole('navigation', { name: width < 960 ? '移动端主导航' : '桌面主导航' })
+      assert.deepEqual(await nav.getByRole('link').evaluateAll(links => links.map(link => link.getAttribute('aria-label') ?? link.textContent.trim())), ['账户', '理财', '助手', '我的'])
+      const expected = route === '/wealth' ? '/wealth' : route === '/support' ? '/support' : route === '/security' ? '/security' : '/dashboard'
+      assert.deepEqual(await nav.locator('[aria-current="page"]').evaluateAll(links => links.map(link => link.getAttribute('href'))), [expected], `${route} 主导航归属`)
+      assert.equal(await page.locator('a[href="/transfer"]:visible').count(), 0, `${route} 不应存在独立转账入口`)
+      assert.equal(await page.getByRole('navigation', { name: '账户导航' }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: '更多服务' }).count(), 0)
     }
     const mobile = await page.getByRole('navigation', { name: '移动端主导航' }).isVisible()
-    assert.equal(mobile, width < 1024, `${width}px 导航断点`)
+    assert.equal(mobile, width < 960, `${width}px 导航断点`)
   }
   // 同一路由的第二次全局搜索必须更新页面筛选值。
   await gotoInApp(page, '/analysis')
   for (const word of ['咖啡', 'Apple']) {
-    await page.getByLabel('全局搜索').fill(word)
-    await page.getByLabel('全局搜索').press('Enter')
+    await page.getByLabel('交易搜索').fill(word)
+    await page.getByLabel('交易搜索').press('Enter')
     await page.waitForFunction(value => new URLSearchParams(location.search).get('q') === value, word)
-    await page.waitForFunction(value => document.querySelector('input[placeholder="搜索商户或备注"]')?.value === value, word)
-    assert.equal(await page.getByPlaceholder('搜索商户或备注').inputValue(), word)
+    await page.getByText(`搜索：${word}`, { exact: false }).waitFor()
+    assert.equal(await page.getByRole('heading', { name: '账单', exact: true }).count(), 1)
   }
-  console.log('PASS 分析页重复全局搜索同步')
+  console.log('PASS 账单重复交易搜索同步')
+  await page.getByRole('tab', { name: '餐饮', exact: true }).click()
+  await page.waitForFunction(() => new URLSearchParams(location.search).get('category') === 'dining')
+  await page.getByLabel('交易搜索').fill('咖啡')
+  await page.getByLabel('交易搜索').press('Enter')
+  await page.waitForFunction(() => new URLSearchParams(location.search).get('q') === '咖啡')
+  assert.equal(new URL(page.url()).searchParams.get('category'), 'dining', '搜索覆盖了分类筛选')
+  await page.reload()
+  await page.getByRole('heading', { name: '账单', exact: true }).waitFor()
+  assert.equal(await page.getByLabel('交易搜索').inputValue(), '咖啡')
+  const beforeDetail = page.url()
+  await page.locator('main a[href^="/transactions/"]').first().click()
+  await page.waitForURL('**/transactions/*')
+  assert.equal(await page.getByRole('navigation', { name: '账户导航' }).count(), 0)
+  assert.equal(await page.getByRole('navigation', { name: '桌面主导航' }).locator('[aria-current="page"]').getAttribute('href'), '/dashboard')
+  await page.goBack()
+  await page.waitForURL(beforeDetail)
+  assert.equal(await page.getByLabel('交易搜索').inputValue(), '咖啡')
+  await page.getByRole('button', { name: '清除关键词', exact: true }).click()
+  await page.waitForFunction(() => !new URLSearchParams(location.search).has('q'))
+  assert.equal(await page.getByLabel('交易搜索').inputValue(), '')
+  assert.equal(new URL(page.url()).searchParams.get('category'), 'dining')
+  console.log('PASS 搜索与分类保留、刷新与返回、交易详情导航归属')
 
   await page.setViewportSize({ width: 320, height: 640 })
-  const more = page.getByRole('button', { name: '更多服务' })
   await gotoInApp(page, '/dashboard')
-  await page.getByRole('button', { name: '转入', exact: true }).click()
-  const receiving = page.getByRole('dialog', { name: '转入 · 收款信息' })
-  await receiving.waitFor()
-  await checkWidth(page, '320px 收款信息弹窗')
+  const openIn = page.getByRole('button', { name: '转入', exact: true })
+  await openIn.waitFor()
+  assert.equal(await openIn.count(), 1)
+  assert.equal(await page.getByRole('button', { name: '转出', exact: true }).count(), 1)
+  await openIn.click()
+  const receiving = page.getByRole('dialog', { name: '转入', exact: true })
+  await receiving.getByRole('button', { name: '复制全部', exact: true }).waitFor()
+  await checkWidth(page, '320px 转入收款信息')
   await receiving.getByRole('button', { name: '模拟一笔转入', exact: true }).click()
   await page.getByLabel('转入金额（元）').waitFor()
-  await checkWidth(page, '320px 转入表单')
-  await page.keyboard.press('Escape')
-  await page.getByRole('dialog').waitFor({ state: 'detached' })
-  await more.click()
-  const services = page.getByRole('dialog', { name: '全部服务' })
-  await services.waitFor()
-  assert.equal(await services.getByRole('link').count(), routes.length)
+  assert.equal(await page.getByRole('dialog').count(), 1)
+  await checkWidth(page, '320px 同窗模拟入账表单')
   assert.equal(await page.evaluate(() => document.body.style.overflow), 'hidden')
   for (let i = 0; i < 12; i++) {
     await page.keyboard.press(i % 2 ? 'Shift+Tab' : 'Tab')
-    assert(await services.evaluate(el => el.contains(document.activeElement)), '弹窗焦点泄漏')
+    assert(await receiving.evaluate(el => el.contains(document.activeElement)), '弹窗焦点泄漏')
   }
   await page.keyboard.press('Escape')
-  await services.waitFor({ state: 'detached' })
-  assert(await more.evaluate(el => el === document.activeElement), '关闭后未恢复焦点')
+  await receiving.waitFor({ state: 'detached' })
+  assert(await openIn.evaluate(el => el === document.activeElement), '关闭后未恢复焦点')
   assert.notEqual(await page.evaluate(() => document.body.style.overflow), 'hidden')
-  await more.click()
-  await services.getByRole('link', { name: '理财', exact: true }).click()
-  await services.waitFor({ state: 'detached' })
-  assert.equal(new URL(page.url()).pathname, '/wealth')
-  console.log('PASS 手机全部服务、焦点循环、Escape 与路由跳转')
+  for (const [legacy, flow] of [['/receiving', 'in'], ['/transfer', 'out']]) {
+    await gotoInApp(page, legacy, { expect: '/dashboard' })
+    await page.waitForFunction(value => new URLSearchParams(location.search).get('flow') === value, flow)
+    const dialog = page.getByRole('dialog', { name: flow === 'in' ? '转入' : '转出', exact: true })
+    await dialog.waitFor()
+    await dialog.getByRole('button', { name: '关闭弹窗', exact: true }).click()
+    await dialog.waitFor({ state: 'detached' })
+    assert.equal(new URL(page.url()).searchParams.has('flow'), false)
+  }
+  console.log('PASS 单窗转入、焦点恢复与旧转账/收款地址兼容')
 
   await page.getByRole('button', { name: '通知', exact: true }).click()
   const notices = page.getByRole('dialog', { name: '最新动态' })

@@ -392,10 +392,11 @@ export function useAgentChat(): AgentChat {
         }
         handleEvent(convId, event)
       }, () => {
-        // EventSource 会自己重连；只在还没握手时把它当作失败。
+        // 握手失败必须取消底层重连，否则失败的连接仍会占用浏览器连接池。
         if (settled) return
         settled = true
         clearTimeout(timer)
+        close()
         reject(new Error('事件流连接失败'))
       })
     })
@@ -436,6 +437,10 @@ export function useAgentChat(): AgentChat {
         patch(convId, c => ({ ...c, agentSessionId: created }))
       }
       const close = await openStream(convId, agentSessionId)
+      if (!mountedRef.current || !conversationsRef.current.some(c => c.id === convId)) {
+        close()
+        throw new Error('对话已关闭')
+      }
       const entry: LiveSession = { agentSessionId, close }
       live.current.set(convId, entry)
       return entry
@@ -655,7 +660,8 @@ export function useAgentChat(): AgentChat {
     commit([conversation, ...conversationsRef.current])
     activeIdRef.current = conversation.id
     setSelectedId(conversation.id)
-  }, [commit])
+    if (current !== undefined) closeIfIdle(current.id)
+  }, [closeIfIdle, commit])
 
   /** 打开一段的事件流（已经有 agent 会话 id 才需要）。 */
   const openForViewing = useCallback((convId: string) => {

@@ -964,7 +964,7 @@ export interface RegistrationResult {
    它不装钱，只是把「你」和理财公司之间的委托关系立起来。
 
    开立前置：
-     · 银行卡实名身份已验证（姓名 / 身份证 / 短信 / 人脸）
+     · 复用银行开户时已验证的实名资料，再通过短信与人脸确认本人操作
      · 风险承受能力评估已完成且在有效期内
      · 签署投资协议
      · 绑定一个资金账户（申购扣款、赎回到账都走它）
@@ -984,8 +984,7 @@ export interface WealthAccount {
 }
 
 export interface WealthAccountOpeningRequest {
-  holderName: string
-  idNumber: string
+  /** 发送到当前实名账户绑定手机号的验证码 */
   smsCode: string
   /** 人脸核身票据 */
   faceTicket: string

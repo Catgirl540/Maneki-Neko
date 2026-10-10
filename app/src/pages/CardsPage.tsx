@@ -1,6 +1,5 @@
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
 import type { Account, BankCard, CardProduct, Cents } from '@/api/types'
 import { BrandMark } from '@/components/brand/BrandMark'
@@ -178,14 +177,7 @@ export function CardsPage() {
 
       {!cards.loading && list.length === 0 && (
         <Card>
-          <EmptyState
-            title="还没有银行卡"
-            action={
-              <Link to="/open-account">
-                <Button>去开立账户</Button>
-              </Link>
-            }
-          />
+          <EmptyState title="还没有银行卡" />
         </Card>
       )}
 
@@ -234,9 +226,6 @@ export function CardsPage() {
                   <RevealToggle shown={balanceShown} onToggle={toggleBalanceShown} />
                 </span>
               </div>
-              <Link to="/transfer" className="text-[13px] font-medium text-gold-deep hover:underline">
-                在这些卡的账户间转账 →
-              </Link>
               {error && (
                 <p className="rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">
                   {error}

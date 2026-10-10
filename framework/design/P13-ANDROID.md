@@ -226,8 +226,8 @@ android.os.NetworkOnMainThreadException
 
 安卓要显示账户、流水、理财、卡片这些页面就得有数据，而数据原本只是网页版里的
 一个前端 mock。"给安卓再抄一份 Kotlin 版"会必然与网页版漂开，所以做的是一条
-**占位后端**：把那份前端 mock 直接挂到服务器上，路径用 `API-CONTRACT.md` 里
-已经定好的 `/api/*`。
+**占位后端**：把那份前端 mock 直接挂到服务器上，路径由
+`app/src/api/contract.ts` 的 `routes` 定义（`/api/*`）。
 
 ```
 安卓 App ──► https://bank.waveflow.cn/api/… ──► nginx ──► luckycat-bridge

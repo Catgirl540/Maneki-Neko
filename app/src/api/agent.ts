@@ -3,8 +3,8 @@
  *
  * 它**刻意不进 `api/contract.ts`**：那份契约是给**银行后端**的，塞进 agent 这些东西
  * 会污染契约、也会让 `tools/check-contract.mjs` 的四方一致性检查失去意义。
- * agent 是一条独立的通道，后端就绪后由后端实现同样的形状（见
- * `design/backend-handoff/AGENT-RUNTIME-CONTRACT.md`）。
+ * agent 是一条独立的通道，服务端实现见
+ * `framework/bridge/demo-server.mjs`，HTTP 校验见 `tools/check-agent-http.mjs`。
  *
  * 服务不在时（纯前端部署）所有调用都会失败，调用方据此回落到固定话术。
  *

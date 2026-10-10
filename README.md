@@ -1,13 +1,16 @@
-# Maneki-Neko（招财猫）· 前端
+# Maneki-Neko（招财猫）
 
 > 本地启动前端、SQLite 后端与演示登录，请先看 [简洁启动说明](README-START.md)。
+
+> 客户端日常开发、配置、验证与排错，见 [前端维护手册](app/README.md)。
 
 > Maneki-Neko(招财猫)是一个集成的AI banking智能体，为了解决团队四人如何拿下10w的现实问题
 
 本仓库包含**网页前端与 Node.js + SQLite HTTP 后端**。开发与生产默认从 `/api` 读取业务数据；浏览器 mock 仅用于显式开启的开发测试。
-前后端之间只有 `app/src/api/contract.ts` 一个接口面，后端按它实现即可，前端零改动；
-接口清单、错误码表、业务不变量与**待后端拍板的开放问题**都整理在
-`design/backend-handoff/API-CONTRACT.md`。本仓根目录留了位置，后端代码放 `server/` 或 `backend/` 都行。
+银行接口、请求与响应类型以 `app/src/api/contract.ts`、`app/src/api/types.ts` 和
+`app/src/api/http.ts` 为准，业务规则由 `app/src/api/mock/` 与服务端实现共同定义。
+后端启动与数据说明见 [server/README.md](server/README.md)；
+服务器目录、服务与部署步骤见 [服务器开发交接文档](design/handoff/AGENT-HANDOFF.md)。
 
 ---
 
@@ -42,7 +45,7 @@
 │   │   │   ├── layout/         侧栏 + 应用外壳
 │   │   │   ├── ui/             按钮、卡片、输入、开关、弹层、图标集
 │   │   │   └── charts/         环形图、走势柱图
-│   │   ├── pages/              8 个页面（含交易详情 / 电子回单）
+│   │   ├── pages/              客户端页面（含交易详情 / 电子回单）
 │   │   ├── store/session.tsx   登录态 + 路由守卫
 │   │   ├── lib/                金额/日期格式化、渠道文案、useAsync、storage
 │   │   ── styles/
@@ -137,7 +140,9 @@ npm run dev --prefix app
 
 Agent 需要服务端 `OPENROUTER_API_KEY`；模型与知识库配置仍由框架 profile 管理。生产沿用桥接端口 8898 时设置 `LUCKYCAT_DEMO_PORT=8898`，同时配置 `LUCKYCAT_BANK_URL`。更新源码后必须重新编译插件、运行 bootstrap 并重启桥接服务；只部署静态前端不会更新 Agent。
 
-登录后可以查询余额、流水、交易详情、理财产品与持仓。转账必须明确付款账户、收款人、**完整收款账号**及银行代码/地区；不能仅凭尾号扣款。确认卡展示后端核对的信息和费用，支付密码由当前银行账户校验，返回同一 SQLite 后端的实际业务回执。当前 Agent 转账支持境内人民币银行转账，FPS、跨境与换汇请使用转账页面。
+OpenRouter 主模型由 `LUCKYCAT_MODEL` 指定；设置 `LUCKYCAT_FALLBACK_MODELS=deepseek/deepseek-v4.1-flash,z-ai/glm-5.3-flash` 后，主模型失败时按顺序回落。回落由 OpenRouter 在单次模型请求内处理，工具和确认流程保持原有校验。运行 `node tools/check-model-fallbacks.mjs` 验证请求适配层。
+
+登录后可以查询余额、流水、交易详情、理财产品与持仓。转账必须明确付款账户、收款人、**完整收款账号**及银行代码/地区；不能仅凭尾号扣款。确认卡展示后端核对的信息和费用，支付密码由当前银行账户校验，返回同一 SQLite 后端的实际业务回执。当前 Agent 转账支持境内人民币银行转账，FPS、跨境与换汇请使用账户总览的转出弹窗。
 
 理财申购需要先在理财页面开户和完成风险测评，并在确认卡中手动抄录风险语句。赎回使用实际持仓编号和份额；后端仍校验封闭期及可赎回份额。卡号/CVV 只在短时窗口展示，关闭、切到后台或到期会清除，不进入模型与对话存档。
 
@@ -188,17 +193,23 @@ node tools/check-agent-http.mjs --browser # 需要 Chromium，可指定 CHROME_P
 ### 页面路径
 
 `/` 是**公开的官网首页**（`pages/LandingPage.tsx`）：没登录的人一进来先看到"这是什么、
-能做什么"，而不是被直接弹到登录页。**总览在 `/dashboard`**，放在登录守卫里面。
+能做什么"，而不是被直接弹到登录页。**账户概览在 `/dashboard`**，放在登录守卫里面。
 
 | 路径 | 页面 | 要登录 |
 | --- | --- | --- |
 | `/` | 官网首页 | 否 |
 | `/login` | 登录 | 否（已登录会被送去 `/dashboard`） |
 | `/open-account` | 开户 | 否 |
-| `/dashboard` | 总览 | 是 |
-| `/transfer` `/cards` `/analysis` `/wealth` `/security` `/support` | 各功能页 | 是 |
+| `/dashboard` | 账户概览 | 是 |
+| `/cards` | 银行卡管理 | 是 |
+| `/receiving` / `/transfer` | 兼容旧地址，跳到账户总览并打开转入 / 转出弹窗 | 是 |
+| `/analysis` | 账单 | 是 |
+| `/analysis/statistics` / `/analysis/autodebits` | 收支分析 / 自动扣款 | 是 |
+| `/wealth` / `/support` / `/security` | 理财 / 助手 / 我的 | 是 |
 | `/transactions/:id` | 交易详情（电子回单） | 是 |
 | 其它 | 回落到 `/`（官网） | — |
+
+客户端一级导航统一为账户、理财、助手、我的；账户概览不设置横排子标签，转入与转出各在一个弹窗内完成。入口归属规则见 [前端维护手册](app/README.md#4-常见修改流程)。
 
 接口路径是另一回事：`/api/...` 是银行后端，`/agent-api/...` 是 agent 演示服务，
 两者都不是页面。改路径时注意 `tools/check-routes.mjs` 会兜住漏改的链接——
@@ -340,7 +351,6 @@ node tools/check-agent-http.mjs --browser # 需要 Chromium，可指定 CHROME_P
 | 会话存档的读写/裁剪/坏数据（离线，不需要浏览器和模型） | `node --import ./tools/ts-resolve-hook.mjs tools/check-sessions.mjs` |
 | Markdown/公式渲染 + 安全退让（离线） | `node --import ./tools/ts-resolve-hook.mjs tools/check-markdown.mjs` |
 | 被 import 的源码都在 git 里（离线，防"推上去编译不过"） | `node tools/check-tracked.mjs` |
-| 交接文档里写的路径真的存在、插件都写进了文档（离线） | `node tools/check-handoff-doc.mjs` |
 | 动效：动画名没拼错、关键帧只动 transform/opacity（离线） | `node tools/check-motion.mjs` |
 | 动效：减少动态效果真的生效、退场动画真的会播（需前端 dev server） | `node tools/check-motion-browser.mjs` |
 | 语音：合成 → 喂回去识别，真音频往返（需联网 + 密钥，会花极少的钱） | `cd framework && bash scripts/e2e-voice.sh` |
@@ -364,8 +374,9 @@ node tools/check-agent-http.mjs --browser # 需要 Chromium，可指定 CHROME_P
 `framework/design/P9-MESSAGE-ACTIONS.md`（消息上的复制/重新生成/朗读/编辑）、
 `framework/design/P10-IMAGE.md`（发图：内联图片块、账户隔离、tool-fs 怎么挂）、
 `framework/design/P11-PERSONA.md`（助手人设、隐藏模型名，以及"藏了界面模型自己会说"）、
-`framework/design/P12-ASK.md`（模型问用户：提问卡片、三种答法、防钓鱼守卫）、
-`design/backend-handoff/AGENT-RUNTIME-CONTRACT.md`（后端要实现的确认通道形状）。
+`framework/design/P12-ASK.md`（模型问用户：提问卡片、三种答法、防钓鱼守卫）。
+当前 Agent HTTP 与确认通道实现见 `framework/bridge/demo-server.mjs`；
+鉴权与会话归属校验见 `tools/check-agent-http.mjs`。
 
 ## 3. 前后端分离怎么落地
 
@@ -405,6 +416,7 @@ POST   /api/fps/resolve            转数快标识解析（返回登记姓名与
 POST   /api/transfers/recipient     核对本行收款账户与户名
 POST   /api/transfers/quote         转账询价（手续费/到账时间/单笔上限/是否需二次确认/换汇报价）
 POST   /api/transfers               提交转账（channel=bank 走卡号；channel=fps 走四种汇款方式）
+POST   /api/transfers/:id/recall    撤销仍在延迟到账窗口内的转账
 
 GET    /api/cards                   银行卡列表
 GET    /api/cards/products          可申请的卡产品（费用与权益由后端给）
@@ -547,7 +559,7 @@ node tools/check-watermark.mjs   # 校验水印在 5 条路由上都真的看得
   但关掉标签页 / 浏览器、或者新开一个标签页，都得重新走一遍登录。
 - **路由守卫 `RequireAuth` 不是安全边界**：它拦的是"迷路的用户"，
   不是攻击者——能在 devtools 里执行代码的人一样能改 sessionStorage。真正的边界必须在后端
-  （对照 `design/backend-handoff/AGENT-RUNTIME-CONTRACT.md` §5）
+  （见 `server/index.mjs`、`framework/bridge/demo-server.mjs` 与 `tools/check-agent-http.mjs`）。
 - 开卡没有身份核验环节（真实银行要人脸 / 身份证 OCR），演示环境只要地址与支付密码
 - 客服**已经接了真 agent**（`framework/` 的运行时 + 演示服务），会真的调用工具办事，
   敏感操作走「展示 → 确认 → 验身份」（见 `framework/design/P5-CONSENT.md`）。
@@ -999,8 +1011,8 @@ Iconify 是实测可用的那一个。
 不该让前端自己凑。
 
 演示用的「模拟一笔转入」还在，但**退到第二屏**（弹层里的一个按钮），并且明确标着演示 ——
-不然这个 demo 里余额只能减不能加。靠 `key={open ? …}` 重挂载来保证每次打开都停在收款信息首屏，
-而不是写一个「open 时 setMode」的 effect（那是在 effect 里同步 setState，多一轮渲染且被 lint 拦）。
+不然这个 demo 里余额只能减不能加。弹窗保持挂载以播放退场动画；每次打开时重置内部内容，始终从收款信息首屏开始。
+模拟入账仅在显式 mock 模式中显示，在同一弹窗内切换表单；HTTP 模式不提供该按钮。
 
 **收款账号不再遮住。** 它和余额、卡号、安全码不是一类东西：账号是**收款项**，
 本来就是给人抄去转账用的，遮起来反而妨碍用。而余额照旧遮着 —— 别把两件事混成一件
@@ -1225,7 +1237,7 @@ ZA 的做法是：注册时开的是**银行账户**，要买理财还得单独�
 ### 16.1 开立前置三件事，缺一不可
 
 1. **风险承受能力评估** —— 监管要求，且必须在有效期内（超过一年重做）
-2. **实名身份核验** —— 姓名 / 身份证 / 短信验证码 / 人脸核身
+2. **本人核验** —— 复用储蓄开户时的实名资料，只验证当前绑定手机号的短信码与人脸，无需重填姓名和身份证
 3. **签署投资协议 + 绑定资金账户** —— 申赎款项都走这个资金账户
 
 顺序是**先测评再开户**，不是并行：账户的适当性等级要在开立时确定下来并记录下来
@@ -1239,10 +1251,11 @@ if (!risk.done || risk.expired) → 403 RISK_ASSESSMENT_REQUIRED  // 开户
 if (agreement !== WEALTH_INVESTMENT_AGREEMENT) → 400 AGREEMENT_REQUIRED
 ```
 
+`POST /api/wealth/account/open` 仅提交短信码、人脸票据、资金账户与协议；服务端按登录会话读取实名状态，并核对短信目标手机号。姓名、身份证不再作为理财开户请求字段。
+
 ### 16.2 界面上怎么闸
 
-- **未开立**：理财页顶部是一张闸门卡片，写明「银行账户是装钱的地方，理财账户才是买理财的资格」，
-  并列出开立三步；**总资产与持仓整块不显示**；产品超市仍可浏览（先看后买）
+- **未开立**：理财页显示开户入口与三个步骤；**总资产与持仓整块不显示**；产品超市仍可浏览（先看后买）
 - **点申购**：产品详情页底部按钮变成「先开立理财账户」，而不是「立即申购」
 - **已开立**：恢复正常，卡片显示理财账户号与风险等级
 

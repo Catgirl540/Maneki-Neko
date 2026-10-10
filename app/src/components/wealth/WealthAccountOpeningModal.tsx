@@ -29,7 +29,7 @@ type Step = 'risk' | 'identity' | 'agreement' | 'done'
  *   · 理财账户是这里开的，它不装钱，只是把「你」和理财公司之间的委托关系立起来
  * 开立前置三件事，缺一不可：
  *   ① 风险承受能力评估（监管要求，且必须在有效期内）
- *   ② 实名身份核验（姓名 / 身份证 / 短信 / 人脸）
+ *   ② 复用已验证的实名资料，通过短信与人脸确认本人操作
  *   ③ 签署投资协议 + 绑定资金账户（申赎款项走它）
  *
  * 顺序是**先测评再开户**，不是并行 —— 因为账户的适当性等级要在开立时确定下来。
@@ -57,8 +57,6 @@ export function WealthAccountOpeningModal({
   const [currentRisk, setCurrentRisk] = useState(risk)
 
   // 身份
-  const [holderName, setHolderName] = useState('')
-  const [idNumber, setIdNumber] = useState('')
   const [smsCode, setSmsCode] = useState('')
   const [faceTicket, setFaceTicket] = useState('')
   const [scanning, setScanning] = useState(false)
@@ -113,8 +111,6 @@ export function WealthAccountOpeningModal({
     setSubmitting(true)
     try {
       const account = await api.openWealthAccount({
-        holderName: holderName.trim(),
-        idNumber: idNumber.trim(),
         smsCode,
         faceTicket,
         settlementAccountId: settlementId,
@@ -143,17 +139,10 @@ export function WealthAccountOpeningModal({
     <Modal
       open
       onClose={onClose}
+      closeDisabled={submitting}
       width="max-w-[540px]"
       title={TITLES[step]}
-      description={
-        step === 'risk'
-          ? '按投资者适当性管理要求，开立理财账户前必须先完成风险承受能力评估。'
-          : step === 'identity'
-            ? `将用 ${phone} 完成实名核验；这个号码也是你的登录号码。`
-            : step === 'agreement'
-              ? '最后一步：指定资金账户并签署投资协议。'
-              : undefined
-      }
+      description={step === 'identity' ? `验证手机号 ${phone}` : undefined}
       footer={
         step === 'agreement' ? (
           <>
@@ -228,21 +217,6 @@ export function WealthAccountOpeningModal({
       {/* —— 第二步：身份核验 —— */}
       {step === 'identity' && (
         <div className="flex flex-col gap-4">
-          <Field
-            label="姓名"
-            value={holderName}
-            onChange={(e) => setHolderName(e.target.value)}
-            placeholder="与身份证一致"
-            autoComplete="name"
-          />
-          <Field
-            label="身份证号"
-            value={idNumber}
-            inputMode="numeric"
-            onChange={(e) => setIdNumber(e.target.value.replace(/[^\dXx]/g, '').slice(0, 18))}
-            placeholder="18 位身份证号"
-          />
-
           <div className="flex items-end gap-2.5">
             <div className="min-w-0 flex-1">
               <Field
@@ -288,7 +262,7 @@ export function WealthAccountOpeningModal({
           <Button
             variant="primary"
             block
-            disabled={!holderName.trim() || idNumber.length !== 18 || !faceTicket || !smsCode}
+            disabled={!faceTicket || smsCode.length !== 6}
             onClick={() => {
               setError(null)
               setStep('agreement')
@@ -298,7 +272,7 @@ export function WealthAccountOpeningModal({
           </Button>
           <p className="text-[12px] leading-relaxed text-ink-mute">
             当前风险等级 <span className="font-medium text-ink">{currentRisk.level}</span>（
-            {TOLERANCE_LABEL[currentRisk.level]}），开立时会作为账户的适当性等级记录下来。
+            {TOLERANCE_LABEL[currentRisk.level]}）
           </p>
         </div>
       )}
@@ -309,7 +283,7 @@ export function WealthAccountOpeningModal({
           <section>
             <h3 className="mb-3 text-[13px] font-medium text-ink-soft">资金账户</h3>
             <p className="mb-3 text-[12px] leading-relaxed text-ink-mute">
-              申购扣款、赎回退款都走这个账户。理财账户本身不装钱。
+              用于申购扣款和赎回到账。
             </p>
             <div className="flex flex-col gap-2.5">
               {accounts.map((a) => {
@@ -397,10 +371,6 @@ export function WealthAccountOpeningModal({
               </dd>
             </div>
           </dl>
-
-          <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">
-            现在可以申购理财产品了。产品超市里超出你风险等级的仍会被拦下。
-          </p>
         </div>
       )}
     </Modal>

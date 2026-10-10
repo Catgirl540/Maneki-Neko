@@ -177,10 +177,6 @@ export function SessionList({
           })}
         </div>
       </div>
-
-      <p className="border-t border-line px-3 py-2.5 text-[11px] leading-4 text-ink-mute">
-        对话记录只存在这台设备上。删除只是从这里的列表里拿掉，服务端与审计日志里的记录会保留。
-      </p>
     </div>
   )
 }

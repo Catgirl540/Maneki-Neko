@@ -1,5 +1,9 @@
 # 代码审查报告 · 招财猫银行（前端）
 
+> 历史审查报告，结论对应当时的代码，不代表当前状态。文中 API-CONTRACT 是已移除的旧交接文档；
+> 需要核对审查上下文时可查阅 [旧 API 契约的历史版本](https://github.com/Catgirl540/Maneki-Neko/blob/078530a55686d28452e1403d33c34c5b43cca21a/design/backend-handoff/API-CONTRACT.md)。
+> 当前接口以 `app/src/api/contract.ts`、`app/src/api/types.ts` 和实现代码为准。
+
 - 审查对象：`/home/bigguga/文档/招财猫Bank`（前端 `app/`，74 个 `.ts/.tsx`，15,233 行）
 - 审查方式：**只读**。没有修改任何源码/配置，没有启动或重启 dev server，没有装依赖。
   除本文件外没有写任何文件。

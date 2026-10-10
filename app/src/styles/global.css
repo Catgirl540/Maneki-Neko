@@ -123,17 +123,30 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  .chat-panel {
-    height: clamp(440px, calc(100dvh - 280px), 840px);
-  }
 }
 
 @media (max-width: 959px) {
   .app-content {
     padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
   }
-  .chat-panel {
-    height: max(360px, calc(100dvh - 350px));
+}
+
+/* 助手占满视口内的工作区，保留主导航与演示声明。 */
+.chat-workspace {
+  height: calc(100dvh - 28px);
+  min-height: 0;
+  overflow: hidden;
+}
+.chat-workspace > aside { height: 100%; }
+.app-content-chat {
+  display: flex;
+  min-height: 0;
+  max-width: none;
+  padding: 0;
+}
+@media (max-width: 959px) {
+  .app-content-chat {
+    padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
   }
 }
 

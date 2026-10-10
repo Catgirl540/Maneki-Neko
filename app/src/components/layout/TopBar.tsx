@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { BellIcon, SearchIcon } from '@/components/ui/icons'
 import { CatMark } from '@/components/brand/Logo'
 import { Modal } from '@/components/ui/Modal'
@@ -11,7 +11,7 @@ import { api } from '@/api'
 /** 搜索与通知共用响应式顶栏，通知使用可滚动、可键盘操作的弹窗。 */
 export function TopBar() {
   const navigate = useNavigate()
-  const [keyword, setKeyword] = useState('')
+  const location = useLocation()
   const [open, setOpen] = useState(false)
   const security = useAsync(() => api.getSecurityOverview(), [])
   const alerts = security.data?.logs.slice(0, 3) ?? []
@@ -19,17 +19,9 @@ export function TopBar() {
   return (
     <>
       <header className="sticky top-7 z-30 flex h-16 items-center gap-3 border-b border-line bg-paper/95 px-4 backdrop-blur lg:h-[76px] lg:gap-4 lg:px-8 print:hidden">
-        <Link to="/dashboard" aria-label="招财猫银行总览" className="shrink-0 lg:hidden"><CatMark className="size-8 text-gold" /></Link>
-        <form role="search" className="flex h-11 min-w-0 max-w-[440px] flex-1 items-center gap-2 rounded-chip border border-line bg-surface px-3 transition-colors focus-within:border-gold sm:gap-3 sm:px-5" onSubmit={(e) => {
-          e.preventDefault()
-          navigate(keyword.trim() ? `/analysis?q=${encodeURIComponent(keyword.trim())}` : '/analysis')
-        }}>
-          <SearchIcon size={18} className="shrink-0 text-ink-mute" />
-          <input type="search" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索交易、收款人或备注" aria-label="全局搜索" className="h-full min-w-0 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-mute" />
-          <button type="submit" className="sr-only">搜索</button>
-        </form>
-        <span className="ml-auto hidden text-[12px] text-ink-soft xl:block">每一笔收支，都心中有数</span>
-        <button type="button" onClick={() => setOpen(true)} aria-label="通知" aria-haspopup="dialog" aria-expanded={open} className="relative ml-auto grid size-11 shrink-0 place-items-center rounded-chip border border-line bg-surface text-ink-soft transition-colors hover:border-line-strong hover:text-ink xl:ml-0">
+        <span aria-label="招财猫银行" className="shrink-0 lg:hidden"><CatMark className="size-8 text-gold" /></span>
+        <TransactionSearch key={`${location.pathname}:${new URLSearchParams(location.search).get('q') ?? ''}`} />
+        <button type="button" onClick={() => setOpen(true)} aria-label="通知" aria-haspopup="dialog" aria-expanded={open} className="relative ml-auto grid size-11 shrink-0 place-items-center rounded-chip border border-line bg-surface text-ink-soft transition-colors hover:border-line-strong hover:text-ink">
           <BellIcon size={20} />
           {alerts.length > 0 && <span className="absolute top-2 right-2.5 size-2 rounded-chip bg-coral" />}
         </button>
@@ -46,5 +38,25 @@ export function TopBar() {
         </ul>
       </Modal>
     </>
+  )
+}
+
+/** 路径或关键词变化时重建输入，分类筛选不打断输入。 */
+function TransactionSearch() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [keyword, setKeyword] = useState(() => location.pathname === '/analysis' ? new URLSearchParams(location.search).get('q') ?? '' : '')
+  return (
+    <form role="search" className="flex h-11 min-w-0 max-w-[440px] flex-1 items-center gap-2 rounded-chip border border-line bg-surface px-3 transition-colors focus-within:border-gold sm:gap-3 sm:px-5" onSubmit={(e) => {
+      e.preventDefault()
+      const query = new URLSearchParams(location.pathname === '/analysis' ? location.search : '')
+      if (keyword.trim()) query.set('q', keyword.trim())
+      else query.delete('q')
+      navigate(query.size ? `/analysis?${query}` : '/analysis')
+    }}>
+      <SearchIcon size={18} className="shrink-0 text-ink-mute" />
+      <input type="search" value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="搜索交易" aria-label="交易搜索" className="h-full min-w-0 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-mute" />
+      <button type="submit" className="sr-only">搜索</button>
+    </form>
   )
 }

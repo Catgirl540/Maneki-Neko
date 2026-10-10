@@ -1,5 +1,4 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
 import type { SupportMessage } from '@/api/types'
 import { AgentCardSecret } from '@/components/agent/AgentCardSecret'
@@ -18,7 +17,6 @@ import { Modal } from '@/components/ui/Modal'
 import { Tag } from '@/components/ui/Segmented'
 import {
   AlertIcon,
-  ArrowRightIcon,
   CheckIcon,
   CloseIcon,
   HistoryIcon,
@@ -80,7 +78,6 @@ export function SupportPage() {
   const probing = agent.status === 'probing'
   /** 当前对话的内容（没打开任何一段时是空的）。单独取出来当依赖：`?? []` 每次渲染都是新数组。 */
   const items = agent.active?.items
-  const itemCount = items?.length ?? 0
   const activeBusy = agent.activeId !== undefined && agent.busyIds.includes(agent.activeId)
 
   // 语音模式下，agent 一开口说话就退出"等回答"状态（转圈该停了）。
@@ -274,20 +271,12 @@ export function SupportPage() {
   }
 
   return (
-    <div className="flex flex-col gap-7">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <AgentCardSecret />
-      <header className="float-up flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
-            智能客服
-          </h1>
-        </div>
-        <ModeTag status={agent.status} />
-      </header>
+      <h1 className="sr-only">助手</h1>
 
-      {/* 对话。高度跟着视口走：右侧两栏撤掉之后，聊天区可以占满一屏，
-          确认卡片不用滚动就能看全（有 min-height 兜住小窗口）。 */}
-      <Card padded={false} className="chat-panel float-up relative flex min-h-0 overflow-hidden">
+      {/* 对话铺满工作区，消息区独立滚动，输入栏始终可见。 */}
+      <Card padded={false} className="chat-panel relative flex min-h-0 flex-1 overflow-hidden rounded-none border-0">
         {/* 历史对话是抽屉，不是常驻侧栏：默认收着，聊天窗独占整宽。 */}
         {/* 抽屉用**宽度**动画而不是挂载/卸载：聊天区会跟着平滑重排，
             和左侧主导航收起时是同一套动作（`transition-[width]` + 同一条缓动）。
@@ -336,8 +325,9 @@ export function SupportPage() {
                 {usingAgent ? '在线 · 敏感操作需你确认' : '账户客服 · 消息服务'}
               </span>
             </span>
+            <span className="ml-auto shrink-0"><ModeTag status={agent.status} /></span>
             {usingAgent && (
-              <span className="flex w-full flex-wrap items-center gap-1 border-t border-line pt-3 sm:ml-auto sm:w-auto sm:border-0 sm:pt-0">
+              <span className="flex w-full flex-wrap items-center gap-1 border-t border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
                 {/* 语音模式开关。服务端没开语音能力时**不显示**这个按钮，
                     而不是显示了再报错——用户点一个注定失败的东西没有意义。 */}
                 {voice.available && (
@@ -448,13 +438,6 @@ export function SupportPage() {
                   ))}
                 </span>
               </div>
-            )}
-
-            {usingAgent && itemCount === 0 && agent.pending === undefined && (
-              <p className="rounded-card bg-sunk px-4 py-3 text-[13px] text-ink-soft">
-                试试下面的问题。涉及转账、理财申购、查看卡号密码这类操作时，
-                我会先把交易信息列出来，等你确认并验证支付密码之后才执行。
-              </p>
             )}
           </div>
 
@@ -970,18 +953,6 @@ function MessageBubble({ message }: { message: SupportMessage }) {
         >
           {message.text}
         </div>
-
-        {message.actions && message.actions.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            {message.actions.map((action) => (
-              <Link key={action.to} to={action.to}>
-                <Button size="sm" icon={<ArrowRightIcon size={15} />}>
-                  {action.label}
-                </Button>
-              </Link>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )

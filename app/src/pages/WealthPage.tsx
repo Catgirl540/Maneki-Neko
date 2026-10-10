@@ -94,7 +94,7 @@ export function WealthPage() {
         <Skeleton className="h-52 rounded-card" />
       ) : !opened ? (
         <Card className="float-up">
-          <div className="flex flex-wrap items-start gap-6">
+          <div className="flex flex-wrap items-center gap-6">
             <span className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold-tint text-gold-deep">
               <ShieldIcon size={24} />
             </span>
@@ -102,29 +102,21 @@ export function WealthPage() {
               <h2 className="text-[19px] leading-tight font-semibold text-ink">
                 还没有理财账户
               </h2>
-              <p className="mt-2 text-[14px] leading-relaxed text-ink-soft">
-                银行账户是装钱的地方，理财账户才是买理财的资格。
-                理财账户不装钱，它把「你」和理财公司之间的委托关系立起来，
-                申购扣款与赎回到账都走你指定的资金账户。
-              </p>
             </div>
           </div>
 
           <ol className="mt-6 grid gap-4 border-t border-line pt-6 sm:grid-cols-3">
             {[
-              { n: '1', title: '风险承受能力评估', desc: '监管要求，结果有效期一年' },
-              { n: '2', title: '实名身份核验', desc: '姓名 / 身份证 / 短信 / 人脸' },
-              { n: '3', title: '签署投资协议', desc: '并指定一个资金账户' },
+              { n: '1', title: '风险承受能力评估' },
+              { n: '2', title: '实名身份核验' },
+              { n: '3', title: '签署投资协议' },
             ].map((item) => (
-              <li key={item.n} className="flex gap-3">
+              <li key={item.n} className="flex items-center gap-3">
                 <span className="grid size-7 shrink-0 place-items-center rounded-chip bg-sunk text-[12px] font-semibold text-ink-soft">
                   {item.n}
                 </span>
                 <span className="min-w-0">
                   <span className="block text-[14px] font-medium text-ink">{item.title}</span>
-                  <span className="mt-0.5 block text-[12px] leading-relaxed text-ink-mute">
-                    {item.desc}
-                  </span>
                 </span>
               </li>
             ))}
@@ -139,9 +131,6 @@ export function WealthPage() {
             >
               开立理财账户
             </Button>
-            <p className="text-[12px] text-ink-mute">
-              开立后可以浏览并申购理财产品；产品超市现在就可以看。
-            </p>
           </div>
         </Card>
       ) : null}
@@ -213,7 +202,7 @@ export function WealthPage() {
                 {RISK_PLAIN_LABEL[maxRiskFor(risk.level)]}）及以下风险等级的产品。
               </p>
               <p className="num mt-2 text-[12px] text-ink-mute">
-                有效期至 {risk.expiresAt.slice(0, 10)} · 监管要求满一年需重新评估
+                有效期至 {risk.expiresAt.slice(0, 10)}
               </p>
               <Button className="mt-5" block icon={<ShieldIcon size={18} />} onClick={() => setAssessing(true)}>
                 重新评估
@@ -223,8 +212,8 @@ export function WealthPage() {
             <>
               <p className="mt-4 text-[14px] leading-relaxed text-ink-soft">
                 {risk.expired && risk.done
-                  ? '你的评估结果已超过一年。监管要求重新评估后才能继续购买理财产品。'
-                  : '按投资者适当性管理要求，首次购买理财产品前必须完成风险承受能力评估。'}
+                  ? '评估已过期，请重新评估。'
+                  : '购买前请完成风险评估。'}
               </p>
               <Button
                 variant="primary"
@@ -370,7 +359,7 @@ export function WealthPage() {
 
                 <span className="mt-3 flex items-center gap-2 text-[12px]">
                   {purchasable ? (
-                    <span className="text-gold-deep">符合你的风险等级 · 查看详情</span>
+                    <span className="text-gold-deep">查看详情</span>
                   ) : (
                     <span className="text-coral">超出你的风险承受能力</span>
                   )}
@@ -441,7 +430,7 @@ export function WealthPage() {
           questions={questions.data}
           risk={risk}
           onClose={() => setOpeningAccount(false)}
-          onRiskUpdated={(result) => setAssessed(result)}
+          onRiskUpdated={() => overview.reload()}
           onOpened={(acc) => {
             setOpeningAccount(false)
             overview.reload()

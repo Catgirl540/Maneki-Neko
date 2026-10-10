@@ -96,8 +96,8 @@ class LoginViewModel(private val bank: BankApi) : ViewModel() {
     /**
      * 把异常变成一句能显示的话。
      *
-     * [BankApiException.message] 已经是后端给的中文文案（`API-CONTRACT.md` 要求
-     * "直接展示给用户、前端不做任何二次包装"），所以**不要**再包一层
+     * [BankApiException.message] 已经是后端给的中文文案，与网页版
+     * `app/src/api/http.ts` 一样直接展示，所以**不要**再包一层
      * "登录失败：…"。网络层异常才需要兜底。
      */
     private fun readable(e: Exception): String = when (e) {

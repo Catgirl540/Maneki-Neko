@@ -18,7 +18,7 @@ import java.io.IOException
 /**
  * 银行后端的错误。
  *
- * 信封是 `API-CONTRACT.md` 定好的 **`{ message, code }` + HTTP 状态码**，
+ * 错误形状与 `app/src/api/http.ts` 一致：**`{ message, code }` + HTTP 状态码**，
  * 不是桥接那边用的 `{ error }`——两套东西，别混。
  *
  * [code] 是机器可判别的错误码，界面只在少数地方用它分支
@@ -34,8 +34,8 @@ class BankApiException(
 /**
  * 银行后端（`/api/…`）的客户端。
  *
- * 路径与 `app/src/api/contract.ts` 的 `routes`、以及
- * `design/backend-handoff/API-CONTRACT.md` 一一对应。
+ * 路径与 `app/src/api/contract.ts` 的 `routes` 一一对应；
+ * 请求与响应类型以 `app/src/api/types.ts` 为准。
  * 演示环境里这一层由 `framework/bridge/demo-bank.mjs` 提供，
  * 真后端上线时只需换 [baseUrl]。
  *

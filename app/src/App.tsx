@@ -1,10 +1,13 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
+import { AccountLayout } from '@/components/layout/AccountLayout'
 import { DemoWatermark } from '@/components/layout/DemoWatermark'
 import { ScrollToTop } from '@/components/layout/ScrollToTop'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { ToastProvider } from '@/components/ui/Toast'
 import { AnalysisPage } from '@/pages/AnalysisPage'
+import { BillsPage } from '@/pages/BillsPage'
+import { AutoDebitsPage } from '@/pages/AutoDebitsPage'
 import { CardsPage } from '@/pages/CardsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LandingPage } from '@/pages/LandingPage'
@@ -13,7 +16,6 @@ import { OpenAccountStandalone } from '@/pages/OpenAccountPage'
 import { SecurityPage } from '@/pages/SecurityPage'
 import { SupportPage } from '@/pages/SupportPage'
 import { TransactionDetailPage } from '@/pages/TransactionDetailPage'
-import { TransferPage } from '@/pages/TransferPage'
 import { WealthPage } from '@/pages/WealthPage'
 import { SessionProvider, RequireAuth } from '@/store/session'
 import { useSession } from '@/store/session-context'
@@ -61,13 +63,16 @@ export default function App() {
                   </RequireAuth>
                 }
               >
-                {/* 总览从 `/` 挪到了 `/dashboard`：`/` 让给官网（见 LandingPage 的说明） */}
-                <Route path="/dashboard" element={<DashboardPage />} />
-                {/* 交易详情（电子回单）：从任意流水行点进来 */}
-                <Route path="/transactions/:id" element={<TransactionDetailPage />} />
-                <Route path="/transfer" element={<TransferPage />} />
-                <Route path="/cards" element={<CardsPage />} />
-                <Route path="/analysis" element={<AnalysisPage />} />
+                <Route element={<AccountLayout />}>
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/cards" element={<CardsPage />} />
+                  <Route path="/receiving" element={<Navigate to="/dashboard?flow=in" replace />} />
+                  <Route path="/analysis" element={<BillsPage />} />
+                  <Route path="/analysis/statistics" element={<AnalysisPage />} />
+                  <Route path="/analysis/autodebits" element={<AutoDebitsPage />} />
+                  <Route path="/transactions/:id" element={<TransactionDetailPage />} />
+                </Route>
+                <Route path="/transfer" element={<Navigate to="/dashboard?flow=out" replace />} />
                 <Route path="/wealth" element={<WealthPage />} />
                 <Route path="/security" element={<SecurityPage />} />
                 <Route path="/support" element={<SupportPage />} />

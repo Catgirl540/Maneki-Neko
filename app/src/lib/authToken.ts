@@ -17,8 +17,8 @@
  *
  * 令牌由后端签发与校验，前端收到未授权响应后会清除会话。
  * `RequireAuth` 挡的是**迷路的用户**，不是攻击者：能在 devtools 里执行代码的人，
- * 一样能把这两个值塞进 sessionStorage。真正的边界必须在后端——见
- * `design/backend-handoff/AGENT-RUNTIME-CONTRACT.md` §5。
+ * 一样能把这两个值塞进 sessionStorage。真正的边界在后端：
+ * `server/index.mjs` 与 `framework/bridge/demo-server.mjs`，验证见 `tools/check-agent-http.mjs`。
  *
  * ## 业务数据**不在这里**
  *

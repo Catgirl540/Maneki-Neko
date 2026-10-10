@@ -136,7 +136,9 @@ if (broken.length === 0) {
 
 // `/` 由兜底 `<Navigate to="/">` 落到，单独放行；`*` 本身不是页面。
 const reachable = new Set(links.map(l => l.target.split(/[?#]/)[0]))
-const orphans = [...exact].filter(route => !reachable.has(route) && route !== '/' && route !== '')
+// 兼容旧地址的重定向不是页面，不需要再提供独立入口；其目标仍由链接检查验证。
+const redirects = new Set([...appSource.matchAll(/<Route\s+path="([^"]+)"\s+element=\{<Navigate\b/g)].map(match => match[1]))
+const orphans = [...exact].filter(route => !reachable.has(route) && !redirects.has(route) && route !== '/' && route !== '')
 if (orphans.length === 0) {
   ok('路由表里没有走不到的页面（每条都至少被一处链接指着）')
 } else {

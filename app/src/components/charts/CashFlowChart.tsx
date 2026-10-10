@@ -68,7 +68,7 @@ const fullLabel = (date: string) => {
  * 现金流面积图：收入（金）与支出（蓝）双序列叠加。
  * 鼠标进入即出竖线 + 数据点标记 + 当日浮层；左右方向键也能逐日查看。
  */
-export function CashFlowChart({ points }: { points: CashFlowPoint[] }) {
+export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE }: { points: CashFlowPoint[]; maxTicks?: number }) {
   const [active, setActive] = useState<number | null>(null)
   const uid = useId().replace(/:/g, '')
 
@@ -93,7 +93,7 @@ export function CashFlowChart({ points }: { points: CashFlowPoint[] }) {
     return yuan.toLocaleString('zh-CN', { maximumFractionDigits: 0 })
   }
 
-  const visibleTicks = tickIndices(count, MAX_TICKS_DENSE)
+  const visibleTicks = tickIndices(count, Math.max(2, maxTicks))
   const activePoint = active == null ? null : points[active]
   const activeXPct = active == null || count < 2 ? 0 : (active / (count - 1)) * 100
 
@@ -256,7 +256,7 @@ export function CashFlowChart({ points }: { points: CashFlowPoint[] }) {
                 i === active ? 'font-semibold text-ink' : 'text-ink-mute',
                 i === 0 ? '' : i === count - 1 ? '-translate-x-full' : '-translate-x-1/2',
               )}
-              style={{ left: `${(i / (count - 1)) * 100}%` }}
+              style={{ left: count > 1 ? `${(i / (count - 1)) * 100}%` : '50%' }}
             >
               {axisLabel(points[i].date)}
             </span>

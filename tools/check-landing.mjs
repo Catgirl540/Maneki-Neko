@@ -33,6 +33,7 @@ const bad = (title, detail = '') => {
 }
 
 async function findChrome() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH
   const cache = path.join(os.homedir(), '.cache/ms-playwright')
   const dirs = (await readdir(cache)).filter((d) => d.startsWith('chromium-'))
   if (!dirs.length) throw new Error('没找到 playwright 的 chromium')
@@ -134,14 +135,14 @@ try {
     }
   }
 
-  /* ── 6. 侧栏「总览」指向新路径 ─────────────────────────────────────── */
-  const navHome = page.getByRole('link', { name: '总览', exact: true }).first()
+  /* ── 6. 侧栏「账户」指向新路径 ─────────────────────────────────────── */
+  const navHome = page.getByRole('link', { name: '账户', exact: true }).first()
   if (await navHome.count() === 0) {
-    bad('侧栏里找不到「总览」入口')
+    bad('侧栏里找不到「账户」入口')
   } else {
     const href = await navHome.getAttribute('href')
-    if (href === '/dashboard') ok('侧栏「总览」指向 `/dashboard`')
-    else bad('侧栏「总览」还指着旧路径', `href=${href}`)
+    if (href === '/dashboard') ok('侧栏「账户」指向 `/dashboard`')
+    else bad('侧栏「账户」还指着旧路径', `href=${href}`)
   }
 
   /* ── 7. 已登录访问登录页 → 去总览（不是停在官网）─────────────────────── */

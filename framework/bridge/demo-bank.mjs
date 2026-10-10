@@ -11,8 +11,8 @@
  * 所以这里直接 **import 前端那份 TS**：一份数据、一处逻辑。代价是桥接进程
  * 要在 Node 里跑 TS（见下），好处是"改 mock 两边同时变"。
  *
- * 路径用的是 `design/backend-handoff/API-CONTRACT.md` 里已经定好的 `/api/*`，
- * 而且**从 `contract.ts` 的 `routes` 推导**——不是手抄一遍。所以真后端上线时
+ * `/api/*` 路径直接从 `app/src/api/contract.ts` 的 `routes` 推导，
+ * 不另行维护一份路由清单。所以真后端上线时
  * 客户端只要换 `VITE_API_BASE_URL` / 安卓换 baseUrl，业务代码零改动。
  *
  * ## 怎么在 Node 里跑起前端 TS

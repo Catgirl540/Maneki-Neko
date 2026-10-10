@@ -75,7 +75,7 @@ export function BankPicker({
     <div
       className={cn('relative', className)}
       onKeyDown={(e) => {
-        if (e.key === 'Escape') setOpen(false)
+        if (e.key === 'Escape' && open) { e.stopPropagation(); setOpen(false) }
       }}
     >
       {/* 触发器：收起时只显示选中的那一家 */}

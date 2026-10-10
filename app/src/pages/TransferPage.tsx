@@ -1,6 +1,5 @@
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
 import type {
   Account,
@@ -24,9 +23,8 @@ import { BankPicker } from '@/components/ui/BankPicker'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Field } from '@/components/ui/Field'
-import { Modal } from '@/components/ui/Modal'
 import { EmptyState, Segmented, Skeleton } from '@/components/ui/Segmented'
-import { AlertIcon, CheckIcon, ChevronRightIcon, UsersIcon } from '@/components/ui/icons'
+import { AlertIcon, CheckIcon, UsersIcon } from '@/components/ui/icons'
 import {
   FPS_CURRENCIES,
   FPS_METHOD_LABEL,
@@ -69,11 +67,17 @@ const FPS_METHODS: { value: FpsMethod; label: string }[] = [
   { value: 'fpsid', label: 'FPS ID' },
 ]
 
-export function TransferPage() {
+export function TransferForm({ onClose, onUpdate, onBusyChange }: {
+  onClose: () => void
+  onUpdate: () => void
+  onBusyChange: (busy: boolean) => void
+}) {
   const toast = useToast()
   // 这一块余额自己一只眼睛，不跟别处联动
   const { shown, toggle: toggleShown } = useReveal()
   const [step, setStep] = useState<Step>(1)
+  const content = useRef<HTMLDivElement>(null)
+  useEffect(() => { content.current?.closest('[role=dialog]')?.scrollTo({ top: 0 }) }, [step])
   const [channel, setChannel] = useState<TransferChannel>('bank')
   const [scope, setScope] = useState<TransferScope>('domestic')
 
@@ -421,6 +425,7 @@ export function TransferPage() {
    * 姓名不是用户填的，是系统查出来给用户核对的。
    */
   async function goReview() {
+    setConfirmOpen(false)
     setError(null)
     setResolved(null)
     setRecipientCheck(null)
@@ -515,6 +520,7 @@ export function TransferPage() {
   async function doSubmit() {
     if (!account) return
     setSubmitting(true)
+    onBusyChange(true)
     setError(null)
     try {
       const res = await api.submitTransfer({
@@ -540,6 +546,7 @@ export function TransferPage() {
       setResult(res)
       setConfirmOpen(false)
       setStep(4)
+      onUpdate()
       accounts.reload()
       payees.reload()
     } catch (err) {
@@ -547,11 +554,13 @@ export function TransferPage() {
       setError(err instanceof ApiError ? err.message : '转账失败，请稍后重试')
     } finally {
       setSubmitting(false)
+      onBusyChange(false)
     }
   }
 
   function reset() {
     setStep(1)
+    setConfirmOpen(false)
     setAmountText('')
     setPayeeName('')
     setFpsValue('')
@@ -569,10 +578,12 @@ export function TransferPage() {
   async function doRecall() {
     if (!result) return
     setRecalling(true)
+    onBusyChange(true)
     setError(null)
     try {
       const r = await api.recallTransfer(result.transactionId)
       toast.show(r.memo)
+      onUpdate()
       setResult(null)
       setStep(1)
       accounts.reload()
@@ -580,6 +591,7 @@ export function TransferPage() {
       toast.show(err instanceof ApiError ? err.message : '撤销失败，请稍后重试')
     } finally {
       setRecalling(false)
+      onBusyChange(false)
     }
   }
 
@@ -596,21 +608,17 @@ export function TransferPage() {
   if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
-    <div className="flex flex-col gap-7">
-      <header className="float-up">
-        <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">转账</h1>
-      </header>
-
+    <div ref={content} className="flex flex-col gap-7">
       {/* 步骤条 */}
-      <ol className="float-up flex items-center gap-3">
+      <ol className="float-up flex items-center gap-1 sm:gap-3">
         {STEPS.map((s, index) => {
           const active = step === s.id
           const done = step > s.id
           return (
-            <li key={s.id} className="flex flex-1 items-center gap-3">
+            <li key={s.id} aria-current={active ? 'step' : undefined} className="flex min-w-0 flex-1 items-center gap-1 sm:gap-3">
               <span
                 className={cn(
-                  'grid size-9 shrink-0 place-items-center rounded-chip text-[14px] font-semibold transition-colors',
+                  'grid size-8 shrink-0 place-items-center rounded-chip text-[14px] font-semibold transition-colors sm:size-9',
                   active && 'bg-gold text-ink',
                   done && 'bg-gold-wash text-gold-deep',
                   !active && !done && 'bg-sunk text-ink-mute',
@@ -618,7 +626,7 @@ export function TransferPage() {
               >
                 {done ? <CheckIcon size={16} /> : s.id}
               </span>
-              <span className={cn('text-[14px]', active ? 'font-medium text-ink' : 'text-ink-mute')}>
+              <span className={cn('whitespace-nowrap text-[12px] sm:text-[14px]', active ? 'font-medium text-ink' : 'text-ink-mute')}>
                 {s.label}
               </span>
               {index < STEPS.length - 1 && (
@@ -631,7 +639,7 @@ export function TransferPage() {
 
       {step === 1 && (
         <div className="float-up mx-auto w-full max-w-[560px]">
-          <Card>
+          <Card padded={false} className="border-0 shadow-none">
             <p className="mb-3 text-[13px] font-medium text-ink-soft">转账方式</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <ChannelCard
@@ -651,7 +659,7 @@ export function TransferPage() {
             {/* 金额 */}
             <div className="mt-7 flex flex-col items-center">
               <span className="text-[13px] text-ink-mute">转账金额</span>
-              <div className="mt-3 flex items-baseline justify-center gap-2">
+              <div className="mt-3 flex w-full min-w-0 items-baseline justify-center gap-2">
                 <span className="text-[28px] leading-none font-semibold text-ink-mute">¥</span>
                 <input
                   value={amountText}
@@ -659,7 +667,7 @@ export function TransferPage() {
                   inputMode="decimal"
                   placeholder="0.00"
                   aria-label="转账金额"
-                  style={{ width: `${Math.max(amountText.length, 4) * 0.62 + 0.2}em` }}
+                  style={{ width: `${Math.max(amountText.length, 4) * 0.62 + 0.2}em`, maxWidth: 'calc(100% - 2rem)' }}
                   className="num bg-transparent text-center text-[34px] leading-none font-bold tracking-[-0.03em] text-ink outline-none placeholder:text-line-strong sm:text-[46px]"
                 />
               </div>
@@ -717,7 +725,6 @@ export function TransferPage() {
                     </button>
                   })}
                 </div>
-                <p className="mt-2 text-[12px] text-ink-mute">本行账户实时到账，付款和收款账户各生成一笔流水。</p>
               </div>
             )}
 
@@ -757,7 +764,7 @@ export function TransferPage() {
                     <span className="text-[14px] text-ink">中国香港</span>
                   </div>
 
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start justify-between gap-4">
                     <span className="text-[13px] font-medium text-ink-soft">收款币种</span>
                     <Segmented
                       value={fpsCurrency}
@@ -778,10 +785,7 @@ export function TransferPage() {
 
                   {/* 收款银行：跨境支付通无论哪种汇款方式都必须指定 */}
                   <div>
-                    <p className="mb-1 text-[13px] font-medium text-ink-soft">收款银行</p>
-                    <p className="mb-3 text-[12px] text-ink-mute">
-                      跨境转账需指定收款银行，以便款项路由至该行
-                    </p>
+                    <p className="mb-3 text-[13px] font-medium text-ink-soft">收款银行</p>
                     <BankPicker
                       banks={banks.data ?? []}
                       region={activeBankRegion}
@@ -897,7 +901,7 @@ export function TransferPage() {
                     placeholder="请输入收款人姓名"
                   />
 
-                  <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start justify-between gap-4">
                     <span className="text-[13px] font-medium text-ink-soft">转账类型</span>
                     <Segmented
                       value={scope}
@@ -994,11 +998,6 @@ export function TransferPage() {
             {quote && (
               <p className="mt-4 rounded-field bg-sunk px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-soft">
                 {quote.channelNote}
-              </p>
-            )}
-            {fx && (
-              <p className="mt-3 rounded-field bg-blue-tint px-3.5 py-2.5 text-[12px] leading-relaxed text-ink-soft">
-                换汇按实时汇率报价。进入确认页后会显示锁价倒计时，过期自动按最新汇率重新询价。
               </p>
             )}
             {overLimit && quote && (
@@ -1126,8 +1125,12 @@ export function TransferPage() {
               </p>
             )}
 
+            {confirmOpen && <div role="alert" className="mt-6 rounded-field bg-gold-wash p-4 text-[14px] leading-relaxed text-ink">
+              <p className="font-semibold">请再次确认</p>
+              <p className="mt-1">{quote?.confirmReason ?? '该笔转账金额较大，请再次核对收款人和金额。'}</p>
+            </div>}
             <div className="mt-8 flex gap-3">
-              <Button block onClick={() => setStep(2)}>
+              <Button block disabled={submitting} onClick={() => { setConfirmOpen(false); setStep(2) }}>
                 返回修改
               </Button>
               <Button
@@ -1135,11 +1138,11 @@ export function TransferPage() {
                 variant="primary"
                 loading={submitting}
                 onClick={() => {
-                  if (quote?.requiresConfirm) setConfirmOpen(true)
+                  if (quote?.requiresConfirm && !confirmOpen) setConfirmOpen(true)
                   else void doSubmit()
                 }}
               >
-                确认转账
+                {confirmOpen ? '确认转出' : '确认转账'}
               </Button>
             </div>
           </Card>
@@ -1258,14 +1261,10 @@ export function TransferPage() {
               </Button>
             )}
             <div className="flex gap-3">
-              <Button block onClick={reset}>
+              <Button block disabled={recalling} onClick={reset}>
                 再转一笔
               </Button>
-              <Link to="/dashboard" className="flex-1">
-                <Button block variant="primary">
-                  返回总览
-                </Button>
-              </Link>
+              <Button block variant="primary" disabled={recalling} onClick={onClose}>完成</Button>
             </div>
           </div>
         </Card>
@@ -1277,45 +1276,7 @@ export function TransferPage() {
         </Card>
       )}
 
-      {/* 大额二次确认 */}
-      <Modal
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title="二次确认"
-        description={quote?.confirmReason ?? '该笔转账金额较大，请再次确认收款人信息。'}
-        footer={
-          <>
-            <Button block onClick={() => setConfirmOpen(false)}>
-              再检查一下
-            </Button>
-            <Button block variant="primary" loading={submitting} onClick={() => void doSubmit()}>
-              确认转出
-            </Button>
-          </>
-        }
-      >
-        <dl className="flex flex-col gap-3 text-[14px]">
-          <SummaryRow label="收款人" value={finalPayeeName || '—'} />
-          <SummaryRow label="收款银行" value={selectedBank?.name ?? '—'} />
-          <SummaryRow label="收款标识" value={identifier} />
-          <SummaryRow label="金额" value={`¥${formatAmount(amount)}`} strong />
-          {fx && (
-            <SummaryRow
-              label="预计到账"
-              value={formatCurrency(fx.toAmount, fx.toCurrency)}
-              strong
-            />
-          )}
-        </dl>
-      </Modal>
 
-      <Link
-        to="/support"
-        className="inline-flex items-center gap-1 self-start text-[13px] text-ink-mute transition-colors hover:text-ink"
-      >
-        转账遇到问题？问问智能客服
-        <ChevronRightIcon size={15} />
-      </Link>
     </div>
   )
 }
@@ -1371,10 +1332,10 @@ function SummaryRow({
   action?: ReactNode
 }) {
   return (
-    <div className="flex items-center justify-between gap-4">
-      <dt className="text-ink-soft">{label}</dt>
-      <dd className="flex items-center gap-1.5">
-        <span className={cn('num text-right', strong ? 'font-semibold text-ink' : 'text-ink')}>
+    <div className="flex items-start justify-between gap-4">
+      <dt className="shrink-0 text-ink-soft">{label}</dt>
+      <dd className="flex min-w-0 items-center justify-end gap-1.5">
+        <span className={cn('num min-w-0 break-all text-right', strong ? 'font-semibold text-ink' : 'text-ink')}>
           {value}
         </span>
         {action}

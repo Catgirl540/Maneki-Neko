@@ -75,7 +75,7 @@ try {
     const { WEALTH_INVESTMENT_AGREEMENT } = await import('../app/src/lib/wealth.ts')
     const sms = await call('/api/auth/sms-code', a.token, { phone: a.user.phone })
     const face = await call('/api/security/verify', a.token, { channel: 'face' })
-    await call('/api/wealth/account/open', a.token, { holderName: a.user.name, idNumber: '110101199001011234', smsCode: sms.demoCode, faceTicket: face.ticket, settlementAccountId: accounts[0].id, agreement: WEALTH_INVESTMENT_AGREEMENT })
+    await call('/api/wealth/account/open', a.token, { smsCode: sms.demoCode, faceTicket: face.ticket, settlementAccountId: accounts[0].id, agreement: WEALTH_INVESTMENT_AGREEMENT })
   }
   const product = products.result.find(p => p.openEnded)
   const sub = await prepare('bank_wealth_subscribe', { productCode: product.code, amountCents: Math.max(product.minAmount, product.stepAmount) })

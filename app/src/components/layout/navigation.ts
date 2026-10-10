@@ -1,11 +1,13 @@
-import { CardIcon, ChartIcon, ChatIcon, HomeIcon, PigIcon, ShieldIcon, TransferIcon } from '@/components/ui/icons'
+import { ChatIcon, PigIcon, UserIcon, WalletIcon } from '@/components/ui/icons'
 
 export const navigationItems = [
-  { to: '/dashboard', label: '总览', Icon: HomeIcon },
-  { to: '/transfer', label: '转账', Icon: TransferIcon },
-  { to: '/cards', label: '银行卡', Icon: CardIcon },
-  { to: '/analysis', label: '消费分析', Icon: ChartIcon },
-  { to: '/wealth', label: '理财', Icon: PigIcon },
-  { to: '/security', label: '安全中心', Icon: ShieldIcon },
-  { to: '/support', label: '智能客服', Icon: ChatIcon },
+  { to: '/dashboard', label: '账户', Icon: WalletIcon, paths: ['/dashboard', '/cards', '/receiving', '/transfer', '/analysis', '/transactions'] },
+  { to: '/wealth', label: '理财', Icon: PigIcon, paths: ['/wealth'] },
+  { to: '/support', label: '助手', Icon: ChatIcon, paths: ['/support'] },
+  { to: '/security', label: '我的', Icon: UserIcon, paths: ['/security'] },
 ]
+
+/** 一级导航按业务归属匹配，详情页也只高亮所属的一项。 */
+export function isNavigationActive(pathname: string, paths: readonly string[]) {
+  return paths.some(path => pathname === path || pathname.startsWith(`${path}/`))
+}

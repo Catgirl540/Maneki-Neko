@@ -91,8 +91,8 @@ SSE 事件的形状（`data:` 一行一个 JSON）：
 挂到用户答完，回 `{ answers: [{ id, selected: [], custom? }] }`；超时回 `{ "answers": [] }`。
 
 完整的字段口径、校验分工与踩过的坑（超时不等于拒绝、空白答复不能结算、
-插件放弃后答复要拿 404）见 `framework/design/P12-ASK.md` 与
-`design/backend-handoff/AGENT-RUNTIME-CONTRACT.md` 的「模型问用户」一节。
+插件放弃后答复要拿 404）见 [P12-ASK.md](P12-ASK.md)；
+当前实现见 `framework/bridge/demo-server.mjs`。
 
 ## 4. 确认通道的形状（后端要实现的就这一段）
 
@@ -166,5 +166,5 @@ npm run dev                          # http://localhost:5180
 正确密码后出现回执号、只读查询不要求密码）。
 
 **未验证**：并发多用户、SSE 在弱网下的重连语义、演示服务的限流与鉴权强度
-（它默认只绑本机回环；对外暴露必须由后端加认证，见
-`design/backend-handoff/AGENT-RUNTIME-CONTRACT.md` §5）。
+（它默认只绑本机回环；当前鉴权实现见 `framework/bridge/demo-server.mjs`，
+HTTP 登录与会话归属验证见 `tools/check-agent-http.mjs`）。

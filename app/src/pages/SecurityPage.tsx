@@ -25,7 +25,7 @@ import { useSession } from '@/store/session-context'
 
 export function SecurityPage() {
   const toast = useToast()
-  const { user, updateUser } = useSession()
+  const { user, updateUser, logout } = useSession()
   const overview = useAsync<SecurityOverview>(() => api.getSecurityOverview(), [])
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [phoneOpen, setPhoneOpen] = useState(false)
@@ -64,9 +64,17 @@ export function SecurityPage() {
     <div className="flex flex-col gap-7">
       <header className="float-up">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
-          安全中心
+          我的
         </h1>
       </header>
+
+      <Card>
+        <CardHeader title="个人信息" />
+        <div className="mt-4 flex items-center gap-4">
+          <span className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold-wash text-[18px] font-semibold text-gold-deep">{user?.avatarInitial}</span>
+          <span><span className="block text-[18px] font-semibold text-ink">{user?.name}</span><span className="mt-1 block text-[13px] text-ink-mute">{user?.memberLevel}</span></span>
+        </div>
+      </Card>
 
       {notice && (
         <p className="float-up flex items-center gap-2 rounded-field bg-blue-wash px-4 py-3 text-[13px] text-blue">
@@ -121,12 +129,6 @@ export function SecurityPage() {
         {/* 安全设置 */}
         <Card className="float-up" style={{ animationDelay: '60ms' }}>
           <CardHeader title="安全设置" />
-          <p className="mt-4 text-[14px] leading-relaxed text-ink-soft">
-            登录手机号与登录密码是这个账户的两把钥匙。
-            大额转账、开卡、理财申购等敏感操作会在
-            <span className="font-medium text-ink">那一步</span>
-            各自要求身份核验，不需要提前在这里做一次认证。
-          </p>
 
           <div className="mt-5 divide-y divide-line">
             <Row
@@ -235,6 +237,8 @@ export function SecurityPage() {
           ))}
         </ul>
       </Card>
+
+      <div><Button variant="danger" onClick={() => void logout()}>退出登录</Button></div>
 
       {/* 弹层**常驻挂载**，靠 `open` 控制显隐 —— 不能写成 `{passwordOpen && <…/>}`。
           条件挂载的话组件是被父级直接卸载的，`Modal` 里的退场动画永远没机会播，

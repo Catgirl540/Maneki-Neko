@@ -25,6 +25,7 @@
  *   LUCKYCAT_DEMO_PORT  监听端口，默认 8788
  *   LUCKYCAT_PROVIDER   模型路由，默认 openrouter
  *   LUCKYCAT_MODEL      模型名，默认 qwen/qwen3.8-flash
+ *   LUCKYCAT_FALLBACK_MODELS OpenRouter 备用模型，逗号分隔，按顺序尝试
  *   LUCKYCAT_BANK_URL  银行 HTTP 地址，默认 http://127.0.0.1:8080
  *   LUCKYCAT_BANK_MODE demo 才启用独立占位工具；默认 http
  *   LUCKYCAT_DEMO_PASSWORD 仅旧 demo 模式支付密码，默认 123456
@@ -459,9 +460,15 @@ function safeParse(text) {
 /** 确保 harness 已启动。 */
 async function ensureHarness() {
   if (harnessStarting) return harnessStarting
+  // 当前适配器没有 extra_body 配置；仅给这个子进程加载请求适配层。
+  const fallbackImport = new URL('./model-fallback-fetch.mjs', import.meta.url).href
+  const fallbackEnv = PROVIDER === 'openrouter' && process.env.LUCKYCAT_FALLBACK_MODELS
+    ? { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${fallbackImport}`.trim() }
+    : undefined
   const candidate = new DeepSeekHarness({
     dshBin: join(ROOT, 'node_modules', '.bin', 'dsh'), profile: 'luckycat',
     provider: PROVIDER, model: MODEL, initializeTimeoutMs: 30_000,
+    ...fallbackEnv === undefined ? {} : { env: fallbackEnv },
     ...PATCHES.length === 0 ? {} : { patches: PATCHES },
   })
   harness = candidate

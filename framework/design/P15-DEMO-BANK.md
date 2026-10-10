@@ -3,7 +3,7 @@
 > 状态：**已实现并上线**（2026-09-21）。
 > 相关：`P6-WEB-BRIDGE.md`（同一个演示服务上的 `/agent-api/*`）、
 > `P14-DEPLOY.md`（部署方式）、`P13-ANDROID.md`（安卓端就是靠它拿业务数据）、
-> `../../design/backend-handoff/API-CONTRACT.md`（真后端要实现的那批接口）。
+> [银行后端说明](../../server/README.md)（当前独立后端与 SQLite 数据说明）。
 
 ## 是什么
 
@@ -19,7 +19,7 @@
                                                          （现场转译，一份数据一处逻辑）
 ```
 
-路径用的就是 `API-CONTRACT.md` 里已经定好的那批（`/api/accounts`、
+路径由 `app/src/api/contract.ts` 的 `routes` 定义（`/api/accounts`、
 `/api/accounts/{id}/transactions`、`/api/transfers`…），所以**真后端上线时
 客户端只要换 baseUrl**，业务代码零改动。
 

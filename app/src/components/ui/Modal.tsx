@@ -10,7 +10,7 @@ const dialogStack: HTMLElement[] = []
 let previousOverflow = ''
 
 /**
- * 轻量弹层：仅用于转入、二次确认等短流程。
+ * 通用弹层：用于转入、转出及其它账户操作。
  *
  * ## 退场动画要靠 `open` 驱动，不能靠父级卸载
  *
@@ -50,6 +50,7 @@ export function Modal({
   children,
   footer,
   width = 'max-w-[440px]',
+  closeDisabled = false,
 }: {
   open: boolean
   onClose: () => void
@@ -58,12 +59,14 @@ export function Modal({
   children?: ReactNode
   footer?: ReactNode
   width?: string
+  /** 写操作提交期间禁止关闭，避免丢失结果或重复提交。 */
+  closeDisabled?: boolean
 }) {
   // 关掉之后还要留在 DOM 里把退场动画放完，所以不能直接用 open 决定渲不渲染。
   const { mounted, exiting } = usePresence(open, EXIT_MS)
   const dialog = useRef<HTMLDivElement>(null)
   const closeRef = useRef(onClose)
-  useEffect(() => { closeRef.current = onClose }, [onClose])
+  useEffect(() => { closeRef.current = () => { if (!closeDisabled) onClose() } }, [onClose, closeDisabled])
   const titleId = useId()
   const descriptionId = useId()
 
@@ -113,6 +116,7 @@ export function Modal({
         aria-label="关闭弹窗背景"
         tabIndex={-1}
         onClick={onClose}
+        disabled={closeDisabled}
         className={cn(
           'absolute inset-0 cursor-default bg-ink/25 backdrop-blur-[2px]',
           exiting ? 'fade-out' : 'fade-in',
@@ -123,6 +127,7 @@ export function Modal({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
+        aria-busy={closeDisabled || undefined}
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
         className={cn(
@@ -134,7 +139,7 @@ export function Modal({
       >
         <div className="flex items-start justify-between gap-3">
           <h2 id={titleId} className="pt-1 text-[20px] leading-7 font-semibold text-ink">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="关闭弹窗" className="grid size-10 shrink-0 place-items-center rounded-chip text-ink-soft transition-colors hover:bg-sunk hover:text-ink"><CloseIcon size={20} /></button>
+          <button type="button" onClick={onClose} disabled={closeDisabled} aria-label="关闭弹窗" className="grid size-10 shrink-0 place-items-center rounded-chip text-ink-soft transition-colors hover:bg-sunk hover:text-ink"><CloseIcon size={20} /></button>
         </div>
         {description && <p id={descriptionId} className="mt-2 text-[14px] text-ink-soft">{description}</p>}
         {children && <div className="mt-6">{children}</div>}

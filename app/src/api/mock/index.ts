@@ -1493,16 +1493,15 @@ export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?
       if (db.wealthAccount.opened) {
         throw new ApiError('理财账户已开立，无需重复开户', 400, 'ALREADY_OPENED')
       }
-      // 兼容旧本地演示数据：未开户期间的残留持仓不属于新开的理财账户。
-      db.holdings = []
-
-      // —— 身份核验：与银行开户同一套口径 ——
-      if (!req.holderName.trim()) throw new ApiError('请填写姓名', 400, 'NAME_REQUIRED')
-      if (!/^\d{17}[\dXx]$/.test(req.idNumber.trim())) {
-        throw new ApiError('请输入 18 位身份证号', 400, 'INVALID_ID')
+      // 使用已登录账户的实名状态，不接受客户端重新提交或替换身份资料。
+      if (!db.security.identityVerified || !db.user.name.trim()) {
+        throw new ApiError('当前账户尚未完成实名验证', 403, 'IDENTITY_REQUIRED')
       }
       const sms = db.pendingSms
       if (!sms) throw new ApiError('请先获取短信验证码', 400, 'SMS_NOT_SENT')
+      if (digitsOnly(sms.phone) !== digitsOnly(db.user.phone)) {
+        throw new ApiError('验证码不是发往当前账户手机号的，请重新获取', 400, 'SMS_PHONE_MISMATCH')
+      }
       if (Date.now() > new Date(sms.expiresAt).getTime()) {
         db.pendingSms = null
         persist()
@@ -1528,6 +1527,8 @@ export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?
       const settlement = db.accounts.find((a) => a.id === req.settlementAccountId)
       if (!settlement) throw new ApiError('请选择资金账户', 400, 'SETTLEMENT_REQUIRED')
 
+      // 兼容旧演示档案：仅在开户成功时清理未开户期间残留的持仓。
+      db.holdings = []
       db.pendingSms = null
       const now = new Date().toISOString()
       db.wealthAccount = {

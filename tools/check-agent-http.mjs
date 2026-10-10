@@ -6,7 +6,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
-const root = new URL('..', import.meta.url).pathname.replace(/\/$/, '')
+import { fileURLToPath } from 'node:url'
+const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const tmp = await mkdtemp(join(tmpdir(), 'agent-runtime-'))
 const free = async () => { const s=net();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p }
 const bankPort = await free(), agentPort = await free(), providerPort = await free()
@@ -140,7 +141,7 @@ try{
    await api(bank, '/api/wealth/risk/assess', a.token, { answers: q.map(x => x.options.reduce((best, o, i, all) => o.score > all[best].score ? i : best, 0)) })
    const sms = (await api(bank, '/api/auth/sms-code', a.token, { phone: a.user.phone })).data
    const face = (await api(bank, '/api/security/verify', a.token, { channel: 'face' })).data
-   const open = await api(bank, '/api/wealth/account/open', a.token, { holderName: a.user.name, idNumber: '110101199001011234', smsCode: sms.demoCode, faceTicket: face.ticket, settlementAccountId: accounts[0].id, agreement: WEALTH_INVESTMENT_AGREEMENT })
+   const open = await api(bank, '/api/wealth/account/open', a.token, { smsCode: sms.demoCode, faceTicket: face.ticket, settlementAccountId: accounts[0].id, agreement: WEALTH_INVESTMENT_AGREEMENT })
    assert.equal(open.status, 200)
    const products = (await api(bank, '/api/wealth/products', a.token)).data
    const product = products.find(x => x.openEnded)

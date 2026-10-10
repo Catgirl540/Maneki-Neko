@@ -1,0 +1,164 @@
+import { useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { api, ApiError } from '@/api'
+import type { BankCard, Transaction, TransactionCategory } from '@/api/types'
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
+import { Button } from '@/components/ui/Button'
+import { Card, CardHeader } from '@/components/ui/Card'
+import { TransactionRow } from '@/components/ui/TransactionRow'
+import { EmptyState, Segmented, Skeleton } from '@/components/ui/Segmented'
+import { DownloadIcon } from '@/components/ui/icons'
+import { CATEGORY_LABEL } from '@/lib/categories'
+import { toCsv } from '@/lib/csv'
+import { downloadText } from '@/lib/download'
+import { useAsync } from '@/lib/useAsync'
+import { useToast } from '@/components/ui/toast-context'
+
+const FILTERS: { value: TransactionCategory | 'all'; label: string }[] = [
+  { value: 'all', label: '全部' },
+  { value: 'dining', label: '餐饮' },
+  { value: 'shopping', label: '购物' },
+  { value: 'housing', label: '房租' },
+  { value: 'transport', label: '交通' },
+  { value: 'subscription', label: '订阅' },
+]
+
+export function BillsPage() {
+  const toast = useToast()
+  const [exporting, setExporting] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const keyword = searchParams.get('q') ?? ''
+  const selectedAccountId = searchParams.get('account') ?? ''
+  const candidate = searchParams.get('category') ?? 'all'
+  const category = (FILTERS.some(item => item.value === candidate) ? candidate : 'all') as TransactionCategory | 'all'
+  const setFilter = (key: string, value: string) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    if (value && value !== 'all') next.set(key, value)
+    else next.delete(key)
+    return next
+  }, { replace: true })
+  const setKeyword = (value: string) => setFilter('q', value)
+  const setCategory = (value: TransactionCategory | 'all') => setFilter('category', value)
+  const setSelectedAccountId = (value: string) => setFilter('account', value)
+  const account = useAsync(() => api.listAccounts(), [])
+  const cards = useAsync<BankCard[]>(() => api.listCards(), [])
+  const accountId = account.data?.find(row => row.id === selectedAccountId)?.id ?? account.data?.[0]?.id
+  const transactions = useAsync<{ items: Transaction[]; total: number }>(
+    () => accountId ? api.listTransactions(accountId, { size: 6, category, keyword }) : Promise.resolve({ items: [], total: 0 }),
+    [accountId, category, keyword],
+  )
+
+  async function exportCsv() {
+    if (!accountId) return
+    setExporting(true)
+    try {
+      const dataset = await api.exportTransactions(accountId, { category, keyword })
+      if (dataset.total === 0) {
+        toast.show('当前筛选条件下没有可导出的流水', 'info')
+        return
+      }
+      downloadText(dataset.fileName, toCsv(dataset.columns, dataset.rows))
+      toast.show(`已导出 ${dataset.total} 笔流水 · 批次 ${dataset.batchNo}`, 'success')
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : '导出失败，请稍后重试', 'error')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const requests = [account, cards, transactions]
+  const failed = requests.filter(state => state.error !== null && state.data === null)
+  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
+  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">账单</h1>
+        <div className="flex flex-wrap gap-2 text-[13px] text-ink-soft">
+          <Link to="/analysis/statistics" className="inline-flex min-h-11 items-center rounded-chip border border-line bg-surface px-4 hover:border-gold">收支分析</Link>
+          <Link to="/analysis/autodebits" className="inline-flex min-h-11 items-center rounded-chip border border-line bg-surface px-4 hover:border-gold">自动扣款</Link>
+        </div>
+      </header>
+      {/* 流水 */}
+      <Card className="float-up" style={{ animationDelay: '180ms' }}>
+        <CardHeader
+          title="交易流水"
+          action={
+            <div className="flex items-center gap-4">
+              <span className="num text-[13px] text-ink-mute">
+                共 {transactions.data?.total ?? 0} 笔
+              </span>
+              <Button
+                size="sm"
+                icon={<DownloadIcon size={16} />}
+                loading={exporting}
+                disabled={!accountId}
+                onClick={() => void exportCsv()}
+              >
+                导出流水
+              </Button>
+            </div>
+          }
+        />
+
+        {(account.data?.length ?? 0) > 1 && (
+          <div className="mt-5 flex flex-wrap gap-2" aria-label="选择流水账户">
+            {account.data?.map((row) => {
+              const card = cards.data?.find((item) => item.accountId === row.id && item.status !== 'replaced')
+              return <button key={row.id} type="button" onClick={() => setSelectedAccountId(row.id)}
+                aria-pressed={accountId === row.id}
+                className={`rounded-chip border px-3 py-2 text-[12px] transition-colors ${accountId === row.id
+                  ? 'border-gold bg-gold-wash text-gold-deep'
+                  : 'border-line text-ink-soft hover:border-gold'}`}>
+                {card?.productName ?? row.label} · 尾号 {card?.last4 ?? row.accountNo.slice(-4)}
+              </button>
+            })}
+          </div>
+        )}
+
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <Segmented value={category} options={FILTERS} onChange={setCategory} />
+          {keyword && <span className="text-[13px] text-ink-soft">搜索：{keyword}<button type="button" onClick={() => setKeyword('')} className="ml-3 text-gold-deep hover:underline">清除关键词</button></span>}
+        </div>
+
+        <div className="mt-3 divide-y divide-line">
+          {transactions.loading &&
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-4 py-4">
+                <Skeleton className="size-10 rounded-chip" />
+                <Skeleton className="h-4 flex-1" />
+                <Skeleton className="h-4 w-20" />
+              </div>
+            ))}
+
+          {transactions.data?.items.map((tx) => (
+            <TransactionRow key={tx.id} tx={tx} showAccount={CATEGORY_LABEL[tx.category]} />
+          ))}
+
+          {!transactions.loading && transactions.data?.items.length === 0 && (
+            <EmptyState
+              title="没有匹配的流水"
+              description="换个分类或关键词再试试。"
+              action={
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setSearchParams(previous => {
+                      const next = new URLSearchParams(previous)
+                      next.delete('category')
+                      next.delete('q')
+                      return next
+                    }, { replace: true })
+                  }}
+                >
+                  清空筛选
+                </Button>
+              }
+            />
+          )}
+        </div>
+      </Card>
+
+    </div>
+  )
+}

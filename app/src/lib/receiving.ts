@@ -23,15 +23,15 @@ export function receivingRows(info: ReceivingInfo): ReceivingRow[] {
       key: 'accountNo',
       label: '收款账户',
       value: info.accountNo,
-      hint: `${info.accountLabel} · 银行账户转账填这个`,
+      hint: info.accountLabel,
     },
     {
       key: 'bank',
       label: '收款银行',
       value: `${info.bankName}（${BANK_REGION_LABEL[info.bankRegion]}）`,
     },
-    { key: 'fpsMobile', label: '转数快手机号', value: info.fpsMobile, hint: '转数快转账可填手机号' },
-    { key: 'fpsId', label: 'FPS ID', value: info.fpsId, hint: '转数快转账也可填 FPS ID' },
+    { key: 'fpsMobile', label: '转数快手机号', value: info.fpsMobile },
+    { key: 'fpsId', label: 'FPS ID', value: info.fpsId },
   ]
 }
 

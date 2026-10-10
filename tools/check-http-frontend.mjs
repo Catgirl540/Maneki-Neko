@@ -56,7 +56,8 @@ try {
   process.env.VITE_USE_MOCK = 'false'
   process.env.VITE_PROXY_TARGET = bankBase
   const appRoot = path.join(root, 'app')
-  const config = { root: appRoot, configFile: path.join(appRoot, 'vite.config.ts'), logLevel: 'error', server: { host: '127.0.0.1', port: 5180, strictPort: true }, preview: { host: '127.0.0.1', port: 5180, strictPort: true, proxy: { '/api': { target: bankBase } } } }
+  const webPort = Number(process.env.HTTP_UI_PORT ?? 5180)
+  const config = { root: appRoot, configFile: path.join(appRoot, 'vite.config.ts'), logLevel: 'error', server: { host: '127.0.0.1', port: webPort, strictPort: true }, preview: { host: '127.0.0.1', port: webPort, strictPort: true, proxy: { '/api': { target: bankBase } } } }
   web = process.argv.includes('--production') ? await preview(config) : await createServer(config)
   if (web.listen) await web.listen()
   browser = await chromium.launch({ executablePath: await chromePath() })
@@ -66,7 +67,7 @@ try {
   page.on('request', request => requests.push(request.url()))
   // 仅模拟独立助手健康检查；银行 API 全部经过真实后端。
   await page.route('**/agent-api/**', route => route.fulfill({ contentType: 'application/json', body: '{"ok":true,"bankDataSource":"demo"}' }))
-  const base = 'http://127.0.0.1:5180'
+  const base = `http://127.0.0.1:${webPort}`
   await page.goto(base + '/login')
   await page.getByPlaceholder('请输入密码').waitFor()
   await page.evaluate(() => {
@@ -95,13 +96,75 @@ try {
   assert((await page.locator('main').innerText()).includes(amount), '页面金额与后端不一致')
   assert(requests.some(url => url.includes('/api/accounts')), '没有发起真实账户 HTTP 请求')
   await page.getByRole('button', { name: '转入', exact: true }).click()
-  await page.getByRole('dialog', { name: '转入 · 收款信息' }).waitFor()
+  const receiving = page.getByRole('dialog', { name: '转入', exact: true })
+  await receiving.getByRole('button', { name: '复制全部', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '模拟一笔转入', exact: true }).count(), 0)
-  await page.keyboard.press('Escape')
-  await page.getByRole('dialog').waitFor({ state: 'detached' })
+  assert((await receiving.innerText()).includes(accounts[0].accountNo))
+  await receiving.getByRole('button', { name: '关闭弹窗', exact: true }).click()
+  await receiving.waitFor({ state: 'detached' })
   console.log('PASS HTTP 登录、账户余额与收款接口一致，无模拟入账按钮')
 
-  for (const route of ['/transfer', '/cards', '/analysis', '/wealth', '/security', '/support']) {
+  // 财务写操作仅使用本脚本创建的临时数据库。
+  const transfer = page.getByRole('dialog', { name: '转出', exact: true })
+  const target = accounts[1]
+  assert(target, '演示用户缺少第二个账户')
+  const holder = (await endpoint('/api/auth/profile', token)).name
+  async function review(amount) {
+    await transfer.getByLabel('转账金额', { exact: true }).fill(amount)
+    await transfer.getByRole('button', { name: '下一步', exact: true }).click()
+    await transfer.getByLabel('收款账户', { exact: true }).fill(target.accountNo)
+    await transfer.getByLabel('收款人', { exact: true }).fill(holder)
+    await transfer.getByRole('button', { name: '下一步', exact: true }).click()
+    await transfer.getByRole('heading', { name: '信息确认', exact: true }).waitFor()
+  }
+  await page.getByRole('button', { name: '转出', exact: true }).click()
+  await review('1')
+  let submits = 0
+  await page.route('**/api/transfers', async route => {
+    if (route.request().method() === 'POST') {
+      submits++
+      await new Promise(resolve => setTimeout(resolve, 800))
+    }
+    await route.continue()
+  })
+  await transfer.getByRole('button', { name: '确认转账', exact: true }).click()
+  await transfer.locator('[aria-label="关闭弹窗"][disabled]').waitFor()
+  await page.keyboard.press('Escape')
+  assert.equal(await transfer.count(), 1, '提交中 Escape 不应关闭')
+  assert(await transfer.getByRole('button', { name: '确认转账', exact: true }).isDisabled())
+  await transfer.getByRole('heading', { name: '转账成功', exact: true }).waitFor()
+  assert.equal(submits, 1)
+  await page.unroute('**/api/transfers')
+  await transfer.getByRole('button', { name: '完成', exact: true }).click()
+  await transfer.waitFor({ state: 'detached' })
+  const afterTransfer = await endpoint('/api/accounts', token)
+  assert.equal(afterTransfer[0].balance, accounts[0].balance - 100)
+  assert.equal(afterTransfer[1].balance, accounts[1].balance + 100)
+  const newBalance = (afterTransfer[0].balance / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  await page.getByRole('region', { name: '账户余额', exact: true }).getByText(`¥${newBalance}`, { exact: true }).first().waitFor()
+  await page.locator('main a[href^="/transactions/"]').first().waitFor()
+  console.log('PASS HTTP 转出同窗完成、提交期间禁止关闭及重复点击，余额与流水刷新')
+
+  await page.getByRole('button', { name: '转出', exact: true }).click()
+  await review('6000')
+  await transfer.getByRole('button', { name: '确认转账', exact: true }).click()
+  await transfer.getByText('请再次确认', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('dialog').count(), 1)
+  await transfer.getByRole('button', { name: '确认转出', exact: true }).click()
+  await transfer.getByRole('heading', { name: '转账处理中', exact: true }).waitFor()
+  const frozen = await endpoint('/api/accounts', token)
+  assert.equal(frozen[0].balance, afterTransfer[0].balance)
+  assert.equal(frozen[0].available, afterTransfer[0].available - 600_000)
+  await transfer.getByRole('button', { name: '撤销这笔转账', exact: true }).click()
+  await transfer.getByLabel('转账金额', { exact: true }).waitFor()
+  const recalled = await endpoint('/api/accounts', token)
+  assert.equal(recalled[0].available, afterTransfer[0].available)
+  assert.equal(recalled[1].balance, afterTransfer[1].balance)
+  await transfer.getByRole('button', { name: '关闭弹窗', exact: true }).click()
+  await transfer.waitFor({ state: 'detached' })
+  console.log('PASS HTTP 大额二次确认与撤销同窗完成，临时数据库冻结与解冻正确')
+
+  for (const route of ['/cards', '/analysis', '/analysis/statistics', '/analysis/autodebits', '/wealth', '/security', '/support']) {
     await gotoInApp(page, route)
     await page.getByRole('status', { name: '正在加载银行数据' }).waitFor({ state: 'detached' })
     await page.waitForTimeout(500)
@@ -110,7 +173,7 @@ try {
   }
   assert.equal(await page.locator('[data-agent-status]').getAttribute('data-agent-status'), 'off', '占位助手不应被启用')
   assert.equal(await page.evaluate(() => localStorage.getItem('luckycat.support.history.v1')), null)
-  console.log('PASS 7 个主要页面使用后端数据，拒绝占位助手与本地客服缓存')
+  console.log('PASS 主要页面使用后端数据，拒绝占位助手与本地客服缓存')
 
   await gotoInApp(page, '/cards')
   const update = page.waitForResponse(response => response.url().includes('/api/cards/') && response.request().method() === 'PATCH')
@@ -126,6 +189,17 @@ try {
   console.log('PASS 浏览器修改卡限额写入 SQLite，刷新后会话和数据保留')
 
   // 有控制的错误注入仅验证错误 UI；此前成功路径未拦截银行请求。
+  await page.route('**/api/accounts/*/transactions*', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"测试流水不可用"}' }))
+  await gotoInApp(page, '/dashboard')
+  await page.getByText('测试流水不可用', { exact: true }).waitFor()
+  await page.getByText('储蓄账户余额', { exact: true }).waitFor()
+  assert.equal(await page.getByText('还没有交易记录', { exact: true }).count(), 0)
+  await page.unroute('**/api/accounts/*/transactions*')
+  await page.getByRole('button', { name: '重新加载', exact: true }).click()
+  await page.locator('main a[href^="/transactions/"]').first().waitFor()
+  console.log('PASS 概览流水独立报错和重试，余额继续显示')
+
+  await gotoInApp(page, '/cards')
   await page.route('**/api/accounts', route => route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"测试后端暂不可用"}' }))
   await gotoInApp(page, '/dashboard')
   await page.getByText('测试后端暂不可用').waitFor()
@@ -134,7 +208,7 @@ try {
   await page.getByRole('button', { name: '重新加载', exact: true }).click()
   await page.getByText('储蓄账户余额', { exact: true }).waitFor()
   await page.route('**/api/analysis/spending*', route => route.fulfill({ contentType: 'text/html', body: '<html>SPA fallback</html>' }))
-  await gotoInApp(page, '/analysis')
+  await gotoInApp(page, '/analysis/statistics')
   await page.getByText('银行接口返回了无效响应，请检查后端服务与 /api 代理配置').waitFor()
   await page.unroute('**/api/analysis/spending*')
   console.log('PASS 后端失败和 HTML 回落显示错误，可重试，不回退 mock')
@@ -166,6 +240,82 @@ try {
   assert.equal((await endpoint('/api/cards', fresh.token)).length, 0)
   assert.equal((await endpoint('/api/payees', fresh.token)).length, 0)
   console.log('PASS 新开户用户显示后端零余额和空卡列表，不混入旧占位账户')
+  // 从刚完成储蓄开户的用户继续开理财户，不再传姓名或身份证。
+  const { WEALTH_INVESTMENT_AGREEMENT } = await import('../app/src/lib/wealth.ts')
+  const wealthBefore = await endpoint('/api/wealth/overview', fresh.token)
+  const otherWealthBefore = await endpoint('/api/wealth/overview', (await endpoint('/api/auth/login', null, {
+    phone: '13800138000', password: '123456', smsCode: (await endpoint('/api/auth/sms-code', null, { phone: '13800138000' })).demoCode,
+  })).token)
+  async function rejectedWealth(body, expectedStatus, expectedCode, authToken = fresh.token) {
+    const response = await fetch(bankBase + '/api/wealth/account/open', { method: 'POST', headers: { 'content-type': 'application/json', ...(authToken ? { authorization: `Bearer ${authToken}` } : {}) }, body: JSON.stringify(body) })
+    const data = await response.json()
+    assert.equal(response.status, expectedStatus, JSON.stringify(data))
+    assert.equal(data.code, expectedCode)
+  }
+  const validSms = await endpoint('/api/auth/sms-code', fresh.token, { phone: newPhone })
+  const validFace = await endpoint('/api/security/verify', fresh.token, { channel: 'face' })
+  const application = { smsCode: validSms.demoCode, faceTicket: validFace.ticket, settlementAccountId: freshAccounts[0].id, agreement: WEALTH_INVESTMENT_AGREEMENT }
+  await rejectedWealth(application, 401, 'UNAUTHORIZED', null)
+  await rejectedWealth({ ...application, smsCode: '000000' }, 400, 'BAD_SMS_CODE')
+  await rejectedWealth({ ...application, faceTicket: '' }, 400, 'FACE_REQUIRED')
+  await rejectedWealth(application, 403, 'RISK_ASSESSMENT_REQUIRED')
+  const wrongPhoneSms = await endpoint('/api/auth/sms-code', fresh.token, { phone: '13911223345' })
+  await rejectedWealth({ ...application, smsCode: wrongPhoneSms.demoCode }, 400, 'SMS_PHONE_MISMATCH')
+  assert.equal((await endpoint('/api/wealth/overview', fresh.token)).account.opened, false)
+  console.log('PASS 理财开户拒绝未登录、错误短信、其它手机号短信、缺少人脸和未完成风险评估')
+
+  freshPage.on('pageerror', error => pageErrors.push(error.message))
+  await gotoInApp(freshPage, '/wealth')
+  await freshPage.getByRole('button', { name: '开立理财账户', exact: true }).click()
+  const wealthDialog = freshPage.getByRole('dialog')
+  const questions = await endpoint('/api/wealth/risk/questions', fresh.token)
+  for (let i = 0; i < questions.length; i++) {
+    await wealthDialog.getByRole('button', { name: questions[i].options[0].label, exact: true }).click()
+    await wealthDialog.getByRole('button', { name: i === questions.length - 1 ? '提交并继续' : '下一题', exact: true }).click()
+  }
+  await freshPage.getByRole('dialog', { name: '开立理财账户 · 身份核验', exact: true }).waitFor()
+  assert.equal(await freshPage.getByRole('dialog').count(), 1, '开户测评后应直接进入身份核验')
+  assert.equal(await wealthDialog.getByLabel('姓名', { exact: true }).count(), 0)
+  assert.equal(await wealthDialog.getByLabel('身份证号', { exact: true }).count(), 0)
+  assert.equal(await wealthDialog.getByRole('textbox').count(), 1, '身份核验只需短信输入')
+  const next = wealthDialog.getByRole('button', { name: '下一步', exact: true })
+  assert(await next.isDisabled())
+  await wealthDialog.getByRole('button', { name: '获取验证码', exact: true }).click()
+  const hint = wealthDialog.getByText(/演示环境验证码[：:]\s*\d{6}/)
+  await hint.waitFor()
+  const code = /\d{6}/.exec(await hint.innerText())[0]
+  await wealthDialog.getByLabel('短信验证码', { exact: true }).fill(code)
+  assert(await next.isDisabled(), '缺少人脸核身时不应继续')
+  await wealthDialog.getByRole('button', { name: '开始核身', exact: true }).click()
+  await wealthDialog.getByText('已通过核身', { exact: true }).waitFor()
+  assert(await next.isEnabled())
+  await freshPage.screenshot({ path: path.join(temp, 'wealth-identity.png') })
+  await next.click()
+  await freshPage.getByRole('dialog', { name: '开立理财账户 · 签署协议', exact: true }).waitFor()
+  await rejectedWealth({ ...application, smsCode: code, agreement: '', holderName: '不能替换账户身份', idNumber: 'invalid' }, 400, 'AGREEMENT_REQUIRED')
+  await rejectedWealth({ ...application, smsCode: code, settlementAccountId: accounts[0].id }, 400, 'SETTLEMENT_REQUIRED')
+  const openRequest = freshPage.waitForRequest(request => request.url().endsWith('/api/wealth/account/open') && request.method() === 'POST')
+  const openResponse = freshPage.waitForResponse(response => response.url().endsWith('/api/wealth/account/open') && response.request().method() === 'POST')
+  await wealthDialog.getByRole('checkbox').check()
+  await wealthDialog.getByRole('button', { name: '签署并开立', exact: true }).click()
+  assert.deepEqual(Object.keys((await openRequest).postDataJSON()).sort(), ['agreement', 'faceTicket', 'settlementAccountId', 'smsCode'])
+  assert.equal((await openResponse).status(), 200)
+  await wealthDialog.waitFor({ state: 'detached' })
+  const opened = await endpoint('/api/wealth/overview', fresh.token)
+  assert.equal(wealthBefore.account.opened, false)
+  assert.equal(opened.account.opened, true)
+  assert.equal(opened.account.settlementAccountId, freshAccounts[0].id)
+  assert.equal((await endpoint('/api/auth/profile', fresh.token)).name, '联调新用户')
+  assert.equal((await endpoint('/api/accounts', fresh.token))[0].balance, 0)
+  await rejectedWealth({ ...application, smsCode: code }, 400, 'ALREADY_OPENED')
+  // 当前用户的开户不会改变另一用户的开户状态。
+  const otherSms = await endpoint('/api/auth/sms-code', null, { phone: '13800138000' })
+  const other = await endpoint('/api/auth/login', null, { phone: '13800138000', password: '123456', smsCode: otherSms.demoCode })
+  assert.deepEqual((await endpoint('/api/wealth/overview', other.token)).account, otherWealthBefore.account)
+  await freshPage.reload()
+  await freshPage.getByText('理财总资产', { exact: true }).waitFor()
+  console.log('PASS 储蓄开户后直接用短信与人脸开理财户，无姓名/身份证输入或传输，协议、账户归属和持久化正确')
+
   assert(!requests.some(url => /\/src\/api\/mock\/|\/assets\/mock-/.test(url)), 'HTTP 页面加载了浏览器 mock 模块')
   assert.deepEqual(pageErrors, [])
   console.log('PASS HTTP 前端联调完成')

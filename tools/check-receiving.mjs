@@ -1,5 +1,5 @@
 /**
- * 「转入 · 收款信息」的检查。
+ * 转入弹窗与模拟入账表单检查。
  *
  * 「转入」在真实银行 App 里不是把余额改大的按钮，而是**把你的收款信息给对方**。
  * 这件事要保的性质是：展示的字段与复制出去的内容**一致且够用** ——
@@ -21,6 +21,7 @@ const BASE = process.argv[2] ?? 'http://127.0.0.1:5180'
 const ROOT = path.resolve(import.meta.dirname, '..')
 
 async function findChrome() {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH
   const cache = path.join(os.homedir(), '.cache/ms-playwright')
   const dirs = (await readdir(cache)).filter((d) => d.startsWith('chromium-'))
   return path.join(cache, dirs.sort().at(-1), 'chrome-linux64', 'chrome')
@@ -78,15 +79,15 @@ report(strayCollect === 0, '①′ 首页没有语义对不上的「收款」按
   `名为「收款」的按钮数：${strayCollect}`,
 ])
 
-/* ------------------------------------------------ ② 转入弹出的是收款信息 */
-await tab.getByRole('button', { name: '转入' }).click()
-const dialog = tab.locator('div[role="dialog"]')
-await dialog.waitFor({ timeout: 5000 })
+/* ------------------------------------------------ ② 转入弹窗展示完整信息 */
+await tab.getByRole('button', { name: '转入', exact: true }).click()
+const dialog = tab.getByRole('dialog', { name: '转入', exact: true })
+await dialog.waitFor()
 await tab.waitForTimeout(500)
 const text = await dialog.innerText()
 const need = ['收款户名', '收款账户', '收款银行', '转数快手机号', 'FPS ID']
 const missing = need.filter((k) => !text.includes(k))
-report(missing.length === 0, '② 转入展示的是收款信息，五项齐全', [
+report(missing.length === 0, '② 转入弹窗信息五项齐全', [
   `缺失：${missing.length ? missing.join('、') : '无'}`,
 ])
 
@@ -117,9 +118,9 @@ await dialog.getByRole('button', { name: '模拟一笔转入' }).click()
 await tab.waitForTimeout(400)
 const demo = await dialog.innerText()
 report(
-  demo.includes('转入金额') && demo.includes('绑定银行卡'),
-  '⑤ 演示用的「模拟一笔转入」仍在，且与收款信息分开',
-  ['第二次点击才进入演示表单，首屏不会被误当成真功能'],
+  demo.includes('转入金额') && demo.includes('绑定银行卡') && await tab.getByRole('dialog').count() === 1,
+  '⑤ 演示用的「模拟一笔转入」在同一个弹窗内切换',
+  ['模拟入账按钮在原弹窗内切换表单，无嵌套弹窗'],
 )
 
 await browser.close()
