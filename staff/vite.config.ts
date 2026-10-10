@@ -7,6 +7,8 @@ import { fileURLToPath, URL } from 'node:url'
 // /staff-api 是工作人员端专用通道：同一进程 server/index.mjs 上的 staff-api.mjs 处理，
 // 与客户端的 /api 分开，员工 token 与客户 token 不混。
 export default defineConfig({
+  // 部署到子路径（如裸 IP 的 /staff/）时用 VITE_BASE_PATH 指定；默认根路径，不影响本地开发。
+  base: process.env.VITE_BASE_PATH ?? '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
