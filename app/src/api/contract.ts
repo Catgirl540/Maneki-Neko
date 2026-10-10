@@ -42,6 +42,7 @@ import type {
   TransferRecipientLookup,
   TransferRecipientResult,
   TransferQuoteRequest,
+  TransferRecallResult,
   TransferRequest,
   TransferResult,
   User,
@@ -85,6 +86,8 @@ export const routes = {
   transferQuote: () => '/api/transfers/quote',
   transferRecipient: () => '/api/transfers/recipient',
   transfers: () => '/api/transfers',
+  /** 撤销在途（延迟到账窗口内）的转账指令（清单 §9.3） */
+  transferRecall: (id: string) => `/api/transfers/${id}/recall`,
 
   cards: () => '/api/cards',
   /** 可申请的卡产品（费用与权益由后端给） */
@@ -170,6 +173,11 @@ export interface BankApi {
   quoteTransfer(req: TransferQuoteRequest): Promise<TransferQuote>
   resolveTransferRecipient(req: TransferRecipientLookup): Promise<TransferRecipientResult>
   submitTransfer(req: TransferRequest): Promise<TransferResult>
+  /**
+   * 撤销在途转账（清单 §9.3）：延迟到账窗口内，用户随时可以自己撤回。
+   * 超窗或已到账 → 409。资金侧只解除冻结，不发生扣款。
+   */
+  recallTransfer(transactionId: string): Promise<TransferRecallResult>
 
   // —— 银行卡 ——
   listCards(): Promise<BankCard[]>

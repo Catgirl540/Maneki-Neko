@@ -17,3 +17,15 @@ export const STATUS_LABEL: Record<TransactionStatus, string> = {
   pending: '处理中',
   failed: '交易失败',
 }
+
+/**
+ * 带原因的状态文案（清单 §9）：
+ * - pendingReason='inflight'（大额延迟到账）→ 「在途」，不是笼统的「处理中」。
+ *   客户要能看出钱还没到对方账上、窗口内还能撤销。
+ * - pendingReason='clearing'（模拟清算）→ 「清算中」。
+ */
+export function statusText(status: TransactionStatus, pendingReason?: 'inflight' | 'clearing') {
+  if (status === 'pending' && pendingReason === 'inflight') return '在途·延迟到账'
+  if (status === 'pending' && pendingReason === 'clearing') return '清算中'
+  return STATUS_LABEL[status]
+}

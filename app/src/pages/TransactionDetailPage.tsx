@@ -43,7 +43,7 @@ import {
   formatRate,
   maskAccountNo,
 } from '@/lib/format'
-import { CHANNEL_LABEL, STATUS_LABEL } from '@/lib/tx'
+import { CHANNEL_LABEL, statusText } from '@/lib/tx'
 import { useAsync } from '@/lib/useAsync'
 
 const STATUS_TONE: Record<TransactionStatus, 'blue' | 'gold' | 'coral'> = {
@@ -61,6 +61,9 @@ export function TransactionDetailPage() {
   const tx = record.data
   const detail = tx?.detail
   const [receiptBusy, setReceiptBusy] = useState(false)
+  const [recallBusy, setRecallBusy] = useState(false)
+  /** 在途（大额延迟到账）且仍在窗口内才可撤销（§9.3） */
+  const inflight = tx?.status === 'pending' && tx.pendingReason === 'inflight'
 
   /** 直接粘贴链接进来时没有可回退的历史，退回流水列表而不是留一个空白页 */
   const goBack = useCallback(() => {
@@ -97,6 +100,24 @@ export function TransactionDetailPage() {
     }
   }
 
+  /**
+   * 撤销在途转账（§9.3）：只解冻可用余额，指令从未执行过、不发生扣款。
+   * 窗口到点自动到账、或员工已拦截后就撤不了了。
+   */
+  async function recallTransfer() {
+    if (!tx) return
+    setRecallBusy(true)
+    try {
+      const r = await api.recallTransfer(tx.id)
+      toast.show(r.memo, 'success')
+      record.reload()
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : '撤销失败，请稍后重试', 'error')
+    } finally {
+      setRecallBusy(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <header className="float-up flex flex-wrap items-center gap-4">
@@ -111,7 +132,12 @@ export function TransactionDetailPage() {
         <h1 className="text-[22px] leading-tight font-bold tracking-[-0.01em] text-ink">
           交易详情
         </h1>
-        <div className="ml-auto print:hidden">
+        <div className="ml-auto flex items-center gap-2.5 print:hidden">
+          {inflight && (
+            <Button variant="danger" loading={recallBusy} onClick={() => void recallTransfer()}>
+              撤销转账
+            </Button>
+          )}
           <Button
             variant="primary"
             icon={<DownloadIcon size={18} />}
@@ -202,7 +228,7 @@ export function TransactionDetailPage() {
                 ) : (
                   <AlertIcon size={14} />
                 )}
-                <span className="ml-1.5">{STATUS_LABEL[tx.status]}</span>
+                <span className="ml-1.5">{statusText(tx.status, tx.pendingReason)}</span>
               </Tag>
               <p className="num text-[13px] text-ink-soft">{formatDateTimeFull(tx.createdAt)}</p>
               <p className="text-[13px] text-ink-soft">{detail.paymentMethod}</p>
@@ -308,11 +334,16 @@ interface InfoField {
  */
 function rowsOf(tx: TransactionRecord, detail: TransactionDetail): InfoField[] {
   const fields: InfoField[] = [
-    { label: '交易状态', value: STATUS_LABEL[tx.status] },
+    { label: '交易状态', value: statusText(tx.status, tx.pendingReason) },
     { label: '交易类型', value: CATEGORY_LABEL[tx.category] },
     { label: '交易渠道', value: CHANNEL_LABEL[detail.channel] },
     { label: '交易时间', value: formatDateTimeFull(tx.createdAt) },
   ]
+
+  // 在途（大额延迟到账）：把窗口截止时刻亮出来，客户才知道什么时候到、什么时候前能撤
+  if (tx.holdUntil) {
+    fields.push({ label: '在途截止', value: formatDateTimeFull(tx.holdUntil) })
+  }
 
   if (detail.counterpartyName) {
     fields.push({ label: '对方户名', value: detail.counterpartyName })

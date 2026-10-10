@@ -2,8 +2,9 @@ import { DatabaseSync } from 'node:sqlite'
 import { existsSync, readFileSync } from 'node:fs'
 
 // storage.ts prepends `luckycat.`; the profile key itself already starts with it.
-const CURRENT_KEY = 'luckycat.mock.db'
-const PROFILES_KEY = 'luckycat.luckycat.mock.user-profiles.v1'
+// 导出给 staff-api.mjs 读客户展示名（工单列表要显示客户名，清单 §2）。
+export const CURRENT_KEY = 'luckycat.mock.db'
+export const PROFILES_KEY = 'luckycat.luckycat.mock.user-profiles.v1'
 const PROFILE_KEYS = new Set([CURRENT_KEY, PROFILES_KEY])
 
 /** SQLite stores the demo profile snapshots and owns the virtual card records. */
@@ -103,6 +104,7 @@ export function openBankDatabase(path, legacyStateFile) {
       memo TEXT NOT NULL,
       category TEXT NOT NULL,
       status TEXT NOT NULL CHECK (status IN ('success', 'pending', 'failed')),
+      pending_reason TEXT,
       created_at TEXT NOT NULL,
       detail_json TEXT NOT NULL,
       PRIMARY KEY (owner_id, id),
@@ -111,6 +113,13 @@ export function openBankDatabase(path, legacyStateFile) {
     CREATE INDEX IF NOT EXISTS idx_bank_transactions_account_time
       ON bank_transactions(owner_id, account_id, created_at DESC);
   `)
+
+  // 老库迁移：pending_reason 是大额转账审核挂起（清单 §9）加的稳定业务列。
+  // 查询时直接读列输出，禁止对 approvals JSON 做关联推导。
+  const txCols = db.prepare('PRAGMA table_info(bank_transactions)').all()
+  if (!txCols.some((column) => column.name === 'pending_reason')) {
+    db.exec('ALTER TABLE bank_transactions ADD COLUMN pending_reason TEXT')
+  }
 
   const getValue = db.prepare('SELECT value_json FROM app_storage WHERE key = ?')
   const putValue = db.prepare(`
@@ -152,8 +161,8 @@ export function openBankDatabase(path, legacyStateFile) {
     VALUES (?, ?, ?, ?, ?, ?, ?)`)
   const putTransaction = db.prepare(`INSERT INTO bank_transactions
     (owner_id, id, account_id, direction, amount_cents, signed_amount_cents,
-     counterparty, memo, category, status, created_at, detail_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+     counterparty, memo, category, status, pending_reason, created_at, detail_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 
   function withTransaction(work) {
     db.exec('BEGIN IMMEDIATE')
@@ -202,7 +211,7 @@ export function openBankDatabase(path, legacyStateFile) {
     for (const tx of profile.transactions) {
       putTransaction.run(owner, tx.id, tx.accountId, tx.direction, tx.amount,
         tx.signedAmount, tx.counterparty, tx.memo, tx.category, tx.status,
-        tx.createdAt, JSON.stringify(tx.detail))
+        tx.pendingReason ?? null, tx.createdAt, JSON.stringify(tx.detail))
     }
   }
 

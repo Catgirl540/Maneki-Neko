@@ -38,6 +38,8 @@
 - [ ] 客户端转账挂起方案书面确认（谁改 `app/**`、阈值取值）——功能清单 §9
 - [ ] agent 对接面冻结稿（§4）发给 agent 负责人并取得回执
 
+**M0 兜底**：逾期未答复不阻塞开工——客户端改动按功能清单 §9.3 默认方案由 A 执行（`pendingReason` 字段两端同属 A，见 §5 不变量 4）；agent 对接面按 §4 冻结稿实现，回执后补。书面答复只影响「谁动手」，不影响「怎么实现」。
+
 ### Phase 0 — 骨架（半天，**A 主导**；B 不空等，领并行任务）
 
 A 必须产出且 B 可依赖的稳定物：
@@ -85,7 +87,7 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 | `server/` tickets/approvals/转账挂起/agent-facing 路由 | A | 独占 | 转账挂起逻辑见功能清单 §9 |
 | `server/` customers/actions/audit 路由 | B | 独占 | |
 | `server/` 鉴权中间件、`writeAudit()`、建表 SQL | A 建、双方只读 | 改动需广播 | 公共地基 |
-| `app/**`（客户端） | — | **原则上禁改**；转账审核文案例外 | 例外范围：`TransferPage.tsx` 结果分支 + 流水状态标签，改动前报备、改完知会客户端作者；预算 < 30 行。若客户端作者认领则 A 不碰 |
+| `app/**`（客户端） | — | **原则上禁改**；延迟到账 UI + mock 业务例外 | 例外范围：`TransferPage.tsx` 结果分支（含撤销）、`TransactionDetailPage.tsx`、`lib/tx.ts`、`api/{types,contract,http}.ts`、`api/mock/**`。改动前报备、改完知会客户端作者。**已超原 <30 行预算（mock 业务约 150 行），待签字**。若客户端作者认领则 A 不碰 |
 
 命名约定：新文件一律带模块前缀（`ticket-*` / `approval-*` / `customer-*` / `action-*` / `audit-*`），避免同名冲突。
 
@@ -108,7 +110,7 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 - 幂等：客户端可传 `Idempotency-Key`；同键重复 POST 返回原单，不重复建单。
 - 错误体与客户端一致：`{ message: string(中文), code: string }`，HTTP status 判成败。
 - 请求/响应字段定义以 `工作人员端清单.md` §5 为准，实现前与该节逐字段核对。
-- **审批闭环（第 6 条，2026-10-09 钉死）**：`POST /tickets/:id/messages` 为 **P0**（demo 第 4 步依赖）。裁决通过后的钱动作**归服务端放行**（对已挂起转账单结算扣款；余额不足 → 流水 `failed` + 自动回写工单消息），**不归 agent**。agent 职责止于：提审 → 轮询 `GET /approvals/:id` → 通报结果。**禁止 agent 在 approved 后再调转账接口**（防双重执行）；员工端同样永不发起新转账。若 agent 负责人已实现「approved 后执行」路径，双方二选一切换，需书面确认。
+- **资金闭环（第 6 条，2026-10-09 钉死；2026-10-10 随延迟到账改写）**：`POST /tickets/:id/messages` 为 **P0**（demo 第 4 步依赖）。处置后的钱动作**归服务端收口**（窗口到点自动到账，或主管拦截/立即到账 → 解冻或结算扣款），**不归 agent**。agent 职责止于：提审 → 轮询 `GET /approvals/:id` → 通报结果。**禁止 agent 处置后再调转账接口**（防双重执行）；员工端同样永不发起新转账。若 agent 负责人已实现「approved 后执行」路径，双方二选一切换，需书面确认。
 
 ---
 
@@ -116,13 +118,16 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 
 1. 角色校验在后端逐接口执行；前端显隐仅为 UX，不构成安全边界。
 2. 工单状态机：`open→processing→waiting⇄processing→resolved`；`→suspended→processing`。非法流转 → 400 + 中文文案。终态 `resolved` 不可变。
-3. 审批状态机：`pending→approved|rejected`，一次性；重复裁决 → 409；驳回必须非空 `reason`。
-4. 转账挂起（功能清单 §9）：金额 < 阈值 → 立即成功（无审核、无感）；金额 ≥ 阈值 → **挂单不扣款**，流水 `status='pending'` + 自动建 `biz_type='transfer'` 审批单（不经 agent）；`approved` = 服务端放行结算 → 流水 `success`（余额不足则 `failed` + 自动工单消息）；`rejected` → `failed` + 理由。阈值为 server 配置项（demo ¥5,000），禁止在前端写死。
+3. 处置状态机：transfer 类 `pending→settled|intercepted|recalled`，非 transfer 类 `pending→approved|rejected`；一次性；重复处置 → 409；拦截必须 `reasonCode` ∈ 枚举；驳回必须非空 `reason`。
+4. 转账挂起（功能清单 §9）：金额 < 阈值（500000 分）→ 立即成功（无审核、无感）；金额 ≥ 阈值 → **挂单不扣款**，存转账指令 + 自动建 `biz_type='transfer'` 审批单（不经 agent；一笔指令仅一张有效审批单）。`approved` = **调用共用「执行转账」业务入口**（付款方扣款、收款方入账、档案流水、同步 `bank_*` 表，同一事务）——**禁止直接 `UPDATE bank_transactions`**（`saveLedger` 会按档案删重建，直接改表必被覆盖）。审批结果与执行结果分开：`approvals.status` 管裁决，`execution_status`(`pending/succeeded/failed`) 管资金执行，余额不足 → 「审批已通过、执行失败」并存 + 自动工单消息。`rejected` → 指令失败。**「审核中」渲染**：流水条目加 `pendingReason?: 'review' | 'clearing'`，服务端从指令**稳定字段**直出（不查审批 JSON），路由是 `GET /api/accounts/:id/transactions`。
 5. 所有写操作经过 `writeAudit()` 落 `audit_logs`；漏记视为缺陷。
 6. 客户敏感字段默认脱敏；完整视图访问必落审计（`customer_access_logs` 或等价 action）。
 7. 代客办理走白名单动作，内部调用客户端既有业务规则，不复制校验逻辑；结果与客户端自办一致（同一 SQLite 数据源）。
 8. 员工 token 与客户 token 不可互换；`staff_users` 预置账号仅演示用途。
 9. 前端不得硬编码假数据进生产分支；mock 与 http 实现方法集合必须一致（参照客户端 `check-contract.mjs` 的五方一致纪律，B 负责写等价检查脚本）；HTTP 一律走 Phase 0 的 `request()` 封装。
+10. 敏感资料访问日志与资料返回在**同一后端接口**内原子完成（校验理由→写日志→返回），前端禁止另发补记请求；`sender`/`actor` 一律服务端从登录态生成，不信请求体。
+11. agent token 与员工 token 权限面不同：agent 仅建单、查自己建的单、回写允许的消息；接单/转派/员工消息仅员工 token。主管不得裁决自己发起的审批（`applicant_id` ≠ 当前主管）。
+12. 审计红线：登录/敏感查看/接单转派/审批/代客操作/失败尝试必须落账（展示页可砍，记录不可砍）；日志不写完整账号、聊天原文、密钥。
 
 ---
 
@@ -135,6 +140,7 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 | agent 5 端点可用 | A | curl 冒烟：建单→查状态→提审→查裁决 |
 | 冒烟脚本 ≥3 条 | B | 列表渲染 / 状态流转 / 审计落库各一条 |
 | 降级清单 | A | 时间不足时按功能清单砍 P2→P1，**P0 三项不可砍** |
+| **演示/合练前环境检查** | A+B | 客户端 `VITE_USE_MOCK=false` 连真后端（mock 转账立即到账，挂起链只在真后端）；`tools/reset-demo.mjs` 可归零 |
 
 ---
 
@@ -149,13 +155,40 @@ B 执行顺序：客户查询前端(mock) → 客户查询后端 → 代客办�
 
 ---
 
-## 8. 当前状态速查（2026-10-09，吸收队友 4 条 + xpy 建议版后）
+## 8. 当前状态速查（2026-10-10，延迟到账 + 拦截窗口已落地）
 
-- [x] 功能清单已定稿：`工作人员端清单.md`（含 §9 转账挂起/审核放行，挂单不扣款）
+- [x] 功能清单已定稿：`工作人员端清单.md`（**§9 已于 2026-10-10 重写**为「延迟到账 + 拦截窗口」，取代旧的「挂起 → 主管审核放行」）
 - [x] 分工已定稿（本文件）
 - [x] 队友 4 条反馈已吸收：转账挂起设计 / 清单入库 `design/staff-console/` / Phase 0 增 HTTP 封装+部署代理 / Git 规矩写死
-- [x] xpy 建议 6 条已裁决：M0 里程碑、角色改 `csr`、messages 升 P0、mock 最小版+`reset-demo.mjs`、B 并行任务、审批闭环归服务端放行（agent 禁重复执行）
-- [ ] M0 未完成：客户端书面答复（谁改 `app/**`、阈值）；agent 冻结稿回执
-- [ ] Phase 0 未开始
-- [ ] 演示账号未预置（`staff_users`：王小明/csr、李主管/supervisor）
-- [ ] 转账审核客户端文案补丁未打（归属见功能清单 §9.3，认领人待客户端作者回复）
+- [x] xpy 建议 6 条已裁决：M0 里程碑、角色改 `csr`、messages 升 P0、mock 最小版+`reset-demo.mjs`、B 并行任务、资金闭环归服务端收口（agent 禁重复执行）
+- [x] 参考反馈 3 条已吸收：`pendingReason` 字段钉死渲染路径（防三不管）/ 验收加「演示前 `VITE_USE_MOCK=false`」/ M0 逾期兜底不许死等
+- [x] 第三方对照后端评审已吸收：禁直接改流水表（走共用业务入口）/ `execution_status` 分离 / 转账处置防伪造（transferId+唯一约束）/ 访问日志同接口落账 / demo 第 1 步真提交转账 / 路由名与金额单位修正
+- [x] **用户 2026-10-10 拍板重设计**：「闸门」→「刹车」。客户的转账权不该被员工收走；改成大额延迟到账 + 时间窗内员工一票否决（拦截，必选枚举理由）+ 客户可撤销 + 到点自动到账
+- [ ] M0 未完成：客户端作者对 `app/**` 改动签字（本次超出原 <30 行预算）；agent 冻结稿回执
+- [x] Phase 0 已完成（2026-10-09）：交付物 1–7 全部落地并冒烟绿
+  - `staff/` 骨架可跑（登录页/外壳/六页占位）、`contract.ts` v1、`request()` 封装、mock 最小版
+  - `server/staff-api.mjs` 六表+鉴权+writeAudit，列表/处置/审计接口已过冒烟
+  - `design/staff-console/DEPLOY.md`、`tools/reset-demo.mjs`（--dry-run 可用，重复跑幂等）
+  - 交付物 8 冻结稿文本已拟好，待人类转交 agent 负责人拿回执
+- [x] 演示账号已预置（`staff_users`：王小明/csr、李主管/supervisor，`ensureStaffSchema` + `reset-demo.mjs` 双保险）
+- [x] A1 工单前端（2026-10-09）：`TicketsPage` + `TicketDrawer`（筛选/3s 轮询/状态机按钮/转给主管/消息）
+- [x] A2 工单后端（2026-10-09）：筛选、agent 权限面、纯转派语义、`customerName` 反查；20 项工单冒烟绿
+- [x] A3 处置前后端 + 延迟到账主链（2026-10-10）：**47 项全链冒烟绿**
+  - 服务端：`createTransferApproval` 自动建单（幂等、防伪造、riskSummary 服务端生成）/
+    `closeTransferApproval` 三种收口 / `decide` 只收 `settle`|`intercept`，拦截必带枚举 `reasonCode` /
+    走 `bankHooks.settleHeldTransfer`（不碰流水表）/ `execution_status` 与 `status` 分离
+  - 桥接：`createDemoBank({ reviewThreshold, holdWindowMs, onTransferHeld, onHoldClosed })` +
+    `getHeldTransfer`/`settleHeldTransfer`/`tickHolds()`（跨档案扫到期窗口，1 秒一次）
+  - 客户端 mock：阈值进窗口 → **冻结 `available` 本金**（不动 `balance`）+ 占位流水
+    `pendingReason='inflight'` + `holdUntil` + `heldRequest` 冻结快照；`recallTransfer` 用户撤销；
+    `settleHeldTransfer` 三种收口都走同一条 `submitTransfer` 业务路
+  - 员工端：`ApprovalsPage`（改名处置中心）真页 —— 列表轮询/参数快照/**窗口倒计时**/
+    **立即到账**/**拦截（枚举理由下拉）**/新状态标签（已到账/已拦截/用户已撤销）
+  - 必测场景全过：小额不进窗口 / 在途冻结可用不动余额 / 用户撤销解冻 / 拦截必选枚举理由（自由文本 400）/
+    拦截解冻 / 立即到账扣款 / 重复处置 409 / **窗口到点自动到账** / 客服处置 403 / 审计留痕
+- [x] 客户端 UI 补丁（**待客户端作者签字**，超出原 <30 行预算）：
+  - `TransferPage`：「转账处理中 · 还剩 X 秒」+ **撤销**按钮；`TransactionDetailPage`：撤销按钮 + 在途截止
+  - `lib/tx.ts`：`inflight` 显示「在途·延迟到账」（旧值 `'review'` 已废弃）
+  - `app/src/api/mock/**`：延迟到账业务实现约 150 行（新模型把整条挂起链搬进 mock）
+- [ ] agent 接口联调（A 顺序最后一项，等对方用冻结稿对接）
+- [x] 全部改动已 commit/push（用户 2026-10-10 明确授权「把成果和进度文档push到github上」）

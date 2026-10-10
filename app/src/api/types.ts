@@ -93,6 +93,17 @@ export interface Transaction {
   category: TransactionCategory
   createdAt: string
   status: TransactionStatus
+  /**
+   * pending 的原因：`inflight` = 在途（大额转账延迟到账窗口，期间可撤销/可被拦截）；
+   * `clearing` = 外行汇款模拟清算。服务端填，前端只渲染（清单 §9.2）。
+   * 没有这个字段的 pending 是老数据，按「处理中」显示。
+   */
+  pendingReason?: 'inflight' | 'clearing'
+  /**
+   * 在途截止时刻（ISO）。到点自动到账；此前用户可撤销、员工可拦截。
+   * 只有 pendingReason='inflight' 的行才有。
+   */
+  holdUntil?: string
 }
 
 /**
@@ -153,6 +164,11 @@ export interface TransactionDetail {
 /** 交易详情接口的返回：台账行 + 附加明细 */
 export interface TransactionRecord extends Transaction {
   detail: TransactionDetail
+  /**
+   * 在途转账的指令快照（清单 §9.4：入窗时冻结，到账按它执行）。
+   * 只有 pendingReason='inflight' 的行才有；到账/拦截/撤销后随行一起消失。
+   */
+  heldRequest?: TransferRequest
 }
 
 export interface Paged<T> {
@@ -407,8 +423,24 @@ export interface TransferResult {
   createdAt: string
   /** 本行收款实时成功；外行演示汇款仅进入模拟清算队列。 */
   settlementStatus?: 'success' | 'pending'
+  /** settlementStatus=pending 的原因：`inflight` = 大额延迟到账窗口（清单 §9），`clearing` = 模拟清算 */
+  pendingReason?: 'inflight' | 'clearing'
+  /** 在途截止时刻（ISO）。到点自动到账，此前可撤销 / 可被拦截 */
+  holdUntil?: string
   /** 实际成交的换汇信息（含成交汇率）。锁价成功的凭证就是这里的 rate */
   fx?: FxQuote
+}
+
+/**
+ * 撤销在途转账的结果（清单 §9.3）。
+ * 撤销只解除可用余额冻结，**不发生扣款**——指令从未执行过。
+ */
+export interface TransferRecallResult {
+  transactionId: string
+  /** 撤销后这笔指令的流水状态（failed = 未执行资金操作） */
+  status: TransactionStatus
+  /** 流水上留下的说明，客服与客户看到同一句话 */
+  memo: string
 }
 
 /* ==========================================================================

@@ -217,6 +217,9 @@ export function toTransactionListItem(rec: TransactionRecord): Transaction {
     category: rec.category,
     createdAt: rec.createdAt,
     status: rec.status,
+    // 在途/清算中要透传到列表（清单 §9.2），前端才有得渲染倒计时
+    ...(rec.pendingReason ? { pendingReason: rec.pendingReason } : {}),
+    ...(rec.holdUntil ? { holdUntil: rec.holdUntil } : {}),
   }
 }
 
@@ -1481,6 +1484,31 @@ export function findProfileByPhone(phone: string): MockDb | null {
   const current = loadDb()
   if (current.user.phone === normalized) return current
   return profiles()[normalized] ?? null
+}
+
+/** 按用户 id 找档案（员工端放行挂起转账用：指令里记的是 customerId，不是手机号）。 */
+export function findProfileByUserId(userId: string): MockDb | null {
+  const current = loadDb()
+  if (current.user.id === userId) return current
+  for (const profile of Object.values(profiles())) {
+    if (profile.user.id === userId) return profile
+  }
+  return null
+}
+
+/**
+ * 列出所有演示档案（含当前激活的那个）。
+ * 在途窗口的定时扫账要跨用户扫：每个档案是独立的一份台账，
+ * 只扫当前档案会漏掉别的客户的到期转账。
+ */
+export function listAllProfiles(): MockDb[] {
+  const current = loadDb()
+  const all = profiles()
+  const out: MockDb[] = [current]
+  for (const profile of Object.values(all)) {
+    if (profile.user.id !== current.user.id) out.push(profile)
+  }
+  return out
 }
 
 /** 换绑手机号后移除旧索引，避免旧号码继续指向该用户档案。 */

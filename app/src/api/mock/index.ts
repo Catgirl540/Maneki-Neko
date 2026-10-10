@@ -66,6 +66,7 @@ import type {
   TransactionRecord,
   TransferQuote,
   TransferQuoteRequest,
+  TransferRecallResult,
   TransferRequest,
   TransferResult,
   User,
@@ -523,7 +524,14 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 
 /* ------------------------------------------------------------------- 实现 */
 
-export function createMockApi(): BankApi {
+/**
+ * @param options.reviewThreshold - 大额转账延迟到账阈值（整数分）。
+ *   传了才会启用在途窗口（真后端演示，清单 §9）；不传 = 一律立即完成（浏览器 mock 模式）。
+ * @param options.holdWindowMs - 在途窗口时长（毫秒）。默认 5 分钟；演示时调小。
+ */
+export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?: number }): BankApi {
+  const reviewThreshold = options?.reviewThreshold
+  const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000
   return {
     async login(phone, password, smsCode) {
       await delay()
@@ -986,6 +994,67 @@ export function createMockApi(): BankApi {
         throw new ApiError('账户可用余额不足', 400, 'INSUFFICIENT_FUNDS')
       }
 
+      // —— 大额转账延迟到账窗口（清单 §9，只在真后端演示开启） ——
+      // 钱**先冻结**（available 扣、balance 不扣）：窗口到点一定付得出去，
+      // 不会出现「到点没钱」这种用户完全控制不了的失败。
+      // 窗口内用户可撤销、员工可拦截；都没人动 → 自动到账。
+      // 到账走 submitTransfer 同一条业务路（删占位后重提交），不复制业务规则。
+      if (reviewThreshold !== undefined && total >= reviewThreshold) {
+        const holdUntil = new Date(Date.now() + holdWindowMs).toISOString()
+        // 只冻结本金（不含手续费）：手续费在真正执行时才计。
+        // 冻结的是 available 不是 balance —— 客户端「可用余额」立刻减少、
+        // 「余额」不变，正是真实银行在途/预授权的表现。
+        const senderRow = loadDb().accounts.find((row) => row.id === req.fromAccountId)
+        if (senderRow) {
+          senderRow.available -= req.amount
+          if (senderRow.available < 0) {
+            senderRow.available += req.amount
+            throw new ApiError('账户可用余额不足', 400, 'INSUFFICIENT_FUNDS')
+          }
+        }
+        const held = pushTransaction(
+          {
+            accountId: req.fromAccountId,
+            direction: 'out',
+            amount: req.amount,
+            signedAmount: -req.amount,
+            counterparty: `转账 · ${req.payeeName.trim()}`,
+            memo: req.memo || `转账至${req.payeeName.trim()}（处理中）`,
+            category: 'transfer',
+            createdAt: new Date().toISOString(),
+            status: 'pending',
+            pendingReason: 'inflight',
+            holdUntil,
+          },
+          {
+            channel: 'transfer',
+            paymentMethod: account.label,
+            accountLabel: account.label,
+            accountNo: account.accountNo,
+            settleCurrency: account.currency,
+            counterpartyName: req.payeeName.trim(),
+            counterpartyAccountNo: identifier,
+            location: '招财猫银行 App',
+            remark: req.memo.trim() || undefined,
+          },
+          false,
+        )
+        held.heldRequest = { ...req }
+        persist()
+        return {
+          transactionId: held.id,
+          referenceNo: held.detail.referenceNo,
+          amount: req.amount,
+          fee,
+          channel: req.channel,
+          identifier,
+          createdAt: held.createdAt,
+          settlementStatus: 'pending',
+          pendingReason: 'inflight',
+          holdUntil,
+        }
+      }
+
       // 同一客户名下的本行账户划转：两边余额和台账在一次持久化中更新。
       const recipient = !isFps && req.scope === 'domestic' &&
         req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN'
@@ -1183,6 +1252,26 @@ export function createMockApi(): BankApi {
         createdAt: tx.createdAt,
         settlementStatus: isFps ? 'success' : 'pending',
         ...(fx ? { fx } : {}),
+      }
+    },
+
+    /**
+     * 撤销在途转账（清单 §9.3）：延迟到账窗口内用户随时可以自己撤回。
+     * 资金侧只解除冻结——这笔指令从未执行过，不存在"退款"。
+     */
+    async recallTransfer(transactionId: string): Promise<TransferRecallResult> {
+      await delay(320)
+      const rec = loadDb().transactions.find((t) => t.id === transactionId)
+      if (!rec) throw new ApiError('交易不存在', 404, 'NOT_FOUND')
+      if (rec.status !== 'pending' || rec.pendingReason !== 'inflight') {
+        throw new ApiError('这笔转账已不在可撤销状态', 409, 'NOT_RECALLABLE')
+      }
+      await settleHeldTransfer(transactionId, 'recalled', '用户主动撤销')
+      const after = loadDb().transactions.find((t) => t.id === transactionId)
+      return {
+        transactionId,
+        status: after?.status ?? 'failed',
+        memo: after?.memo ?? '已撤销',
       }
     },
 
@@ -1873,4 +1962,139 @@ export function createMockApi(): BankApi {
       return cannedReply(text)
     },
   }
+}
+
+/* ==========================================================================
+   大额转账在途窗口：到账 / 拦截 / 撤销（清单 §9.4）
+   红线：不许直接改 bank_* 表（saveLedger 会重建）；一切经过档案 + persist()。
+   到账走 **submitTransfer 同一条业务路**——解冻、删占位、按冻结指令重新提交，
+   这样余额校验、台账、收款人簿、入账全部复用，不复制业务规则。
+   拦截/撤销只是解除冻结：这笔指令从未执行过，不存在"退款"。
+   ========================================================================== */
+
+/** 在途窗口的三种了结方式 */
+export type HoldOutcome = 'settled' | 'intercepted' | 'recalled'
+
+export interface HeldTransferInfo {
+  customerId: string
+  transactionId: string
+  amount: Cents
+  payeeName: string
+  /** 在途截止时刻（ISO）；过了就自动到账 */
+  holdUntil: string
+  /** 冻结的原始转账指令（到账按它执行） */
+  request: TransferRequest
+}
+
+/** 解除可用余额冻结（冻结的是本金，见 submitTransfer 挂起分支的注释） */
+function releaseFreeze(db: ReturnType<typeof loadDb>, rec: TransactionRecord) {
+  const row = db.accounts.find((a) => a.id === rec.accountId)
+  if (row) {
+    row.available += rec.amount
+    if (row.available > row.balance + 0) {
+      // 只在账目被外部改坏时才会发生；宁可夹住也不要出现可用>余额的脏数据
+      row.available = row.balance
+    }
+  }
+}
+
+/** 查在途中的指令（员工端建单、agent 提审防伪造用）。须先 activate 到对应档案。 */
+export function getHeldTransfer(transactionId: string): HeldTransferInfo | null {
+  const db = loadDb()
+  const rec = db.transactions.find((t) => t.id === transactionId)
+  if (!rec || rec.status !== 'pending' || rec.pendingReason !== 'inflight' || !rec.heldRequest) {
+    return null
+  }
+  return {
+    customerId: db.user.id,
+    transactionId: rec.id,
+    amount: rec.amount,
+    payeeName: rec.heldRequest.payeeName,
+    holdUntil: rec.holdUntil ?? new Date().toISOString(),
+    request: rec.heldRequest,
+  }
+}
+
+/**
+ * 了结在途指令。
+ * - `settled`：到点/员工立即放行 → 解冻后走 submitTransfer 真正执行
+ * - `intercepted`：员工拦截 → 解冻，流水翻 failed 留痕
+ * - `recalled`：用户撤销 → 同上，理由记「用户主动撤销」
+ * 返回到账的转账结果（拦截/撤销返回 null）。执行失败抛错，调用方据此留痕。
+ */
+export async function settleHeldTransfer(
+  transactionId: string,
+  outcome: HoldOutcome,
+  reason?: string,
+): Promise<TransferResult | null> {
+  const db = loadDb()
+  const index = db.transactions.findIndex(
+    (t) => t.id === transactionId && t.pendingReason === 'inflight' && t.status === 'pending',
+  )
+  if (index < 0) {
+    throw new ApiError('没有找到在途的转账指令', 404, 'HELD_TRANSFER_NOT_FOUND')
+  }
+  const rec = db.transactions[index]
+  const held = rec.heldRequest
+  if (!held) {
+    throw new ApiError('在途指令缺少快照，无法结算', 409, 'HELD_REQUEST_MISSING')
+  }
+
+  if (outcome !== 'settled') {
+    // 拦截 / 撤销：解除冻结即可。钱从头到尾没离开过账户。
+    releaseFreeze(db, rec)
+    rec.status = 'failed'
+    delete rec.pendingReason
+    delete rec.holdUntil
+    delete rec.heldRequest
+    rec.memo = outcome === 'recalled'
+      ? `${rec.memo} · 已撤销${reason ? `：${reason}` : ''}`
+      : `${rec.memo} · 已拦截${reason ? `：${reason}` : ''}`
+    persist()
+    return null
+  }
+
+  // 到账：解冻 → 撤占位 → 按冻结指令走 submitTransfer 业务路。
+  // 解冻在先，submitTransfer 里的可用余额校验才看得见这笔钱。
+  releaseFreeze(db, rec)
+  db.transactions.splice(index, 1)
+  persist()
+  try {
+    // 不带 reviewThreshold 的实例 = 纯执行，不会再进窗口
+    return await createMockApi().submitTransfer(held)
+  } catch (error) {
+    // 极少数情况（如收款账户校验在窗口内失效）才走到这里：留痕，别静默吞掉
+    rec.status = 'failed'
+    delete rec.pendingReason
+    delete rec.holdUntil
+    delete rec.heldRequest
+    rec.memo = `${rec.memo} · 到账失败：${error instanceof Error ? error.message : '未知错误'}`
+    db.transactions.unshift(rec)
+    persist()
+    throw error
+  }
+}
+
+/**
+ * 扫出**当前档案**里所有到点的在途指令并自动到账（清单 §9.1：没人拦 = 默认放行）。
+ * 跨用户的扫描由调用方（demo-bank tickHolds）逐档案切换来做。
+ * 返回本次自动到账的指令号列表，调用方据此关掉员工端的窗口记录。
+ */
+export async function settleExpiredHolds(): Promise<string[]> {
+  const db = loadDb()
+  const now = Date.now()
+  const expired = db.transactions.filter(
+    (t) => t.status === 'pending' && t.pendingReason === 'inflight' && t.holdUntil !== undefined
+      && new Date(t.holdUntil).getTime() <= now,
+  )
+  const settled: string[] = []
+  for (const rec of expired) {
+    try {
+      await settleHeldTransfer(rec.id, 'settled')
+      settled.push(rec.id)
+    } catch {
+      // 单笔失败不影响其他笔；settleHeldTransfer 内部已经把流水翻 failed 留痕
+    }
+  }
+  return settled
 }

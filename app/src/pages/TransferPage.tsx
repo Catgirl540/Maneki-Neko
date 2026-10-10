@@ -105,6 +105,9 @@ export function TransferPage() {
   const [submitting, setSubmitting] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [result, setResult] = useState<TransferResult | null>(null)
+  /** 在途倒计时用的本地时钟；只有 result 在途时才跳（§9） */
+  const [nowMs, setNowMs] = useState(() => Date.now())
+  const [recalling, setRecalling] = useState(false)
   const [quoteState, setQuoteState] = useState<TransferQuote | null>(null)
   /** 换汇报价过期后自增，触发重新询价 */
   const [quoteNonce, setQuoteNonce] = useState(0)
@@ -533,7 +536,36 @@ export function TransferPage() {
     setResolved(null)
     setResult(null)
     setError(null)
+    setRecalling(false)
   }
+
+  /**
+   * 撤销在途转账（§9.3）：只解冻可用余额，指令从未执行过、不发生扣款。
+   * 窗口到点自动到账后就撤不了了。
+   */
+  async function doRecall() {
+    if (!result) return
+    setRecalling(true)
+    setError(null)
+    try {
+      const r = await api.recallTransfer(result.transactionId)
+      toast.show(r.memo)
+      setResult(null)
+      setStep(1)
+      accounts.reload()
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : '撤销失败，请稍后重试')
+    } finally {
+      setRecalling(false)
+    }
+  }
+
+  // 在途结果才跳秒；到点后交给后端自动到账，这里只是展示。
+  useEffect(() => {
+    if (!result?.holdUntil) return
+    const timer = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [result?.holdUntil])
 
   return (
     <div className="flex flex-col gap-7">
@@ -1140,20 +1172,51 @@ export function TransferPage() {
 
       {step === 3 && result && (
         <Card className="float-up mx-auto w-full max-w-[520px] text-center">
-          <span className="mx-auto grid size-16 place-items-center rounded-chip bg-blue-wash text-blue">
-            <CheckIcon size={30} />
-          </span>
+          {result.pendingReason === 'inflight' ? (
+            <span className="mx-auto grid size-16 place-items-center rounded-chip bg-gold-wash text-gold-deep">
+              <AlertIcon size={30} />
+            </span>
+          ) : (
+            <span className="mx-auto grid size-16 place-items-center rounded-chip bg-blue-wash text-blue">
+              <CheckIcon size={30} />
+            </span>
+          )}
           <h2 className="mt-5 text-[22px] font-bold tracking-[-0.01em] text-ink">
-            {result.settlementStatus === 'pending' ? '已提交模拟清算' : '转账成功'}
+            {result.pendingReason === 'inflight'
+              ? '转账处理中'
+              : result.settlementStatus === 'pending'
+                ? '已提交模拟清算'
+                : '转账成功'}
           </h2>
           <p className="num mt-3 text-[34px] leading-none font-bold text-ink">
             ¥{formatAmount(result.amount)}
           </p>
           <p className="mt-3 text-[14px] text-ink-soft">
-            {result.settlementStatus === 'pending'
-              ? `转往 ${finalPayeeName} · 外行收款账户不在本演示数据库内`
-              : `已转给 ${finalPayeeName} · ${etaText}`}
+            {result.pendingReason === 'inflight'
+              ? `大额转账延迟到账 · 转往 ${finalPayeeName}`
+              : result.settlementStatus === 'pending'
+                ? `转往 ${finalPayeeName} · 外行收款账户不在本演示数据库内`
+                : `已转给 ${finalPayeeName} · ${etaText}`}
           </p>
+
+          {result.pendingReason === 'inflight' && result.holdUntil && (
+            <div className="mt-5 rounded-tile border border-gold-deep/30 px-4 py-3">
+              <p className="text-[13px] text-ink-mute">窗口到点自动到账，此前可撤销</p>
+              <p className="num mt-1 text-[22px] font-bold text-gold-deep">
+                {(() => {
+                  const left = new Date(result.holdUntil).getTime() - nowMs
+                  if (left <= 0) return '窗口已到点，正在自动到账…'
+                  const totalSec = Math.ceil(left / 1000)
+                  const m = Math.floor(totalSec / 60)
+                  const s = totalSec % 60
+                  return `还剩 ${m > 0 ? `${m} 分 ` : ''}${s} 秒`
+                })()}
+              </p>
+              <p className="mt-2 text-[12px] text-ink-mute">
+                本金已冻结（可用余额已扣减），撤销后立即退回；手续费在真正到账时才计。
+              </p>
+            </div>
+          )}
 
           <dl className="mt-8 flex flex-col gap-3.5 border-t border-line pt-6 text-left text-[14px]">
             <SummaryRow label="收款银行" value={selectedBank?.name ?? '—'} />
@@ -1176,15 +1239,27 @@ export function TransferPage() {
             )}
           </dl>
 
-          <div className="mt-8 flex gap-3">
-            <Button block onClick={reset}>
-              再转一笔
-            </Button>
-            <Link to="/dashboard" className="flex-1">
-              <Button block variant="primary">
-                返回总览
+          <div className="mt-8 flex flex-col gap-3">
+            {result.pendingReason === 'inflight' && (
+              <Button
+                block
+                variant="secondary"
+                disabled={recalling}
+                onClick={doRecall}
+              >
+                {recalling ? '撤销中…' : '撤销这笔转账'}
               </Button>
-            </Link>
+            )}
+            <div className="flex gap-3">
+              <Button block onClick={reset}>
+                再转一笔
+              </Button>
+              <Link to="/dashboard" className="flex-1">
+                <Button block variant="primary">
+                  返回总览
+                </Button>
+              </Link>
+            </div>
           </div>
         </Card>
       )}

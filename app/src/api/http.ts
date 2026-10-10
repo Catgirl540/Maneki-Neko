@@ -11,6 +11,7 @@ import type {
   ReceiptFile,
   TransactionRecord,
   TransferQuoteRequest,
+  TransferRecallResult,
   TransferRequest,
   User,
 } from './types'
@@ -91,6 +92,8 @@ export function createHttpApi(): BankApi {
     quoteTransfer: (req: TransferQuoteRequest) => post(routes.transferQuote(), req),
     resolveTransferRecipient: (req) => post(routes.transferRecipient(), req),
     submitTransfer: (req: TransferRequest) => post(routes.transfers(), req),
+    recallTransfer: (transactionId: string) =>
+      post<TransferRecallResult>(routes.transferRecall(transactionId), {}),
 
     listCards: () => request<BankCard[]>(routes.cards()),
     listCardProducts: () => request<CardProduct[]>(routes.cardProducts()),

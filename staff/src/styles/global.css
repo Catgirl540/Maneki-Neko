@@ -1,0 +1,35 @@
+@import 'tailwindcss';
+@import './tokens.css';
+
+/* 员工端不引入 Web 字体文件（客户端那两套 woff2 不搬），中文交系统字体栈。
+   视觉规范复用 tokens.css，换肤仍只改 tokens 一个文件。 */
+:root {
+  font-family: 'Inter Variable', 'Inter', 'PingFang SC', 'Microsoft YaHei',
+    'Noto Sans CJK SC', system-ui, sans-serif;
+  color: var(--color-ink);
+  background: var(--color-paper);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--color-paper);
+}
+
+/* 员工端偏工具风：比客户端更紧凑的表格与行高 */
+table.staff-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+table.staff-table th,
+table.staff-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-line);
+  font-size: 14px;
+}
+table.staff-table th {
+  color: var(--color-ink-soft);
+  font-weight: 600;
+  background: var(--color-sunk);
+}

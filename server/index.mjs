@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDemoBank } from '../framework/bridge/demo-bank.mjs'
 import { openBankDatabase } from './database.mjs'
+import { createStaffApi } from './staff-api.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const host = process.env.BANK_HOST ?? '127.0.0.1'
@@ -58,7 +59,39 @@ const auth = {
 
 mkdirSync(dirname(databaseFile), { recursive: true })
 const database = openBankDatabase(databaseFile, legacyStateFile)
-const bank = await createDemoBank({ searchFrom: root, auth, storage: database.storage })
+// 大额转账延迟到账阈值（清单 §9.1）：demo ¥5,000 = 500000 分，服务端可调，不写死前端。
+const reviewThreshold = Number(process.env.BANK_TRANSFER_REVIEW_CENTS ?? 500_000)
+// 在途窗口时长：业务默认 5 分钟，演示调成 30 秒（BANK_TRANSFER_HOLD_SECONDS=30）。
+const holdWindowMs = Number(process.env.BANK_TRANSFER_HOLD_SECONDS ?? 300) * 1000
+// staffApi 依赖 bank 的资金钩子，bank 的回调又要回写 staffApi 的记录，
+// 所以用前向引用解开环：先建 bank，回调触发时 staffApi 已就位。
+let staffApi
+const bank = await createDemoBank({
+  searchFrom: root,
+  auth,
+  storage: database.storage,
+  reviewThreshold,
+  holdWindowMs,
+  onTransferHeld: (held) => staffApi.createTransferApproval(held),
+  onHoldClosed: (closed) => staffApi.closeTransferApproval(closed),
+})
+// 工作人员端 /staff-api/*（见 design/staff-console/）。先于 bank.handle 匹配。
+staffApi = createStaffApi({
+  db: database.db,
+  bankHooks: {
+    getHeldTransfer: (args) => bank.getHeldTransfer(args),
+    settleHeldTransfer: (args) => bank.settleHeldTransfer(args),
+  },
+})
+
+// 在途窗口到点自动到账（清单 §9.1：没人拦 = 默认放行）。
+// 1 秒一次：demo 窗口只有 30 秒，粒度太粗会让倒计时和实际到账对不上。
+const holdTimer = setInterval(() => {
+  bank.tickHolds().catch((error) => {
+    console.warn(`[bank-server] 自动到账扫账失败：${error?.message ?? error}`)
+  })
+}, 1000)
+holdTimer.unref?.()
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
@@ -74,6 +107,7 @@ const server = createServer(async (req, res) => {
     return
   }
   try {
+    if (await staffApi.handle(req, res, url)) return
     if (await bank.handle(req, res, url)) return
   } catch (error) {
     if (res.writableEnded) return
@@ -88,4 +122,5 @@ const server = createServer(async (req, res) => {
 server.listen(port, host, () => {
   console.log(`[bank-server] http://${host}:${port}`)
   console.log(`[bank-server] SQLite: ${databaseFile}`)
+  console.log(`[bank-server] 大额延迟到账：阈值 ¥${(reviewThreshold / 100).toFixed(2)}，窗口 ${holdWindowMs / 1000}s`)
 })

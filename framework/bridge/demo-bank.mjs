@@ -76,6 +76,7 @@ const ROUTES = [
   ['POST', 'transferQuote', 'quoteTransfer', (id, b) => [b]],
   ['POST', 'transferRecipient', 'resolveTransferRecipient', (id, b) => [b]],
   ['POST', 'transfers', 'submitTransfer', (id, b) => [b]],
+  ['POST', 'transferRecall', 'recallTransfer', (id) => [id]],
 
   // —— 银行卡 ——
   ['GET', 'cards', 'listCards', () => []],
@@ -298,9 +299,23 @@ function findAssetRoot(start) {
  * @param options.searchFrom - 从哪个目录开始向上找 app 源码与转译钩子。
  * @param options.auth - 可选的服务端会话适配器；不传时保留原演示桥接行为。
  * @param options.storage - 可选的 localStorage 适配器，供 SQLite 后端持久化。
- * @returns `{ handle, reset, stats }`
+ * @param options.reviewThreshold - 大额转账延迟到账阈值（整数分）。传了才启用在途窗口
+ *   （清单 §9）：≥ 阈值的转账先冻结、进窗口；不传 = 一律立即到账（浏览器 mock 同款）。
+ * @param options.holdWindowMs - 在途窗口时长（毫秒），默认 5 分钟，演示可调小。
+ * @param options.onTransferHeld - 转账进窗口时的回调（server 侧建拦截窗口记录）。
+ * @param options.onHoldClosed - 窗口了结时的回调（到账/拦截/撤销，server 侧关单）。
+ * @returns `{ handle, reset, stats, getHeldTransfer, settleHeldTransfer, tickHolds }`
  */
-export async function createDemoBank({ stateFile, searchFrom, auth, storage } = {}) {
+export async function createDemoBank({
+  stateFile,
+  searchFrom,
+  auth,
+  storage,
+  reviewThreshold,
+  holdWindowMs,
+  onTransferHeld,
+  onHoldClosed,
+} = {}) {
   const start = searchFrom ?? fileURLToPath(new URL('../..', import.meta.url))
   const root = findAssetRoot(start)
   if (root === null) {
@@ -326,12 +341,21 @@ export async function createDemoBank({ stateFile, searchFrom, auth, storage } = 
     // 而 mock 与它共用同一个模块实例，所以 api 会立刻看到新数据。
     import(pathToFileURL(dbPath).href),
   ])
-  const { createMockApi } = mockModule
+  const {
+    createMockApi,
+    getHeldTransfer: mockGetHeldTransfer,
+    settleHeldTransfer: mockSettleHeldTransfer,
+    settleExpiredHolds: mockSettleExpiredHolds,
+  } = mockModule
   const { routes, ApiError } = contractModule
-  const { resetDb, findProfileByPhone, activateDb } = dbModule
+  const { resetDb, findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb } = dbModule
   dbModule.loadDb()
 
-  const api = createMockApi()
+  const api = createMockApi(
+    reviewThreshold === undefined
+      ? {}
+      : { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000 },
+  )
   const patterns = compilePatterns(routes)
   // mock 原本是单标签页内存对象。HTTP 桥接会同时服务多个用户，
   // 所以请求先按 bearer token 切到对应档案，并串行执行以避免切档串号。
@@ -450,6 +474,23 @@ export async function createDemoBank({ stateFile, searchFrom, auth, storage } = 
           return undefined
         }
         const value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+        // 大额转账进在途窗口：通知 server 侧建记录（清单 §9.4，只在真后端演示开启）
+        if (entry.bankMethod === 'submitTransfer' && value?.pendingReason === 'inflight' && onTransferHeld) {
+          await onTransferHeld({
+            customerId: dbModule.loadDb().user.id,
+            request: body,
+            result: value,
+          })
+        }
+        // 用户撤销：mock 内部已了结流水，这里补一刀关掉员工端的窗口记录
+        if (entry.bankMethod === 'recallTransfer' && onHoldClosed) {
+          await onHoldClosed({
+            customerId: dbModule.loadDb().user.id,
+            transactionId: match.arg,
+            outcome: 'recalled',
+            reason: '用户主动撤销',
+          })
+        }
         if (auth && entry.bankMethod === 'changePhone') {
           await auth.phoneChanged(phone, value.phone)
         }
@@ -485,5 +526,58 @@ export async function createDemoBank({ stateFile, searchFrom, auth, storage } = 
     handle,
     reset,
     stats: () => ({ routes: ROUTES.length, staticRoutes: patterns.staticOnes.length, stateFile }),
+
+    /** 查在途中的转账指令（员工端/agent 提审用）。走同一队列，避免切档串号。 */
+    getHeldTransfer({ customerId, transactionId }) {
+      return exclusive(async () => {
+        const profile = findProfileByUserId(customerId)
+        if (profile === null) return null
+        activateDb(profile)
+        return mockGetHeldTransfer(transactionId)
+      })
+    },
+
+    /**
+     * 了结在途转账（员工端窗口操作）。内部切到客户档案，
+     * 到账走 submitTransfer 同一条业务路。了结后通知 server 关单。
+     */
+    settleHeldTransfer({ customerId, transactionId, outcome, reason }) {
+      return exclusive(async () => {
+        const profile = findProfileByUserId(customerId)
+        if (profile === null) {
+          throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
+        }
+        activateDb(profile)
+        const result = await mockSettleHeldTransfer(transactionId, outcome, reason)
+        if (onHoldClosed) {
+          await onHoldClosed({ customerId, transactionId, outcome, reason })
+        }
+        return result
+      })
+    },
+
+    /**
+     * 定时扫账：把所有到点的在途指令自动到账（清单 §9.1，没人拦 = 默认放行）。
+     * 跨用户逐档案切换——每个档案是独立台账，只扫当前档会漏掉别人的到期转账。
+     * 返回本次自动到账的笔数。
+     */
+    tickHolds() {
+      return exclusive(async () => {
+        const closed = []
+        for (const profile of listAllProfiles()) {
+          activateDb(profile)
+          const ids = await mockSettleExpiredHolds()
+          for (const transactionId of ids) {
+            closed.push({ customerId: profile.user.id, transactionId })
+          }
+        }
+        if (onHoldClosed) {
+          for (const item of closed) {
+            await onHoldClosed({ ...item, outcome: 'settled', reason: '窗口到点，自动到账' })
+          }
+        }
+        return closed.length
+      })
+    },
   }
 }
