@@ -29,6 +29,22 @@ function assertDocument(raw: unknown, position: number, path: string): CorpusDoc
   if (typeof document.text !== 'string' || document.text.trim() === '') {
     throw new CorpusError(`corpus ${path}: documents[${position}]（id=${document.id}）的 text 必须是非空字符串`)
   }
+  for (const field of ['tags', 'routes'] as const) {
+    const value = document[field]
+    if (value !== undefined && (!Array.isArray(value) || value.some(item => typeof item !== 'string'))) {
+      throw new CorpusError(`corpus ${path}: ${document.id}.${field} 必须为字符串数组`)
+    }
+  }
+  if (document.sections !== undefined) {
+    const ids = new Set<string>()
+    if (!Array.isArray(document.sections) || document.sections.length === 0) throw new CorpusError(`corpus ${path}: sections 为空或无效`)
+    for (const section of document.sections) {
+      if (!section || ![section.id, section.title, section.text].every(value => typeof value === 'string' && value.trim()) || ids.has(section.id)) {
+        throw new CorpusError(`corpus ${path}: ${document.id} 章节字段缺失或 id 重复`)
+      }
+      ids.add(section.id)
+    }
+  }
   return document as CorpusDocument
 }
 
@@ -65,7 +81,8 @@ export function loadCorpus(path: string): CorpusDocument[] {
     const document = assertDocument(entry, position, path)
     if (ids.has(document.id)) throw new CorpusError(`corpus ${path}: 文档 id 重复：${document.id}`)
     ids.add(document.id)
-    return document
+    const version = (parsed as CorpusFile).version
+    return { ...document, ...version === undefined ? {} : { version } }
   })
 }
 
@@ -86,24 +103,33 @@ function hardSplit(paragraph: string, maxChars: number): string[] {
 }
 
 /**
- * 把文档切成可检索的块：先按空行分段，超长段落再按码点硬切。
+ * 结构化问答按章节完整切块，超长即报错；旧测试语料按空行分段后码点硬切。
  * 按码点切保证**不会把一个字切成半个**。
  * @param documents - 语料文档。
  * @param maxChunkChars - 单块最大码点数。
  * @returns 展平后的块数组。
  */
 export function chunkDocuments(documents: readonly CorpusDocument[], maxChunkChars: number = DEFAULT_MAX_CHUNK_CHARS): Chunk[] {
+  if (!Number.isInteger(maxChunkChars) || maxChunkChars < 1) throw new CorpusError('maxChunkChars 必须为正整数')
   const chunks: Chunk[] = []
   for (const document of documents) {
-    const pieces = paragraphsOf(document.text).flatMap(paragraph => hardSplit(paragraph, maxChunkChars))
-    pieces.forEach((text, index) => {
-      chunks.push({
-        documentId: document.id,
-        index,
-        text,
-        ...document.title === undefined ? {} : { title: document.title },
+    const metadata = {
+      ...document.title === undefined ? {} : { title: document.title },
+      ...document.tags === undefined ? {} : { tags: document.tags },
+      ...document.routes === undefined ? {} : { routes: document.routes },
+      ...document.version === undefined ? {} : { version: document.version },
+    }
+    if (document.sections !== undefined) {
+      document.sections.forEach((section, index) => {
+        const text = `${section.title}\n${section.text}`
+        // 问答整体不可硬切，否则可能留下结论却丢掉限制。
+        if (Array.from(text).length > maxChunkChars) throw new CorpusError(`章节 ${document.id}#${section.id} 超出块长，请缩短完整答案`)
+        chunks.push({ documentId: document.id, index, sectionId: section.id, sectionTitle: section.title, text, ...metadata })
       })
-    })
+    } else {
+      const pieces = paragraphsOf(document.text).flatMap(paragraph => hardSplit(paragraph, maxChunkChars))
+      pieces.forEach((text, index) => chunks.push({ documentId: document.id, index, text, ...metadata }))
+    }
   }
   return chunks
 }

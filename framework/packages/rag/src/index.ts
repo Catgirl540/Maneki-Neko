@@ -103,7 +103,11 @@ export function apply(ctx: Context, config: Config): void {
     description:
       'Search the internal knowledge base and return the most relevant passages with their source ids. '
       + 'Call this before answering any question about the organisation\'s own policies, fees, limits, or procedures. '
-      + 'Answer from the returned passages and cite the source ids; if the passages do not cover the question, say so instead of guessing.',
+      + 'Normally answer in 2-4 short sentences covering only the question. Do not add examples, extra verification steps, human support channels or unsolicited offers absent from the passages. '
+      + 'Answer concisely from passages. Source ids, scores, versions and internal paths are for audit only; do not show them to customers. '
+      + 'If no passage covers the question, say no supporting information was found instead of guessing. '
+      + 'Knowledge is NOT live customer data: query bank tools for balances, actual fees, limits, FX rates, NAV and transaction status. '
+      + 'If a query fails or a banking action is unavailable, say so and point to the relevant web page; never invent values or claim execution.',
     parameters: {
       query: { type: 'string', required: true, description: 'The question or keywords to search for.' },
       top_k: { type: 'number', description: 'Maximum number of passages to return. Defaults to the configured value.' },
@@ -167,13 +171,17 @@ export function apply(ctx: Context, config: Config): void {
         ...outcome.degradedReason === undefined ? {} : { degradedReason: outcome.degradedReason },
         indexedChunks: outcome.indexedChunks,
         corpusPath: config.corpusPath,
+        corpusVersion: documents[0]?.version ?? null,
+        answerPolicy: hits.length === 0 ? 'no-supported-answer' : 'rules-only-query-live-data',
         injection: {
           bytes: bounded.injectedBytes,
           dropped: bounded.dropped,
           truncated: bounded.truncated,
         },
         hits: hits.map(hit => ({
-          source: `${hit.chunk.documentId}#${hit.chunk.index}`,
+          source: `${hit.chunk.documentId}#${hit.chunk.sectionId ?? hit.chunk.index}`,
+          routes: hit.chunk.routes ?? [],
+          corpusVersion: hit.chunk.version ?? null,
           ...hit.chunk.title === undefined ? {} : { title: hit.chunk.title },
           score: Number(hit.score.toFixed(4)),
           matchedBy: hit.matchedBy,

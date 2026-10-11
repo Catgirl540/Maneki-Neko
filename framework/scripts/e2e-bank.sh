@@ -3,7 +3,7 @@
 #   A. 模型真的调用了 knowledge_lookup
 #   B. 会话日志里留下了注入块，且字节数不超过预算（model-visible ⟺ logged）
 #   C. 检索走了向量（mode=hybrid），不是降级成关键词
-#   D. 回答里出现语料才有的事实（千分之一 / 50）
+#   D. 回答里出现语料才有的事实（境内免费 / 跨境千分之一 / 最低 50 元）
 #
 # 用法：OPENROUTER_API_KEY=... bash scripts/e2e-bank.sh ["自定义问题"]
 set -uo pipefail
@@ -14,11 +14,22 @@ if [ -z "${OPENROUTER_API_KEY:-}" ]; then
   exit 2
 fi
 
-question="${1:-转账手续费怎么收？单笔最高收多少？}"
+question="${1:-境内和跨境银行转账手续费分别怎么收？跨境最低多少？50 元是上限吗？}"
 echo "e2e-bank: 提问：$question"
 
-out="$(timeout 240 node "$LUCKYCAT_ROOT/bridge/run.mjs" "$question" 2>&1)"
-bridge_status=$?
+# 本测试只验证知识问答；HTTP 银行办理必须由可信桥接注入通道，不能直接用 CLI 加载。
+patch_file="$(mktemp "${TMPDIR:-/tmp}/luckycat-knowledge.XXXXXX.yml")"
+trap 'rm -f "$patch_file"' EXIT
+cat > "$patch_file" <<'YAML'
+- id: luckycat-bank-demo
+  disabled: true
+YAML
+export LUCKYCAT_PATCHES="${LUCKYCAT_PATCHES:+$LUCKYCAT_PATCHES,}$patch_file"
+if out="$(timeout 240 node "$LUCKYCAT_ROOT/bridge/run.mjs" "$question" 2>&1)"; then
+  bridge_status=0
+else
+  bridge_status=$?
+fi
 echo "$out" | sed 's/^/    /'
 
 if [ "$bridge_status" -ne 0 ]; then
@@ -99,8 +110,12 @@ for node in walk(events):
 check('hybrid' in modes, f'C. 检索走了向量（mode=hybrid，实测 {modes}）')
 
 # D. 回答里的事实
-check('千分之一' in bridge_out, 'D1. 回答含「千分之一」')
-check('50' in bridge_out, 'D2. 回答含「50」（单笔上限）')
+answer = bridge_out.split('--- assistant ---')[-1].split('--- events:')[0]
+check('千分之一' in answer or '0.1%' in answer or '0.1％' in answer, 'D1. 跨境费率为千分之一')
+check('50' in answer and ('最低' in answer or '起收' in answer), 'D2. 50 元是最低费用')
+check(any(word in answer for word in ['免手续费', '免费', '不收', '手续费为 0']), 'D3. 境内转账免费')
+check(any(word in answer for word in ['不是上限', '不是费用上限', '不封顶', '没有上限', '没有设置', '未设置']), 'D4. 不误报 50 元封顶')
+check('kb-' not in answer and 'corpus.json' not in answer, 'D5. 客户回复不显示内部来源编号或路径')
 
 print()
 print(f'e2e-bank: {"全部通过" if not failures else "有失败项: " + ", ".join(failures)}')

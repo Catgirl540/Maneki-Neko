@@ -375,7 +375,22 @@ export interface TransferQuote {
   fx?: FxQuote
 }
 
+export interface ConfirmedTransferQuote {
+  version: 1
+  fromCurrency: Currency
+  fee: Cents
+  /** 客户确认的价格；null 表示无需换汇。 */
+  fx: Pick<FxQuote, 'fromCurrency' | 'toCurrency' | 'rate' | 'fromAmount' | 'toAmount' | 'spread'> | null
+  /** 银行受理前的有效期；已受理在途指令保留原价格条件。 */
+  submitBefore: number
+}
+
 export interface TransferRequest {
+  /** 助手确认卡绑定的价格条件；不通过条件校验就不冻结或扣款。 */
+  confirmedQuote?: ConfirmedTransferQuote
+  /** FPS 登记解析结果，提交时与登记册再次核对。 */
+  confirmedRecipient?: { name: string; bankCode: string; bankRegion: 'HK' }
+
   fromAccountId: string
   channel: TransferChannel
   scope: TransferScope

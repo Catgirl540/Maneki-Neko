@@ -94,6 +94,7 @@ export interface QuestionAnswerItem {
 export type AgentEvent =
   | { type: 'hello'; sessionId: string }
   | { type: 'bank-updated' }
+  | { type: 'stopped' }
   | { type: 'card-secret'; cardId: string; field: string; value: string; expiresAt: number }
   | { type: 'status'; status: 'running' | 'idle' }
   | { type: 'assistant'; text: string; messageId?: string }
@@ -222,6 +223,11 @@ export async function probeAgent(): Promise<AgentHealth | null> {
 export async function createAgentSession(): Promise<string> {
   const result = await requestJson<{ sessionId: string }>('/sessions', { method: 'POST' })
   return result.sessionId
+}
+
+/** 中断当前会话，服务端空闲事件到达后才允许下一条消息。 */
+export async function stopAgentTurn(sessionId: string): Promise<void> {
+  await requestJson(`/sessions/${encodeURIComponent(sessionId)}/stop`, { method: 'POST' }, 12_000)
 }
 
 /** 一个旧会话在 agent 侧还剩下什么。 */

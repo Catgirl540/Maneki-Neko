@@ -90,6 +90,10 @@ try {
   await wait(async () => { try { return (await fetch(base + '/agent-api/health')).status === 401 } catch { return false } }, log)
   const request = (path, token = 'tokenA', init = {}) => fetch(base + path, { ...init, headers: { authorization: 'Bearer ' + token } })
   const sid = (await (await request('/agent-api/sessions', 'tokenA', { method: 'POST' })).json()).sessionId
+  const stopPath = '/agent-api/sessions/' + sid + '/stop'
+  assert.equal((await request(stopPath, 'tokenB', { method: 'POST' })).status, 404)
+  assert.equal((await request(stopPath, '', { method: 'POST' })).status, 401)
+  assert.deepEqual(await (await request(stopPath, 'tokenA', { method: 'POST' })).json(), { stopped: false })
   const endpoint = '/agent-api/sessions/' + sid + '/events'
   assert.equal((await request(endpoint, '')).status, 401)
   assert.equal((await request(endpoint, 'tokenB')).status, 404)

@@ -12,6 +12,8 @@
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_home.sh"
 
+node "$LUCKYCAT_ROOT/scripts/build-knowledge.mjs"
+
 SRC="$LUCKYCAT_ROOT/profiles/luckycat"
 DEST="$DSH_HOME/profiles/luckycat"
 
@@ -22,7 +24,7 @@ cp "$SRC/cordis.yml" "$DEST/cordis.yml"
 
 # profile 的补丁层：模板是唯一事实来源，占位符在这里替换。
 sed \
-  -e "s|@LUCKYCAT_CORPUS@|$LUCKYCAT_ROOT/examples/bank/corpus.json|g" \
+  -e "s|@LUCKYCAT_CORPUS@|$LUCKYCAT_ROOT/.generated/knowledge/corpus.json|g" \
   -e "s|@LUCKYCAT_DEMO_DATA@|$LUCKYCAT_ROOT/packages/bank-demo/demo-data.json|g" \
   "$SRC/cordis.patch.yml" > "$DEST/cordis.patch.yml"
 

@@ -62,6 +62,13 @@ export function cosine(a: readonly number[], b: readonly number[]): number {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB))
 }
 
+/** 移除口语提问外壳，保留业务名词；不改动金额、币种与否定条件。 */
+export function queryKeywords(query: string): string {
+  const normalized = normalizeForKeywords(query)
+    .replace(/请问|请帮我|帮我|我想要|我想|能不能|可以不可以|在哪里|在哪儿|哪里|怎么|如何|是不是|需要|应该|一下|什么|哪些|多少|准备|怎么办|的吗|了吗|呢|吗|呀|啊|啥|的/gu, '')
+  return normalized || query
+}
+
 /** 排序与截断的入参。 */
 export interface RankInput {
   /** 用户问题。 */
@@ -85,8 +92,19 @@ export interface RankInput {
  */
 export function rankHits(input: RankInput): Hit[] {
   const hits: Hit[] = []
+  const keywords = queryKeywords(input.query)
+  // 多个业务问题并列时，完整句子覆盖率会被其他问题稀释；同时检索各个有效分句。
+  const clauses = input.query.split(/[，、；。？！,;.!?]/u).map(queryKeywords)
+    .filter(part => Array.from(part).length >= 3 && !/^(到|在|去)?(操作|办理|处理|页面|入口)$/.test(part)).slice(0, 8)
+  const bodyCoverage = (text: string): number => Math.max(keywordCoverage(keywords, text),
+    ...clauses.map(clause => keywordCoverage(clause, text) * 0.9))
   for (const [position, chunk] of input.chunks.entries()) {
-    const coverage = keywordCoverage(input.query, chunk.text)
+    const coverage = Math.max(
+      bodyCoverage(chunk.text) * (chunk.sectionTitle ? 0.85 : 1)
+        + (chunk.sectionTitle ? bodyCoverage(chunk.sectionTitle) * 0.15 : 0),
+      // 文档级关键词只作辅助，避免同篇所有问答得到相同高分。
+      keywordCoverage(keywords, [chunk.title, ...(chunk.tags ?? [])].filter(Boolean).join(' ')) * 0.6,
+    )
     const vector = input.queryVector === undefined ? undefined : input.chunkVectors?.[position]
     const similarity = vector === undefined ? undefined : cosine(input.queryVector as readonly number[], vector)
     const score = Math.max(similarity ?? 0, coverage)

@@ -18,6 +18,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TSC="$ROOT/node_modules/.bin/tsc"
+node "$ROOT/scripts/build-knowledge.mjs"
 
 packages=("$@")
 if [ ${#packages[@]} -eq 0 ]; then

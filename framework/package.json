@@ -9,11 +9,14 @@
   },
   "scripts": {
     "dump-config": "bash scripts/dsh-profile.sh dump-config",
-    "verify": "bash scripts/verify.sh"
+    "verify": "bash scripts/verify.sh",
+    "knowledge": "node scripts/build-knowledge.mjs",
+    "test:knowledge": "node --test packages/rag/tests/*.test.mjs"
   },
   "dependencies": {
     "@deepseek-ai/dsh": "0.1.6-alpha.2",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "js-yaml": "^4.3.2"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",

@@ -28,6 +28,7 @@ dsh 子进程（profile luckycat，DSH_HOME=framework/.dsh-home）
 | POST | `/agent-api/sessions` | 建会话 → `{ sessionId }` |
 | GET | `/agent-api/sessions/:id` | **只读**问这段会话还在不在 → `{ sessionId, known, started, busy }`（见下） |
 | POST | `/agent-api/sessions/:id/messages` | `{ text }` → 202 + `{ accepted: true }`（**入队回执，不代表回答完成**） |
+| POST | `/agent-api/sessions/:id/stop` | 停止本轮生成，保留正文并取消未执行授权；已提交银行的业务另查回执 |
 | GET | `/agent-api/sessions/:id/stream` | SSE 事件流 |
 | GET | `/agent-api/sessions/:id/events` | SSE 不可用时短请求接收；可带 `after` 游标，返回 `{ cursor, events }` |
 | POST | `/agent-api/consent/:challengeId` | `{ decision, paymentPassword? }` → 校验后放行长轮询 |

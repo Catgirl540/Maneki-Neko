@@ -20,8 +20,9 @@ const MIN_USEFUL_BYTES = 80
 /** 注入内容的固定包装。 */
 const HEADER = [
   '<knowledge_reference>',
-  '以下是与本次问题最相关的内部资料片段。请优先依据这些资料回答，并在引用时写明来源 id。',
-  '如果资料没有覆盖问题，请明确说明「资料中没有」，不要编造。',
+  '依据以下资料回答；来源编号、分数和内部路径仅供审计，不向客户展示。',
+  '回复须为二至四个短句、三百字以内。多项业务各用一句说明能否办理、入口与必要限制，不得把部分不支持概括为全部不能办理。不复制资料或补充未问细节，不加示例、验证步骤、人工服务或追问邀请。',
+  '无依据明确说明，不编造。实时余额、实际费用、汇率、净值、额度及状态须查询；查询失败引导对应页面。',
   '',
   '',
 ].join('\n')
@@ -63,7 +64,7 @@ export function truncateUtf8(text: string, maxBytes: number): string {
 
 /** 渲染一条命中。 */
 function renderHit(hit: Hit): string {
-  const label = `${hit.chunk.documentId}#${hit.chunk.index}`
+  const label = `${hit.chunk.documentId}#${hit.chunk.sectionId ?? hit.chunk.index}`
   const title = hit.chunk.title === undefined ? '' : ` ${hit.chunk.title}`
   const similarity = hit.similarity === undefined ? '' : `，向量 ${hit.similarity.toFixed(3)}`
   return `[${label}]${title}（得分 ${hit.score.toFixed(3)}，${hit.matchedBy}，关键词覆盖 ${hit.coverage.toFixed(3)}${similarity}）\n${hit.chunk.text}\n\n`

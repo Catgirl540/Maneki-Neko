@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createServer } from 'node:net'
 import { randomUUID } from 'node:crypto'
+import { checkTransfers } from './check-agent-transfers.mjs'
 import { createBankAgent } from '../framework/bridge/bank-agent.mjs'
 const root = resolve(import.meta.dirname, '..')
 const tmp = await mkdtemp(join(tmpdir(), 'luckycat-agent-'))
@@ -59,6 +60,7 @@ try {
   await assert.rejects(agent.execute(p.input), e => e.code === 'CONSENT_REQUIRED')
   assert(events.some(e => e.type === 'bank-updated'))
   console.log('PASS 未确认/错密码/参数替换均不扣款，正确授权两侧入账且不能重放')
+  await checkTransfers({ call, prepare, run, agent, accounts, a, b, other })
   const rejected = await prepare('bank_transfer', transfer); agent.forget(rejected.challenge); await assert.rejects(agent.execute(rejected.input), e => e.code === 'CONSENT_REQUIRED')
   const expired = await prepare('bank_get_balance', {}, 'a', 600); await new Promise(r => setTimeout(r, 700)); await assert.rejects(agent.approve(expired.challenge), e => e.status === 404)
   console.log('PASS 取消和过期授权不能执行')
@@ -67,6 +69,74 @@ try {
   assert.equal(secret.displayed, true); assert(!('result' in secret)); assert(events.find(e => e.type === 'card-secret').value)
   await assert.rejects(prepare('bank_reveal_card_secret', { cardId: (await call('/api/cards', b.token))[0].id, field: 'cvv' }), e => e.status === 404)
   console.log('PASS 卡安全信息走临时事件，不返回给模型；拒绝他人卡片')
+  const listedCards = (await run('bank_list_cards', {})).result
+  assert.equal(listedCards[0].id, cards[0].id)
+  assert(!('shippingAddress' in listedCards[0]) && !('pan' in listedCards[0]))
+  const cardId = cards[0].id
+  const lock = await prepare('bank_set_card_lock', { cardId, locked: true })
+  assert.equal(lock.challenge.verification, undefined)
+  await assert.rejects(agent.execute(lock.input), e => e.code === 'CONSENT_REQUIRED')
+  await agent.approve(lock.challenge)
+  assert.equal((await agent.execute(lock.input)).result.status, 'locked')
+  await assert.rejects(prepare('bank_update_card_settings', { cardId, onlinePayment: true }), /先解锁/)
+  await assert.rejects(prepare('bank_set_card_lock', { cardId, locked: 'false' }), /布尔值/)
+  await assert.rejects(prepare('bank_update_card_settings', { cardId, dailyLimitCents: -1 }), /日限额/)
+  await assert.rejects(prepare('bank_update_card_settings', { cardId }), /请指定/)
+  await assert.rejects(prepare('bank_set_card_lock', { cardId: (await call('/api/cards', b.token))[0].id, locked: true }), e => e.status === 404)
+  assert.equal((await run('bank_set_card_lock', { cardId, locked: false })).result.onlinePayment, false)
+  const configured = await run('bank_update_card_settings', { cardId, onlinePayment: true, overseasPayment: false, dailyLimitCents: 500000 })
+  assert.equal(configured.result.dailyLimit, 500000); assert.equal(configured.result.onlinePayment, true)
+  const staleSettings = await prepare('bank_update_card_settings', { cardId, onlinePayment: false })
+  await agent.approve(staleSettings.challenge)
+  await run('bank_set_card_lock', { cardId, locked: true })
+  await assert.rejects(agent.execute(staleSettings.input), /已变化/)
+  await run('bank_set_card_lock', { cardId, locked: false })
+  console.log('PASS 卡片锁定/解锁、支付开关与限额真实生效；类型/状态/跨账户/旧确认拦截')
+  const contracts = (await run('bank_list_autodebits', {})).result
+  assert(contracts.length)
+  const debitId = contracts[0].id
+  const disabled = await run('bank_set_autodebit', { autoDebitId: debitId, enabled: false })
+  assert.equal(disabled.result.enabled, false)
+  assert.equal((await run('bank_set_autodebit', { autoDebitId: debitId, enabled: true })).result.enabled, true)
+  await assert.rejects(prepare('bank_set_autodebit', { autoDebitId: 'not-owned', enabled: false }), e => e.status === 404)
+  await assert.rejects(prepare('bank_set_autodebit', { autoDebitId: debitId, enabled: 'false' }), /布尔值/)
+  const stopped = await prepare('bank_set_autodebit', { autoDebitId: debitId, enabled: false })
+  await agent.approve(stopped.challenge); agent.forgetSession('a')
+  await assert.rejects(agent.execute(stopped.input), e => e.code === 'CONSENT_REQUIRED')
+  sessions.get('a').stopping = true
+  await assert.rejects(prepare('bank_set_autodebit', { autoDebitId: debitId, enabled: false }), /本轮已停止/)
+  sessions.get('a').stopping = false
+  const spending = (await run('bank_get_spending', {})).result
+  assert.deepEqual(spending, await call('/api/analysis/spending', a.token))
+  const month = new Date().toISOString().slice(0, 7)
+  assert.deepEqual((await run('bank_get_spending', { month })).result, await call(`/api/analysis/spending?month=${month}`, a.token))
+  assert.deepEqual((await run('bank_get_cashflow', { days: 30 })).result, await call('/api/analysis/cashflow?days=30', a.token))
+  await assert.rejects(prepare('bank_get_spending', { month: '2026-99' }), /月份格式/)
+  await assert.rejects(prepare('bank_get_cashflow', { days: 9999999 }), /7 天或 30 天/)
+  console.log('PASS 已有自动扣款启停、停止后授权作废；消费与现金流采用全量银行统计')
+  const cardProducts = (await run('bank_card_products', {})).result
+  const address = { recipient: a.user.name, phone: a.user.phone, region: '广东省', city: '深圳市', detail: '测试街道一号楼 101 室', postalCode: '518000' }
+  const beforeCard = (await call('/api/accounts', a.token))[0].balance
+  const applyArgs = { productCode: cardProducts[0].code, ...address }
+  await assert.rejects(prepare('bank_apply_card', { ...applyArgs, detail: '123' }), /至少 5/)
+  const application = await prepare('bank_apply_card', applyArgs)
+  assert.equal(application.challenge.verification, 'payment-password')
+  assert(application.challenge.fields.some(f => f.label === '寄送地址' && f.value.includes(address.detail)))
+  await assert.rejects(agent.execute(application.input), e => e.code === 'CONSENT_REQUIRED')
+  assert.equal((await call('/api/accounts', a.token))[0].balance, beforeCard)
+  await agent.approve(application.challenge, '888888')
+  const applied = (await agent.execute(application.input)).result
+  assert.equal(applied.status, 'pending'); assert(!('shippingAddress' in applied))
+  assert.equal((await call('/api/accounts', a.token))[0].balance, beforeCard - cardProducts[0].issuingFee - cardProducts[0].deliveryFee)
+  await assert.rejects(agent.execute(application.input), e => e.code === 'CONSENT_REQUIRED')
+  await assert.rejects(prepare('bank_set_card_lock', { cardId: applied.id, locked: false }), /寄送中/)
+  const beforeReplace = (await call('/api/accounts', a.token))[0].balance
+  const replaced = (await run('bank_replace_card', { cardId, ...address }, '888888')).result
+  assert.equal(replaced.status, 'pending'); assert.notEqual(replaced.id, cardId)
+  assert.equal((await call('/api/cards', a.token)).find(c => c.id === cardId).status, 'replaced')
+  assert.equal((await call('/api/accounts', a.token))[0].balance, beforeReplace - replaced.issuingFee)
+  await assert.rejects(prepare('bank_replace_card', { cardId, ...address }), /已换卡/)
+  console.log('PASS 申请/换卡费用、寄送地址和扣费账户权威确认；新卡寄送中、旧卡失效、不能重放')
   const questions = await call('/api/wealth/risk/questions', a.token)
   await call('/api/wealth/risk/assess', a.token, { answers: questions.map(q => q.options.reduce((best, o, i, all) => o.score > all[best].score ? i : best, 0)) })
   const overview = await call('/api/wealth/overview', a.token)

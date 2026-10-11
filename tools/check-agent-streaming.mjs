@@ -39,20 +39,28 @@ console.log('PASS 正文块顺序、最终文本覆盖、失败草稿撤回；�
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const tmp = await mkdtemp(join(tmpdir(), 'agent-stream-'))
-let bridge, vite, browser, log = '', modelRequests = 0, messagePosts = 0, polls = 0, mode = 'sse'
+let bridge, vite, browser, log = '', modelRequests = 0, messagePosts = 0, polls = 0, mode = 'sse', behavior = 'text', cancelledRequests = 0
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server.address().port)))
 const provider = createServer(async (req, res) => {
   for await (const body of req) { void body }
   modelRequests++
+  res.on('close', () => { if (!res.writableEnded) cancelledRequests++ })
   res.writeHead(200, { 'content-type': 'text/event-stream' })
   const send = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ id: 'test-stream', object: 'chat.completion.chunk', created: 1, model: 'stream-test', choices: [{ index: 0, delta, finish_reason }] })}\n\n`)
   send({ role: 'assistant' }); await sleep(100)
+  if (behavior !== 'text') {
+    const name = behavior === 'consent' ? 'bank_list_cards' : 'ask_user_question'
+    const args = behavior === 'consent' ? {} : { questions: [{ id: 'target', question: '请选择要处理的卡片', options: [{ label: '卡片一' }, { label: '卡片二' }] }] }
+    send({ tool_calls: [{ index: 0, id: 'fixture-call-' + modelRequests, type: 'function', function: { name, arguments: JSON.stringify(args) } }] })
+    send({}, 'tool_calls'); res.end('data: [DONE]\n\n'); return
+  }
   send({ content: '这是' }); await sleep(1500)
   send({ content: '流式' }); await sleep(1500)
   send({ content: '回复。' }); await sleep(700)
   send({}, 'stop'); res.end('data: [DONE]\n\n')
 })
 const fixture = createServer((req, res) => {
+  if (req.url === '/api/cards') { res.writeHead(200, { 'content-type': 'application/json' }); res.end('[]'); return }
   if (req.url.startsWith('/api/auth/profile')) {
     res.writeHead(200, { 'content-type': 'application/json' }); res.end(JSON.stringify({ id: 'a' })); return
   }
@@ -121,6 +129,60 @@ try {
   assert.equal(await page.locator('[data-streaming="true"]').count(), 0)
   assert.equal(await page.locator('[data-message-kind="assistant"]').count(), 1)
   console.log('PASS 每轮只提交一次、每轮只调用模型一次；历史刷新后保留完整回复')
+  mode = 'sse'
+  await page.getByRole('button', { name: '新对话', exact: true }).click()
+  await page.getByLabel('聊天消息').fill('测试中断这一轮')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  const streaming = page.locator('[data-message-kind="assistant"][data-streaming="true"]')
+  await streaming.waitFor({ timeout: 30000 })
+  const partialId = await streaming.getAttribute('data-message-id')
+  const partialText = await streaming.innerText()
+  await page.getByRole('button', { name: '停止生成', exact: true }).click()
+  await page.getByText('已停止生成', { exact: true }).waitFor({ timeout: 15000 })
+  await page.getByRole('button', { name: '发送', exact: true }).waitFor()
+  const retained = page.locator(`[data-message-id="${partialId}"]`)
+  assert((await retained.innerText()).includes(partialText))
+  assert.equal(await retained.getAttribute('data-streaming'), null)
+  await sleep(4000)
+  assert(!(await retained.innerText()).includes('这是流式回复。'), '停止后仍然写入了迟到正文')
+  assert(cancelledRequests >= 1, '只是隐藏 UI，没有中断模型连接')
+  await page.getByLabel('聊天消息').fill('停止后再问一次')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await page.locator('[data-message-kind="assistant"]', { hasText: '这是流式回复。' }).waitFor({ timeout: 15000 })
+  await page.getByRole('button', { name: '发送', exact: true }).waitFor()
+  console.log('PASS 停止会真正关闭模型请求、保留部分正文、屏蔽迟到事件，同一会话可继续发送')
+
+  // 两个会话同时生成；只停止当前会话。
+  await page.getByRole('button', { name: '新对话', exact: true }).click()
+  await page.getByLabel('聊天消息').fill('并发会话 A')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await page.locator('[data-streaming="true"]').waitFor()
+  await page.getByRole('button', { name: '新对话', exact: true }).click()
+  await page.getByLabel('聊天消息').fill('并发会话 B')
+  await page.getByRole('button', { name: '发送', exact: true }).click()
+  await page.locator('[data-streaming="true"]').waitFor()
+  await page.getByRole('button', { name: '停止生成', exact: true }).click()
+  await page.getByText('已停止生成', { exact: true }).waitFor()
+  await sleep(4000)
+  const stored = await page.evaluate(() => Object.values(localStorage).filter(v => v.includes('并发会话 A')).join(''))
+  assert(stored.includes('这是流式回复。'), '中断影响了另一个会话')
+  console.log('PASS 并发会话互相隔离，中断不关闭共享运行时')
+
+  for (const pending of ['consent', 'question']) {
+    behavior = pending
+    await page.getByRole('button', { name: '新对话', exact: true }).click()
+    await page.getByLabel('聊天消息').fill('中断等待中的' + pending)
+    await page.getByRole('button', { name: '发送', exact: true }).click()
+    if (pending === 'consent') await page.getByText('本人银行卡、状态、支付开关与日限额', { exact: true }).waitFor({ timeout: 15000 })
+    else await page.getByText('请选择要处理的卡片', { exact: true }).waitFor({ timeout: 15000 })
+    await page.getByRole('button', { name: '停止生成', exact: true }).click()
+    await page.getByText('已停止生成', { exact: true }).waitFor({ timeout: 15000 })
+    await page.getByRole('button', { name: '发送', exact: true }).waitFor()
+    assert.equal(await page.getByText(pending === 'consent' ? '本人银行卡、状态、支付开关与日限额' : '请选择要处理的卡片', { exact: true }).count(), 0)
+    console.log(`PASS 等待 ${pending} 时停止：卡片移除、本轮退出，不继续执行`)
+  }
+  assert.deepEqual(errors, [])
+
 } catch (error) { console.error(log); throw error }
 finally {
   await browser?.close(); await vite?.close()

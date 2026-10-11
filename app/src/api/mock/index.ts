@@ -13,6 +13,7 @@ import {
   validateBankAccount,
   validateFpsValue,
 } from '@/lib/account'
+import { assertTransferConfirmation } from '@/lib/transfer-confirmation'
 import { validateAddress } from '@/lib/address'
 import {
   RISK_ACKNOWLEDGEMENT,
@@ -531,7 +532,7 @@ const EXPORT_COLUMNS: ExportColumn[] = [
  *   传了才会启用在途窗口（真后端演示，清单 §9）；不传 = 一律立即完成（浏览器 mock 模式）。
  * @param options.holdWindowMs - 在途窗口时长（毫秒）。默认 5 分钟；演示时调小。
  */
-export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?: number }): BankApi {
+export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?: number; acceptedQuote?: boolean }): BankApi {
   const reviewThreshold = options?.reviewThreshold
   const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000
   return {
@@ -988,6 +989,17 @@ export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?
           ? Math.max(Math.round(req.amount * OVERSEAS_RATE), OVERSEAS_MIN_FEE)
           : 0
       const total = req.amount + fee
+      const quotedFx = buildFxQuote(account.currency, req.payeeCurrency ?? account.currency, req.amount)
+      assertTransferConfirmation(req, fee, account.currency, quotedFx, options?.acceptedQuote)
+      if (req.confirmedRecipient) {
+        const registered = FPS_REGISTRY.find(r => r.idType === req.fpsMethod && r.id === req.fpsId)
+        if (!isFps || req.fpsMethod === 'account' || !registered ||
+            hideMiddle(registered.name) !== req.confirmedRecipient.name || registered.bankCode !== req.confirmedRecipient.bankCode ||
+            req.confirmedRecipient.bankRegion !== 'HK' || req.payeeName !== req.confirmedRecipient.name ||
+            req.payeeBankCode !== req.confirmedRecipient.bankCode || req.payeeBankRegion !== 'HK') {
+          throw new ApiError('FPS 收款登记已变化，请重新核对', 409, 'RECIPIENT_CHANGED')
+        }
+      }
 
       if (req.amount > singleLimit) {
         throw new ApiError(
@@ -1139,9 +1151,8 @@ export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?
         }
       }
 
-      // 需要换汇时按**成交时**的汇率再算一次（不是复用询价结果）：
-      // 真实系统在这里校验锁价票据是否还在有效期内，过期就报错让前端重新询价
-      const fx = buildFxQuote(account.currency, req.payeeCurrency ?? account.currency, req.amount)
+      // 使用本次提交计算并通过确认条件校验的价格；带确认条件的指令不静默改价。
+      const fx = quotedFx
 
       applyBalance(req.fromAccountId, -total)
       const bank = findBank(db.banks, req.payeeBankCode, req.payeeBankRegion)
@@ -1269,7 +1280,7 @@ export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?
       await delay(320)
       const rec = loadDb().transactions.find((t) => t.id === transactionId)
       if (!rec) throw new ApiError('交易不存在', 404, 'NOT_FOUND')
-      if (rec.status !== 'pending' || rec.pendingReason !== 'inflight') {
+      if (rec.status !== 'pending' || rec.pendingReason !== 'inflight' || !rec.holdUntil || !Number.isFinite(Date.parse(rec.holdUntil)) || Date.parse(rec.holdUntil) <= Date.now()) {
         throw new ApiError('这笔转账已不在可撤销状态', 409, 'NOT_RECALLABLE')
       }
       await settleHeldTransfer(transactionId, 'recalled', '用户主动撤销')
@@ -2068,7 +2079,7 @@ export async function settleHeldTransfer(
   persist()
   try {
     // 不带 reviewThreshold 的实例 = 纯执行，不会再进窗口
-    return await createMockApi().submitTransfer(held)
+    return await createMockApi({ acceptedQuote: true }).submitTransfer(held)
   } catch (error) {
     // 极少数情况（如收款账户校验在窗口内失效）才走到这里：留痕，别静默吞掉
     rec.status = 'failed'

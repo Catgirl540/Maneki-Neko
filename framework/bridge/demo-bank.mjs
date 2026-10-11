@@ -524,6 +524,10 @@ export async function createDemoBank({
 
   return {
     handle,
+    transferRequirements: (req) => exclusive(async () => {
+      await activateRequestProfile(req, 'profile')
+      return { confirmedQuoteVersion: 1, confirmedRecipient: true }
+    }),
     wealthRequirements: (req) => exclusive(async () => {
       await activateRequestProfile(req, "profile")
       return { riskAcknowledgementText: mockModule.RISK_ACKNOWLEDGEMENT }

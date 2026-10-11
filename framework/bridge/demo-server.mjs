@@ -47,8 +47,9 @@
 
 import { createServer } from 'node:http'
 import { createHash } from 'node:crypto'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, mkdtemp, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
@@ -57,6 +58,7 @@ import { createDemoBank } from './demo-bank.mjs'
 import { createBankAgent, bankError } from './bank-agent.mjs'
 import { createEventPolling } from './event-polling.mjs'
 import { createAssistantStream } from './assistant-stream.mjs'
+import { cancelAgent } from './agent-control.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -75,11 +77,14 @@ const HTTP_BANK = process.env.LUCKYCAT_BANK_MODE !== 'demo'
 process.env.LUCKYCAT_BANK_MODE = HTTP_BANK ? 'http' : 'demo'
 const INTERNAL_TOKEN = randomBytes(32).toString('base64url')
 process.env.LUCKYCAT_INTERNAL_TOKEN = INTERNAL_TOKEN
+const controlDir = await mkdtemp(join(tmpdir(), 'luckycat-control-'))
+const controlSocket = join(controlDir, 'agent.sock')
+process.env.LUCKYCAT_CONTROL_SOCKET = controlSocket
 process.env.LUCKYCAT_BANK_TOOL_URL = `http://127.0.0.1:${PORT}/internal/bank-tool`
 process.env.LUCKYCAT_CONSENT_URL = `http://127.0.0.1:${PORT}/consent/challenge`
 process.env.LUCKYCAT_QUESTION_URL = `http://127.0.0.1:${PORT}/agent-api/questions`
 if (HTTP_BANK) {
-  process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX ??= '只用中文办理业务。账户、余额、金额、产品和回执一律以当前客户的银行工具返回为准。需要信息时调用 ask_user_question，不得猜测账户或收款人，不得仅凭尾号转账。扣款必须提供明确付款账户、完整收款账号、登记姓名和银行地区/代码。风险确认语句必须由客户本人提供。确认和支付密码由独立卡片收集，禁止索要密码或把密码写入工具参数。工具成功返回前不得声称操作成功。失败或受理中的业务要如实说明。卡号和 CVV 只在临时窗口展示，不要在对话中复述。不要透露模型名称或内部实现。'
+  process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX ??= '只用中文办理业务。账户、余额、金额、产品和回执一律以当前客户的银行工具返回为准。需要信息时调用 ask_user_question，不得猜测账户或收款人，不得仅凭尾号转账。银行转账必须提供明确付款账户、完整收款账号、登记姓名和银行地区/代码；FPS 必须提供完整标识和明确收款币种，非账号方式的姓名及银行以登记解析为准，不得补猜掩码姓名。换汇金额按付款币种输入，核对报价有效期与收款金额。风险确认语句必须由客户本人提供。确认和支付密码由独立卡片收集，禁止索要密码或把密码写入工具参数。工具成功返回前不得声称操作成功。失败或受理中的业务要如实说明。卡号和 CVV 只在临时窗口展示，不要在对话中复述。不要透露模型名称或内部实现。'
 }
 
 /** 可选的额外 overlay（冒号或逗号分隔绝对路径），端到端自检用。 */
@@ -464,7 +469,7 @@ async function ensureHarness() {
     // SDK 0.1.6 只公开完成消息；用树外插件扩展通知，不修改运行时依赖。
     const streamPatch = join(home, 'assistant-stream.patch.yml')
     await mkdir(home, { recursive: true })
-    await writeFile(streamPatch, JSON.stringify([{ insert: [{ id: 'luckycat-assistant-stream', name: join(ROOT, 'bridge/assistant-stream-plugin.mjs') }] }]))
+    await writeFile(streamPatch, JSON.stringify([{ insert: [{ id: 'luckycat-assistant-stream', name: join(ROOT, 'bridge/assistant-stream-plugin.mjs') }, { id: 'luckycat-agent-control', name: join(ROOT, 'bridge/agent-control-plugin.mjs') }] }]))
     // 当前适配器没有 extra_body 配置；仅给这个子进程加载请求适配层。
     const fallbackImport = new URL('./model-fallback-fetch.mjs', import.meta.url).href
     const fallbackEnv = PROVIDER === 'openrouter' && process.env.LUCKYCAT_FALLBACK_MODELS
@@ -517,10 +522,14 @@ async function runTurn(sessionId, input) {
     return
   }
   entry.busy = true
+  entry.stopping = false
+  entry.activity = { cancelled: false }
   const assistantStream = createAssistantStream(sessionId, event => publish(sessionId, event))
+  entry.assistantStream = assistantStream
   publish(sessionId, { type: 'status', status: 'running' })
   try {
     const active = await ensureHarness()
+    if (entry.stopping) return
     entry.handle ??= active.session(sessionId)
     // 递提示词之前打上标记：这一步之后运行时里就有这个会话了。
     entry.started = true
@@ -538,14 +547,17 @@ async function runTurn(sessionId, input) {
         if (projected !== undefined) publish(sessionId, projected)
       },
     })
-    if (result.finalResponse.trim() === '') {
+    if (!entry.stopping && result.finalResponse.trim() === '') {
       publish(sessionId, { type: 'error', message: '模型没有产出可见文本（可能上游失败），请看服务端日志。' })
     }
   } catch (error) {
-    publish(sessionId, { type: 'error', message: `agent 运行失败：${error instanceof Error ? error.message : String(error)}` })
+    if (!entry.stopping) publish(sessionId, { type: 'error', message: `agent 运行失败：${error instanceof Error ? error.message : String(error)}` })
   } finally {
     assistantStream.close()
+    if (entry.stopping) publish(sessionId, { type: 'stopped' })
+    entry.assistantStream = undefined
     entry.busy = false
+    entry.stopping = false
     publish(sessionId, { type: 'status', status: 'idle' })
   }
 }
@@ -688,9 +700,34 @@ async function handle(req, res) {
     return
   }
 
+  // 仅停止目标会话；未提交的授权作废，已提交银行操作仍以银行回执为准。
+  if (req.method === 'POST' && parts.length === 4 && parts[0] === 'agent-api' && parts[1] === 'sessions' && parts[3] === 'stop') {
+    const entry = sessions.get(parts[2])
+    if (!entry) throw bankError('会话不存在', 404)
+    if (!entry.busy) { sendJson(res, 200, { stopped: false }); return }
+    if (entry.stopTask) { await entry.stopTask; sendJson(res, 200, { stopped: true }); return }
+    entry.stopping = true
+    entry.activity.cancelled = true
+    entry.assistantStream?.stop()
+    bankAgent?.forgetSession(entry.id)
+    entry.stopTask = (async () => {
+      // 正在初始化 / 排入运行时的会话可能还没有 agent，重试直到取消或本轮退出。
+      for (let i = 0; i < 100 && entry.busy; i++) {
+        try { if (await cancelAgent(controlSocket, INTERNAL_TOKEN, entry.id)) break } catch { /* 尚在启动 */ }
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+      for (const [id, pending] of pendingConsents) if (pending.challenge.sessionId === entry.id) settleConsent(id, { decision: 'reject', challengeId: id })
+      for (const [id, pending] of pendingQuestions) if (pending.sessionId === entry.id) settleQuestion(id, undefined)
+    })().finally(() => { entry.stopTask = undefined })
+    await entry.stopTask
+    sendJson(res, 200, { stopped: true })
+    return
+  }
+
   // 发消息
   if (req.method === 'POST' && parts.length === 4 && parts[0] === 'agent-api' && parts[1] === 'sessions' && parts[3] === 'messages') {
     const sessionId = parts[2]
+    if (sessions.get(sessionId)?.busy || sessions.get(sessionId)?.stopTask) throw bankError('上一轮还在进行中，请等它结束', 409)
     const body = await readJson(req, MAX_IMAGE_BODY_BYTES)
     const text = typeof body.text === 'string' ? body.text.trim() : ''
     const image = body.image
@@ -758,7 +795,7 @@ async function handle(req, res) {
       if (text !== '') blocks.push({ type: 'text', text })
       blocks.push({ type: 'image', data, mimeType })
     }
-    sessionOf(sessionId)
+    if (sessionOf(sessionId).busy || sessions.get(sessionId).stopTask) throw bankError('上一轮还在进行中，请等它结束', 409)
     // 只有文字时仍然按字符串递——那是走熟了的路，没必要为图片把它改掉
     void runTurn(sessionId, blocks ?? text)
     sendJson(res, 202, { accepted: true })
@@ -922,6 +959,7 @@ async function handle(req, res) {
       return
     }
     if (HTTP_BANK) await bankAgent.current(sessionId)
+    if (sessions.get(sessionId)?.activity?.cancelled) throw bankError('本轮已停止', 409)
     const questionId = newQuestionId()
     const now = Date.now()
     const pending = {
@@ -1284,6 +1322,7 @@ async function shutdown() {
   streams.clear()
   server.close()
   if (harness !== undefined) await harness.close()
+  await rm(controlDir, { recursive: true, force: true })
 }
 
 process.on('SIGINT', () => { void shutdown().then(() => process.exit(0)) })

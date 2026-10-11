@@ -210,7 +210,7 @@
         baseURL: https://openrouter.ai/api/v1
         # 换成付费档 `baai/bge-m3`（$0.01/M）。原来用的免费档也是**共享池**，
         # 和 chat 那边同一个毛病；换成付费档顺带把检索也修好了一点。
-        # 选它的依据是**实测**（`examples/bank/corpus.json` 上 10 条容易混的问题）：
+        # 选它的依据是**实测**（旧示例语料（现为 tests/fixtures/legacy-corpus.json）上 10 条容易混的问题）：
         #   nvidia…:free 9/10、pplx-embed-v1-0.6b 9/10、bge-m3 10/10、
         #   qwen3-embedding-4b 10/10（$0.02/M，7s）、qwen3-embedding-8b 10/10（$0.01/M，**29s** 太慢）。
         # 也就是说：bge-m3 是满分里最便宜的，而且顺手修掉了 9/10 那个错
@@ -236,7 +236,7 @@
         timeoutMs: 30000
         maxAttempts: 2
 
-# ── 7. 知识库检索（P2） ────────────────────────────────────────────────────
+# ── 7. 知识库检索（Markdown 构建语料） ────────────────────────────────────────────────────
 # 语料路径在加载期同步读取：路径错/JSON 坏/字段缺都在启动时报错，不留到提问时。
 - id: luckycat-rag
   config:

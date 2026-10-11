@@ -26,3 +26,5 @@ profiles/*/.dsh-module-fallback/
 *.swp
 .idea/
 .vscode/
+# Markdown 知识源生成的检索语料
+.generated/

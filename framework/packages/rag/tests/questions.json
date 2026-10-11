@@ -1,0 +1,332 @@
+[
+  {
+    "query": "我想注册，需要准备啥",
+    "source": "kb-accounts#register",
+    "critical": false
+  },
+  {
+    "query": "没卡是不是还要开户",
+    "source": "kb-accounts#relations",
+    "critical": false
+  },
+  {
+    "query": "余额和可用余额有啥区别",
+    "source": "kb-accounts#balance",
+    "critical": false
+  },
+  {
+    "query": "转账入口在哪里",
+    "source": "kb-accounts#navigation",
+    "critical": false
+  },
+  {
+    "query": "怎么转入钱",
+    "source": "kb-accounts#deposit",
+    "critical": false
+  },
+  {
+    "query": "转账手续费怎么收",
+    "source": "kb-transfers#fees",
+    "critical": true
+  },
+  {
+    "query": "跨境手续费最高五十吗",
+    "source": "kb-transfers#fees",
+    "critical": true
+  },
+  {
+    "query": "境内转账收费吗",
+    "source": "kb-transfers#fees",
+    "critical": true
+  },
+  {
+    "query": "FPS要手续费吗",
+    "source": "kb-transfers#fees",
+    "critical": true
+  },
+  {
+    "query": "一次最多转多少钱",
+    "source": "kb-transfers#limits",
+    "critical": true
+  },
+  {
+    "query": "银行卡日限额等于转账限额吗",
+    "source": "kb-transfers#limits",
+    "critical": true
+  },
+  {
+    "query": "转账多久能到账",
+    "source": "kb-transfers#eta",
+    "critical": false
+  },
+  {
+    "query": "助手可以给别人转账吗",
+    "source": "kb-transfers#bank-transfer",
+    "critical": true
+  },
+  {
+    "query": "只给卡号尾号能转账吗",
+    "source": "kb-transfers#bank-transfer",
+    "critical": true
+  },
+  {
+    "query": "用手机号转FPS怎么办",
+    "source": "kb-transfers#fps",
+    "critical": true
+  },
+  {
+    "query": "帮我换汇转到境外",
+    "source": "kb-transfers#fx",
+    "critical": true
+  },
+  {
+    "query": "转账处理中怎么撤回",
+    "source": "kb-transfers#recall",
+    "critical": true
+  },
+  {
+    "query": "我没有银行卡怎么申请",
+    "source": "kb-cards#apply",
+    "critical": true
+  },
+  {
+    "query": "卡丢了怎么办",
+    "source": "kb-cards#lost",
+    "critical": true
+  },
+  {
+    "query": "锁卡会影响账户转账吗",
+    "source": "kb-cards#lost",
+    "critical": true
+  },
+  {
+    "query": "换卡以后旧卡还能用吗",
+    "source": "kb-cards#replace",
+    "critical": true
+  },
+  {
+    "query": "新卡日限额多少",
+    "source": "kb-cards#settings",
+    "critical": true
+  },
+  {
+    "query": "怎么关闭境外支付",
+    "source": "kb-cards#settings",
+    "critical": true
+  },
+  {
+    "query": "CVV在哪里看",
+    "source": "kb-cards#secrets",
+    "critical": false
+  },
+  {
+    "query": "怎么查上个月的流水",
+    "source": "kb-bills#list",
+    "critical": false
+  },
+  {
+    "query": "怎么查某笔交易状态",
+    "source": "kb-bills#detail",
+    "critical": false
+  },
+  {
+    "query": "电子回单怎么下载",
+    "source": "kb-bills#receipt",
+    "critical": true
+  },
+  {
+    "query": "导出流水是Excel吗",
+    "source": "kb-bills#export",
+    "critical": true
+  },
+  {
+    "query": "这个月花了多少钱",
+    "source": "kb-analysis#spending",
+    "critical": true
+  },
+  {
+    "query": "哪里能看现金流",
+    "source": "kb-analysis#cashflow",
+    "critical": true
+  },
+  {
+    "query": "帮我关闭自动扣款",
+    "source": "kb-analysis#autodebits",
+    "critical": true
+  },
+  {
+    "query": "恢复订阅代扣怎么弄",
+    "source": "kb-analysis#autodebits",
+    "critical": true
+  },
+  {
+    "query": "理财开户还需要填身份证吗",
+    "source": "kb-wealth#opening",
+    "critical": true
+  },
+  {
+    "query": "你能帮我办理财开户吗",
+    "source": "kb-wealth#opening",
+    "critical": true
+  },
+  {
+    "query": "风险测评过期了怎么办",
+    "source": "kb-wealth#risk",
+    "critical": true
+  },
+  {
+    "query": "理财能保证收益吗",
+    "source": "kb-wealth#products",
+    "critical": false
+  },
+  {
+    "query": "买理财从哪个账户扣钱",
+    "source": "kb-wealth#subscribe",
+    "critical": false
+  },
+  {
+    "query": "封闭期可以赎回吗",
+    "source": "kb-wealth#redeem",
+    "critical": false
+  },
+  {
+    "query": "助手能办理哪些业务",
+    "source": "kb-assistant#capabilities",
+    "critical": true
+  },
+  {
+    "query": "支付密码应该填在哪里",
+    "source": "kb-assistant#confirmation",
+    "critical": false
+  },
+  {
+    "query": "能上传PDF文件吗",
+    "source": "kb-assistant#images",
+    "critical": true
+  },
+  {
+    "query": "麦克风为什么不能用",
+    "source": "kb-assistant#voice",
+    "critical": false
+  },
+  {
+    "query": "换手机历史对话会同步吗",
+    "source": "kb-assistant#history",
+    "critical": true
+  },
+  {
+    "query": "能不能停止生成",
+    "source": "kb-assistant#edit",
+    "critical": true
+  },
+  {
+    "query": "查询余额失败了怎么办",
+    "source": "kb-assistant#unavailable",
+    "critical": true
+  },
+  {
+    "query": "短信验证码过期了怎么办",
+    "source": "kb-security#login",
+    "critical": false
+  },
+  {
+    "query": "忘记登录密码怎么找回",
+    "source": "kb-security#password",
+    "critical": true
+  },
+  {
+    "query": "如何更换登录手机号",
+    "source": "kb-security#phone",
+    "critical": true
+  },
+  {
+    "query": "在哪里查看安全日志",
+    "source": "kb-security#rules",
+    "critical": false
+  },
+  {
+    "query": "支付密码锁了怎么办",
+    "source": "kb-security#paypassword",
+    "critical": true
+  },
+  {
+    "query": "助手现在能直接关闭自动扣款、做FPS转账和导出账单吗？应该到哪里操作？",
+    "source": "kb-assistant#capabilities",
+    "critical": true
+  },
+  {
+    "query": "助手能替我锁卡解锁吗，需要支付密码吗",
+    "source": "kb-cards#lost",
+    "critical": true
+  },
+  {
+    "query": "请助手帮我申请银行卡要提供什么",
+    "source": "kb-cards#apply",
+    "critical": true
+  },
+  {
+    "query": "助手帮我换卡会收多少费用",
+    "source": "kb-cards#replace",
+    "critical": true
+  },
+  {
+    "query": "助手能改卡片的线上支付开关和日限额吗",
+    "source": "kb-cards#settings",
+    "critical": true
+  },
+  {
+    "query": "让助手关闭已有自动扣款是否要支付密码",
+    "source": "kb-analysis#autodebits",
+    "critical": true
+  },
+  {
+    "query": "助手可以直接查这个月消费分类吗",
+    "source": "kb-analysis#spending",
+    "critical": true
+  },
+  {
+    "query": "能请助手查最近三十天现金流吗",
+    "source": "kb-analysis#cashflow",
+    "critical": true
+  },
+  {
+    "query": "如何停止正在生成的回复，会不会撤销转账",
+    "source": "kb-assistant#edit",
+    "critical": true
+  },
+  {
+    "query": "助手能做FPS手机号转账吗",
+    "source": "kb-transfers#fps",
+    "critical": true
+  },
+  {
+    "query": "FPS邮箱转账需要姓名吗",
+    "source": "kb-transfers#fps",
+    "critical": true
+  },
+  {
+    "query": "助手跨币种转账金额按什么币种",
+    "source": "kb-transfers#fx",
+    "critical": true
+  },
+  {
+    "query": "换汇报价过期了还能提交吗",
+    "source": "kb-transfers#fx",
+    "critical": true
+  },
+  {
+    "query": "助手可以撤销在途转账吗",
+    "source": "kb-transfers#recall",
+    "critical": true
+  },
+  {
+    "query": "普通外行清算中的转账可以撤回吗",
+    "source": "kb-transfers#recall",
+    "critical": true
+  },
+  {
+    "query": "怎么查询保存的收款人和银行代码",
+    "source": "kb-transfers#bank-transfer",
+    "critical": true
+  }
+]

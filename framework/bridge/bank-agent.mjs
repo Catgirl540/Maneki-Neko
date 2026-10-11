@@ -1,7 +1,9 @@
 /** 账户绑定、权威确认信息与一次性执行授权。银行 Bearer / 支付密码永不进入 harness。 */
 import { createHash } from 'node:crypto'
 
-export const bankError = (message, status = 400, code = 'AGENT_BANK_ERROR') => Object.assign(new Error(message), { status, code })
+import { bankError } from './bank-error.mjs'
+export { bankError } from './bank-error.mjs'
+import { prepareTransfer, refreshTransfer, fullAccount, fpsIdentifier } from './transfer-agent.mjs'
 const enc = encodeURIComponent
 const text = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw bankError(`缺少${label}`)
@@ -15,17 +17,33 @@ const money = (cents, currency = 'CNY') => `${currency} ${(cents / 100).toFixed(
 const stable = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v)
 const digest = value => createHash('sha256').update(stable(value)).digest('hex')
 const field = (label, value, emphasis = false) => ({ label, value: String(value), ...(emphasis ? { emphasis: true } : {}) })
-const writable = new Set(['bank_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret'])
+const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'])
+const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer'])
+const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
+const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
+const safeCard = ({ shippingAddress, cardholder, ...card }) => card
+const addressOf = a => {
+  const address = Object.fromEntries(['recipient', 'phone', 'region', 'city', 'detail'].map(k => [k, text(a[k], '寄送地址 ' + k)]))
+  if (!/^1[3-9]\d{9}$/.test(address.phone)) throw bankError('请输入 11 位手机号')
+  if (address.detail.length < 5) throw bankError('详细地址至少 5 个字')
+  if (a.postalCode !== undefined && a.postalCode !== '') {
+    if (!/^\d{6}$/.test(a.postalCode)) throw bankError('邮政编码为 6 位数字')
+    address.postalCode = a.postalCode
+  }
+  return address
+}
+const addressFields = address => [field('收件人', address.recipient), field('联系电话', address.phone), field('寄送地址', `${address.region} ${address.city} ${address.detail}`), field('邮政编码', address.postalCode || '未填写')]
+
 
 export function createBankAgent({ baseUrl, sessions, publish }) {
   const base = new URL(baseUrl)
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname))) throw bankError('银行服务必须使用 HTTPS 或本机回环地址')
   const grants = new Map()
   const key = (sessionId, callId) => `${sessionId}\0${callId}`
-  async function call(token, path, body) {
+  async function call(token, path, body, method = body === undefined ? 'GET' : 'POST') {
     let response
     try {
-      response = await fetch(new URL(path, base), { method: body === undefined ? 'GET' : 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(12_000) })
+      response = await fetch(new URL(path, base), { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(12_000) })
     } catch { throw bankError('无法连接银行服务，请稍后重试', 503, 'BANK_UNREACHABLE') }
     let data
     try { data = await response.json() } catch { throw bankError('银行接口返回了无效响应', 502) }
@@ -52,12 +70,20 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
   }
   async function prepare(challenge) {
     const entry = await current(challenge.sessionId)
+    const activity = entry.activity
+    if (entry.stopping || activity?.cancelled) throw bankError('本轮已停止', 409)
     const a = challenge.arguments
     if (!a || typeof a !== 'object' || Array.isArray(a)) throw bankError('工具调用缺少绑定参数')
     if (Object.keys(a).some(k => /password|token|secret/i.test(k))) throw bankError('凭据不得通过模型工具参数传入')
     const get = path => call(entry.bankToken, path)
     const post = (path, body) => call(entry.bankToken, path, body)
-    let path, body, fields, preview, riskAcknowledgementText
+    let path, body, fields, preview, riskAcknowledgementText, method, submitBefore
+    const ownedCard = async () => {
+      const card = (await get('/api/cards')).find(c => c.id === text(a.cardId, '卡片编号'))
+      if (!card) throw bankError('卡片不存在或不属于当前账户', 404)
+      if (card.status === 'replaced') throw bankError('该卡已换卡，无法操作')
+      return card
+    }
     switch (challenge.toolName) {
       case 'bank_get_balance': {
         path = a.accountId ? `/api/accounts/${enc(text(a.accountId, '账户编号'))}` : '/api/accounts'
@@ -78,26 +104,42 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         await get(path)
         fields = [field('交易编号', a.transactionId)]
         break
-      case 'bank_transfer': {
-        const account = await get(`/api/accounts/${enc(text(a.fromAccountId, '付款账户'))}`)
-        const accountNo = text(a.payeeAccountNo, '完整收款账号').replace(/\s/g, '')
-        if (!/^\d{8,34}$/.test(accountNo)) throw bankError('请提供完整收款账号，不能仅使用尾号')
-        const name = text(a.payeeName, '收款人姓名')
-        const bankCode = text(a.payeeBankCode, '收款银行')
-        const bankRegion = text(a.payeeBankRegion, '收款银行地区')
-        if (!['CN', 'HK'].includes(bankRegion)) throw bankError('银行地区必须为 CN 或 HK')
-        const banks = await get('/api/banks')
-        const bank = banks.find(b => b.code === bankCode && b.region === bankRegion)
-        if (!bank) throw bankError('收款银行不存在')
-        if (bankRegion !== 'CN' || account.currency !== 'CNY') throw bankError('助手目前仅支持境内人民币银行转账，跨境或换汇请使用转账页面')
-        body = { fromAccountId: account.id, channel: 'bank', scope: 'domestic', payeeName: name, payeeAccountNo: accountNo, payeeBankCode: bankCode, payeeBankRegion: bankRegion, amount: amount(a.amountCents), memo: typeof a.memo === 'string' ? a.memo : '' }
-        if (bankCode === 'LCB') {
-          await post('/api/transfers/recipient', { bankCode, bankRegion, accountOrCardNo: accountNo, payeeName: name })
-        }
-        const quote = await post('/api/transfers/quote', { fromAccountId: account.id, channel: 'bank', scope: 'domestic', amount: body.amount, bankCode, bankRegion })
-        path = '/api/transfers'
-        fields = [field('付款账户', `${account.label} · 尾号 ${account.accountNo.slice(-4)}`), field('收款人', name), field('收款银行', bank.name), field('完整收款账号', accountNo), field('转账金额', money(body.amount), true), field('手续费', money(quote.fee)), field('预计到账', quote.etaText), field('备注', body.memo || '无')]
-        preview = { fee: quote.fee }
+      case 'bank_transfer':
+      case 'bank_fps_transfer': {
+        ({ path, body, fields, preview, submitBefore } = await prepareTransfer(a, challenge.toolName === 'bank_fps_transfer', get, post))
+        break
+      }
+      case 'bank_list_banks':
+        if (a.region !== undefined && !['CN', 'HK'].includes(a.region)) throw bankError('银行地区必须为 CN 或 HK')
+        path = '/api/banks'
+        fields = [field('查询内容', '银行名称、地区与代码'), field('地区', a.region || '全部'), field('关键词', a.keyword || '全部')]
+        break
+      case 'bank_list_payees':
+        path = '/api/payees'
+        fields = [field('查询内容', '本人已保存收款人及完整收款标识'), field('关键词', a.keyword || '全部')]
+        break
+      case 'bank_resolve_fps':
+        if (a.fpsMethod === 'account') throw bankError('银行账号方式需自行提供户名与香港银行代码，不能解析登记')
+        path = '/api/fps/resolve'
+        body = { idType: a.fpsMethod, fpsId: fpsIdentifier(a.fpsMethod, a.fpsIdentifier) }
+        fields = [field('查询内容', 'FPS 登记掩码姓名与默认收款银行'), field('方式', body.idType), field('完整 FPS 标识', body.fpsId)]
+        break
+      case 'bank_verify_recipient': {
+        if (!['CN', 'HK'].includes(a.bankRegion)) throw bankError('银行地区必须为 CN 或 HK')
+        path = '/api/transfers/recipient'
+        body = { bankCode: text(a.bankCode, '银行代码'), bankRegion: a.bankRegion, accountOrCardNo: fullAccount(a.accountNo), ...(a.payeeName === undefined ? {} : { payeeName: text(a.payeeName, '收款人姓名') }) }
+        if (!(await get('/api/banks')).some(b => b.code === body.bankCode && b.region === body.bankRegion)) throw bankError('收款银行不存在')
+        fields = [field('查询内容', '收款账户校验；外部银行不代表实名核验通过'), field('银行', `${body.bankRegion} ${body.bankCode}`), field('完整收款账号', body.accountOrCardNo)]
+        break
+      }
+      case 'bank_recall_transfer': {
+        const tx = await get(`/api/transactions/${enc(text(a.transactionId, '交易编号'))}`)
+        if (tx.status !== 'pending' || tx.pendingReason !== 'inflight' || Date.parse(tx.holdUntil) <= Date.now() || !Number.isFinite(Date.parse(tx.holdUntil))) throw bankError('该交易已不能撤回，请查看最新交易状态', 409)
+        path = `/api/transfers/${enc(tx.id)}/recall`
+        body = {}
+        preview = { recallState: digest(tx) }
+        submitBefore = Date.parse(tx.holdUntil)
+        fields = [field('操作', '撤回在途转账', true), field('交易编号', tx.id), field('金额', money(Math.abs(tx.amount), tx.detail.settleCurrency)), field('收款人', tx.counterparty || tx.title || '请核对交易详情'), field('在途截止', tx.holdUntil), field('影响', '解除本笔在途冻结；以银行撤回结果为准')]
         break
       }
       case 'bank_wealth_quote':
@@ -131,6 +173,92 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         fields = [field('产品', holding.productName), field('持仓编号', holding.id), field('赎回份额', a.shares ?? holding.shares, true), field('说明', '到账金额与时间以银行受理结果为准')]
         break
       }
+      case 'bank_list_cards':
+        path = '/api/cards'
+        fields = [field('查询内容', '本人银行卡、状态、支付开关与日限额')]
+        break
+      case 'bank_card_products':
+        path = '/api/cards/products'
+        fields = [field('查询内容', '可申请卡产品、制卡与寄送费用')]
+        break
+      case 'bank_set_card_lock': {
+        const card = await ownedCard()
+        const locked = boolean(a.locked, '锁卡状态')
+        // 寄送中卡片不能借解锁动作被激活。
+        if (card.status === 'pending') throw bankError('卡片仍在寄送中，请在银行卡页面处理')
+        path = `/api/cards/${enc(card.id)}/lock`
+        body = { locked }
+        preview = { cardState: digest(safeCard(card)) }
+        fields = [field('卡片', cardLabel(card)), field('操作', locked ? '锁卡' : '解锁', true), field('影响', locked ? '关闭线上及境外支付；资金账户转账不受影响' : '支付开关不会自动恢复，请重新检查')]
+        break
+      }
+      case 'bank_update_card_settings': {
+        const card = await ownedCard()
+        if (card.status === 'pending') throw bankError('卡片仍在寄送中，请在银行卡页面处理')
+        body = {}
+        fields = [field('卡片', cardLabel(card))]
+        for (const [key, label] of [['onlinePayment', '线上支付'], ['overseasPayment', '境外支付']]) {
+          if (a[key] === undefined) continue
+          body[key] = boolean(a[key], label)
+          fields.push(field(label, body[key] ? '开启' : '关闭', true))
+        }
+        if (a.dailyLimitCents !== undefined) {
+          if (![200_000, 500_000, 1_000_000, 5_000_000].includes(a.dailyLimitCents)) throw bankError('日限额仅支持 2000、5000、10000 或 50000 元')
+          body.dailyLimit = a.dailyLimitCents
+          fields.push(field('银行卡日限额', money(body.dailyLimit), true))
+        }
+        if (!Object.keys(body).length) throw bankError('请指定要修改的卡片设置')
+        if (card.status === 'locked' && (body.onlinePayment || body.overseasPayment)) throw bankError('卡片已锁定，请先解锁')
+        path = `/api/cards/${enc(card.id)}/settings`
+        method = 'PATCH'
+        preview = { cardState: digest(safeCard(card)) }
+        break
+      }
+      case 'bank_apply_card':
+      case 'bank_replace_card': {
+        const replacing = challenge.toolName === 'bank_replace_card'
+        const card = replacing ? await ownedCard() : undefined
+        const products = await get('/api/cards/products')
+        const product = replacing ? products.find(p => p.network === card.network) : products.find(p => p.code === text(a.productCode, '卡产品代码'))
+        if (!replacing && !product) throw bankError('卡产品不存在', 404)
+        const accounts = await get('/api/accounts')
+        const account = accounts[0]
+        if (!account) throw bankError('没有可扣费资金账户')
+        const fee = product ? product.issuingFee + product.deliveryFee : 2000
+        const address = addressOf(a)
+        body = { address, ...(!replacing ? { productCode: product.code } : {}) }
+        path = replacing ? `/api/cards/${enc(card.id)}/replace` : '/api/cards/open'
+        preview = { fee, accountId: account.id, ...(card ? { cardState: digest(safeCard(card)) } : {}) }
+        fields = [field('操作', replacing ? '换卡' : '申请新卡'), field('卡片', replacing ? cardLabel(card) : product.name), field('费用合计', money(fee), true), field('扣费账户', `${account.label} · 尾号 ${account.accountNo.slice(-4)}`), ...addressFields(address), field('影响', replacing ? '旧卡将失效，新卡为寄送中' : '新卡为寄送中，支付开关初始关闭')]
+        break
+      }
+      case 'bank_list_autodebits':
+        path = '/api/autodebits'
+        fields = [field('查询内容', '本人已签约自动扣款、金额、周期与启用状态')]
+        break
+      case 'bank_set_autodebit': {
+        const item = (await get('/api/autodebits')).find(d => d.id === text(a.autoDebitId, '自动扣款编号'))
+        if (!item) throw bankError('扣款计划不存在或不属于当前账户', 404)
+        body = { enabled: boolean(a.enabled, '启用状态') }
+        path = `/api/autodebits/${enc(item.id)}`
+        method = 'PATCH'
+        preview = { autoDebitState: digest(item) }
+        fields = [field('签约服务', item.merchant), field('每期金额', money(item.amount)), field('扣款周期', item.cycle), field('操作', body.enabled ? '启用自动扣款' : '关闭自动扣款', true), field('说明', '仅管理已有签约；不会取消已产生账单或退款')]
+        break
+      }
+      case 'bank_get_spending': {
+        if (a.month !== undefined && !/^\d{4}-(0[1-9]|1[0-2])$/.test(a.month)) throw bankError('月份格式应为 YYYY-MM')
+        path = '/api/analysis/spending' + (a.month ? `?month=${enc(a.month)}` : '')
+        fields = [field('查询内容', '月度支出、分类构成与近期走势'), field('月份', a.month || '本月')]
+        break
+      }
+      case 'bank_get_cashflow': {
+        const days = a.days ?? 7
+        if (![7, 30].includes(days)) throw bankError('现金流仅支持近 7 天或 30 天')
+        path = `/api/analysis/cashflow?days=${days}`
+        fields = [field('查询内容', `近 ${days} 天现金流与收支趋势`)]
+        break
+      }
       case 'bank_reveal_card_secret': {
         const cards = await get('/api/cards')
         const card = cards.find(c => c.id === text(a.cardId, '卡片编号'))
@@ -143,9 +271,11 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       }
       default: throw bankError('未支持的银行工具', 400)
     }
+    if (submitBefore) challenge = { ...challenge, expiresAt: Math.min(challenge.expiresAt, submitBefore) }
     if (!Number.isFinite(challenge.expiresAt) || challenge.expiresAt <= Date.now()) throw bankError('确认已过期')
-    const verification = writable.has(challenge.toolName) ? 'payment-password' : undefined
-    const prepared = { challenge: { ...challenge, arguments: undefined, fields, verification, ...(riskAcknowledgementText ? { riskAcknowledgementText } : {}), consequence: verification ? '确认并验证后提交银行服务；操作结果以银行回执为准。' : '查询结果会显示在对话中。' }, fingerprint: digest(a), path, body, preview, ownerId: entry.ownerId, approved: false }
+    if (entry.stopping || activity?.cancelled || entry.activity !== activity) throw bankError('本轮已停止', 409)
+    const verification = passwordTools.has(challenge.toolName) ? 'payment-password' : undefined
+    const prepared = { challenge: { ...challenge, arguments: undefined, fields, verification, ...(riskAcknowledgementText ? { riskAcknowledgementText } : {}), consequence: verification ? '确认并验证后提交银行服务；操作结果以银行回执为准。' : writable.has(challenge.toolName) ? '确认后提交银行服务，操作结果以银行回执为准。' : '查询结果会显示在对话中。' }, fingerprint: digest(a), path, body, method, preview, activity, ownerId: entry.ownerId, approved: false }
     const k = key(challenge.sessionId, challenge.callId)
     if (grants.has(k)) throw bankError('工具调用已存在确认', 409)
     const ttl = Math.min(challenge.expiresAt - Date.now(), 180_000)
@@ -177,17 +307,21 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
   }
   async function execute(input) {
     const entry = await current(input.sessionId)
+    if (entry.stopping || entry.activity?.cancelled) throw bankError('本轮已停止，未执行的授权已取消', 409)
     const k = key(input.sessionId, input.callId)
     const g = grants.get(k)
-    if (!g || !g.approved || g.ownerId !== entry.ownerId || g.challenge.toolName !== input.toolName || g.fingerprint !== digest(input.arguments) || g.challenge.expiresAt <= Date.now()) throw bankError('缺少与本次参数匹配的用户授权', 403, 'CONSENT_REQUIRED')
+    if (!g || !g.approved || g.activity !== entry.activity || g.ownerId !== entry.ownerId || g.challenge.toolName !== input.toolName || g.fingerprint !== digest(input.arguments) || g.challenge.expiresAt <= Date.now()) throw bankError('缺少与本次参数匹配的用户授权', 403, 'CONSENT_REQUIRED')
     grants.delete(k) // 在任何异步调用前消费，防并行重放和重复扣款。
     clearTimeout(g.timer)
     try {
       let body = g.body
-      if (input.toolName === 'bank_transfer') {
+      if (['bank_transfer', 'bank_fps_transfer'].includes(input.toolName)) {
         await call(entry.bankToken, '/api/auth/payment-password/verify', { paymentPassword: g.password })
-        const quote = await call(entry.bankToken, '/api/transfers/quote', { fromAccountId: body.fromAccountId, channel: 'bank', scope: 'domestic', amount: body.amount, bankCode: body.payeeBankCode, bankRegion: body.payeeBankRegion })
-        if (quote.fee !== g.preview.fee) throw bankError('手续费已变化，请重新确认', 409)
+        await refreshTransfer(body, g.preview, path => call(entry.bankToken, path), (path, data) => call(entry.bankToken, path, data))
+      }
+      if (g.preview?.recallState) {
+        const tx = await call(entry.bankToken, `/api/transactions/${enc(input.arguments.transactionId)}`)
+        if (digest(tx) !== g.preview.recallState || tx.status !== 'pending' || tx.pendingReason !== 'inflight' || Date.parse(tx.holdUntil) <= Date.now()) throw bankError('交易状态已变化，请重新确认', 409)
       }
       if (input.toolName === 'bank_wealth_subscribe') {
         const product = await call(entry.bankToken, `/api/wealth/products/${enc(body.productCode)}`)
@@ -195,8 +329,27 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         if (digest({ nav: product.nav, fees: product.transactionFees }) !== g.preview.product || overview.account.settlementAccountId !== g.preview.settlementAccountId) throw bankError('产品净值、费用或资金账户已变化，请重新确认', 409)
       }
       if (input.toolName === 'bank_wealth_redeem') await call(entry.bankToken, '/api/auth/payment-password/verify', { paymentPassword: g.password })
-      if (['bank_wealth_subscribe', 'bank_reveal_card_secret'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
-      const data = await call(entry.bankToken, g.path, body)
+      if (g.preview?.cardState) {
+        const card = (await call(entry.bankToken, '/api/cards')).find(c => c.id === input.arguments.cardId)
+        if (!card || digest(safeCard(card)) !== g.preview.cardState) throw bankError('卡片状态或设置已变化，请重新确认', 409)
+      }
+      if (['bank_apply_card', 'bank_replace_card'].includes(input.toolName)) {
+        const products = await call(entry.bankToken, '/api/cards/products')
+        const cards = await call(entry.bankToken, '/api/cards')
+        const card = cards.find(c => c.id === input.arguments.cardId)
+        const product = input.toolName === 'bank_apply_card' ? products.find(p => p.code === body.productCode) : products.find(p => p.network === card?.network)
+        const fee = product ? product.issuingFee + product.deliveryFee : 2000
+        const accounts = await call(entry.bankToken, '/api/accounts')
+        if (fee !== g.preview.fee || accounts[0]?.id !== g.preview.accountId) throw bankError('卡片费用或扣费账户已变化，请重新确认', 409)
+      }
+      if (g.preview?.autoDebitState) {
+        const item = (await call(entry.bankToken, '/api/autodebits')).find(d => d.id === input.arguments.autoDebitId)
+        if (!item || digest(item) !== g.preview.autoDebitState) throw bankError('签约项目已变化，请重新确认', 409)
+      }
+      // 停止可能与重新核价并发，真正提交前再核对一次。
+      if (entry.stopping || g.activity?.cancelled || g.activity !== entry.activity) throw bankError('本轮已停止，未提交银行操作', 409)
+      if (['bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
+      const data = await call(entry.bankToken, g.path, body, g.method)
       if (input.toolName === 'bank_reveal_card_secret') {
         const value = input.arguments.field === 'cvv' ? data.cvv : data.pan
         publish(input.sessionId, { type: 'card-secret', cardId: input.arguments.cardId, field: input.arguments.field, value, expiresAt: Date.now() + Math.min(60, Math.max(1, Number(data.revealSeconds) || 30)) * 1000 })
@@ -207,10 +360,17 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         const overview = await call(entry.bankToken, '/api/wealth/overview')
         return { dataSource: 'http', accounts: Array.isArray(data) ? data : [data], cards: cards.map(c => ({ id: c.id, last4: c.last4, status: c.status })), holdings: overview.holdings, wealthAccount: overview.account, risk: overview.risk }
       }
+      if (['bank_list_banks', 'bank_list_payees'].includes(input.toolName)) {
+        const query = String(input.arguments.keyword ?? '').trim().toLowerCase()
+        const rows = data.filter(item => (input.toolName !== 'bank_list_banks' || !input.arguments.region || item.region === input.arguments.region) && (!query || [item.name, item.bankName, item.code, item.accountNo, item.fpsId].some(v => typeof v === 'string' && v.toLowerCase().includes(query))))
+        return { dataSource: 'http', result: { items: rows.slice(0, 20).map(item => input.toolName === 'bank_list_banks' ? { code: item.code, region: item.region, name: item.name, internal: !!item.internal } : item), total: rows.length, truncated: rows.length > 20, ...(rows.length > 20 ? { notice: '请提供更具体的名称或银行地区以缩小范围，不得猜测未返回的信息。' } : {}) } }
+      }
+      if (input.toolName === 'bank_list_cards') return { dataSource: 'http', result: data.map(safeCard) }
       if (writable.has(input.toolName)) publish(input.sessionId, { type: 'bank-updated' })
-      return { dataSource: 'http', result: data }
+      return { dataSource: 'http', result: input.toolName.includes('card') && writable.has(input.toolName) ? safeCard(data) : data }
     } finally { g.password = undefined }
   }
+  function forgetSession(sessionId) { for (const g of grants.values()) if (g.challenge.sessionId === sessionId) forget(g.challenge) }
   function close() { for (const g of grants.values()) { clearTimeout(g.timer); g.password = undefined }; grants.clear() }
-  return { authenticate, owned, current, prepare, approve, forget, execute, close }
+  return { authenticate, owned, current, prepare, approve, forget, forgetSession, execute, close }
 }

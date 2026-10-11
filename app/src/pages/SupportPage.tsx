@@ -650,14 +650,20 @@ export function SupportPage() {
                   <MicIcon size={20} />
                 </button>
               )}
-              <button
+              {usingAgent && activeBusy ? (
+                <button type="button" aria-label="停止生成" title="停止生成" disabled={agent.stopping}
+                  onClick={() => { spokenRef.current = latestAssistant; voice.stopSpeaking(); agent.stop() }}
+                  className="grid size-12 shrink-0 place-items-center rounded-chip bg-ink text-ink-invert transition-opacity disabled:opacity-40">
+                  <StopIcon size={20} />
+                </button>
+              ) : <button
                 type="submit"
                 aria-label="发送"
                 disabled={(usingAgent ? activeBusy : thinking) || (!input.trim() && pendingImage === undefined) || probing || imageBusy}
                 className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold text-ink transition-colors hover:bg-gold-deep hover:text-ink-invert disabled:cursor-not-allowed disabled:bg-gold/40"
               >
                 <SendIcon size={20} />
-              </button>
+              </button>}
             </form>
           </div>
         </div>

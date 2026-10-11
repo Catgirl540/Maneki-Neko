@@ -35,6 +35,7 @@ import {
   probeAgent,
   probeAgentSession,
   sendAgentMessage,
+  stopAgentTurn,
   type AgentEvent,
   type ConsentChallenge,
   type PendingQuestion,
@@ -105,10 +106,26 @@ const TOOL_LABELS: Record<string, string> = {
   bank_list_transactions: '查询交易流水',
   bank_get_transaction_detail: '查看交易详情',
   bank_transfer: '转账',
+  bank_fps_transfer: 'FPS 转账',
+  bank_list_banks: '查询银行',
+  bank_list_payees: '查询收款人',
+  bank_resolve_fps: '查询 FPS 登记',
+  bank_verify_recipient: '校验收款账号',
+  bank_recall_transfer: '撤回在途转账',
   bank_wealth_quote: '查询理财产品',
   bank_wealth_subscribe: '申购理财产品',
   bank_wealth_redeem: '赎回理财产品',
   bank_reveal_card_secret: '查看卡安全信息',
+  bank_list_cards: '查询银行卡',
+  bank_card_products: '查询卡产品',
+  bank_set_card_lock: '锁卡或解锁',
+  bank_update_card_settings: '修改卡片设置',
+  bank_apply_card: '申请新卡',
+  bank_replace_card: '换卡',
+  bank_list_autodebits: '查询自动扣款',
+  bank_set_autodebit: '管理自动扣款',
+  bank_get_spending: '查询消费分析',
+  bank_get_cashflow: '查询现金流',
   luckycat_ping: '框架自检',
 }
 
@@ -136,6 +153,8 @@ export interface AgentChat {
   active?: StoredConversation
   /** 正在回答的对话 id（**不止当前这一段**，列表上用得到）。 */
   busyIds: string[]
+  stopping: boolean
+  stop: () => void
   /** 上下文已经不在助手记忆里的对话 id（列表上标出来）。 */
   lostIds: string[]
   /** 当前对话待确认的敏感操作。 */
@@ -194,6 +213,9 @@ export function useAgentChat(): AgentChat {
   const [pendings, setPendings] = useState<Record<string, PendingConsent>>({})
   /** 每段对话当前待答复的问题。与确认卡片并存：两者可以同时存在。 */
   const [asks, setAsks] = useState<Record<string, PendingAsk>>({})
+  const [stoppingIds, setStoppingIds] = useState<string[]>([])
+  const stoppingRef = useRef(new Set<string>())
+  const dispatches = useRef(new Map<string, Promise<void>>())
   const [lostIds, setLostIds] = useState<string[]>([])
 
   /**
@@ -309,10 +331,17 @@ export function useAgentChat(): AgentChat {
       case 'status':
         setBusy(convId, event.status === 'running')
         if (event.status !== 'running') {
+          stoppingRef.current.delete(convId)
+          setStoppingIds([...stoppingRef.current])
           patch(convId, conversation => ({ ...conversation, items: conversation.items.map(item =>
             item.kind === 'assistant' && item.streaming ? { ...item, streaming: false } : item) }))
           closeIfIdle(convId)
         }
+        return
+      case 'stopped':
+        pushItem(convId, { kind: 'notice', id: nextId(), text: '已停止生成', tone: 'info' })
+        patch(convId, c => ({ ...c, items: c.items.map(item => item.kind === 'tool' && item.state === 'running'
+          ? { ...item, state: 'error', text: '已中断；已提交业务请以银行记录为准' } : item) }))
         return
       case 'assistant-update':
       case 'assistant':
@@ -508,7 +537,7 @@ export function useAgentChat(): AgentChat {
    */
   const dispatch = useCallback((convId: string, value: string, image?: PreparedImage) => {
     setBusy(convId, true)
-    void (async () => {
+    const task = (async () => {
       try {
         const mode = await prepare(convId)
         if (!mountedRef.current) return
@@ -516,6 +545,10 @@ export function useAgentChat(): AgentChat {
         // 在用户按下发送之前就已经写着了（见 SupportPage 的 contextLost）。
         const session = await ensureLive(convId, mode === 'fresh')
         if (!mountedRef.current) return
+        if (stoppingRef.current.has(convId)) {
+          setBusy(convId, false)
+          return
+        }
         await sendAgentMessage(
           session.agentSessionId,
           value,
@@ -532,8 +565,31 @@ export function useAgentChat(): AgentChat {
           tone: 'error',
         })
       }
-    })()
+    })().finally(() => { dispatches.current.delete(convId) })
+    dispatches.current.set(convId, task)
   }, [ensureLive, prepare, pushItem, setBusy])
+
+  const stop = useCallback(() => {
+    const convId = activeIdRef.current
+    if (!convId || !busyRef.current.has(convId) || stoppingRef.current.has(convId)) return
+    stoppingRef.current.add(convId)
+    setStoppingIds([...stoppingRef.current])
+    void (async () => {
+      try {
+        // 等入队请求完成，避免停止先于本轮提交；还没提交时 dispatch 会直接退出。
+        await dispatches.current.get(convId)
+        const sessionId = live.current.get(convId)?.agentSessionId
+        if (sessionId && busyRef.current.has(convId)) await stopAgentTurn(sessionId)
+      } catch (error) {
+        pushItem(convId, { kind: 'notice', id: nextId(), text: `停止失败：${error instanceof Error ? error.message : String(error)}`, tone: 'error' })
+      } finally {
+        if (mountedRef.current) {
+          stoppingRef.current.delete(convId)
+          setStoppingIds([...stoppingRef.current])
+        }
+      }
+    })()
+  }, [pushItem])
 
   const send = useCallback((text: string, image?: PreparedImage) => {
     const value = text.trim()
@@ -557,7 +613,7 @@ export function useAgentChat(): AgentChat {
     })
     if (wasUntitled) patch(convId, c => ({ ...c, title: titleFrom(value === '' ? image?.name ?? '' : value) }))
     dispatch(convId, value, image)
-  }, [dispatch, patch, pendings, pushItem, status])
+  }, [asks, dispatch, patch, pendings, pushItem, status])
 
   /**
    * 倒回某条用户消息并重发。
@@ -787,6 +843,8 @@ export function useAgentChat(): AgentChat {
     activeId,
     active,
     busyIds,
+    stopping: activeId !== undefined && stoppingIds.includes(activeId),
+    stop,
     lostIds,
     pending: activeId === undefined ? undefined : pendings[activeId],
     ask: activeId === undefined ? undefined : asks[activeId],

@@ -150,7 +150,7 @@ describe('有界注入', () => {
   })
 
   it('预算不足时先丢分数最低的', () => {
-    const bounded = boundHits(hits, 400)
+    const bounded = boundHits(hits, 700)
     assert.ok(bounded.dropped > 0, '应当丢掉一些')
     assert.ok(bounded.text.includes('kb-fee#0'), '最高分的必须留下')
     assert.ok(!bounded.text.includes('kb-hours#0'), '最低分的应当被丢')

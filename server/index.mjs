@@ -108,6 +108,12 @@ const server = createServer(async (req, res) => {
   }
   try {
     if (await staffApi.handle(req, res, url)) return
+    if (url.pathname === '/api/agent/transfer/requirements' && req.method === 'GET') {
+      const value = await bank.transferRequirements(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
     if (url.pathname === '/api/agent/wealth/requirements' && req.method === 'GET') {
       const value = await bank.wealthRequirements(req)
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
