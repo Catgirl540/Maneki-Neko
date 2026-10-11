@@ -12,6 +12,7 @@
  */
 
 import {
+  recoveryHistory,
   MAX_CONVERSATIONS,
   isEmptyConversation,
   makeConversation,
@@ -326,4 +327,15 @@ saveConversations([conversation({ id: 'owner-a', items: [{ kind: 'user', id: 'a-
 saveConversations([conversation({ id: 'owner-b', items: [{ kind: 'user', id: 'b-message', text: '客户 B' }] })], 'b')
 eq(loadConversations('a').map(c => c.id), ['owner-a'], '客户 A 仅加载自己的对话')
 eq(loadConversations('b').map(c => c.id), ['owner-b'], '客户 B 仅加载自己的对话')
+const recovery = recoveryHistory([
+  { kind: 'user', id: 'old', text: '旧问题', thumb: '不能迁入的图片' },
+  { kind: 'tool', id: 'tool', name: 'bank_transfer', state: 'done', text: '不能迁入的工具回执' },
+  { kind: 'notice', id: 'notice', text: '不能迁入的系统通知', tone: 'info' },
+  { kind: 'assistant', id: 'reply', text: '旧回复' },
+])
+eq(recovery, [{ role: 'user', text: '旧问题' }, { role: 'assistant', text: '旧回复' }], '旧版恢复只带用户与助手文字，不带图片、工具或通知')
+const recent = recoveryHistory(Array.from({ length: 80 }, (_, i) => ({ kind: 'user', id: String(i), text: '消息 ' + i })))
+eq([recent.length, recent[0].text, recent.at(-1).text], [40, '消息 40', '消息 79'], '恢复保留最近 40 条且顺序不变')
+const bounded = recoveryHistory(Array.from({ length: 40 }, (_, i) => ({ kind: 'user', id: String(i), text: '界'.repeat(10000) })))
+report(new TextEncoder().encode(JSON.stringify(bounded)).byteLength <= 48_000, '恢复按 UTF-8 字节控制体积，避免中文超出请求预算')
 process.exit(failures === 0 ? 0 : 1)

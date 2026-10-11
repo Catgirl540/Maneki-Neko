@@ -4,7 +4,7 @@ title: "助手能力与对话"
 navigation: "助手"
 routes: ["/support"]
 keywords: ["助手", "图片", "语音", "历史记录"]
-sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs"]
+sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs"]
 ---
 
 ## 助手能办理什么？哪些功能暂不支持？ {#capabilities}
@@ -25,7 +25,7 @@ sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/s
 
 ## 历史对话会同步吗？换设备或重启后能恢复吗？ {#history}
 
-历史列表保存在当前设备浏览器中，可新建、切换、重命名及删除对话；暂不支持跨设备同步、历史搜索或导出。服务器重启后不会自动恢复完整模型上下文；关闭网页期间的回复也不保证重新打开后补齐。删除本地列表不表示服务端审计记录删除。
+历史列表保存在当前设备浏览器中，可新建、切换、重命名及删除对话；暂不支持跨设备同步、历史搜索或导出。新版会话在服务器重启后可恢复文字、图片和已记录的工具上下文；旧版本对话自动迁入本机最近的文字记录，历史图片需重发。重启中断的确认需重新发起，不能据此认定业务成功；已提交业务请查银行记录。关闭网页期间的回复不保证补齐；删除本地列表不删除服务端记录。
 
 ## 可以停止生成、编辑或重新生成回复吗？ {#edit}
 

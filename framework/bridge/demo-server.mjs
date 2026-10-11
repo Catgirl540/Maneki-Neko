@@ -60,6 +60,7 @@ import { createEventPolling } from './event-polling.mjs'
 import { createAssistantStream } from './assistant-stream.mjs'
 import { cancelAgent } from './agent-control.mjs'
 import { checkPolicy } from '../scripts/check-bank-tool-policy.mjs'
+import { openSessionStore, legacyContext } from './session-store.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -67,6 +68,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const home = join(ROOT, '.dsh-home')
 if (!home.startsWith(ROOT)) throw new Error(`refusing DSH_HOME outside the repo: ${home}`)
 process.env.DSH_HOME = home
+// 独立于进程生命周期；测试可指向临时目录，生产目录须跨发布保留。
+const SESSION_DIR = resolve(process.env.LUCKYCAT_SESSION_DIR ?? home)
 
 const PORT = Number(process.env.LUCKYCAT_DEMO_PORT ?? 8788)
 const PROVIDER = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
@@ -139,7 +142,7 @@ const MAX_AUDIO_BYTES = 12 * 1024 * 1024
  * `ECONNRESET`，而不是下面那条清清楚楚的 413）。这是实测踩到的。
  */
 /** 用户上传的图片放这里。**在 .dsh-home 下**（已被 gitignore），不混进仓库。 */
-const UPLOAD_ROOT = join(home, 'uploads')
+const UPLOAD_ROOT = join(SESSION_DIR, 'uploads')
 
 /**
  * 账户目录名的白名单。
@@ -345,6 +348,7 @@ function publish(sessionId, event) {
     entry.events ??= []
     entry.events.push({ id, event })
     if (entry.events.length > 256) entry.events.shift()
+    sessionStore.record(entry, event)
   }
   const subscribers = streams.get(sessionId)
   if (subscribers === undefined) return
@@ -405,11 +409,33 @@ function settleQuestion(questionId, answer) {
 
 /** 会话表：我们的 sessionId → { harness 会话句柄, 忙碌标志, 工具调用轨迹 }。 */
 const sessions = new Map()
+const sessionStore = HTTP_BANK ? openSessionStore(join(SESSION_DIR, 'web-context', 'sessions.sqlite')) : null
+if (sessionStore) for (const entry of sessionStore.interrupted()) sessions.set(entry.id, entry)
 const bankAgent = HTTP_BANK ? createBankAgent({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish }) : null
+for (const entry of sessions.values()) {
+  if (entry.interrupted) {
+    publish(entry.id, { type: 'session-restored', interrupted: true })
+    publish(entry.id, { type: 'status', status: 'idle' })
+  } else sessionStore.save(entry)
+}
+
+// 限制活动索引缓存，历史仍保存在磁盘；避免持久化后 50 段成为永久额度。
+function makeSessionRoom(ownerId) {
+  const full = () => sessions.size >= 1000 || [...sessions.values()].filter(e => e.ownerId === ownerId).length >= 50
+  for (const [id, entry] of sessions) {
+    if (!full()) return
+    if (entry.busy || entry.stopTask || entry.requestRefs || streams.has(id)) continue
+    if ([...sessions.values()].filter(e => e.ownerId === ownerId).length >= 50 && entry.ownerId !== ownerId) continue
+    sessions.delete(id)
+  }
+  if (full()) throw bankError('同时打开的会话过多，请稍后重试', 429)
+}
 
 /** 共享的 harness（一个进程带多个会话）。 */
 let harness
 let harnessStarting
+const activeTurns = new Set()
+let shuttingDown = false
 
 /** 从会话事件里抽出给网页看的东西。 */
 function projectEvent(sessionId, event) {
@@ -469,9 +495,18 @@ async function ensureHarness() {
   if (harnessStarting) return harnessStarting
   harnessStarting = (async () => {
     // SDK 0.1.6 只公开完成消息；用树外插件扩展通知，不修改运行时依赖。
-    const streamPatch = join(home, 'assistant-stream.patch.yml')
+    const streamPatch = join(controlDir, 'runtime.patch.yml')
     await mkdir(home, { recursive: true })
-    await writeFile(streamPatch, JSON.stringify([{ insert: [{ id: 'luckycat-assistant-stream', name: join(ROOT, 'bridge/assistant-stream-plugin.mjs') }, { id: 'luckycat-agent-control', name: join(ROOT, 'bridge/agent-control-plugin.mjs') }] }]))
+    await writeFile(streamPatch, JSON.stringify([
+      { id: 'sessions', config: { root: join(SESSION_DIR, 'sessions'), compression: 'none' } },
+      { id: 'attachment-local', config: { dshHome: SESSION_DIR } },
+      { id: 'sdk-jsonrpc-server', disabled: true },
+      { insert: [
+        { id: 'luckycat-sdk-resume', name: join(ROOT, 'bridge/sdk-session-resume.mjs'), inject: ['sdkAppStartup', 'loader', 'agents', 'sessionPersistence'], config: { maxTokensAsSuccess: false } },
+        { id: 'luckycat-assistant-stream', name: join(ROOT, 'bridge/assistant-stream-plugin.mjs') },
+        { id: 'luckycat-agent-control', name: join(ROOT, 'bridge/agent-control-plugin.mjs') },
+      ] },
+    ]), { mode: 0o600 })
     // 当前适配器没有 extra_body 配置；仅给这个子进程加载请求适配层。
     const fallbackImport = new URL('./model-fallback-fetch.mjs', import.meta.url).href
     const fallbackEnv = PROVIDER === 'openrouter' && process.env.LUCKYCAT_FALLBACK_MODELS
@@ -499,10 +534,7 @@ async function ensureHarness() {
 /**
  * 取或建一个会话。
  *
- * `started` 是关键的一格：**建过**不等于**跑过**。网页把历史对话存在浏览器里，
- * 刷新之后会拿着旧的会话 id 回来问"这段对话的上下文还在吗"。只有真的往运行时
- * 递过提示词的会话，运行时里才存在这个会话；服务重启过就全没了。少了这一格，
- * 用户看到的是一段记得住的记录配一个失忆的助手，而且**界面上看不出来**。
+ * started 与可信客户归属持久化；运行时句柄在首次继续对话时从原生日志恢复。
  */
 function sessionOf(sessionId) {
   let entry = sessions.get(sessionId)
@@ -535,7 +567,10 @@ async function runTurn(sessionId, input) {
     entry.handle ??= active.session(sessionId)
     // 递提示词之前打上标记：这一步之后运行时里就有这个会话了。
     entry.started = true
-    const result = await entry.handle.run(input, {
+    sessionStore?.save(entry)
+    const prompt = entry.legacyContext
+      ? [{ type: 'text', text: entry.legacyContext }, ...(typeof input === 'string' ? [{ type: 'text', text: input }] : input)] : input
+    const result = await entry.handle.run(prompt, {
       onNotification: (notification) => {
         if (notification.params.sessionId !== sessionId) return
         if (notification.method === 'luckycat.assistant-stream') {
@@ -549,6 +584,8 @@ async function runTurn(sessionId, input) {
         if (projected !== undefined) publish(sessionId, projected)
       },
     })
+    entry.legacyContext = undefined
+    sessionStore?.save(entry)
     if (!entry.stopping && result.finalResponse.trim() === '') {
       publish(sessionId, { type: 'error', message: '模型没有产出可见文本（可能上游失败），请看服务端日志。' })
     }
@@ -601,10 +638,11 @@ const server = createServer((req, res) => {
   void handle(req, res).catch((error) => {
     if (!res.headersSent) sendJson(res, error?.status ?? 500, { error: error instanceof Error ? error.message : String(error), code: error?.code })
     else res.end()
-  })
+  }).finally(() => { if (req.sessionEntry) req.sessionEntry.requestRefs -= 1 })
 })
 
 async function handle(req, res) {
+  if (shuttingDown) { sendJson(res, 503, { error: '服务正在重启，请稍后重试' }); return }
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   const parts = pathParts(url.pathname)
 
@@ -632,11 +670,24 @@ async function handle(req, res) {
   if (HTTP_BANK && url.pathname.startsWith('/agent-api/') && !internal) {
     identity = await bankAgent.authenticate(req.headers.authorization)
     if (parts[1] === 'sessions' && parts[2]) {
-      const entry = sessions.get(parts[2])
-      // 重启后无会话时，状态探测明确返回失忆；其他路由仍拒绝未知会话。
+      let entry = sessions.get(parts[2])
+      if (!entry) {
+        const stored = sessionStore.get(parts[2])
+        if (stored) {
+          if (stored.ownerId !== identity.user.id) throw bankError('会话不存在或不属于当前账户', 404, 'NOT_FOUND')
+          makeSessionRoom(identity.user.id)
+          entry = stored
+          sessions.set(entry.id, entry)
+        }
+      }
+      // 旧版本未保存归属的会话不能凭 id 认领，网页可迁入自己的本地文字记录。
       if (!entry && req.method === 'GET' && parts.length === 3) {
         sendJson(res, 200, { sessionId: parts[2], known: false, started: false, busy: false })
         return
+      }
+      if (entry) {
+        req.sessionEntry = entry
+        entry.requestRefs = (entry.requestRefs ?? 0) + 1
       }
       await bankAgent.owned(entry, identity)
     }
@@ -680,10 +731,13 @@ async function handle(req, res) {
 
   // 建会话
   if (req.method === 'POST' && parts.join('/') === 'agent-api/sessions') {
-    if (HTTP_BANK && (sessions.size >= 1000 || [...sessions.values()].filter(entry => entry.ownerId === identity.user.id).length >= 50)) throw bankError('会话数量已达上限，请稍后重试', 429)
+    const context = legacyContext((await readJson(req)).history)
+    if (HTTP_BANK) makeSessionRoom(identity.user.id)
     const sessionId = `web-${randomUUID()}`
     const entry = sessionOf(sessionId)
     if (identity) { entry.ownerId = identity.user.id; entry.bankToken = identity.token }
+    entry.legacyContext = context
+    sessionStore?.save(entry)
     sendJson(res, 200, { sessionId })
     return
   }
@@ -799,7 +853,9 @@ async function handle(req, res) {
     }
     if (sessionOf(sessionId).busy || sessions.get(sessionId).stopTask) throw bankError('上一轮还在进行中，请等它结束', 409)
     // 只有文字时仍然按字符串递——那是走熟了的路，没必要为图片把它改掉
-    void runTurn(sessionId, blocks ?? text)
+    const turn = runTurn(sessionId, blocks ?? text)
+    activeTurns.add(turn)
+    void turn.finally(() => activeTurns.delete(turn))
     sendJson(res, 202, { accepted: true })
     return
   }
@@ -1311,19 +1367,26 @@ server.listen(PORT, '127.0.0.1', () => {
 
 /** 优雅退出：结束所有待确认事项与 SSE 连接，再关 harness。 */
 async function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
   eventPolling.close()
   bankAgent?.close()
-  for (const [challengeId, entry] of pendingConsents) {
-    clearTimeout(entry.timer)
-    entry.resolve({ decision: 'reject', challengeId })
+  for (const entry of sessions.values()) if (entry.busy) {
+    entry.stopping = true
+    entry.activity.cancelled = true
+    entry.assistantStream?.stop()
+    publish(entry.id, { type: 'session-restored', interrupted: true })
   }
-  pendingConsents.clear()
+  for (const challengeId of pendingConsents.keys()) settleConsent(challengeId, { decision: 'reject', challengeId })
+  for (const id of pendingQuestions.keys()) settleQuestion(id, undefined)
   for (const subscribers of streams.values()) {
     for (const res of subscribers) res.end()
   }
   streams.clear()
   server.close()
   if (harness !== undefined) await harness.close()
+  await Promise.allSettled(activeTurns)
+  sessionStore?.close()
   await rm(controlDir, { recursive: true, force: true })
 }
 

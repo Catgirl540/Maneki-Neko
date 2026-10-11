@@ -1,13 +1,8 @@
 /**
  * 历史对话的本地存档：把浏览器里的多段对话存下来、读回来。
  *
- * 当前银行后端尚未持久化助手对话，Agent 上下文只活在运行时内存里，重启就忘。
- * 浏览器存档与服务端会话状态分开管理；服务端数据范围见 `server/README.md`。
- * 所以这一版：**记录存本地、上下文靠运行时**，两条路各管各的。
- *
- * 由此带来一条必须说清楚的规矩：本地有记录 ≠ 助手还记得。服务重启过之后，
- * 旧对话的记录还在，但运行时里的上下文没了。这个"失忆"由
- * `GET /agent-api/sessions/:id` 探测出来，界面负责如实告诉用户（见 `useAgentChat`）。
+ * 历史列表仍保存在本机；服务端按登录客户保存上下文并在重启后恢复。
+ * 未建立服务端归属的旧版本记录，可在发送时迁入最近的文字上下文。
  *
  * 这个模块是**纯逻辑**：不碰 React、不碰网络，所以能直接拿 node 跑测试。
  *
@@ -31,6 +26,18 @@ export type ChatItem =
 
 /** 一条"人说的话"：用户发言或助手回复。工具执行过程与系统通知不算。 */
 export type MessageItem = Extract<ChatItem, { kind: 'user' | 'assistant' }>
+
+/** 旧版本迁移只带最近文字，不把本地工具行、通知或图片当作业务事实。 */
+export function recoveryHistory(items: ChatItem[]): { role: 'user' | 'assistant'; text: string }[] {
+  const messages = items.filter((item): item is MessageItem => item.kind === 'user' || item.kind === 'assistant')
+  const history: { role: 'user' | 'assistant'; text: string }[] = []
+  for (const item of messages.slice(-40).reverse()) {
+    const row = { role: item.kind, text: item.text.slice(0, MAX_ITEM_TEXT) }
+    if (new TextEncoder().encode(JSON.stringify([row, ...history])).byteLength > 48_000) break
+    history.unshift(row)
+  }
+  return history
+}
 
 /** 一段对话（含它的全部内容）。 */export interface StoredConversation {
   /** 本地 id：只在这台设备上有意义，用来在界面上认人。 */

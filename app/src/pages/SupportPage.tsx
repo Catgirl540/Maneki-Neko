@@ -382,18 +382,6 @@ export function SupportPage() {
 
           {supportError && !usingAgent && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
           <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
-            {/* 上下文没了这件事必须在**发言之前**就写在脸上。
-                否则用户看到的是一段完整的记录配一个答非所问的助手。 */}
-            {usingAgent && agent.contextLost && (
-              <div className="flex items-start gap-3 rounded-card bg-coral-wash px-4 py-3 text-[13px] leading-relaxed text-ink">
-                <AlertIcon size={16} className="mt-0.5 shrink-0 text-coral" />
-                <span>
-                  agent 服务重启过，助手已经不记得这段对话了。上面的记录还在，
-                  但你继续说话会从一段新的对话开始。
-                </span>
-              </div>
-            )}
-
             {/* 只给**单条**气泡做入场，不给整块列表做。
                 滑进来的消息是"又来了一句话"，一次 220ms 的轻微上浮就够了；
                 整块再淡一次的话两层叠在一起，看着就是糊的。

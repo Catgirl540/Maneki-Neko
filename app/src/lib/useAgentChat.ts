@@ -43,6 +43,7 @@ import {
   type VoiceCapability,
 } from '@/api/agent'
 import {
+  recoveryHistory,
   isEmptyConversation,
   loadConversations,
   makeConversation,
@@ -161,7 +162,7 @@ export interface AgentChat {
   pending?: PendingConsent
   /** 当前对话待答复的问题（模型问用户的那张卡片）。 */
   ask?: PendingAsk
-  /** 当前对话的上下文已经不在助手的记忆里（服务重启过）。 */
+  /** 旧版记录尚待迁入文字上下文。 */
   contextLost: boolean
   /** 当前就是一段**空对话**（建出来没发过话）：此时不该再新建。 */
   activeIsEmpty: boolean
@@ -320,6 +321,14 @@ export function useAgentChat(): AgentChat {
 
   const handleEvent = useCallback((convId: string, event: AgentEvent) => {
     switch (event.type) {
+      case 'session-restored':
+        setPendings(prev => { const next = { ...prev }; delete next[convId]; return next })
+        setAsks(prev => { const next = { ...prev }; delete next[convId]; return next })
+        patch(convId, c => ({ ...c, items: c.items.map(item => item.kind === 'tool' && item.state === 'running'
+          ? { ...item, state: 'error', text: '本次处理已中断，请核对银行记录' }
+          : item.kind === 'assistant' ? { ...item, streaming: false } : item) }))
+        if (event.interrupted) pushItem(convId, { kind: 'notice', id: nextId(), text: '服务已恢复，上次处理已中断。已提交的业务请核对银行记录。', tone: 'info' })
+        return
       case 'bank-updated':
         window.dispatchEvent(new Event('luckycat:bank-updated'))
         return
@@ -479,9 +488,12 @@ export function useAgentChat(): AgentChat {
       if (conversation === undefined) throw new Error('这段对话已经不在列表里了')
       let agentSessionId = fresh ? undefined : conversation.agentSessionId
       if (agentSessionId === undefined) {
-        agentSessionId = await createAgentSession()
+        // 当前刚写入的待发消息另行提交，迁移时不重复带入。
+        agentSessionId = await createAgentSession(fresh ? recoveryHistory(conversation.items.slice(0, -1)) : undefined)
         const created = agentSessionId
         patch(convId, c => ({ ...c, agentSessionId: created }))
+        lost.current.delete(convId)
+        setLostIds([...lost.current])
       }
       const close = await openStream(convId, agentSessionId)
       if (!mountedRef.current || !conversationsRef.current.some(c => c.id === convId)) {
@@ -515,7 +527,7 @@ export function useAgentChat(): AgentChat {
     if (!mountedRef.current) return 'resume'
     if (state === null) return 'resume'
     probed.current.add(convId)
-    if (state.started) return 'resume'
+    if (state.known) return 'resume'
     lost.current.add(convId)
     setLostIds([...lost.current])
     return 'fresh'
@@ -541,8 +553,7 @@ export function useAgentChat(): AgentChat {
       try {
         const mode = await prepare(convId)
         if (!mountedRef.current) return
-        // 上下文没了的时候**不在这里补一条通知**：界面上有一条常驻的提示，
-        // 在用户按下发送之前就已经写着了（见 SupportPage 的 contextLost）。
+        // 旧版文字在建新会话时自动迁入；新版按原会话继续。
         const session = await ensureLive(convId, mode === 'fresh')
         if (!mountedRef.current) return
         if (stoppingRef.current.has(convId)) {

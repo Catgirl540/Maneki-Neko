@@ -63,7 +63,7 @@ try{
  const modelPort=await listen(provider),bridgePort=await freePort();bridge=`http://127.0.0.1:${bridgePort}`
  const overlay=join(tmp,'local-model.yml')
  await writeFile(overlay,`- id: llm-pi-ai\n  config:\n    providers:\n      test:\n        apiKeyEnv: LUCKYCAT_TEST_KEY\n        api: openai-completions\n        baseURL: http://127.0.0.1:${modelPort}/v1\n        models:\n          - id: tool-access-test\n            name: Test\n            contextWindow: 128000\n- id: luckycat-rag\n  disabled: true\n- id: luckycat-embedding\n  disabled: true\n`)
- const c=start('framework/bridge/demo-server.mjs',{LUCKYCAT_DEMO_PORT:String(bridgePort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_PROVIDER:'test',LUCKYCAT_MODEL:'tool-access-test',LUCKYCAT_TEST_KEY:'local-test-only',LUCKYCAT_PATCHES:overlay,LUCKYCAT_DISABLE_VOICE:'1',LUCKYCAT_DEMO_TOKEN:''})
+ const c=start('framework/bridge/demo-server.mjs',{LUCKYCAT_SESSION_DIR:join(tmp,'sessions'),LUCKYCAT_DEMO_PORT:String(bridgePort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_PROVIDER:'test',LUCKYCAT_MODEL:'tool-access-test',LUCKYCAT_TEST_KEY:'local-test-only',LUCKYCAT_PATCHES:overlay,LUCKYCAT_DISABLE_VOICE:'1',LUCKYCAT_DEMO_TOKEN:''})
  await healthy(c,bridge+'/agent-api/health',token)
  const {sessionId}=await call(bridge,'/agent-api/sessions',token,{})
  await call(bridge,`/agent-api/sessions/${sessionId}/messages`,token,{text:'请帮我申请一张新银行卡，先查看可申请卡产品。寄送地址使用以下模拟资料：'+JSON.stringify(address)})

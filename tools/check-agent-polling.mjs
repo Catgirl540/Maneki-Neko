@@ -5,12 +5,16 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { once } from 'node:events'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createServer } from '../app/node_modules/vite/dist/node/index.js'
 import { chromium } from 'playwright-core'
 import { createEventPolling } from '../framework/bridge/event-polling.mjs'
 import { login } from './lib/session.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
+const tmp = await mkdtemp(join(tmpdir(), 'agent-polling-'))
 const inbox = createEventPolling()
 const entry = { eventSeq: 2, events: [{ id: '1', event: { type: 'assistant', text: 'first' } }, { id: '2', event: { type: 'status', status: 'idle' } }] }
 try {
@@ -83,7 +87,7 @@ try {
   const portServer = http(); await new Promise(r => portServer.listen(0, '127.0.0.1', r))
   const port = portServer.address().port; await new Promise(r => portServer.close(r))
   bridge = spawn(process.execPath, ['framework/bridge/demo-server.mjs'], {
-    cwd: root, env: { ...process.env, LUCKYCAT_DEMO_PORT: String(port), LUCKYCAT_BANK_URL: fixture, LUCKYCAT_BANK_MODE: 'http', LUCKYCAT_DISABLE_VOICE: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: root, env: { ...process.env, LUCKYCAT_SESSION_DIR: join(tmp, 'sessions'), LUCKYCAT_DEMO_PORT: String(port), LUCKYCAT_BANK_URL: fixture, LUCKYCAT_BANK_MODE: 'http', LUCKYCAT_DISABLE_VOICE: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
   })
   let log = ''; bridge.stdout.on('data', x => { log += x }); bridge.stderr.on('data', x => { log += x })
   const base = 'http://127.0.0.1:' + port
@@ -139,4 +143,5 @@ try {
   await browser?.close(); await vite?.close()
   if (bridge && bridge.exitCode === null) { const exited = once(bridge, 'exit'); bridge.kill('SIGTERM'); await exited }
   server.closeAllConnections(); await new Promise(r => server.close(r))
+  await rm(tmp, { recursive: true, force: true })
 }

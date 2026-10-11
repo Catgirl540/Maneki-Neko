@@ -95,6 +95,7 @@ export type AgentEvent =
   | { type: 'hello'; sessionId: string }
   | { type: 'bank-updated' }
   | { type: 'stopped' }
+  | { type: 'session-restored'; interrupted: boolean }
   | { type: 'card-secret'; cardId: string; field: string; value: string; expiresAt: number }
   | { type: 'status'; status: 'running' | 'idle' }
   | { type: 'assistant'; text: string; messageId?: string }
@@ -220,8 +221,11 @@ export async function probeAgent(): Promise<AgentHealth | null> {
  * 建一个会话。
  * @returns 会话 id。
  */
-export async function createAgentSession(): Promise<string> {
-  const result = await requestJson<{ sessionId: string }>('/sessions', { method: 'POST' })
+export async function createAgentSession(history?: { role: 'user' | 'assistant'; text: string }[]): Promise<string> {
+  const result = await requestJson<{ sessionId: string }>('/sessions', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(history?.length ? { history } : {}),
+  })
   return result.sessionId
 }
 
@@ -234,7 +238,7 @@ export async function stopAgentTurn(sessionId: string): Promise<void> {
 export interface AgentSessionState {
   /** 服务端还认得这个 id。 */
   known: boolean
-  /** 真的往运行时递过提示词——**只有这个为真，助手才记得这段对话**。 */
+  /** 已有运行时上下文；重启后会从日志恢复。 */
   started: boolean
   /** 正在回答。 */
   busy: boolean
@@ -243,9 +247,7 @@ export interface AgentSessionState {
 /**
  * 问一个旧会话还在不在。**永不抛异常**：问不到只是一种状态。
  *
- * 为什么需要这一步：历史对话存在浏览器里，服务端重启过之后记录还在、
- * 上下文没了。不探测的话，界面会显示一段完整的历史配一个什么都不记得的助手，
- * 而用户看不出哪里不对。
+ * 新版会话可直接继续；未保存可信归属的旧记录需要迁入本机文字上下文。
  * @param sessionId - agent 侧会话 id。
  * @returns 会话状态；问不到时返回 null（**不等于**"不存在"，调用方不要据此报失忆）。
  */

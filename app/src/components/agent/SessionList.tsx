@@ -145,7 +145,7 @@ export function SessionList({
                         回答中
                       </span>
                     )}
-                    {!busy && lost && <span className="shrink-0 text-coral">上下文已失效</span>}
+                    {!busy && lost && <span className="shrink-0 text-ink-muted">待恢复</span>}
                     <span className="truncate">
                       {relativeTime(conversation.updatedAt, now, { compact: true })}
                       {count > 0 && ` · ${count} 条`}
