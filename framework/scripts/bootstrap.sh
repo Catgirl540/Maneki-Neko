@@ -39,6 +39,10 @@ sed \
 # 端到端自检用的 overlay（压短确认超时），同样只通过 --patch 挂载。
 cp "$SRC/consent-fast-timeout.patch.yml" "$DEST/consent-fast-timeout.patch.yml"
 
+if [ -f "$LUCKYCAT_ROOT/packages/bank-demo/lib/http-tools.js" ]; then
+  node "$LUCKYCAT_ROOT/scripts/check-bank-tool-policy.mjs" "$DEST/cordis.patch.yml" "$DEST/doctor.patch.yml"
+fi
+
 # profile 清单只在首次生成：`dsh plugin` 会把已装 bundle 写在这里，
 # 不能每次覆盖掉。
 if [ ! -f "$DEST/package.json" ]; then

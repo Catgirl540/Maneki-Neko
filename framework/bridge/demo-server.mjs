@@ -59,6 +59,7 @@ import { createBankAgent, bankError } from './bank-agent.mjs'
 import { createEventPolling } from './event-polling.mjs'
 import { createAssistantStream } from './assistant-stream.mjs'
 import { cancelAgent } from './agent-control.mjs'
+import { checkPolicy } from '../scripts/check-bank-tool-policy.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -74,6 +75,7 @@ const DEMO_PASSWORD = process.env.LUCKYCAT_DEMO_PASSWORD ?? '123456'
 const ACCESS_TOKEN = process.env.LUCKYCAT_DEMO_TOKEN ?? ''
 // 默认连接独立 SQLite 银行；旧演示工具只能显式启用。
 const HTTP_BANK = process.env.LUCKYCAT_BANK_MODE !== 'demo'
+if (HTTP_BANK) checkPolicy(join(home, 'profiles/luckycat/cordis.patch.yml'))
 process.env.LUCKYCAT_BANK_MODE = HTTP_BANK ? 'http' : 'demo'
 const INTERNAL_TOKEN = randomBytes(32).toString('base64url')
 process.env.LUCKYCAT_INTERNAL_TOKEN = INTERNAL_TOKEN

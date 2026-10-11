@@ -80,4 +80,7 @@ for pkg in "${packages[@]}"; do
   echo "build: $pkg"
   "$TSC" -p "$dir/tsconfig.json"
 done
+if [ -f "$ROOT/packages/bank-demo/lib/http-tools.js" ]; then
+  node "$ROOT/scripts/check-bank-tool-policy.mjs"
+fi
 echo "build: 完成"

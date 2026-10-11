@@ -103,6 +103,11 @@ if grep -q 'maxInjectBytes: 2000' <<<"$rag_block"; then ok "注入预算已显�
 hard_block="$(entry_block luckycat-hardening)"
 if [ -n "$hard_block" ]; then ok "加固插件行 luckycat-hardening 在树中"; else bad "加固插件行缺失"; fi
 if grep -q 'allowedTools:' <<<"$hard_block"; then ok "工具白名单已显式配置（fail-closed）"; else bad "工具白名单缺失"; fi
+if node "$LUCKYCAT_ROOT/scripts/check-bank-tool-policy.mjs" "$DSH_HOME/profiles/luckycat/cordis.patch.yml" "$DSH_HOME/profiles/luckycat/doctor.patch.yml"; then
+  ok "HTTP 银行工具注册与生产、自检允许列表一致"
+else
+  bad "HTTP 银行工具允许列表不完整"
+fi
 if grep -q 'secretEnv:' <<<"$hard_block"; then ok "按环境变量名脱敏已配置（取值不进配置）"; else bad "secretEnv 未配置"; fi
 
 # V2g 敏感操作闸门与银行示例消费者
@@ -217,7 +222,7 @@ done
 ok "闸门拦截的 8 个工具都在加固白名单里"
 
 echo "== V4 离线单测（不联网） =="
-unit_out="$(node --test "$LUCKYCAT_ROOT"/packages/*/tests/*.test.mjs 2>&1)"
+unit_out="$(node --test --test-reporter=tap "$LUCKYCAT_ROOT"/packages/*/tests/*.test.mjs 2>&1)"
 unit_fail_count="$(sed -n 's/^# fail \([0-9]*\)$/\1/p' <<<"$unit_out")"
 if [ "${unit_fail_count:-1}" = "0" ]; then
   ok "离线单测全过（$(sed -n 's/^# pass \([0-9]*\)$/\1/p' <<<"$unit_out") 个用例）"

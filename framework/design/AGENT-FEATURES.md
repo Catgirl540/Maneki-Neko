@@ -28,9 +28,13 @@
 
 停止后保留已显示正文，取消未执行的授权及待答问题，等本轮空闲后再发送。已经提交银行的操作不能靠停止生成撤回，结果需查询银行记录。活动标记会拦住取消后迟到的授权准备及提交。
 
+## 工具可用性
+
+银行工具注册、生产允许列表与自检允许列表必须一致。构建及 bootstrap 调用 `check-bank-tool-policy.mjs` 校验，HTTP 桥接启动时再次检查实际 profile；漏配时启动失败，避免出现界面宣称支持但运行时拒绝的情况。允许列表仅显式增加已注册的业务功能，不放开命令执行或文件访问。
+
 ## 验证
 
-使用 Node 24。`tools/check-agent-bank.mjs` 在临时 SQLite 银行中验证账户隔离、实际状态与扣费、确认绑定、取消与重放。`tools/check-agent-streaming.mjs` 使用本地模型协议和浏览器验证流式、停止、继续发送、并发隔离、确认及提问等待中的取消。`tools/check-agent-transfers.mjs` 随银行集成测试验证四种 FPS、跨币种实扣、报价条件与在途撤回；`tools/check-transfer-quotes.mjs` 在内存中验证在途结算价格变化与撤回截止。`tools/check-agent-polling.mjs` 验证登录、停止接口归属、游标、短请求降级与敏感事件。
+使用 Node 24。`tools/check-agent-tool-access.mjs` 以本地模型协议、真实 Harness 和临时 SQLite 银行验证模型侧工具清单与完整申请新卡流程，不发送外部模型请求。`tools/check-agent-bank.mjs` 在临时 SQLite 银行中验证账户隔离、实际状态与扣费、确认绑定、取消与重放。`tools/check-agent-streaming.mjs` 使用本地模型协议和浏览器验证流式、停止、继续发送、并发隔离、确认及提问等待中的取消。`tools/check-agent-transfers.mjs` 随银行集成测试验证四种 FPS、跨币种实扣、报价条件与在途撤回；`tools/check-transfer-quotes.mjs` 在内存中验证在途结算价格变化与撤回截止。`tools/check-agent-polling.mjs` 验证登录、停止接口归属、游标、短请求降级与敏感事件。
 
 业务或能力有变动时，同步更新 `framework/knowledge/` 与对应断言，再生成语料。
 

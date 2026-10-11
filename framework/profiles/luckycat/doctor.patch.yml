@@ -24,6 +24,22 @@
       - bank_wealth_subscribe
       - bank_wealth_redeem
       - bank_reveal_card_secret
+      - bank_fps_transfer
+      - bank_list_banks
+      - bank_list_payees
+      - bank_resolve_fps
+      - bank_verify_recipient
+      - bank_recall_transfer
+      - bank_list_cards
+      - bank_card_products
+      - bank_set_card_lock
+      - bank_update_card_settings
+      - bank_apply_card
+      - bank_replace_card
+      - bank_list_autodebits
+      - bank_set_autodebit
+      - bank_get_spending
+      - bank_get_cashflow
     secretEnv:
       - OPENROUTER_API_KEY
       - RELAYROUTER_API_KEY
