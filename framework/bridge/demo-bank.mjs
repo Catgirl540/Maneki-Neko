@@ -347,6 +347,7 @@ export async function createDemoBank({
     getHeldTransfer: mockGetHeldTransfer,
     settleHeldTransfer: mockSettleHeldTransfer,
     settleExpiredHolds: mockSettleExpiredHolds,
+    settleClearingTransactions: mockSettleClearing,
   } = mockModule
   const { routes, ApiError } = contractModule
   const { resetDb, findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb } = dbModule
@@ -583,7 +584,9 @@ export async function createDemoBank({
     },
 
     /**
-     * 定时扫账：把所有到点的在途指令自动到账（清单 §9.1，没人拦 = 默认放行）。
+     * 定时扫账（清单 §9.1 / §9.2）：
+     * - 到点的在途指令自动到账（没人拦 = 默认放行）
+     * - 模拟清算单翻 success，含孤儿 pending 兜底（钱已扣，绝不许停在 pending）
      * 跨用户逐档案切换——每个档案是独立台账，只扫当前档会漏掉别人的到期转账。
      * 返回本次自动到账的笔数。
      */
@@ -601,6 +604,9 @@ export async function createDemoBank({
           for (const transactionId of ids) {
             closed.push({ customerId: profile.user.id, transactionId })
           }
+          // 清算单只改状态、不动资金，也没有员工端窗口要关，
+          // 所以不进 closed —— 别让 onHoldClosed 误以为是拦截窗口了结。
+          mockSettleClearing()
         }
         activateDb(before)
         if (onHoldClosed) {

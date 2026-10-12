@@ -535,16 +535,21 @@ const EXPORT_COLUMNS: ExportColumn[] = [
  *   传了才会启用在途窗口（真后端演示，清单 §9）；不传 = 一律立即完成（浏览器 mock 模式）。
  *   **可以传函数**（2026-10-12）：阈值改成运行时配置后，必须每笔现读，不能建实例时冻死。
  * @param options.holdWindowMs - 在途窗口时长（毫秒）。默认 5 分钟；演示时调小。
+ * @param options.settleImmediately - 转账当场落 success，不进「模拟清算」。
+ *   在途窗口到期执行时用：这笔已经等过一轮窗口了，到账就该落定，
+ *   不该再挂 3 秒清算——否则「自动到账」变成延迟到账完又延迟一次。
  */
 export function createMockApi(options?: {
   reviewThreshold?: Cents | (() => Cents | undefined)
   holdWindowMs?: number
   acceptedQuote?: boolean
+  settleImmediately?: boolean
 }): BankApi {
   const thresholdSource = options?.reviewThreshold
   const readThreshold = (): Cents | undefined =>
     typeof thresholdSource === 'function' ? thresholdSource() : thresholdSource
   const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000
+  const settleImmediately = options?.settleImmediately === true
   return {
     async login(phone, password, smsCode) {
       await delay()
@@ -1181,7 +1186,12 @@ export function createMockApi(options?: {
               : `${req.scope === 'overseas' ? '境外' : '境内'}转账至${bank?.shortName ?? '对方银行'}`),
           category: 'transfer',
           createdAt: new Date().toISOString(),
-          status: isFps ? 'success' : 'pending',
+          // 外行转账走「模拟清算」：钱已扣、单据先挂 pending，几秒后由扫账翻 success。
+          // 必须带 pendingReason='clearing'——扫账靠它和「大额在途窗口」区分。
+          // 没有这个字段的 pending 是孤儿数据，由 settleClearingTransactions 兜底结清，
+          // 绝不允许停在 pending 上把钱吞掉（2026-10-12 事故根因）。
+          status: isFps || settleImmediately ? 'success' : 'pending',
+          ...(isFps || settleImmediately ? {} : { pendingReason: 'clearing' as const }),
         },
         {
           channel: 'transfer',
@@ -1278,7 +1288,10 @@ export function createMockApi(options?: {
         channel: req.channel,
         identifier,
         createdAt: tx.createdAt,
-        settlementStatus: isFps ? 'success' : 'pending',
+        settlementStatus: isFps || settleImmediately ? 'success' : 'pending',
+        // 区分「模拟清算」和「大额在途窗口」：前端据此显示「已提交模拟清算」
+        // 还是「转账处理中」+ 倒计时。缺了它两种 pending 就没法分辨。
+        ...(isFps || settleImmediately ? {} : { pendingReason: 'clearing' as const }),
         ...(fx ? { fx } : {}),
       }
     },
@@ -2089,8 +2102,9 @@ export async function settleHeldTransfer(
   db.transactions.splice(index, 1)
   persist()
   try {
-    // 不带 reviewThreshold 的实例 = 纯执行，不会再进窗口
-    return await createMockApi({ acceptedQuote: true }).submitTransfer(held)
+    // 不带 reviewThreshold = 纯执行，不会再进窗口。
+    // settleImmediately = 到账就落定，不再挂「模拟清算」——这笔已经等过窗口了。
+    return await createMockApi({ acceptedQuote: true, settleImmediately: true }).submitTransfer(held)
   } catch (error) {
     // 极少数情况（如收款账户校验在窗口内失效）才走到这里：留痕，别静默吞掉
     rec.status = 'failed'
@@ -2126,4 +2140,41 @@ export async function settleExpiredHolds(): Promise<string[]> {
     }
   }
   return settled
+}
+
+/** 模拟清算多久后翻 success：够看见「已提交模拟清算」，又不至于像卡死 */
+const CLEARING_SETTLE_MS = 3_000
+
+/**
+ * 扫出**当前档案**里的模拟清算单，翻成 success（清单 §9.2）。
+ *
+ * 这条路**不动资金**——钱在 submitTransfer 提交时就已扣（applyBalance），
+ * 这里只改状态。所以它和「大额在途窗口」是两回事：
+ * - `inflight`：冻结 available、到期执行，走 settleHeldTransfer
+ * - `clearing`：钱已扣，只是单据先挂 pending 装清算延迟，这里翻 success
+ *
+ * **兜底**：`pending` 但没有 `pendingReason` 的是孤儿数据（老库、或历史上
+ * 漏写标记的单）。它同样已经扣过钱，绝不能停在 pending 上——一律结清。
+ * 2026-10-12 就是这样把一笔 ¥6,969 吞掉的：扣了钱、单据永远 pending。
+ *
+ * 跨用户的扫描由调用方（demo-bank tickHolds）逐档案切换来做。
+ * 返回本次结清的指令号列表。
+ */
+export function settleClearingTransactions(delayMs: number = CLEARING_SETTLE_MS): string[] {
+  const db = loadDb()
+  const now = Date.now()
+  const done: string[] = []
+  for (const rec of db.transactions) {
+    if (rec.status !== 'pending') continue
+    // 大额在途窗口另有结算，这里不碰
+    if (rec.pendingReason === 'inflight') continue
+    const age = now - new Date(rec.createdAt).getTime()
+    // 刚建的清算单再等等，让「已提交模拟清算」看得见；孤儿数据同理
+    if (Number.isFinite(age) && age < delayMs) continue
+    rec.status = 'success'
+    delete rec.pendingReason
+    done.push(rec.id)
+  }
+  if (done.length > 0) persist()
+  return done
 }

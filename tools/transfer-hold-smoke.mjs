@@ -399,6 +399,63 @@ async function main() {
       JSON.stringify(logs2).slice(0, 240),
     )
 
+    // ── 场景 G：模拟清算不能吞钱（2026-10-12 事故回归） ──
+    // 小额外行转账走「模拟清算」：钱当场扣、单据先挂 pending，几秒后由扫账翻 success。
+    // 事故根因：这个 pending 没有调度器，钱扣了单据永远挂着 —— 用户看到的就是「钱被吞」。
+    // 此刻阈值是 ¥5,000，¥200 走不到在途窗口，正好覆盖这条路。
+    const beforeClearing = await readAcc()
+    const clearing = await mkTransfer(20_000, '苏晚', '清算回归')
+    check(
+      clearing.pendingReason === 'clearing' && clearing.settlementStatus === 'pending',
+      '小额外行转账进模拟清算',
+      JSON.stringify(clearing),
+    )
+    check(Boolean(clearing.transactionId), '清算单拿到指令号', JSON.stringify(clearing))
+    // 提交即扣钱（applyBalance），但**余额不能少于本金**——冻结只动 available，
+    // 而这条路根本不冻结，balance 与 available 同步扣才是对的
+    const duringClearing = await readAcc()
+    check(
+      duringClearing.balance === beforeClearing.balance - 20_000,
+      '清算期间本金已扣',
+      JSON.stringify({ before: beforeClearing.balance, now: duringClearing.balance }),
+    )
+
+    // 等扫账结清（CLEARING_SETTLE_MS=3s + 1s tick 间隔，留足余量）
+    await new Promise((r) => setTimeout(r, 5_500))
+    const clearingTx = await j(
+      await fetch(`${bank}/api/transactions/${clearing.transactionId}`, { headers: cus }),
+    )
+    check(
+      clearingTx.status === 'success',
+      '清算单结清为 success（不再卡在 pending）',
+      JSON.stringify(clearingTx).slice(0, 200),
+    )
+    check(
+      clearingTx.pendingReason === undefined || clearingTx.pendingReason === null,
+      '结清后清掉 pendingReason',
+      JSON.stringify(clearingTx.pendingReason),
+    )
+
+    // 兜底：非 inflight 的 pending 不能无限挂着。
+    // 判定用「存续时间」而不是「有 pending」——刚建几秒的清算单是正常在途。
+    const txList = await j(
+      await fetch(`${bank}/api/accounts/${acc.id}/transactions?size=50`, { headers: cus }),
+    )
+    const rows = txList.items ?? txList.transactions ?? txList ?? []
+    const nowMs = Date.now()
+    const stuck = (Array.isArray(rows) ? rows : []).filter(
+      (t) =>
+        t.status === 'pending' &&
+        t.pendingReason !== 'inflight' &&
+        // 清算延迟 3s + 1s tick + 余量；超过还挂着 = 真卡死
+        nowMs - new Date(t.createdAt).getTime() > 8_000,
+    )
+    check(
+      stuck.length === 0,
+      '扫账后无滞留 pending（孤儿单兜底结清）',
+      JSON.stringify(stuck).slice(0, 200),
+    )
+
     console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
     process.exitCode = fail === 0 ? 0 : 1
   } finally {
