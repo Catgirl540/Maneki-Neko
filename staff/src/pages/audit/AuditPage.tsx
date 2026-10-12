@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError, type AuditLog } from '@/api'
+import { ApiError, api, type AuditLog } from '@/api'
 
 /** 统一的「后端没起」回落提示，不白屏（验收 §8） */
 function ErrorNote({ message }: { message: string | null }) {
@@ -21,39 +21,10 @@ function useAsync<T>(loader: () => Promise<T>) {
   return { data, error }
 }
 
-export function WorkbenchPage() {
-  return (
-    <div>
-      <h1 className="text-xl font-semibold text-[var(--color-ink)]">工作台</h1>
-      <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
-        新工单与待办会出现在这里（3 秒轮询在 Phase 1 接上）。
-      </p>
-    </div>
-  )
-}
-
-export function CustomersPage() {
-  return (
-    <div>
-      <h1 className="text-xl font-semibold text-[var(--color-ink)]">客户查询</h1>
-      <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
-        搜索与客户 360 页在 Phase 1 由乙实现（评审后降 P1，P0 留最小查询）。
-      </p>
-    </div>
-  )
-}
-
-export function ActionsPage() {
-  return (
-    <div>
-      <h1 className="text-xl font-semibold text-[var(--color-ink)]">代客办理</h1>
-      <p className="mt-2 text-sm text-[var(--color-ink-soft)]">
-        白名单动作 Phase 1 接通；未核验禁止解锁卡/调高限额（清单 §2 P1）。
-      </p>
-    </div>
-  )
-}
-
+/**
+ * 审计日志（乙模块）：仅主管可见，后端还有一道 403（不只是藏菜单）。
+ * 这里给最小表格；按员工/动作/时间筛选在 Phase 1。
+ */
 export function AuditPage() {
   const { data, error } = useAsync<AuditLog[]>(() => api.listAuditLogs())
   return (
