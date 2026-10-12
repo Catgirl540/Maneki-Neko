@@ -19,8 +19,9 @@ import {
   type CreateTicketRequest,
   type CustomerActionRequest,
   type StaffApi,
+  type TransferThreshold,
 } from '../contract'
-import { get, patch, post, setStaffToken } from './base'
+import { get, patch, post, put, setStaffToken } from './base'
 
 export function createHttpApi(): StaffApi {
   return {
@@ -60,5 +61,10 @@ export function createHttpApi(): StaffApi {
       post(routes.customerActions(id, action), req),
 
     listAuditLogs: () => get<AuditLog[]>(routes.auditLogs()),
+
+    // 运行时阈值（清单 §9.1）：改完立刻对下一笔转账生效
+    getTransferThreshold: () => get<TransferThreshold>(routes.transferThreshold()),
+    updateTransferThreshold: (cents) =>
+      put<TransferThreshold>(routes.transferThreshold(), { transferReviewCents: cents }),
   }
 }

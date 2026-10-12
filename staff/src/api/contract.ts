@@ -10,6 +10,7 @@ import type {
   Approval,
   ApprovalBizType,
   AuditLog,
+  Cents,
   CustomerProfile,
   CustomerSummary,
   StaffLoginResult,
@@ -21,6 +22,13 @@ import type {
   TicketStatus,
   TranscriptEntry,
 } from './types'
+
+/** 大额延迟到账阈值（清单 §9.1）。金额一律整数分，¥500,000 = 50000000 */
+export interface TransferThreshold {
+  transferReviewCents: Cents
+  /** 后端允许的上限：阈值必须低于单笔转账上限，否则永远进不了窗口 */
+  maxTransferReviewCents: Cents
+}
 
 /** 与后端约定的 REST 路径表，mock 与 http 共用（照抄客户端 check-contract 的纪律） */
 export const routes = {
@@ -41,6 +49,9 @@ export const routes = {
   customerProfile: (id: string) => `/staff-api/customers/${id}/profile`,
 
   customerActions: (id: string, action: string) => `/staff-api/customers/${id}/actions/${action}`,
+
+  /** 运行时参数：大额延迟到账阈值（清单 §9.1，2026-10-12 起可在员工端随时改） */
+  transferThreshold: () => '/staff-api/settings/transfer-threshold',
 
   auditLogs: () => '/staff-api/audit-logs',
 
@@ -143,4 +154,12 @@ export interface StaffApi {
   performCustomerAction(id: string, action: string, req: CustomerActionRequest): Promise<{ ok: true }>
 
   listAuditLogs(): Promise<AuditLog[]>
+
+  /**
+   * 大额延迟到账阈值（整数分）。运行时配置，员工端可改（清单 §9.1）。
+   * 默认 ¥500,000 = 50000000 分。改完立刻对下一笔转账生效，不用重启。
+   */
+  getTransferThreshold(): Promise<TransferThreshold>
+  /** 只有主管能改；超上限或非整数分会被 400 拒掉 */
+  updateTransferThreshold(cents: Cents): Promise<TransferThreshold>
 }
