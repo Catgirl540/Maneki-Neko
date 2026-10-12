@@ -456,6 +456,80 @@ async function main() {
       JSON.stringify(stuck).slice(0, 200),
     )
 
+    // ── 场景 H：本行大额自动到账，收款方的钱不能被旧快照盖掉（issue #3 回归） ──
+    // tickHolds() 跨档案遍历：处理付款方时会把收款方新余额写盘，
+    // 但遍历数组里那只是「扫描开始时」的旧快照。旧快照一旦被 activateDb 写回，
+    // saveLedger 删表重建，收款方刚入账的行就没了 —— 付款 success、收款 0 元。
+    const payee = await j(
+      await fetch(`${bank}/api/auth/sms-code`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phone: '13600136000' }),
+      }),
+    )
+    const payeeLogin = await j(
+      await fetch(`${bank}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phone: '13600136000', password: '123456', smsCode: payee.demoCode }),
+      }),
+    )
+    check(Boolean(payeeLogin.token), '收款方登录', JSON.stringify(payeeLogin).slice(0, 160))
+    const payeeH = { authorization: `Bearer ${payeeLogin.token}`, 'content-type': 'application/json' }
+    const readPayeeAcc = async () => {
+      const accounts = await j(await fetch(`${bank}/api/accounts`, { headers: payeeH }))
+      return (accounts.accounts ?? accounts)[0]
+    }
+    const payeeAccBefore = await readPayeeAcc()
+    const payeeTxsBefore = await j(
+      await fetch(`${bank}/api/accounts/${payeeAccBefore.id}/transactions?size=50`, { headers: payeeH }),
+    )
+    const payeeRowsBefore = payeeTxsBefore.items ?? payeeTxsBefore.transactions ?? payeeTxsBefore ?? []
+    const payeeCountBefore = (Array.isArray(payeeRowsBefore) ? payeeRowsBefore : []).length
+
+    // 回到付款方，走本行（LCB/CN）+ 大额 → 进在途窗口
+    const held5 = await j(
+      await fetch(`${bank}/api/transfers`, {
+        method: 'POST',
+        headers: cus,
+        body: JSON.stringify({
+          fromAccountId: acc.id,
+          channel: 'bank',
+          scope: 'domestic',
+          payeeName: payeeLogin.user?.name ?? '陈嘉禾',
+          payeeBankCode: 'LCB',
+          payeeBankRegion: 'CN',
+          payeeAccountNo: payeeAccBefore.accountNo,
+          amount: 600_000,
+          memo: 'issue3 回归',
+        }),
+      }),
+    )
+    check(held5.pendingReason === 'inflight', '本行大额也进在途窗口', JSON.stringify(held5))
+
+    // 等窗口到点自动到账（5s 窗口 + 扫账周期）
+    await new Promise((r) => setTimeout(r, Number(HOLD_SECONDS) * 1000 + 2500))
+
+    const payeeAccAfter = await readPayeeAcc()
+    check(
+      payeeAccAfter.balance === payeeAccBefore.balance + 600_000,
+      '收款方余额如数入账（没被旧快照盖掉）',
+      `${payeeAccBefore.balance} → ${payeeAccAfter.balance}，应 +600000`,
+    )
+    const payeeTxsAfter = await j(
+      await fetch(`${bank}/api/accounts/${payeeAccAfter.id}/transactions?size=50`, { headers: payeeH }),
+    )
+    const payeeRowsAfter = payeeTxsAfter.items ?? payeeTxsAfter.transactions ?? payeeTxsAfter ?? []
+    const payeeIncoming = (Array.isArray(payeeRowsAfter) ? payeeRowsAfter : []).filter(
+      (t) => t.memo === 'issue3 回归' && (t.direction === 'in' || t.signedAmount > 0),
+    )
+    check(payeeIncoming.length === 1, '收款方入账流水恰好一条', JSON.stringify(payeeIncoming).slice(0, 200))
+    check(
+      (Array.isArray(payeeRowsAfter) ? payeeRowsAfter : []).length === payeeCountBefore + 1,
+      '收款方流水只多这一条（没有被重建抹掉历史）',
+      `${payeeCountBefore} → ${(Array.isArray(payeeRowsAfter) ? payeeRowsAfter : []).length}`,
+    )
+
     console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
     process.exitCode = fail === 0 ? 0 : 1
   } finally {

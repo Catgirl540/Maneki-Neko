@@ -1520,9 +1520,32 @@ export function forgetProfilePhone(phone: string): void {
   storage.set(PROFILES_KEY, all)
 }
 
-/** 注册/登录成功后切换到该用户的独立数据档案。 */
+/**
+ * 存储里这个用户最新的一份档案；没有就 null。
+ * 只查存储，**不看内存 cache**——cache 本身可能就是要被淘汰的那份旧快照。
+ */
+function latestStoredProfile(userId: string): MockDb | null {
+  for (const profile of Object.values(profiles())) {
+    if (profile.user.id === userId) return profile
+  }
+  const current = storage.get<MockDb | null>(STORAGE_KEYS.mockDb, null)
+  return current?.user?.id === userId ? current : null
+}
+
+/**
+ * 注册/登录成功后切换到该用户的独立数据档案。
+ *
+ * 装入的是**存储里最新一份**，不是调用方递进来的对象——后者可能是旧快照。
+ * 定时扫账跨档案遍历时，收款方刚入账的新余额就是这么被旧快照写回抹掉的：
+ * `persist()` 写 `PROFILES_KEY` 会对地图里每个档案跑 `saveLedger()`（删表重建），
+ * 旧对象一写回，收款方那几行就被删掉重建成了旧数据。
+ * 2026-10-12 issue #3：付款 success、审批 settled、收款方一分没进。
+ *
+ * 因此：想改字段，必须在 activateDb() **之后**改再 persist()；
+ * 改在切档前会被最新一份盖掉。
+ */
 export function activateDb(next: MockDb): void {
-  cache = next
+  cache = latestStoredProfile(next.user.id) ?? next
   ensureCardAccounts(cache)
   syncSeq(cache)
   for (const profile of Object.values(profiles())) syncSeq(profile)

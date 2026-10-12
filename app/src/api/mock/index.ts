@@ -578,11 +578,15 @@ export function createMockApi(options?: {
       // 一次性：用过就作废，不能让同一个码反复登录
       db.pendingSms = null
       persist()
-      target.pendingSms = null
-      // 重新登录即解除支付密码锁定
-      target.payPasswordFailures = 0
+      // activateDb() 装入的是存储里最新一份，不是这里的 target——
+      // 字段必须在切档之后改，改在前面会被最新一份盖掉（见 activateDb 注释）。
       activateDb(target)
-      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: target.user }
+      const live = loadDb()
+      live.pendingSms = null
+      // 重新登录即解除支付密码锁定
+      live.payPasswordFailures = 0
+      persist()
+      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: live.user }
     },
 
     async register(req): Promise<RegistrationResult> {
