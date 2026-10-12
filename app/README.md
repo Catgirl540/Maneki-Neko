@@ -146,12 +146,11 @@ node tools/check-http-frontend.mjs
 线上客户端部署在 `/bank/`，按以下配置构建：
 
 ```bash
-VITE_USE_MOCK=false VITE_BASE_PATH=/bank/ VITE_API_BASE_URL=/bank \
-  VITE_AGENT_URL=/bank/agent-api npm --prefix app run build
+npm --prefix app run build:server
 ```
 
 产物在 `app/dist/`。发布、服务管理和 nginx 配置按[服务器开发交接文档](../design/handoff/AGENT-HANDOFF.md)执行。
-发布后检查 `/bank/`、静态资源、银行请求、Agent 连接，以及刷新 `/bank/transfer` 等深层链接。
+发布后运行 `node tools/check-web-deployment.mjs`，检查 `/bank/`、资源路径与类型、银行和 Agent 代理、深层链接。仅首页返回 200 不能说明网页正常，资源请求可能实际返回其他应用的 HTML。最后在浏览器确认官网与登录页正常显示。
 
 ## 8. 常见问题
 
