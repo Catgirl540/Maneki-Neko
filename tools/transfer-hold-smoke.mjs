@@ -328,6 +328,77 @@ async function main() {
       JSON.stringify(logs).slice(0, 200),
     )
 
+    // ── 场景 F：延迟到账阈值是运行时配置（清单 §9.1，2026-10-12） ──
+    const th1 = await j(await fetch(`${staffBase}/settings/transfer-threshold`, { headers: authW }))
+    check(th1.transferReviewCents === 500_000, '阈值读回 env 种子值', JSON.stringify(th1))
+
+    // 客服只能看不能改
+    const csrPut = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authW,
+      body: JSON.stringify({ transferReviewCents: 900_000 }),
+    })
+    check(csrPut.status === 403, '客服改阈值 403', String(csrPut.status))
+
+    // 非整数分 / 负数 / 超上限都要被拒
+    const badFloat = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authL,
+      body: JSON.stringify({ transferReviewCents: 12.5 }),
+    })
+    check(badFloat.status === 400, '非整数分 400', String(badFloat.status))
+    const badNeg = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authL,
+      body: JSON.stringify({ transferReviewCents: -1 }),
+    })
+    check(badNeg.status === 400, '负阈值 400', String(badNeg.status))
+    const badMax = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authL,
+      body: JSON.stringify({ transferReviewCents: 200_000_000 }),
+    })
+    check(badMax.status === 400, '超上限 400', String(badMax.status))
+
+    // 主管把阈值从 ¥5,000 抬到 ¥8,000 —— 立刻生效，不用重启
+    const th2 = await j(
+      await fetch(`${staffBase}/settings/transfer-threshold`, {
+        method: 'PUT',
+        headers: authL,
+        body: JSON.stringify({ transferReviewCents: 800_000 }),
+      }),
+    )
+    check(th2.transferReviewCents === 800_000, '主管改阈值落库', JSON.stringify(th2))
+
+    // 热生效验证：¥6,000 原本进窗口，阈值抬到 ¥8,000 后应**不再**进
+    const afterRaise = await mkTransfer(600_000, '苏晚', '阈值抬高后的小额')
+    check(
+      afterRaise.pendingReason !== 'inflight' && Boolean(afterRaise.transactionId),
+      '阈值热生效（6000 不再进窗口）',
+      JSON.stringify(afterRaise),
+    )
+
+    // 再调回 ¥5,000，¥5,500 应重新进窗口
+    const th3 = await j(
+      await fetch(`${staffBase}/settings/transfer-threshold`, {
+        method: 'PUT',
+        headers: authL,
+        body: JSON.stringify({ transferReviewCents: 500_000 }),
+      }),
+    )
+    check(th3.transferReviewCents === 500_000, '阈值调回', JSON.stringify(th3))
+    const afterLower = await mkTransfer(550_000, '梁乐怡', '阈值调回后的大额')
+    check(afterLower.pendingReason === 'inflight', '阈值调回后再进窗口', JSON.stringify(afterLower))
+
+    // 改阈值必须留痕
+    const audit2 = await j(await fetch(`${staffBase}/audit-logs`, { headers: authL }))
+    const logs2 = audit2.logs ?? audit2
+    check(
+      Array.isArray(logs2) && logs2.some((l) => l.action === 'settings.transferThreshold.update'),
+      '审计留痕 settings.*',
+      JSON.stringify(logs2).slice(0, 240),
+    )
+
     console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
     process.exitCode = fail === 0 ? 0 : 1
   } finally {

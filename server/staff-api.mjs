@@ -14,8 +14,19 @@ import { CURRENT_KEY, PROFILES_KEY } from './database.mjs'
  */
 
 const STAFF_SESSION_HOURS = 12
-/** 大额转账延迟到账阈值（清单 §9.1：demo ¥5,000 = 500000 分，可调，不写死前端） */
-const REVIEW_THRESHOLD_CENTS = Number(process.env.BANK_TRANSFER_REVIEW_CENTS ?? 500_000)
+/**
+ * 大额转账延迟到账阈值（清单 §9.1）。
+ * **运行时可改**（2026-10-12 拍板）：落在 `staff_settings` 表里，员工端随时调，
+ * 重启不丢；env 只是**首次建库的种子值**，不是唯一事实来源。
+ * 默认 ¥500,000 = 50000000 分。金额一律整数分，别跟元混用。
+ */
+const REVIEW_THRESHOLD_SEED_CENTS = Number(process.env.BANK_TRANSFER_REVIEW_CENTS ?? 50_000_000)
+const SETTING_TRANSFER_REVIEW_CENTS = 'transfer_review_cents'
+/**
+ * 阈值必须低于单笔转账上限，否则「进窗口」永远触发不了。
+ * 与 `app/src/api/mock/index.ts` 的 `BANK_SINGLE_LIMIT`（¥1,000,000）对齐。
+ */
+const REVIEW_THRESHOLD_MAX_CENTS = 90_000_000
 /**
  * 拦截理由是**枚举**（清单 §9.5）：自由文本等于允许"看着不爽"这种理由，
  * 也就把用户的资金处置权变成了员工的随心所欲。必须可审计、可统计。
@@ -87,6 +98,12 @@ export function ensureStaffSchema(db) {
       reason      TEXT NOT NULL,
       created_at  TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS staff_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      updated_by TEXT,
+      updated_at TEXT NOT NULL
+    );
   `)
   // 老库迁移：tickets.created_by 是 Phase 1 加的（agent 只能查自己建的单，§5.5 约定 6）
   const ticketCols = db.prepare('PRAGMA table_info(tickets)').all()
@@ -104,6 +121,49 @@ export function ensureStaffSchema(db) {
     insert.run('staff_wang', '王小明', 'csr', hashPassword('123456'), now)
     insert.run('staff_li', '李主管', 'supervisor', hashPassword('123456'), now)
   }
+  // 运行时配置种子：库空时写一次，之后以库里为准（员工端改了就生效，重启不回退）。
+  const hasThreshold = db.prepare('SELECT 1 AS x FROM staff_settings WHERE key = ?')
+    .get(SETTING_TRANSFER_REVIEW_CENTS)
+  if (!hasThreshold) {
+    db.prepare('INSERT INTO staff_settings (key, value, updated_at) VALUES (?, ?, ?)')
+      .run(SETTING_TRANSFER_REVIEW_CENTS, String(REVIEW_THRESHOLD_SEED_CENTS), new Date().toISOString())
+  }
+}
+
+/** 读延迟到账阈值（整数分）。库缺失时回落到 env 种子值，保证永远读得到数。 */
+export function getTransferReviewCents(db) {
+  const row = db.prepare('SELECT value FROM staff_settings WHERE key = ?')
+    .get(SETTING_TRANSFER_REVIEW_CENTS)
+  const n = Number(row?.value ?? REVIEW_THRESHOLD_SEED_CENTS)
+  return Number.isFinite(n) && n > 0 ? n : REVIEW_THRESHOLD_SEED_CENTS
+}
+
+/**
+ * 写延迟到账阈值（整数分）。校验在这里，不信任调用方。
+ * 上限单列一条：阈值若高过单笔上限，转账根本走不到「进窗口」那一步。
+ */
+export function setTransferReviewCents(db, cents, actorId) {
+  const n = Number(cents)
+  if (!Number.isFinite(n) || !Number.isInteger(n)) {
+    throw staffError(400, '阈值必须是整数分（¥1 = 100）', 'BAD_THRESHOLD')
+  }
+  if (n <= 0) {
+    throw staffError(400, '阈值必须大于 0', 'BAD_THRESHOLD')
+  }
+  if (n > REVIEW_THRESHOLD_MAX_CENTS) {
+    throw staffError(
+      400,
+      `阈值不能超过 ¥${(REVIEW_THRESHOLD_MAX_CENTS / 100).toLocaleString('zh-CN')}（须低于单笔转账上限，否则永远进不了窗口）`,
+      'BAD_THRESHOLD',
+    )
+  }
+  const now = new Date().toISOString()
+  db.prepare(`INSERT INTO staff_settings (key, value, updated_by, updated_at)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(key) DO UPDATE SET value = excluded.value,
+                updated_by = excluded.updated_by, updated_at = excluded.updated_at`)
+    .run(SETTING_TRANSFER_REVIEW_CENTS, String(n), actorId ?? null, now)
+  return n
 }
 
 function hashPassword(plain) {
@@ -276,7 +336,7 @@ export function createStaffApi({ db, bankHooks = {} }) {
     const existing = findPendingTransferApproval(transactionId)
     if (existing) return { approvalId: existing.id, status: existing.status }
     const amountText = (result.amount / 100).toLocaleString('zh-CN')
-    const thresholdText = (REVIEW_THRESHOLD_CENTS / 100).toLocaleString('zh-CN')
+    const thresholdText = (getTransferReviewCents(db) / 100).toLocaleString('zh-CN')
     const holdUntil = result.holdUntil ?? new Date().toISOString()
     const id = newId('A')
     // 参数快照冻结在 biz_payload（建单后冻结，处置时不再变）；
@@ -633,6 +693,35 @@ export function createStaffApi({ db, bankHooks = {} }) {
           json(res, 200, mapApproval(db.prepare('SELECT * FROM approvals WHERE id = ?').get(id)))
           return true
         }
+      }
+
+      // —— 运行时参数（清单 §9.1，2026-10-12 起可在员工端随时改） ——
+      // 只给主管改：阈值是风控参数，客服能看见但不能随手拧。
+      if (path === '/staff-api/settings/transfer-threshold' && req.method === 'GET') {
+        auth.resolve(req, {})
+        json(res, 200, {
+          transferReviewCents: getTransferReviewCents(db),
+          maxTransferReviewCents: REVIEW_THRESHOLD_MAX_CENTS,
+        })
+        return true
+      }
+      if (path === '/staff-api/settings/transfer-threshold' && req.method === 'PUT') {
+        const who = auth.resolve(req, { roles: ['supervisor'] })
+        const body = await readBody(req)
+        const before = getTransferReviewCents(db)
+        const next = setTransferReviewCents(db, body.transferReviewCents, who.actorId)
+        writeAudit({
+          actorId: who.actorId,
+          action: 'settings.transferThreshold.update',
+          targetType: 'setting',
+          targetId: SETTING_TRANSFER_REVIEW_CENTS,
+          reason: `¥${(before / 100).toLocaleString('zh-CN')} → ¥${(next / 100).toLocaleString('zh-CN')}`,
+        })
+        json(res, 200, {
+          transferReviewCents: next,
+          maxTransferReviewCents: REVIEW_THRESHOLD_MAX_CENTS,
+        })
+        return true
       }
 
       // —— 审计（清单 §2 P2，只给主管看） ——

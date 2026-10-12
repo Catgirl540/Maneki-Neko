@@ -299,7 +299,8 @@ function findAssetRoot(start) {
  * @param options.searchFrom - 从哪个目录开始向上找 app 源码与转译钩子。
  * @param options.auth - 可选的服务端会话适配器；不传时保留原演示桥接行为。
  * @param options.storage - 可选的 localStorage 适配器，供 SQLite 后端持久化。
- * @param options.reviewThreshold - 大额转账延迟到账阈值（整数分）。传了才启用在途窗口
+ * @param options.reviewThreshold - 大额转账延迟到账阈值（整数分或取值函数）。
+ *   传函数 = 阈值运行时可改，每笔转账现读（清单 §9.1）。传了才启用在途窗口
  *   （清单 §9）：≥ 阈值的转账先冻结、进窗口；不传 = 一律立即到账（浏览器 mock 同款）。
  * @param options.holdWindowMs - 在途窗口时长（毫秒），默认 5 分钟，演示可调小。
  * @param options.onTransferHeld - 转账进窗口时的回调（server 侧建拦截窗口记录）。
@@ -356,6 +357,7 @@ export async function createDemoBank({
       ? {}
       : { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000 },
   )
+  // reviewThreshold 允许是函数：mock 内部每笔转账现读，员工端改完立刻生效。
   const patterns = compilePatterns(routes)
   // mock 原本是单标签页内存对象。HTTP 桥接会同时服务多个用户，
   // 所以请求先按 bearer token 切到对应档案，并串行执行以避免切档串号。

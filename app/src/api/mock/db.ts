@@ -1158,8 +1158,10 @@ function seed(): MockDb {
       label: '储蓄账户',
       accountNo: '8820000000112233445',
       currency: 'CNY',
-      balance: 28_464_055,
-      available: 28_464_055,
+      // 2026-10-12 抬到 ¥1,284,640.55：延迟到账阈值设到 ¥500,000 后，
+      // 原 ¥284,640.55 连一笔大额都转不出去，演示必挂。
+      balance: 128_464_055,
+      available: 128_464_055,
       interestRate: 0.0155,
       monthNetChange: 0,
     },

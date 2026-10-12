@@ -133,10 +133,13 @@ function hideMiddle(name: string): string {
 
 /** 大额转账二次确认阈值：¥5,000.00 */
 const LARGE_TRANSFER: Cents = 500_000
-/** 银行账户转账单笔上限：¥50,000.00 */
-const BANK_SINGLE_LIMIT: Cents = 5_000_000
-/** FPS（转数快）未登记收款人单笔上限：¥10,000.00 */
-const FPS_SINGLE_LIMIT: Cents = 1_000_000
+/**
+ * 银行账户转账单笔上限：¥1,000,000.00
+ * （2026-10-12 抬高：延迟到账阈值已设到 ¥500,000，上限必须高过它，否则永远进不了窗口）
+ */
+const BANK_SINGLE_LIMIT: Cents = 100_000_000
+/** FPS（转数快）未登记收款人单笔上限：¥600,000.00（同上，要留出阈值之上的空间） */
+const FPS_SINGLE_LIMIT: Cents = 60_000_000
 /** 境外转账费率 0.1%，最低 ¥50.00 */
 const OVERSEAS_RATE = 0.001
 const OVERSEAS_MIN_FEE: Cents = 5_000
@@ -530,10 +533,17 @@ const EXPORT_COLUMNS: ExportColumn[] = [
 /**
  * @param options.reviewThreshold - 大额转账延迟到账阈值（整数分）。
  *   传了才会启用在途窗口（真后端演示，清单 §9）；不传 = 一律立即完成（浏览器 mock 模式）。
+ *   **可以传函数**（2026-10-12）：阈值改成运行时配置后，必须每笔现读，不能建实例时冻死。
  * @param options.holdWindowMs - 在途窗口时长（毫秒）。默认 5 分钟；演示时调小。
  */
-export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?: number; acceptedQuote?: boolean }): BankApi {
-  const reviewThreshold = options?.reviewThreshold
+export function createMockApi(options?: {
+  reviewThreshold?: Cents | (() => Cents | undefined)
+  holdWindowMs?: number
+  acceptedQuote?: boolean
+}): BankApi {
+  const thresholdSource = options?.reviewThreshold
+  const readThreshold = (): Cents | undefined =>
+    typeof thresholdSource === 'function' ? thresholdSource() : thresholdSource
   const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000
   return {
     async login(phone, password, smsCode) {
@@ -1017,6 +1027,7 @@ export function createMockApi(options?: { reviewThreshold?: Cents; holdWindowMs?
       // 不会出现「到点没钱」这种用户完全控制不了的失败。
       // 窗口内用户可撤销、员工可拦截；都没人动 → 自动到账。
       // 到账走 submitTransfer 同一条业务路（删占位后重提交），不复制业务规则。
+      const reviewThreshold = readThreshold()
       if (reviewThreshold !== undefined && total >= reviewThreshold) {
         const holdUntil = new Date(Date.now() + holdWindowMs).toISOString()
         // 只冻结本金（不含手续费）：手续费在真正执行时才计。
