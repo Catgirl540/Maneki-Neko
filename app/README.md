@@ -102,6 +102,8 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 页面骨架用统一类：`.content-shell`（内容宽度与左右留白，随断点收放）、`.page-stack`（页面区块纵向节奏），标题用 `PageHeader` 组件；布局 token（`--content-max` / `--gutter-x*` / `--page-y*` / `--stack-gap*`）都在 `tokens.css`。
 客户端 `lg` 断点为 **960px**，检查手机布局和浏览器“桌面版网站”，不要按默认 1024px 推断。
 
+新增功能的页面、演示接口和业务完成度应分开判断，实际限制见 [接口文档](../docs/api/README.md#当前实现范围)。自动任务、核身、还款和权益等尚未完成，mock 被服务端复用后会影响共享演示数据。
+
 **新增银行接口**：同步修改 `contract.ts`、`types.ts`、`http.ts`、mock 实现和后端路由映射，
 并更新根 README 的接口清单。页面通过 `@/api` 调用银行业务；Agent 使用独立的 `src/api/agent.ts` 通道。
 

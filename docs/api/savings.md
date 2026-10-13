@@ -2,6 +2,10 @@
 
 对应 `app/src/api/contract.ts` 的 `savings*` 接口，页面 `app/src/pages/SavingsPage.tsx`。
 
+## 当前能力
+
+已提供目标增删改查及凑整配置保存。总览中的已有存款、归集计划、打卡、徽章和奖励来自演示档案，不是资金账户计算结果。未实现向目标转入/取出、消费凑整触发、周期归集、打卡统计与奖励入账。
+
 ## 总览
 
 `GET /api/savings/overview` → `SavingsOverview`
@@ -24,10 +28,10 @@
 | `createdAt` | 创建时间 |
 | `sweep` | 定期自动归集 `SavingsSweep`，未开启为 `null` |
 
-`SavingsSweep`：`{ amount, cycle, accountId }`（每 `cycle` 从 `accountId` 归集 `amount`）。
+`SavingsSweep`：`{ amount, cycle, accountId }`（计划字段；当前没有按 `cycle` 执行归集的任务）。
 
 `SavingsRoundupRule`：`{ enabled, roundupTo, dailyCap, accountId, goalId }`
-（消费凑整到 `roundupTo` 分，单日上限 `dailyCap`，转入目标 `goalId`，`null` = 不指定目标）。
+（保存的配置：凑整值 `roundupTo`、单日上限 `dailyCap`、目标 `goalId`；当前不触发转存，金额及账户/目标归属校验也未完整实现）。
 
 `SavingsStreak`：`{ days, longestDays, lastSavedAt, badges[] }`；`badges[]` 项为 `{ id, label, earned, hint }`。
 
@@ -40,7 +44,7 @@
 | --- | --- | --- | --- |
 | POST | `/api/savings/goals` | `SavingsGoalRequest` `{ name, targetAmount, icon?, deadline? }` | `SavingsGoal` |
 | PATCH | `/api/savings/goals/:id` | `SavingsGoalUpdate`（同上的字段，全部可选） | `SavingsGoal` |
-| DELETE | `/api/savings/goals/:id` | — | `{ ok: true }` |
+| DELETE | `/api/savings/goals/:id` | — | `BankApi` 为 `void`，HTTP 桥接返回 `{ ok: true }` |
 
 ## 凑整规则
 
@@ -52,4 +56,4 @@
 
 → `SavingsRoundupRule`。
 
-错误：`INVALID_AMOUNT`（金额 ≤ 0）、`NOT_FOUND`（目标不存在）。
+目标管理错误：`INVALID_NAME`、`INVALID_AMOUNT`、`GOAL_NOT_FOUND`。凑整接口当前仅赋值保存，不能宣称已执行上述完整校验。

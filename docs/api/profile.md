@@ -2,7 +2,11 @@
 
 对应 `app/src/api/contract.ts` 的 `invitations` / `membership*` / `identity*` 接口。
 
-## 邀请与奖励
+## 当前能力
+
+邀请与奖励返回演示样例，没有邀请关系归因或奖励发放。会员接口只修改档案状态与记录，未扣费、未执行续费和权益。身份核验为占位：OCR 不接收图片，除姓名外返回固定资料；活体无采集直接返回通过，不可作为开户或权限提升依据。
+
+## 邀请与奖励（演示数据）
 
 `GET /api/invitations` → `InvitationsOverview`
 
@@ -25,7 +29,7 @@
 | --- | --- |
 | `current` | `MembershipSubscription` 当前订阅 |
 | `plans` | `MembershipPlan[]` 可选套餐 |
-| `records` | `{ id, label, amount, createdAt }[]` 扣款 / 权益记录 |
+| `records` | `{ id, label, amount, createdAt }[]` 模拟订阅操作记录，不证明已扣款或已执行权益 |
 
 `MembershipSubscription`：`{ planId, planName, status: 'active'|'canceled'|'none', price, period, startedAt, renewAt }`
 （`renewAt` 已取消时为 `null`）。
@@ -58,8 +62,7 @@
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
-| POST | `/api/identity/ocr` | `{ imageBase64?, documentType }` | `IdentityOcrResult` |
-| POST | `/api/identity/liveness` | `{ imageBase64? }` | `{ verified: boolean, verifiedAt: string }` |
+| POST | `/api/identity/ocr` | 无参数 | 固定 `IdentityOcrResult` 样例 |
+| POST | `/api/identity/liveness` | 无参数 | 固定通过：`{ verified: true, verifiedAt: string }` |
 
-> 演示环境：OCR 按登记资料回填，活体必定通过；真机需接入第三方核身服务。
-> 敏感：证件号一律脱敏展示，明文只用于核验，不落前端存储。
+> 当前 OCR 结果除姓名外是固定样例，页面直接显示 `ocr.idNumber`，mock 模式会随档案保存明文；“界面一律脱敏、明文不落前端存储”不符合现有代码。实际证件脱敏、存储控制和第三方核身接入均待实现。
