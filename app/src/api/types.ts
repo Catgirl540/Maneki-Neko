@@ -169,6 +169,8 @@ export interface TransactionRecord extends Transaction {
    * 只有 pendingReason='inflight' 的行才有；到账/拦截/撤销后随行一起消失。
    */
   heldRequest?: TransferRequest
+  /** 冻结的本金与手续费合计；旧在途数据未记录时按本金解冻。 */
+  heldFrozenAmount?: Cents
 }
 
 export interface Paged<T> {

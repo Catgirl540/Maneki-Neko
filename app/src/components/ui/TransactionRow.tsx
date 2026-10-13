@@ -4,6 +4,7 @@ import { CategoryIcon } from './CategoryIcon'
 import { ChevronRightIcon } from './icons'
 import { formatDateTime, formatMoneySigned } from '@/lib/format'
 import { cn } from '@/lib/cn'
+import { statusText } from '@/lib/tx'
 
 /**
  * 台账行：左侧圆形浅金分类图标 + 商户/时间 + 右侧金额。
@@ -33,6 +34,7 @@ export function TransactionRow({ tx, showAccount }: { tx: Transaction; showAccou
         <span className="mt-0.5 block truncate text-[13px] text-ink-mute">
           {showAccount ? `${showAccount} · ` : ''}
           {formatDateTime(tx.createdAt)}
+          {tx.status !== 'success' ? ` · ${statusText(tx.status, tx.pendingReason)}` : ''}
         </span>
       </span>
 

@@ -355,13 +355,14 @@ function pushTransaction(
   tx: Omit<Transaction, 'id'>,
   detail: Omit<TransactionDetail, 'referenceNo' | 'balanceBefore' | 'balanceAfter'>,
   save = true,
+  identity?: Pick<TransferResult, 'transactionId' | 'referenceNo'>,
 ): TransactionRecord {
   const db = loadDb()
-  const id = nextId('txn')
+  const id = identity?.transactionId ?? nextId('txn')
   const created: TransactionRecord = {
     ...tx,
     id,
-    detail: { ...detail, referenceNo: makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
+    detail: { ...detail, referenceNo: identity?.referenceNo ?? makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
   }
   db.transactions.unshift(created)
   if (save) persist()
@@ -568,6 +569,8 @@ export function createMockApi(options?: {
   holdWindowMs?: number
   acceptedQuote?: boolean
   settleImmediately?: boolean
+  /** 内部结算沿用已受理指令的编号；不从 HTTP 请求读取。 */
+  settlementIdentity?: Pick<TransferResult, 'transactionId' | 'referenceNo'>
 }): BankApi {
   const thresholdSource = options?.reviewThreshold
   const readThreshold = (): Cents | undefined =>
@@ -1068,14 +1071,12 @@ export function createMockApi(options?: {
       const reviewThreshold = readThreshold()
       if (reviewThreshold !== undefined && total >= reviewThreshold) {
         const holdUntil = new Date(Date.now() + holdWindowMs).toISOString()
-        // 只冻结本金（不含手续费）：手续费在真正执行时才计。
-        // 冻结的是 available 不是 balance —— 客户端「可用余额」立刻减少、
-        // 「余额」不变，正是真实银行在途/预授权的表现。
+        // 本金与手续费一起预留，避免手续费在窗口内被花掉；到账时才实际扣款。
         const senderRow = loadDb().accounts.find((row) => row.id === req.fromAccountId)
         if (senderRow) {
-          senderRow.available -= req.amount
+          senderRow.available -= total
           if (senderRow.available < 0) {
-            senderRow.available += req.amount
+            senderRow.available += total
             throw new ApiError('账户可用余额不足', 400, 'INSUFFICIENT_FUNDS')
           }
         }
@@ -1107,6 +1108,7 @@ export function createMockApi(options?: {
           false,
         )
         held.heldRequest = { ...req }
+        held.heldFrozenAmount = total
         persist()
         return {
           transactionId: held.id,
@@ -1119,6 +1121,7 @@ export function createMockApi(options?: {
           settlementStatus: 'pending',
           pendingReason: 'inflight',
           holdUntil,
+          ...(quotedFx ? { fx: quotedFx } : {}),
         }
       }
 
@@ -1160,7 +1163,7 @@ export function createMockApi(options?: {
           counterpartyAccountNo: maskBankAccount(req.payeeAccountNo ?? ''),
           counterpartyBank: '招财猫银行', location: '招财猫银行 App',
           remark: req.memo.trim() || undefined,
-        }, false)
+        }, false, options?.settlementIdentity)
         const incomingId = nextId('txn')
         recipient.profile.transactions.unshift({
           id: incomingId,
@@ -1249,6 +1252,8 @@ export function createMockApi(options?: {
               }
             : {}),
         },
+        true,
+        options?.settlementIdentity,
       )
 
       if (fee > 0) {
@@ -1315,7 +1320,7 @@ export function createMockApi(options?: {
 
       return {
         transactionId: tx.id,
-        referenceNo: `LC${Date.now().toString().slice(-10)}`,
+        referenceNo: tx.detail.referenceNo,
         amount: req.amount,
         fee,
         channel: req.channel,
@@ -2636,11 +2641,11 @@ export interface HeldTransferInfo {
   request: TransferRequest
 }
 
-/** 解除可用余额冻结（冻结的是本金，见 submitTransfer 挂起分支的注释） */
+/** 解冻本次实际预留金额；兼容只冻结本金的旧指令。 */
 function releaseFreeze(db: ReturnType<typeof loadDb>, rec: TransactionRecord) {
   const row = db.accounts.find((a) => a.id === rec.accountId)
   if (row) {
-    row.available += rec.amount
+    row.available += rec.heldFrozenAmount ?? rec.amount
     if (row.available > row.balance + 0) {
       // 只在账目被外部改坏时才会发生；宁可夹住也不要出现可用>余额的脏数据
       row.available = row.balance
@@ -2697,6 +2702,7 @@ export async function settleHeldTransfer(
     delete rec.pendingReason
     delete rec.holdUntil
     delete rec.heldRequest
+    delete rec.heldFrozenAmount
     rec.memo = outcome === 'recalled'
       ? `${rec.memo} · 已撤销${reason ? `：${reason}` : ''}`
       : `${rec.memo} · 已拦截${reason ? `：${reason}` : ''}`
@@ -2712,13 +2718,18 @@ export async function settleHeldTransfer(
   try {
     // 不带 reviewThreshold = 纯执行，不会再进窗口。
     // settleImmediately = 到账就落定，不再挂「模拟清算」——这笔已经等过窗口了。
-    return await createMockApi({ acceptedQuote: true, settleImmediately: true }).submitTransfer(held)
+    return await createMockApi({
+      acceptedQuote: true,
+      settleImmediately: true,
+      settlementIdentity: { transactionId: rec.id, referenceNo: rec.detail.referenceNo },
+    }).submitTransfer(held)
   } catch (error) {
     // 极少数情况（如收款账户校验在窗口内失效）才走到这里：留痕，别静默吞掉
     rec.status = 'failed'
     delete rec.pendingReason
     delete rec.holdUntil
     delete rec.heldRequest
+    delete rec.heldFrozenAmount
     rec.memo = `${rec.memo} · 到账失败：${error instanceof Error ? error.message : '未知错误'}`
     db.transactions.unshift(rec)
     persist()

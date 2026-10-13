@@ -228,7 +228,8 @@ export function withBalances(
   let running = closing
   return rows.map((row) => {
     const balanceAfter = running
-    running -= row.signedAmount
+    // 在途仅冻结可用额度，失败/撤销没有扣款，不能参与余额回推。
+    if (row.status !== 'failed' && row.pendingReason !== 'inflight') running -= row.signedAmount
     return { ...row, detail: { ...row.detail, balanceAfter, balanceBefore: running } }
   })
 }
