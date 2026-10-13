@@ -20,6 +20,8 @@ const membership = { current: { planId: 'gold', planName: '金卡', status: 'can
   plans: [{ id: 'gold', name: '金卡', price: 1900, period: '每月', perks: [] }], records: [{ id: 'record', label: '订阅设置', amount: 1900, createdAt: date }] }
 let rate = .14, ttl = 30, accountFailure = false, showOcr = true, holdQuote = false, releaseQuote
 let roundup = { enabled: false, roundupTo: 100, dailyCap: 1000, accountId: 'a0', goalId: null }
+const goals = []
+let holdSavingsReload = false, releaseSavingsReload, holdRoundup = false, releaseRoundup, roundupFailure = false
 const quotes = [], submitted = [], writes = [], errors = []
 try {
   await web.listen()
@@ -63,10 +65,22 @@ try {
       case '/api/wealth/cash-management': return respond({ balance: 0, totalYield: 0, sevenDayYield: .02, accountId: 'a0', sweepEnabled: false, sweepThreshold: 10000, products: [] })
       case '/api/credit/overview': return respond({ creditLimit: 1000000, availableCredit: 1000000, products: [loanProduct], loans: [], installments: [], builder: { score: 700, level: '良好', streakMonths: 0, nextMilestone: '', tips: [] } })
       case '/api/wealth/investments': return respond({ holding: 0, totalReturn: 0, plans: [], products: [investProduct] })
-      case '/api/savings/overview': return respond({ totalSaved: 0, goals: [], roundup, streak: { days: 0, longestDays: 0, lastSavedAt: '', badges: [] }, rewards: [] })
+      case '/api/savings/overview': {
+        const overview = structuredClone({ totalSaved: 0, goals, roundup, streak: { days: 0, longestDays: 0, lastSavedAt: '', badges: [] }, rewards: [] })
+        if (holdSavingsReload) { holdSavingsReload = false; await new Promise(r => { releaseSavingsReload = r }) }
+        return respond(overview)
+      }
+      case '/api/savings/goals': {
+        const goal = { ...body, id: `goal-${goals.length}`, savedAmount: 0, sweep: null, createdAt: date }
+        goals.push(goal)
+        holdSavingsReload = true
+        return respond(goal)
+      }
       case '/api/savings/roundup': {
         // 服务端返回的权威值与请求不同，页面必须采用响应。
+        if (holdRoundup) { holdRoundup = false; await new Promise(r => { releaseRoundup = r }) }
         await new Promise(r => setTimeout(r, 200))
+        if (roundupFailure) return respond({ message: '设置暂不可用' }, 503)
         roundup = { ...roundup, enabled: false }; return respond(roundup)
       }
       case '/api/membership': return respond(membership)
@@ -163,6 +177,32 @@ try {
   await page.waitForTimeout(350)
   assert.equal(await page.getByRole('switch', { name: '消费凑整转存', exact: true }).getAttribute('aria-checked'), 'false')
   console.log('PASS 目标金额溢出拦截，凑整设置采用接口响应值')
+
+  // 新建后的总览刷新先返回，随后设置成功/失败，不能拿设置前的快照盖掉新目标。
+  for (const failure of [false, true]) {
+    releaseSavingsReload = undefined; releaseRoundup = undefined
+    roundupFailure = failure; holdRoundup = true
+    const name = failure ? '失败请求仍保留的目标' : '并发刷新后保留的目标'
+    await page.getByRole('button', { name: '新建目标', exact: true }).first().click()
+    await page.getByLabel('目标名称', { exact: true }).fill(name)
+    await page.getByLabel('目标金额', { exact: true }).fill('100')
+    await page.getByRole('dialog').getByRole('button', { name: '创建', exact: true }).click()
+    for (let i = 0; !releaseSavingsReload && i < 100; i++) await new Promise(r => setTimeout(r, 10))
+    assert(releaseSavingsReload)
+    await page.getByRole('switch', { name: '消费凑整转存', exact: true }).click()
+    for (let i = 0; !releaseRoundup && i < 100; i++) await new Promise(r => setTimeout(r, 10))
+    assert(releaseRoundup)
+    releaseSavingsReload()
+    await page.getByText(name, { exact: true }).waitFor()
+    const response = page.waitForResponse(r => new URL(r.url()).pathname === '/api/savings/roundup')
+    releaseRoundup(); await response
+    await page.getByText(failure ? '设置暂不可用' : '凑整规则已保存', { exact: true }).last().waitFor()
+    await page.waitForTimeout(250)
+    for (const goal of goals) assert(await page.getByText(goal.name, { exact: true }).isVisible())
+    assert.equal(await page.getByRole('switch', { name: '消费凑整转存', exact: true }).getAttribute('aria-checked'), 'false')
+  }
+  roundupFailure = false
+  console.log('PASS 新建目标刷新与凑整设置并发：成功和失败均不覆盖新目标')
 
   accountFailure = true
   await visit('/wealth/investments', '数据暂时无法加载')

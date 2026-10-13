@@ -125,16 +125,15 @@ export function SavingsPage() {
 
   async function toggleRoundup(next: boolean) {
     if (writing.current) return
-    const snapshot = savings.data
-    if (!snapshot) return
+    if (!savings.data) return
     writing.current = true
     setUpdating(true)
     try {
-      const roundup = await api.updateSavingsRoundup({ enabled: next })
-      savings.setData({ ...snapshot, roundup })
+      await api.updateSavingsRoundup({ enabled: next })
+      // 等待设置期间，目标列表可能已经刷新；重读总览，不用旧快照覆盖它。
+      savings.reload()
       toast.show('凑整规则已保存', 'success')
     } catch (err) {
-      savings.setData(snapshot)
       toast.show(err instanceof ApiError ? err.message : '操作失败，请稍后重试', 'error')
     } finally {
       writing.current = false
