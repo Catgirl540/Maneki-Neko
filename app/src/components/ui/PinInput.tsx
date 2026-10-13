@@ -1,5 +1,5 @@
 import { useRef, type ClipboardEvent, type KeyboardEvent } from 'react'
-import { cn } from '@/lib/cn'
+import { cn } from '../../lib/cn'
 
 /**
  * 支付密码输入：6 个独立格子。

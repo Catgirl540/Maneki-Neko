@@ -11,6 +11,7 @@ export default defineConfig({
   base: process.env.VITE_BASE_PATH ?? '/',
   plugins: [react(), tailwindcss()],
   resolve: {
+    dedupe: ['react', 'react-dom', 'react-markdown', 'remark-breaks', 'remark-gfm', 'remark-math', 'rehype-katex', 'katex'],
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },

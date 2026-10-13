@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import type { StaffRole } from '@/api'
 import { useSession } from '@/store/session-context'
 
@@ -20,21 +20,23 @@ const NAV: Array<{ to: string; label: string; roles: StaffRole[] }> = [
 export function AppShell() {
   const { user, logout } = useSession()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const isChat = pathname === '/assistant'
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="w-56 shrink-0 bg-[var(--color-sunk)] border-r border-[var(--color-line)] p-4">
-        <div className="mb-6">
+    <div className={`staff-shell flex min-w-0 flex-col lg:flex-row ${isChat ? 'staff-shell-chat' : 'min-h-screen'}`}>
+      <aside className="staff-sidebar w-full shrink-0 lg:w-56 bg-[var(--color-sunk)] border-b lg:border-b-0 lg:border-r border-[var(--color-line)] p-4">
+        <div className="mb-3 lg:mb-6">
           <div className="text-lg font-semibold text-[var(--color-ink)]">招财猫银行</div>
-          <div className="text-xs text-[var(--color-ink-mute)]">工作人员端</div>
+          <div className="hidden text-xs text-[var(--color-ink-mute)] lg:block">工作人员端</div>
         </div>
-        <nav className="space-y-1">
+        <nav aria-label="工作人员导航" className="flex gap-1 overflow-x-auto lg:block lg:space-y-1">
           {NAV.filter((item) => user && item.roles.includes(user.role)).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               className={({ isActive }) =>
-                `block rounded-[var(--radius-tile)] px-3 py-2 text-sm ${
+                `block shrink-0 whitespace-nowrap rounded-[var(--radius-tile)] px-3 py-2 text-sm ${
                   isActive
                     ? 'bg-[var(--color-gold-wash)] text-[var(--color-gold-deep)] font-medium'
                     : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-gold-tint)]'
@@ -47,8 +49,8 @@ export function AppShell() {
         </nav>
       </aside>
 
-      <div className="flex-1 flex flex-col">
-        <header className="flex items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-3">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-3">
           <div className="text-sm text-[var(--color-ink-soft)]">
             {user?.name}
             <span className="ml-2 rounded-full bg-[var(--color-blue-wash)] px-2 py-0.5 text-xs text-[var(--color-blue-deep)]">
@@ -66,7 +68,7 @@ export function AppShell() {
           </button>
         </header>
 
-        <main className="flex-1 p-6">
+        <main className={isChat ? 'flex min-h-0 min-w-0 flex-1 overflow-hidden' : 'min-w-0 flex-1 p-4 sm:p-6'}>
           <Outlet />
         </main>
       </div>

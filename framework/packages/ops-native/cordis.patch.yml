@@ -1,3 +1,4 @@
+# Attachment storage is provided by the shared staff profile.
 # Native tools/providers from the installed DSH base composition. No replacement shell implementation.
 - insert:
     - id: fs-sandbox
@@ -10,8 +11,6 @@
       name: '@deepseek-ai/dsh-tool-fs-search'
       config:
         sampleOverCapGlobResults: false
-    - id: attachment-local
-      name: '@deepseek-ai/dsh-attachment-local'
     - id: ops-pwsh-sandbox
       name: '@deepseek-ai/dsh-pwsh-sandbox'
       disabled: !!js process.platform !== 'win32'

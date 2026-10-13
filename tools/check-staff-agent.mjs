@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { rampFrames } from './lib/ttsFixture.mjs'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const dir = await mkdtemp(join(tmpdir(), 'staff-harness-'))
@@ -32,8 +33,8 @@ const provider = createServer(async (req, res) => {
   const tool = fixtures[marker]
   res.writeHead(200, { 'content-type': 'text/event-stream' })
   const send = (delta, finish_reason = null) => res.write(`data: ${JSON.stringify({ id: 'chatcmpl-test', object: 'chat.completion.chunk', created: 1, model: 'staff-test', choices: [{ index: 0, delta, finish_reason }] })}\n\n`)
-  send({ role: 'assistant', ...(first ? { tool_calls: [{ index: 0, id: `call_${marker}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } }] } : { content: '已取得业务处理结果，请以回执状态为准。' }) })
-  send({}, first ? 'tool_calls' : 'stop'); res.end('data: [DONE]\n\n')
+  send({ role: 'assistant', ...(first && tool.name ? { tool_calls: [{ index: 0, id: `call_${marker}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } }] } : { content: tool.reply ?? '已取得业务处理结果，请以回执状态为准。' }) })
+  send({}, first && tool.name ? 'tool_calls' : 'stop'); res.end('data: [DONE]\n\n')
 })
 try {
   await new Promise(r => provider.listen(providerPort, '127.0.0.1', r))
@@ -44,7 +45,7 @@ try {
   const profile = (await api(bank, `/staff-api/customers/${customer.customerId}/profile?reason=回归测试`, csr.token)).data
   const ticket = (await api(bank, '/staff-api/tickets', csr.token, { customerId: customer.customerId, channel: 'web', reason: '本地 Agent 浏览器测试' })).data
   const patch = join(dir, 'provider.patch.yml')
-  await writeFile(patch, JSON.stringify([{ id: 'llm-pi-ai', config: { providers: { test: { apiKeyEnv: 'LUCKYCAT_TEST_KEY', api: 'openai-completions', baseURL: `http://127.0.0.1:${providerPort}/v1`, models: [{ id: 'staff-test', name: 'Test', contextWindow: 128000 }] } } } }]))
+  await writeFile(patch, JSON.stringify([{ id: 'llm-pi-ai', config: { providers: { test: { apiKeyEnv: 'LUCKYCAT_TEST_KEY', api: 'openai-completions', baseURL: `http://127.0.0.1:${providerPort}/v1`, models: [{ id: 'staff-test', name: 'Test', contextWindow: 128000, input: ['text', 'image'] }] } } } }]))
   start('framework/bridge/staff-server.mjs', { LUCKYCAT_DEMO_PORT: String(agentPort), LUCKYCAT_BANK_URL: bank, LUCKYCAT_PROVIDER: 'test', LUCKYCAT_MODEL: 'staff-test', LUCKYCAT_TEST_KEY: 'test-only', LUCKYCAT_PATCHES: patch, LUCKYCAT_SESSION_DIR: join(dir, 'staff-context') })
   await ready(agent, '/agent-api/health', csr.token)
   assert.equal((await api(agent, '/agent-api/health')).status, 401)
@@ -91,26 +92,120 @@ try {
     const { chromium } = await import('playwright-core')
     const { createServer: createVite } = await import('../staff/node_modules/vite/dist/node/index.js')
     process.env.VITE_USE_MOCK = 'false'
+    process.env.VITE_BASE_PATH = '/staff/'
     vite = await createVite({ root: join(root, 'staff'), configFile: join(root, 'staff/vite.config.ts'), server: { host: '127.0.0.1', port: 0, proxy: { '/staff-api': { target: bank }, '/staff-agent-api': { target: agent, rewrite: p => p.replace(/^\/staff-agent-api/, '/agent-api') } } } })
     await vite.listen()
-    browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}/assistant`)
+    browser = await chromium.launch({ executablePath: process.env.CHROME_BIN ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true, args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] })
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, permissions: ['microphone'] })
+    const errors = [], customerCalls = [], mediaCalls = []
+    page.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/')) customerCalls.push(request.url()) })
+    // 本地语音夹具：真正录音和播放；上游转写/合成不产生网络计费。
+    await page.route('**/staff-agent-api/health', async route => {
+      const response = await route.fetch()
+      const health = await response.json()
+      await route.fulfill({ response, json: { ...health, voice: { asr: true, tts: true, stream: true, maxSeconds: 60 } } })
+    })
+    await page.route('**/staff-agent-api/asr', async route => {
+      const request = route.request(), data = request.postDataJSON()
+      mediaCalls.push({ path: 'asr', auth: request.headers().authorization, data })
+      await route.fulfill({ json: { text: 'staff_fixture_voice', seconds: 1 } })
+    })
+    await page.route('**/staff-agent-api/tts/stream', async route => {
+      const request = route.request()
+      mediaCalls.push({ path: 'tts', auth: request.headers().authorization, data: request.postDataJSON() })
+      const frames = rampFrames(1)
+      const body = `event: start\ndata: {"format":"pcm","sampleRate":24000}\n\n` + frames.map(frame => `event: audio\ndata: ${frame.toString('base64')}\n\n`).join('') + `event: end\ndata: {"frames":${frames.length},"bytes":48000,"truncated":false}\n\n`
+      await route.fulfill({ status: 200, contentType: 'text/event-stream', body })
+    })
+    page.on('pageerror', e => errors.push(e.message))
+    await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}/staff/assistant`)
     await page.getByLabel('员工姓名').fill('王小明'); await page.getByLabel('密码', { exact: true }).fill('123456'); await page.getByRole('button', { name: '登录', exact: true }).click()
     await page.getByRole('heading', { name: '工作人员助手', exact: true }).waitFor()
     fixtures.staff_fixture_browser_lock = { name: 'staff_customer_action', args: { customerId: customer.customerId, ticketId: ticket.ticketId, cardId: profile.cards[0].id, action: 'lockCard', reason: '客户来电要求锁卡' } }
-    await page.getByLabel('业务请求').fill('staff_fixture_browser_lock'); await page.getByRole('button', { name: '发送', exact: true }).click()
+    await page.getByLabel('聊天消息').fill('staff_fixture_browser_lock'); await page.getByRole('button', { name: '发送', exact: true }).click()
     const card = page.getByRole('region', { name: '操作确认' }); await card.waitFor({ timeout: 40_000 })
     const confirm = card.getByRole('button', { name: '确认并办理' }); assert.equal(await confirm.isEnabled(), false)
     await card.getByRole('checkbox').check(); await confirm.click()
     await page.getByText('已取得业务处理结果，请以回执状态为准。', { exact: true }).waitFor({ timeout: 20_000 })
     assert.equal((await api(bank, `/staff-api/customers/${customer.customerId}/profile?reason=test`, csr.token)).data.cards.find(c => c.id === profile.cards[0].id).status, 'locked')
     fixtures.staff_fixture_browser_question = { name: 'ask_user_question', args: { questions: [{ id: 'purpose', question: '请选择业务类型', options: [{ label: '客户查询', description: '查看概要' }, { label: '工单处理', description: '查看工单' }] }] } }
-    await page.getByLabel('业务请求').fill('staff_fixture_browser_question'); await page.getByRole('button', { name: '发送', exact: true }).click()
-    const question = page.getByRole('region', { name: '补充信息' }); await question.waitFor({ timeout: 30_000 }); await question.getByRole('radio', { name: /^客户查询/ }).check(); await question.getByRole('button', { name: '提交回答' }).click(); await question.waitFor({ state: 'hidden' })
-    assert.deepEqual(errors, [])
+    await page.getByLabel('聊天消息').fill('staff_fixture_browser_question'); await page.getByRole('button', { name: '发送', exact: true }).click()
+    const question = page.locator('[data-question-card]'); await question.waitFor({ timeout: 30_000 }); await question.getByRole('radio', { name: /^客户查询/ }).check(); await question.getByRole('button', { name: '提交', exact: true }).click(); await question.waitFor({ state: 'hidden' })
+    fixtures.staff_fixture_browser_cancel = { name: 'staff_get_transfer_threshold', args: {} }
+    await page.getByLabel('聊天消息').fill('staff_fixture_browser_cancel')
+    await page.getByRole('button', { name: '发送', exact: true }).click()
+    const cancelCard = page.getByRole('region', { name: '操作确认' })
+    await cancelCard.waitFor()
+    await page.route('**/staff-agent-api/consent/*', route => route.fulfill({ status: 503, json: { error: '本地确认网络失败夹具' } }), { times: 1 })
+    await cancelCard.getByRole('button', { name: '取消', exact: true }).click()
+    await cancelCard.getByRole('alert').filter({ hasText: '本地确认网络失败夹具' }).waitFor()
+    await cancelCard.getByRole('button', { name: '取消', exact: true }).click()
+    await cancelCard.waitFor({ state: 'hidden' })
+    console.log('PASS 取消失败保留确认卡、显示错误并允许重试')
+
+    // 图片经过共用的压缩/缩略图管道，真实 Harness 必须收到视觉输入。
+    await page.getByRole('button', { name: '新对话', exact: true }).click()
+    fixtures.staff_fixture_image = { reply: '**图片已收到**，请核对工单信息。' }
+    const image = await page.evaluate(() => { const canvas = document.createElement('canvas'); canvas.width = 80; canvas.height = 40; const ctx = canvas.getContext('2d'); ctx.fillStyle = '#c8973c'; ctx.fillRect(0, 0, 80, 40); return canvas.toDataURL('image/png').split(',')[1] })
+    await page.locator('[data-image-input]').setInputFiles({ name: '工单截图.png', mimeType: 'image/png', buffer: Buffer.from(image, 'base64') })
+    await page.locator('[data-pending-image]').waitFor({ state: 'visible' })
+    await page.getByLabel('聊天消息').fill('staff_fixture_image')
+    await page.getByRole('button', { name: '发送', exact: true }).click()
+    await page.locator('strong').filter({ hasText: '图片已收到' }).waitFor({ timeout: 30_000 })
+    assert(modelRequests.some(request => JSON.stringify(request.messages).includes('data:image/')), '图片没有进入真实模型协议请求')
+    assert.equal(await page.locator('[data-message-kind="user"] img').count(), 1)
     await page.screenshot({ path: join(root, 'server/data/staff-agent-preview.png'), fullPage: true })
+    console.log('PASS 员工图片压缩、预览、发送、视觉附件接线及 Markdown 渲染')
+
+    await page.getByRole('button', { name: '新对话', exact: true }).click()
+    fixtures.staff_fixture_voice = { reply: '语音测试回复已完成。' }
+    const voice = page.getByRole('button', { name: '语音', exact: true })
+    await voice.click()
+    const mic = page.getByRole('button', { name: '按住说话', exact: true })
+    const box = await mic.boundingBox(); await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+    await page.mouse.down(); await page.waitForTimeout(1200); await page.mouse.up()
+    await page.getByText('语音测试回复已完成。', { exact: true }).waitFor({ timeout: 30_000 })
+    await page.waitForFunction(() => document.querySelector('[data-speech-progress]'), null, { timeout: 15_000 })
+    assert.equal(mediaCalls.filter(call => call.path === 'asr').length, 1)
+    assert(mediaCalls.find(call => call.path === 'asr').data.audio.length > 100, '录音没有产生真实数据')
+    assert(mediaCalls.some(call => call.path === 'tts'))
+    assert(mediaCalls.every(call => /^Bearer .+/.test(call.auth ?? '')), '语音请求漏带员工身份')
+    assert.equal(new Set(mediaCalls.map(call => call.auth)).size, 1)
+    assert(!mediaCalls.some(call => call.auth === `Bearer ${csr.token}`), '误用了测试脚本另一个登录会话')
+    console.log('PASS 真麦克风录音、员工通道转写、自动朗读及语音请求鉴权')
+
+    // 历史抽屉、响应式布局、员工切换及离线边界。
+    await voice.click()
+    await page.getByRole('button', { name: /历史对话/ }).click()
+    assert(await page.getByRole('complementary', { name: '历史对话', exact: true }).isVisible())
+    await page.getByRole('button', { name: /历史对话/ }).click()
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 })
+      const geometry = await page.evaluate(() => {
+        const input = document.querySelector('[aria-label="聊天消息"]').getBoundingClientRect()
+        return { overflow: document.documentElement.scrollWidth > innerWidth, bottom: input.bottom, height: innerHeight }
+      })
+      assert(!geometry.overflow, `员工页面 ${width}px 横向溢出`)
+      assert(geometry.bottom <= geometry.height, `员工页面 ${width}px 输入栏超出视口`)
+    }
+    await page.screenshot({ path: join(root, 'server/data/staff-agent-mobile-preview.png'), fullPage: true })
+    const keys = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('luckycat.agent.sessions')))
+    assert(keys.some(key => key.includes('staff.csr.')), '历史没有按员工账号及角色隔离')
+    await page.getByRole('button', { name: '退出', exact: true }).click()
+    await page.getByLabel('员工姓名').fill('李主管'); await page.getByLabel('密码', { exact: true }).fill('123456'); await page.getByRole('button', { name: '登录', exact: true }).click()
+    await page.getByRole('link', { name: '工作人员助手', exact: true }).click()
+    await page.locator('[data-agent-status="ready"]').waitFor()
+    assert.equal(await page.locator('[data-message-kind]').count(), 0, '主管看到了客服历史')
+    await page.unroute('**/staff-agent-api/health')
+    await page.route('**/staff-agent-api/health', route => route.fulfill({ status: 503, json: { error: '本地离线夹具' } }))
+    await page.getByRole('link', { name: '工作台', exact: true }).click()
+    await page.getByRole('link', { name: '工作人员助手', exact: true }).click()
+    await page.getByRole('alert').filter({ hasText: '工作人员助手暂时不可用' }).waitFor()
+    assert.equal(await page.getByLabel('聊天消息').isEnabled(), false)
+    assert.deepEqual(customerCalls, [], '员工页面调用了客户银行接口')
+    console.log('PASS 历史记录、320/390/1440 布局、员工切换隔离和服务离线边界')
+    assert.deepEqual(errors, [])
+    await page.setViewportSize({ width: 1280, height: 900 })
     console.log('PASS 浏览器登录、助手入口、实时卡片、客户核验勾选、真实锁卡及补充问题，无页面异常')
   }
   const requests = JSON.stringify(modelRequests)

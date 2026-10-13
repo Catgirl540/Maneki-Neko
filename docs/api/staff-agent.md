@@ -1,6 +1,6 @@
 # 工作人员 Agent
 
-复用客户端的 Harness、消息流、会话持久化、补充问题、停止和确认通道。员工使用独立 `staff` profile、提示词和会话目录；客户端仍使用 `luckycat` profile。新增工作人员页面 `/assistant`。
+复用客户端的 Harness、消息流、会话持久化、补充问题、停止和确认通道。员工使用独立 `staff` profile、提示词和会话目录；客户端仍使用 `luckycat` profile。工作人员页面 `/assistant` 直接使用客户端 `ChatWorkspace`，包含图片压缩上传、按住录音、回复朗读、Markdown、历史管理和消息操作。
 
 ## 运行
 
@@ -12,7 +12,7 @@ $env:LUCKYCAT_MODEL = 'z-ai/glm-5.3-flash'
 npm run start:staff
 ```
 
-首次运行会构建复用插件并准备仓库内 `.dsh-home/profiles/staff`；Windows 和 Linux 均可使用。运行时默认监听回环地址 8789，默认模型与客户端相同。模型密钥缺失时页面显示“助手模型尚未配置”，不伪造回答。
+首次运行会构建复用插件并准备仓库内 `.dsh-home/profiles/staff`；Windows 和 Linux 均可使用。运行时默认监听回环地址 8789，默认模型与客户端相同。模型密钥缺失时页面显示助手不可用。员工端不降级调用客户端客服接口。
 
 `staff` 目录运行前设置 `VITE_USE_MOCK=false`，然后 `npm run dev`，访问 `http://127.0.0.1:5181/assistant`。员工登录账号仍为王小明 / 李主管 / 运维人员，演示密码 123456。
 
@@ -29,6 +29,14 @@ npm run start:staff
 | `VITE_STAFF_AGENT_TARGET` | 开发代理目标，默认 http://127.0.0.1:8789 |
 
 生产反向代理把 `/staff-agent-api/*` 转发为员工桥接服务 `/agent-api/*`，保留 `Authorization`。密钥只配置到服务进程，不放到任何 `VITE_*` 变量。
+
+## 图片与语音
+
+图片沿用客户端压缩、缩略图及内联视觉输入链路，附件按已认证员工归档。`staff` 和 `staff-ops` profile 均具备附件存储；增加附件不会给客服开放文件或系统工具。
+
+语音通过所选员工通道的 `/asr`、`/tts/stream` 请求，携带员工 Bearer。服务端读取与客户端相同的 OpenRouter 和火山语音环境凭据。`LUCKYCAT_DISABLE_VOICE=1` 可显式关闭；未配置能力或浏览器连接不支持录音时，页面显示原因。语音只能发起请求，敏感操作仍须手动确认，代客办理仍须完成客户核验。
+
+本机历史按员工账号和角色隔离。前端结构及本地验证见 [工作人员端维护说明](../../staff/README.md)。
 
 ## 角色、工具与确认
 
@@ -93,3 +101,9 @@ npm run test:ops-agent:live
 前两项检查权限、类型化协议、沙箱执行、密钥环境剥离、一次授权、取消与浏览器确认卡，使用本机模型 fixture 和临时工作区。最后一项使用真实 GLM 与 Clef，只读取或删除隔离工作区的虚拟验收文件；结果保存到忽略的 `server/data/ops-agent-live-report.json`。真实测试结果以报告的 `passed` 字段为准。
 
 2026-10-13：运维单元测试 11 项、员工后端回归 14 项、两套完整浏览器流程和工作人员前端构建通过。真实 Clef 读取/删除/重启/创建笔记分类通过；GLM + Clef + 原生 DSH 的读取、取消删除、确认删除通过。当前读取样本也因概率未达保守阈值而要求人工确认，这符合规则，不代表所有读取都会自动执行。
+
+### 多模态验收
+
+`node tools/check-staff-agent.mjs --browser` 使用本地协议与语音夹具，验证图片进入真实 Harness、录音转写接线、PCM 朗读、员工确认、历史隔离及 320/390/1440px 布局，不调用外部模型。
+
+显式需要真实服务抽查时，可用已配置环境运行 `node tools/check-staff-media-live.mjs`（浏览器路径用 `CHROME_BIN`）。该命令会调用计费的视觉、TTS 与 ASR 服务，只使用生成的虚拟工单图片、合成音频和临时数据库；不会修改公网客户数据。

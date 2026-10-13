@@ -1,5 +1,8 @@
 @import 'tailwindcss';
 @import './tokens.css';
+@import '../../../app/src/styles/chat.css';
+@source '../../../app/src/components';
+@source '../../../app/src/lib';
 
 /* 员工端不引入 Web 字体文件（客户端那两套 woff2 不搬），中文交系统字体栈。
    视觉规范复用 tokens.css，换肤仍只改 tokens 一个文件。 */
@@ -32,4 +35,10 @@ table.staff-table th {
   color: var(--color-ink-soft);
   font-weight: 600;
   background: var(--color-sunk);
+}
+
+.staff-shell-chat { height: 100dvh; min-height: 0; overflow: hidden; }
+.staff-shell-chat .staff-sidebar { min-height: 0; }
+@media (min-width: 960px) {
+  .staff-shell-chat .staff-sidebar { overflow-y: auto; }
 }

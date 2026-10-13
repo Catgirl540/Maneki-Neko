@@ -348,5 +348,35 @@
     "query": "转入页的FPS手机号和ID为什么不展示",
     "source": "kb-accounts#deposit",
     "critical": true
+  },
+  {
+    "query": "我要转人工找客服",
+    "source": "kb-assistant#human-support",
+    "critical": true
+  },
+  {
+    "query": "助手能帮我联系人工客服吗",
+    "source": "kb-assistant#human-support",
+    "critical": true
+  },
+  {
+    "query": "转人工以后是不是已经接通客服了",
+    "source": "kb-assistant#human-support",
+    "critical": true
+  },
+  {
+    "query": "人工客服回复在哪里看",
+    "source": "kb-assistant#human-replies",
+    "critical": true
+  },
+  {
+    "query": "怎么给人工工单补充留言",
+    "source": "kb-assistant#human-replies",
+    "critical": true
+  },
+  {
+    "query": "工单已解决还能继续发消息吗",
+    "source": "kb-assistant#human-replies",
+    "critical": true
   }
 ]

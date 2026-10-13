@@ -33,6 +33,11 @@ export function createCustomerAuth(db, { lifetimeMs = 12 * 60 * 60 * 1000, now =
       if (!entry) throw Object.assign(new Error('请重新登录'), { status: 401, code: 'UNAUTHORIZED' })
       return entry.phone
     },
+    identity(req) {
+      const entry = current(req)
+      if (!entry) throw Object.assign(new Error('请重新登录'), { status: 401, code: 'UNAUTHORIZED' })
+      return { id: entry.ownerId }
+    },
     issue(user, req) {
       const token = randomBytes(32).toString('base64url')
       const id = createHash('sha256').update(token).digest('hex')

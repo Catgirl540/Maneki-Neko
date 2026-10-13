@@ -263,6 +263,10 @@
       - ask_user_question
       - knowledge_lookup
       - luckycat_ping
+      - bank_request_human_support
+      - bank_list_support_tickets
+      - bank_get_support_ticket
+      - bank_reply_support_ticket
       - bank_get_balance
       - bank_list_transactions
       - bank_get_transaction_detail

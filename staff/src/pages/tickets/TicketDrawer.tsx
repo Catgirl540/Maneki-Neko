@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api, type TicketDetail, type TicketStatus } from '@/api'
 import { useSession } from '@/store/session-context'
 import { TICKET_STATUS_LABEL, formatTime } from './labels'
@@ -63,22 +63,28 @@ export function TicketDrawer({
   const { user } = useSession()
   const [ticket, setTicket] = useState<TicketDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const loading = useRef(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
 
   const load = useCallback(async () => {
+    if (loading.current) return
+    loading.current = true
     try {
       setTicket(await api.getTicket(ticketId))
-      setError(null)
+      setLoadError(null)
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : '工单加载失败')
-    }
+      setLoadError(e instanceof ApiError ? e.message : '工单加载失败')
+    } finally { loading.current = false }
   }, [ticketId])
 
   useEffect(() => {
     // 同上：数据加载，setState 在 await 之后
     // oxlint-disable-next-line react/set-state-in-effect
     load()
+    const timer = window.setInterval(() => { if (!document.hidden) void load() }, 3000)
+    return () => window.clearInterval(timer)
   }, [load])
 
   async function run(work: () => Promise<unknown>) {
@@ -108,16 +114,15 @@ export function TicketDrawer({
 
   function send() {
     const text = draft.trim()
-    if (!text) return
-    setDraft('')
-    return run(() => api.postTicketMessage(ticketId, text))
+    if (!text || busy || ticket?.status === 'resolved') return
+    return run(async () => { await api.postTicketMessage(ticketId, text); setDraft('') })
   }
 
   return (
     // 固定遮罩 + 右侧面板。demo 用组件内联实现，不引第三方抽屉库（不变量 4）
     <div className="fixed inset-0 z-20 flex justify-end">
-      <div className="flex-1 bg-black/20" onClick={onClose} />
-      <div className="flex h-full w-[480px] flex-col border-l border-[var(--color-line)] bg-[var(--color-surface)] shadow-xl">
+      <div className="flex-1 bg-black/20" onClick={() => { if (!busy) onClose() }} />
+      <div className="flex h-full w-full max-w-[480px] min-w-0 flex-col border-l border-[var(--color-line)] bg-[var(--color-surface)] shadow-xl">
         <header className="flex items-center justify-between border-b border-[var(--color-line)] px-5 py-4">
           <div>
             <div className="font-mono text-sm text-[var(--color-ink-mute)]">{ticketId}</div>
@@ -131,16 +136,16 @@ export function TicketDrawer({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={() => { if (!busy) onClose() }}
             className="rounded-[var(--radius-tile)] px-2 py-1 text-[var(--color-ink-mute)] hover:bg-[var(--color-paper)]"
           >
             关闭
           </button>
         </header>
 
-        {error && (
-          <div className="mx-5 mt-3 rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-3 py-2 text-sm text-[var(--color-coral)]">
-            {error}
+        {(error || loadError) && (
+          <div role="alert" className="mx-5 mt-3 rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-3 py-2 text-sm text-[var(--color-coral)]">
+            {error || loadError}
           </div>
         )}
 
@@ -224,12 +229,15 @@ export function TicketDrawer({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') send()
                 }}
-                placeholder="给客户留言…（演示可直接发）"
-                className="flex-1 rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
+                placeholder={ticket.status === 'resolved' ? '工单已解决' : '给客户留言…'}
+                aria-label="给客户留言"
+                disabled={busy || ticket.status === 'resolved'}
+                maxLength={2000}
+                className="min-w-0 flex-1 rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
               />
               <button
                 onClick={send}
-                disabled={busy || !draft.trim()}
+                disabled={busy || !draft.trim() || ticket.status === 'resolved'}
                 className="rounded-[var(--radius-field)] bg-[var(--color-gold)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-gold-deep)] disabled:opacity-60"
               >
                 发送

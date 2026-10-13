@@ -18,9 +18,9 @@
  */
 
 import { useLayoutEffect, useRef } from 'react'
-import { PencilIcon, TrashIcon } from '@/components/ui/icons'
-import { cn } from '@/lib/cn'
-import { messageCount, relativeTime, type StoredConversation } from '@/lib/agentSessions'
+import { PencilIcon, TrashIcon } from '../ui/icons'
+import { cn } from '../../lib/cn'
+import { messageCount, relativeTime, type StoredConversation } from '../../lib/agentSessions'
 
 interface SessionListProps {
   conversations: StoredConversation[]

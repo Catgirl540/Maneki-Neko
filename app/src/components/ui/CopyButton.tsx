@@ -1,7 +1,7 @@
 import { useToast } from './toast-context'
 import { CopyIcon } from './icons'
-import { cn } from '@/lib/cn'
-import { copyText } from '@/lib/clipboard'
+import { cn } from '../../lib/cn'
+import { copyText } from '../../lib/clipboard'
 import { useState } from 'react'
 import { ManualCopyModal } from './ManualCopyModal'
 

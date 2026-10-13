@@ -40,7 +40,7 @@ try {
   const ops = (await api(bank, '/staff-api/login', null, { name: '运维人员', password: '123456' })).data
   const csr = (await api(bank, '/staff-api/login', null, { name: '王小明', password: '123456' })).data
   const patch = join(dir, 'provider.yml'); await writeFile(patch, JSON.stringify([{ id: 'llm-pi-ai', config: { providers: { test: { apiKeyEnv: 'LUCKYCAT_TEST_KEY', api: 'openai-completions', baseURL: `http://127.0.0.1:${providerPort}/v1`, models: [{ id: 'ops-test', name: 'Test', contextWindow: 128000 }] } } } }]))
-  start('framework/bridge/ops-server.mjs', { LUCKYCAT_DEMO_PORT: String(agentPort), LUCKYCAT_BANK_URL: bank, LUCKYCAT_PROVIDER: 'test', LUCKYCAT_MODEL: 'ops-test', LUCKYCAT_TEST_KEY: 'test-only', OPENROUTER_API_KEY: 'scrub-test-only', CLEF_FLASH_URL: `http://127.0.0.1:${clefPort}/decisions`, LUCKYCAT_PATCHES: patch, LUCKYCAT_SESSION_DIR: join(dir, 'ops-context'), LUCKYCAT_OPS_WORKSPACE: workspace })
+  start('framework/bridge/ops-server.mjs', { LUCKYCAT_DEMO_PORT: String(agentPort), LUCKYCAT_BANK_URL: bank, LUCKYCAT_PROVIDER: 'test', LUCKYCAT_MODEL: 'ops-test', LUCKYCAT_TEST_KEY: 'test-only', OPENROUTER_API_KEY: 'scrub-test-only', OPS_TEST_SECRET: 'fixture-secret-never-output', CLEF_FLASH_URL: `http://127.0.0.1:${clefPort}/decisions`, LUCKYCAT_PATCHES: patch, LUCKYCAT_SESSION_DIR: join(dir, 'ops-context'), LUCKYCAT_OPS_WORKSPACE: workspace })
   await ready(agent, '/agent-api/health', ops.token)
   assert.equal((await api(agent, '/agent-api/sessions', csr.token, {})).status, 403)
   assert.equal((await api(agent, '/internal/ops-tool/prepare', null, {})).status, 403)
@@ -72,7 +72,10 @@ try {
   const read = await run('ops_fixture_read', { name: 'read', args: { file_path: 'README.md' } })
   assert(read.result.text.includes('原生 DSH 运维诊断测试')); assert.equal(read.card, undefined)
   console.log('PASS 原生 DSH read 执行，Clef 低风险自动通过，员工业务账户不能进入运维运行时')
-  const shell = await run('ops_fixture_shell', { name: process.platform === 'win32' ? 'pwsh' : 'bash', args: { command: process.platform === 'win32' ? "Get-Date -Format yyyy; if (Test-Path Env:OPENROUTER_API_KEY) { Write-Output 'SECRET_PRESENT' } else { Write-Output 'SECRET_ABSENT' }" : "date +%Y; test -z \"$OPENROUTER_API_KEY\" && echo SECRET_ABSENT", description: '检查系统时间及子进程环境隔离' } })
+  const shellName = process.platform === 'win32' ? 'pwsh' : 'bash'
+  await run('ops_fixture_protected_env', { name: shellName, args: { command: process.platform === 'win32' ? '$env:OPENROUTER_API_KEY' : 'echo "$OPENROUTER_API_KEY"', description: '受保护密钥访问应被拒绝' } }, 'deny')
+  // 密钥名访问会在执行前被策略拒绝；用无业务含义的夹具变量验证子进程环境剥离。
+  const shell = await run('ops_fixture_shell', { name: shellName, args: { command: process.platform === 'win32' ? "Get-Date -Format yyyy; if (Test-Path Env:OPS_TEST_SECRET) { Write-Output 'SECRET_PRESENT' } else { Write-Output 'SECRET_ABSENT' }" : "date +%Y; if printenv OPS_TEST_SECRET >/dev/null; then echo SECRET_PRESENT; else echo SECRET_ABSENT; fi", description: '检查系统时间及子进程环境隔离' } })
   assert(shell.result.text.includes('SECRET_ABSENT')); assert(!shell.result.text.includes('SECRET_PRESENT'))
   console.log('PASS 原生 PowerShell/bash 沙箱执行；子进程没有继承模型 API 密钥')
   await run('ops_fixture_write_cancel', { name: 'write', args: { file_path: 'cancelled.txt', content: '不应落盘' } }, 'reject')
@@ -89,7 +92,7 @@ try {
     const page = await browser.newPage(), errors = []; page.on('pageerror', e => errors.push(e.message))
     await page.goto(`http://127.0.0.1:${vite.httpServer.address().port}/assistant`); await page.getByLabel('员工姓名').fill('运维人员'); await page.getByLabel('密码', { exact: true }).fill('123456'); await page.getByRole('button', { name: '登录', exact: true }).click(); await page.getByRole('link', { name: '工作人员助手', exact: true }).click()
     fixtures.ops_fixture_browser_write = { name: 'write', args: { file_path: 'browser.txt', content: '浏览器确认原生运维工具\n' } }
-    await page.getByLabel('业务请求').fill('ops_fixture_browser_write'); await page.getByRole('button', { name: '发送', exact: true }).click()
+    await page.getByLabel('聊天消息').fill('ops_fixture_browser_write'); await page.getByRole('button', { name: '发送', exact: true }).click()
     const card = page.getByRole('region', { name: '操作确认' }); await card.waitFor({ timeout: 40_000 }); assert((await card.innerText()).includes('browser.txt')); await card.getByRole('button', { name: '确认', exact: true }).click()
     await page.getByText('已取得本次运维请求的执行回执。', { exact: true }).waitFor({ timeout: 20_000 }); assert.equal(await readFile(join(workspace, 'browser.txt'), 'utf8'), '浏览器确认原生运维工具\n'); assert.deepEqual(errors, [])
     console.log('PASS 运维浏览器自动选择独立运行时、展示完整高危操作参数并经确认写入，无页面异常')

@@ -152,6 +152,11 @@ export function createHttpApi(): BankApi {
     listSupportMessages: () => request(routes.supportHistory()),
     sendSupportMessage: (text) => post(routes.supportChat(), { text }),
 
+    requestHumanSupport: (req) => post(routes.supportTickets(), req),
+    listSupportTickets: (page) => request(routes.supportTickets() + `?page=${page ?? 1}`),
+    getSupportTicket: (id) => request(routes.supportTicket(encodeURIComponent(id))),
+    replySupportTicket: (id, req) => post(routes.supportTicketMessages(encodeURIComponent(id)), req),
+
     // —— 账户域扩展 ——
     quoteExchange: (req) => post(routes.exchangeQuote(), req),
     submitExchange: (req) => post(routes.exchange(), req),

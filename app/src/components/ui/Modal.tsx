@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { CloseIcon } from './icons'
-import { cn } from '@/lib/cn'
-import { usePresence } from '@/lib/usePresence'
+import { cn } from '../../lib/cn'
+import { usePresence } from '../../lib/usePresence'
 
 /** 退场动画时长，必须和 `.pop-out` / `.fade-out` 的 `--duration-press` 对上。 */
 const EXIT_MS = 140

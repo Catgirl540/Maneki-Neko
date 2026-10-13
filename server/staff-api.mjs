@@ -520,7 +520,7 @@ export function createStaffApi({ db, bankHooks = {}, operations }) {
           if (who.role === 'agent' && ticket.created_by !== who.actorId) {
             throw staffError(403, '只能查看自己创建的工单', 'FORBIDDEN')
           }
-          const messages = db.prepare('SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at').all(id)
+          const messages = db.prepare('SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at, rowid').all(id)
           json(res, 200, { ...mapTicket(ticket, readCustomerNames(db)), messages })
           return true
         }
@@ -556,10 +556,12 @@ export function createStaffApi({ db, bankHooks = {}, operations }) {
           }
           const body = await readBody(req)
           requireFields(body, ['text'])
+          if (ticket.status === 'resolved') throw staffError(409, '工单已解决，不能继续回复', 'TICKET_CLOSED')
           const sender = who.actorType === 'agent' ? 'system' : 'staff'
           const mid = newId('msg')
           db.prepare('INSERT INTO ticket_messages (id, ticket_id, sender, text, created_at) VALUES (?, ?, ?, ?, ?)')
             .run(mid, id, sender, body.text, now())
+          db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?').run(now(), id)
           writeAudit({ actorType: who.actorType, actorId: who.actorId, action: 'ticket.message', targetType: 'ticket', targetId: id })
           json(res, 201, { messageId: mid })
           return true

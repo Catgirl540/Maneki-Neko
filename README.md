@@ -492,6 +492,10 @@ POST   /api/identity/liveness        人脸活体核验
 
 GET    /api/support/messages        客服历史
 POST   /api/support/chat            客服对话
+GET    /api/support/tickets         本人的人工工单（分页）
+POST   /api/support/tickets         提交转人工请求
+GET    /api/support/tickets/:id      本人工单详情与回复
+POST   /api/support/tickets/:id/messages  客户补充留言
 ```
 
 ## 4. 换美术风格怎么改
@@ -518,8 +522,8 @@ POST   /api/support/chat            客服对话
 | 安全中心 → 交易风控 | 4 条风控规则开关 + 安全评分 | ✅ |
 | 其他服务 → 重置密码 | 安全中心 → 安全设置的改密流程 | ✅ |
 | 其他服务 → 开卡 / 换卡 / 锁卡 | 卡种选择（银联 / Visa）、邮寄地址、制卡费在线支付（支付密码验证）、锁卡与限额 | ✅ |
-| AI Agent 入口 → 智能客服 | 对话式入口（固定话术），带跳转动作 | ✅ |
-| AI Agent 入口 → AI 辅助操作 / Agent 自主操作 / 转人工 | 能力占位说明 | 占位 |
+| 助手 → 智能客服 | 真实 Agent、流式回复、确认卡、图片和语音；服务不可用时保留固定客服通道 | ✅ |
+| 助手 → 转人工 / 人工工单 | 手动或 Agent 确认建单，员工受理、双向留言、进度与解决状态；异步工单服务 | ✅ |
 
 ## 6. 数据层交互约定
 

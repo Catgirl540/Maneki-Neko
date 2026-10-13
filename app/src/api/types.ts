@@ -736,6 +736,25 @@ export interface SupportMessage {
   actions?: { label: string; to: string }[]
 }
 
+/** 客户可见人工工单；不含员工内部处置资料。 */
+export type SupportTicketStatus = 'open' | 'processing' | 'waiting' | 'suspended' | 'resolved'
+export interface SupportTicket {
+  ticketId: string
+  reason: string
+  status: SupportTicketStatus
+  createdAt: string
+  updatedAt: string
+}
+export interface SupportTicketDetail extends SupportTicket {
+  messages: { id: string; sender: 'customer' | 'staff' | 'system'; text: string; createdAt: string }[]
+}
+export type SupportTicketPage = Paged<SupportTicket>
+export interface HumanSupportRequest {
+  requestId: string
+  reason: string
+  transcript?: { role: 'user' | 'assistant'; text: string }[]
+}
+
 export interface SupportReply {
   message: SupportMessage
   /** 是否为固定话术（MVP 阶段无真实模型） */

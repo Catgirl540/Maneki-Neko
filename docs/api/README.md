@@ -154,7 +154,22 @@
 
 详见 [wealth-ext.md](./wealth-ext.md)。
 
-### 9 规划中（契约已设计，尚未实现）
+### 9 人工服务
+
+客户人工服务使用当前客户 Bearer，不使用员工令牌或共享 Agent 密钥。`server/support-api.mjs` 将请求写入同一套员工工单表；仅客户主动提交的公开工单可从客户接口读取。
+
+- `POST /api/support/tickets`：`{requestId, reason, transcript?}`，问题最多 500 字；可选最近 20 条文字摘要，每条最多 2000 字，不收图片。
+- `GET /api/support/tickets?page=1`：返回 `Paged<SupportTicket>`，固定每页 20 条。
+- `GET /api/support/tickets/:id`：本人公开工单、状态及双向留言，不含员工审计、负责人或审批字段。
+- `POST /api/support/tickets/:id/messages`：`{requestId, text}`，留言最多 2000 字；已解决工单返回 `409 TICKET_CLOSED`。
+
+写请求编号须为 16–100 位字母、数字、下划线或连字符。同一客户的相同请求编号与内容重试不会重复建单／留言；编号用于其他内容时返回 `409 REQUEST_CONFLICT`。客户身份和留言发送人均由登录态确定。常见敏感数字在摘要与客户留言中隐藏；密码、验证码与 CVV 不应提交。
+
+状态为 `open`（等待受理）、`processing`（处理中）、`waiting`（待客户补充）、`suspended`（已暂停）、`resolved`（已解决）。客户回复 `waiting` 工单后自动回到 `processing`。页面打开时每 3 秒检查更新，不提供即时接通、固定响应时间或离线推送保证。
+
+Agent 共用以上客户接口，提供 `bank_request_human_support`、`bank_list_support_tickets`、`bank_get_support_ticket`、`bank_reply_support_ticket`，均需确认；转人工不要求支付密码。手动入口不依赖 Agent 在线。验证：`node tools/check-human-support.mjs --browser`，使用临时银行和本地模型协议。真实模型抽查可显式运行 `node tools/check-human-support-live.mjs`，需要进程环境密钥且会产生少量模型费用；仅创建临时本地验收工单。
+
+### 10 规划中（契约已设计，尚未实现）
 
 线上按揭申请与进度；加密资产兑换 / 托管 / Staking（合规与风控未就绪）。详见 [roadmap.md](./roadmap.md)。
 

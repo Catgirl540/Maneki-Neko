@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { AgentEvent } from '@/api/agent'
-import { Modal } from '@/components/ui/Modal'
+import type { AgentEvent } from '../../api/agent'
+import { Modal } from '../ui/Modal'
 
 type Secret = Extract<AgentEvent, { type: 'card-secret' }>
 /** 敏感卡信息只在内存临时窗口显示，不进入对话存档。 */

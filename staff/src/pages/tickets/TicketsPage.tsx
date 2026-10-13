@@ -150,6 +150,7 @@ export function TicketsPage() {
 
       {selectedId && (
         <TicketDrawer
+          key={selectedId}
           ticketId={selectedId}
           onClose={() => setSelectedId(null)}
           onChanged={refresh}

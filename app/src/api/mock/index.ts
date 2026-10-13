@@ -30,6 +30,7 @@ import {
   formatFxAmount,
   formatRate,
 } from '@/lib/format'
+import { redactSupportText } from '../../../../shared/support.mjs'
 import { STORAGE_KEYS, storage } from '@/lib/storage'
 import { CHANNEL_LABEL, STATUS_LABEL } from '@/lib/tx'
 import { maskPhone } from '@/lib/format'
@@ -62,6 +63,7 @@ import type {
   SmsCodeResult,
   SupportMessage,
   SupportReply,
+  SupportTicketDetail,
   Transaction,
   TransactionCategory,
   TransactionDetail,
@@ -445,10 +447,20 @@ const CANNED_RULES: { match: RegExp; text: string; actions?: { label: string; to
   },
   {
     match: /人工|客服|投诉/,
-    text: '已为你准备转人工入口。人工客服服务时间 09:00–21:00，非服务时间会转留言工单。',
-    actions: [{ label: '转人工客服', to: '/support' }],
+    text: '可点击助手页的“转人工”提交问题，随后在“人工工单”查看回复。',
+    actions: [],
   },
 ]
+
+const humanTickets = new Map<string, SupportTicketDetail[]>()
+const humanRequests = new Map<string, string>()
+const humanOwner = () => loadDb().user.id
+const humanRows = () => humanTickets.get(humanOwner()) ?? []
+const humanTicket = (id: string) => {
+  const row = humanRows().find(row => row.ticketId === id)
+  if (!row) throw new ApiError('工单不存在', 404, 'NOT_FOUND')
+  return row
+}
 
 function cannedReply(text: string): SupportReply {
   const rule = CANNED_RULES.find((r) => r.match.test(text))
@@ -2063,6 +2075,33 @@ export function createMockApi(options?: {
     async sendSupportMessage(text) {
       await delay(650)
       return cannedReply(text)
+    },
+
+    async requestHumanSupport(req) {
+      if (!req.reason.trim() || req.reason.length > 500) throw new ApiError('请输入 500 字以内的问题描述', 400)
+      const key = `${humanOwner()}:${req.requestId}`
+      const previous = humanRequests.get(key)
+      if (previous) return structuredClone(humanTicket(previous))
+      const now = new Date().toISOString()
+      const row: SupportTicketDetail = { ticketId: nextId('T'), reason: redactSupportText(req.reason), status: 'open', createdAt: now, updatedAt: now, messages: [] }
+      humanTickets.set(humanOwner(), [row, ...humanRows()]); humanRequests.set(key, row.ticketId)
+      return structuredClone(row)
+    },
+    async listSupportTickets(page = 1) {
+      const rows = humanRows()
+      return { items: structuredClone(rows.slice((page - 1) * 20, page * 20)), page, size: 20, total: rows.length }
+    },
+    async getSupportTicket(id) { return structuredClone(humanTicket(id)) },
+    async replySupportTicket(id, req) {
+      const row = humanTicket(id)
+      if (row.status === 'resolved') throw new ApiError('工单已解决，请重新转人工', 409)
+      const key = `${humanOwner()}:${req.requestId}`
+      const previous = humanRequests.get(key)
+      if (previous) return { messageId: previous }
+      const messageId = nextId('msg')
+      row.messages.push({ id: messageId, sender: 'customer', text: redactSupportText(req.text), createdAt: new Date().toISOString() })
+      row.updatedAt = new Date().toISOString(); humanRequests.set(key, messageId)
+      return { messageId }
     },
 
     /* -------------------------------------------------- 账户域扩展 */

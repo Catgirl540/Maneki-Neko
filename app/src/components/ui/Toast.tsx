@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ToastContext, type ToastTone } from './toast-context'
 import { AlertIcon, CheckIcon } from './icons'
-import { cn } from '@/lib/cn'
+import { cn } from '../../lib/cn'
 
 /** 一条轻提示停留多久（不含退场动画）。 */
 const TOAST_HOLD_MS = 2600

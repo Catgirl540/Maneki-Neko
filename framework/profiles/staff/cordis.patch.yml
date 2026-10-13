@@ -101,3 +101,8 @@
         tailChars: 1024
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
+
+# 图片直接进入模型上下文；仅附件存储，不向客服开放文件或系统工具。
+- insert:
+    - id: attachment-local
+      name: '@deepseek-ai/dsh-attachment-local'

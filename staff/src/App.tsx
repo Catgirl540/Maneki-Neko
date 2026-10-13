@@ -1,3 +1,4 @@
+import { ToastProvider } from '../../app/src/components/ui/Toast'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { OperationsPage } from '@/pages/operations/OperationsPage'
 import { AssistantPage } from '@/pages/assistant/AssistantPage'
@@ -49,6 +50,7 @@ function RequireOperations() {
 export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <ToastProvider>
       <SessionProvider>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
@@ -81,6 +83,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/workbench" replace />} />
         </Routes>
       </SessionProvider>
+      </ToastProvider>
     </BrowserRouter>
   )
 }

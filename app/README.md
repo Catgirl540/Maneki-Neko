@@ -74,7 +74,9 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 需要登录的页面放在 `RequireAuth` 包裹的路由组内；登录后的跳转统一由 `LoginRoute` 处理。
 
 一级导航固定为 **账户、理财、助手、我的**，桌面与手机顺序一致。
-助手使用全屏工作区：`AppShell.tsx` 隐藏通用顶栏，`global.css` 的 `chat-workspace` 与 `app-content-chat` 控制视口高度和手机导航留位；`SupportPage.tsx` 只滚动消息，输入栏固定在底部。
+助手使用全屏工作区：`AppShell.tsx` 隐藏通用顶栏，`global.css` 的 `chat-workspace` 与 `app-content-chat` 控制视口高度和手机导航留位；`SupportPage.tsx` 是客户端入口，实际聊天界面在 `components/agent/ChatWorkspace.tsx`，只滚动消息，输入栏固定在底部。
+“助手”顶部提供“转人工”和“人工工单”。入口组件位于 `src/components/support/HumanSupport.tsx`，手动提交可选择附上当前文字对话；Agent 提交只分享确认卡中的摘要。人工工单是异步处理，打开时定时查看回复。改动后运行 `node tools/check-human-support.mjs --browser`，验证客户、员工两端与隔离权限。
+
 账户概览首屏是「余额主卡 + 常用功能入口卡」：五个高频入口（转账 / 账单 / 银行卡 / 存钱计划 / 多币种换汇）在桌面 ≥1024 宽的一屏内即可点开；近 30 天收支、最近交易与资金账户下移到首屏之下，末尾是「更多服务」分区。不设置横排子标签。
 **转入、转出只在概览提供入口，各自打开一个弹窗**；大额二次确认也在转出弹窗内完成。
 
@@ -100,6 +102,8 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 
 **调整样式**：先修改设计 token，再调整组件布局。通用交互优先复用现有控件。
 页面骨架用统一类：`.content-shell`（内容宽度与左右留白，随断点收放）、`.page-stack`（页面区块纵向节奏），标题用 `PageHeader` 组件；布局 token（`--content-max` / `--gutter-x*` / `--page-y*` / `--stack-gap*`）都在 `tokens.css`。
+聊天组件、消息状态、图片处理和语音逻辑同时供员工端使用。修改共用代码后，除客户端回归外，还需执行 `node tools/check-staff-agent.mjs --browser` 与 `node tools/check-ops-agent.mjs --browser`；员工接入说明见 [工作人员端维护说明](../staff/README.md)。
+
 客户端 `lg` 断点为 **960px**，检查手机布局和浏览器“桌面版网站”，不要按默认 1024px 推断。
 
 **新增银行接口**：同步修改 `contract.ts`、`types.ts`、`http.ts`、mock 实现和后端路由映射，

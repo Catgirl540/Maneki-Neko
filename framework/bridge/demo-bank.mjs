@@ -114,6 +114,10 @@ const ROUTES = [
   // —— 客服（固定话术那套；真 agent 走 /agent-api，不是这里）——
   ['GET', 'supportHistory', 'listSupportMessages', () => []],
   ['POST', 'supportChat', 'sendSupportMessage', (id, b) => [b.text]],
+  ['POST', 'supportTickets', 'requestHumanSupport', (id, b) => [b]],
+  ['GET', 'supportTickets', 'listSupportTickets', (id, b, q) => [Number(q.get('page') ?? 1)]],
+  ['GET', 'supportTicket', 'getSupportTicket', id => [id]],
+  ['POST', 'supportTicketMessages', 'replySupportTicket', (id, b) => [id, b]],
 
   // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
   ['POST', 'exchangeQuote', 'quoteExchange', (id, b) => [b]],

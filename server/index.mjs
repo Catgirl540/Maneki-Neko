@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { createCustomerSupportApi } from './support-api.mjs'
 import { createCustomerAuth } from './customer-auth.mjs'
 import { createOperations } from './operations.mjs'
 import { mkdirSync } from 'node:fs'
@@ -18,6 +19,7 @@ const database = openBankDatabase(databaseFile, legacyStateFile)
 const auth = createCustomerAuth(database.db)
 // 先建 staff 表：阈值读取走 staff_settings，必须在任何 getTransferReviewCents 之前存在。
 ensureStaffSchema(database.db)
+const customerSupport = createCustomerSupportApi({ db: database.db, auth })
 const operations = createOperations({ db: database.db, root, databaseFile, backupDir: process.env.BANK_BACKUP_DIR })
 // 大额转账延迟到账阈值（清单 §9.1）：默认 ¥500,000 = 50000000 分。
 // 2026-10-12 起是**运行时配置**：存 staff_settings，员工端随时改，这里每笔现读。
@@ -78,6 +80,7 @@ const server = createServer(async (req, res) => {
     return
   }
   try {
+    if (await customerSupport.handle(req, res, url)) return
     if (await staffApi.handle(req, res, url)) return
     if (url.pathname === '/api/agent/transfer/requirements' && req.method === 'GET') {
       const value = await bank.transferRequirements(req)

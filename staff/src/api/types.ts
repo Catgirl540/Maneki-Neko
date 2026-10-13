@@ -112,7 +112,7 @@ export interface Approval {
 
 export interface AuditLog {
   id: string
-  actor_type: 'staff' | 'agent'
+  actor_type: 'staff' | 'agent' | 'customer'
   actor_id: string | null
   action: string
   target_type: string | null

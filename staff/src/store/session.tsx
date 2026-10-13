@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { api, type StaffUser } from '@/api'
+import { STAFF_AUTH_EXPIRED_EVENT } from '@/api/agent'
 import { SessionContext, useSession } from './session-context'
 
 /**
@@ -13,6 +14,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   // 刷新后内存 token 没了，静默回登录页即可，不用报错
   useEffect(() => {
     api.me().then(setUser).catch(() => setUser(null))
+  }, [])
+
+  useEffect(() => {
+    const expired = () => setUser(null)
+    window.addEventListener(STAFF_AUTH_EXPIRED_EVENT, expired)
+    return () => window.removeEventListener(STAFF_AUTH_EXPIRED_EVENT, expired)
   }, [])
 
   const login = useCallback(async (name: string, password: string) => {

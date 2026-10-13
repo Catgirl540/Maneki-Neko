@@ -28,7 +28,7 @@
  * @module app/lib/speechCache
  */
 
-import { preview, voiceLog } from '@/lib/voiceLog'
+import { preview, voiceLog } from './voiceLog'
 
 /** 一次流式合成的结果（缓存对外给的形状）。 */
 export interface CachedSpeech {

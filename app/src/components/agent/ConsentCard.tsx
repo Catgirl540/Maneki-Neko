@@ -14,12 +14,12 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/Button'
-import { PinInput } from '@/components/ui/PinInput'
-import { AlertIcon, CheckIcon, LockIcon } from '@/components/ui/icons'
-import { cn } from '@/lib/cn'
-import type { PendingConsent } from '@/lib/useAgentChat'
-import type { VerificationMethod } from '@/api/agent'
+import { Button } from '../ui/Button'
+import { PinInput } from '../ui/PinInput'
+import { AlertIcon, CheckIcon, LockIcon } from '../ui/icons'
+import { cn } from '../../lib/cn'
+import type { PendingConsent } from '../../lib/useAgentChat'
+import type { VerificationMethod } from '../../api/agent'
 
 /** 验证方式的中文说法。 */
 const METHOD_LABELS: Record<VerificationMethod, string> = {
@@ -71,7 +71,7 @@ export function ConsentCard({
     // ring-pulse：外面那圈金边响两下就停。这张卡是全站最需要"看一眼"的东西
     //（它对应运行时里已经挂住的那次工具调用），但它要的是被看到，不是被盯着，
     // 所以脉冲**不是**无限循环。
-    <div className="pop-in ring-pulse rounded-card border border-gold bg-gold-wash/50 p-5">
+    <div data-consent-card role="region" aria-label="操作确认" className="pop-in ring-pulse rounded-card border border-gold bg-gold-wash/50 p-5">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-chip bg-gold text-ink">
           <LockIcon size={16} />

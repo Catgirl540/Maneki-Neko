@@ -3,13 +3,13 @@ id: "kb-assistant"
 title: "助手能力与对话"
 navigation: "助手"
 routes: ["/support"]
-keywords: ["助手", "图片", "语音", "历史记录"]
-sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs"]
+keywords: ["助手", "图片", "语音", "历史记录", "人工客服", "转人工", "工单", "投诉"]
+sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "server/support-api.mjs", "app/src/components/support/HumanSupport.tsx", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs"]
 ---
 
 ## 助手能办理什么？哪些功能暂不支持？ {#capabilities}
 
-助手支持查余额、最近流水、交易详情、境内及香港银行转账、FPS、跨币种转账、查询收款人与银行代码、撤回可撤回的在途转账、理财产品查询、申购和赎回，临时查看卡号或安全码、查询及申请换发银行卡、锁卡解锁、设置卡限额与支付开关、启停已有自动扣款、月度消费及现金流查询。暂不能导出账单、注册及理财开户、风险测评、修改密码手机号。未支持的业务请去对应网页入口，不得声称已代办。
+助手支持查余额、最近流水、交易详情、境内及香港银行转账、FPS、跨币种转账、查询收款人与银行代码、撤回可撤回的在途转账、理财产品查询、申购和赎回，临时查看卡号或安全码、查询及申请换发银行卡、锁卡解锁、设置卡限额与支付开关、启停已有自动扣款、月度消费及现金流查询。支持按用户请求提交人工工单、查询工单及人工回复、补充留言；提交需确认。暂不能导出账单、注册及理财开户、风险测评、修改密码手机号。未支持的业务请去对应网页入口，不得声称已代办。
 
 ## 助手转账要怎么确认？支付密码填在哪里？ {#confirmation}
 
@@ -34,3 +34,11 @@ sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/s
 ## 没有资料或查询失败时怎么办？ {#unavailable}
 
 知识库仅解释现有网页操作与通用规则，不包含个人实时余额、实际费用、汇率、净值、额度与交易状态。相关查询失败时应明确无法确认并引导对应页面核对；没有匹配知识时应说明未找到依据，不编造网点、客服电话、收费或完成结果。
+
+## 怎么转人工？助手可以帮我联系人工客服吗？ {#human-support}
+
+在“助手”点击“转人工”，填写问题后提交；也可以告诉助手具体问题并要求转人工，核对确认卡后提交。提交的是人工服务工单，不代表已即时接通客服，不承诺固定受理时间。手动提交可选择附上最近对话文字，不包含图片；助手办理只发送确认卡中的问题摘要。不要填写密码、验证码或 CVV。
+
+## 人工客服回复在哪里看？怎么补充问题？ {#human-replies}
+
+在“助手 → 人工工单”查看本人已提交工单、处理状态和客服回复，并补充留言；助手也能在确认后查询或补充。页面打开时定时更新，关闭页面后不保证即时通知。等待受理、处理中、待你补充、已暂停和已解决分别按实际状态显示；已解决工单不能继续留言，仍需帮助时重新提交转人工请求。人工留言不会自动执行转账等银行操作。
