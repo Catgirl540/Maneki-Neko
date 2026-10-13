@@ -1,5 +1,7 @@
 # 规划中接口（尚未实现）
 
+2026-10-13：#7/#9 的本地修复、新增登记/审计契约与验证说明见 [本地 issue 修改说明](./local-issue-fixes.md)。周期任务与真实第三方业务仍需按下述流程验收。
+
 路径树中标注「后续规划」的域，当前**未**在 `contract.ts` / 后端落地。
 实现时按 `types.ts → contract.ts → http.ts → mock → demo-bank.mjs` 顺序新增，并同步本目录。
 

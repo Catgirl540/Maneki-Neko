@@ -12,7 +12,7 @@ const root = resolve(import.meta.dirname, '..')
 const tmp = await mkdtemp(join(tmpdir(), 'luckycat-agent-'))
 const socket = createServer(); await new Promise(r => socket.listen(0, '127.0.0.1', r)); const port = socket.address().port; await new Promise(r => socket.close(r))
 const base = `http://127.0.0.1:${port}`
-const child = spawn(process.execPath, ['server/index.mjs'], { cwd: root, env: { ...process.env, BANK_PORT: String(port), BANK_DB_FILE: join(tmp, 'bank.sqlite'), BANK_STATE_FILE: join(tmp, 'legacy.json') }, stdio: ['ignore', 'pipe', 'pipe'] })
+const child = spawn(process.execPath, ['server/index.mjs'], { cwd: root, env: { ...process.env, BANK_TRANSFER_REVIEW_CENTS: '500000', BANK_TRANSFER_HOLD_SECONDS: '300', BANK_PORT: String(port), BANK_DB_FILE: join(tmp, 'bank.sqlite'), BANK_STATE_FILE: join(tmp, 'legacy.json') }, stdio: ['ignore', 'pipe', 'pipe'] })
 let log = ''; child.stdout.on('data', x => log += x); child.stderr.on('data', x => log += x)
 const sessions = new Map(); const events = []
 const agent = createBankAgent({ baseUrl: base, sessions, publish: (_, e) => events.push(e) })
@@ -29,6 +29,16 @@ const run = async (tool, args, password, sessionId = 'a') => { const p = await p
 try {
   for (let n = 0; n < 100; n++) { if (child.exitCode !== null) throw new Error(log); try { if ((await fetch(base + '/health')).ok) break } catch {} await new Promise(r => setTimeout(r, 100)) }
   const a = await login('13800138000'); const b = await login('13600136000')
+  const securityA = await call('/api/security/overview', a.token)
+  const securityB = await call('/api/security/overview', b.token)
+  assert(securityA.sessionAuditSupported)
+  assert.equal(securityA.devices.filter(d => d.current && d.active).length, 1)
+  assert.equal(securityB.devices.filter(d => d.current && d.active).length, 1)
+  assert.notEqual(securityA.devices[0].id, securityB.devices[0].id)
+  await assert.rejects(call('/api/auth/login', null, { phone: a.user.phone, password: 'wrong', smsCode: '000000' }))
+  assert((await call('/api/security/overview', a.token)).logs.some(l => l.action === '登录失败'))
+  assert(!(await call('/api/security/overview', b.token)).logs.some(l => l.action === '登录失败'))
+  console.log('PASS HTTP登录审计与设备会话真实持久化，失败登录和客户隔离')
   sessions.set('a', { ownerId: a.user.id, bankToken: a.token }); sessions.set('b', { ownerId: b.user.id, bankToken: b.token })
   await assert.rejects(agent.authenticate(), e => e.status === 401)
   await assert.rejects(agent.owned(sessions.get('a'), { user: b.user, token: b.token }), e => e.status === 404)

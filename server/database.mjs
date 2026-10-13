@@ -121,6 +121,8 @@ export function openBankDatabase(path, legacyStateFile) {
     db.exec('ALTER TABLE bank_transactions ADD COLUMN pending_reason TEXT')
   }
 
+  if (!db.prepare('PRAGMA table_info(virtual_cards)').all().some(c => c.name === 'extensions_json')) db.exec("ALTER TABLE virtual_cards ADD COLUMN extensions_json TEXT NOT NULL DEFAULT '{}'")
+  const updateCardExtensions = db.prepare('UPDATE virtual_cards SET extensions_json = ? WHERE owner_id = ? AND id = ?')
   const getValue = db.prepare('SELECT value_json FROM app_storage WHERE key = ?')
   const putValue = db.prepare(`
     INSERT INTO app_storage(key, value_json) VALUES (?, ?)
@@ -191,6 +193,8 @@ export function openBankDatabase(path, legacyStateFile) {
         card.issuingFee ?? null,
       )
       const secret = profile.cardSecrets?.[card.id]
+      const { paymentEnabled, channelLimits, merchantLimits } = card
+      updateCardExtensions.run(JSON.stringify({ paymentEnabled, channelLimits, merchantLimits }), owner, card.id)
       if (card.status === 'replaced') deleteSecret.run(owner, card.id)
       else if (secret) putSecret.run(owner, card.id, secret.pan, secret.cvv)
     }
@@ -236,6 +240,7 @@ export function openBankDatabase(path, legacyStateFile) {
     const owner = profile?.user?.id
     if (!owner) return profile
     profile.cards = cardsForOwner.all(owner).map((card) => ({
+      ...JSON.parse(card.extensions_json ?? '{}'),
       id: card.id,
       accountId: card.account_id,
       productName: card.product_name,

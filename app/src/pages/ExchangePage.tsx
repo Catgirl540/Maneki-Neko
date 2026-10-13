@@ -145,6 +145,7 @@ export function ExchangePage() {
       }
       const res = await api.submitExchange({
         ...snapshot.request,
+        quoteId: snapshot.quote.quoteId,
         paymentPassword: password,
       })
       setResult(res)

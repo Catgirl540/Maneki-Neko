@@ -101,12 +101,12 @@ import {
   CARD_PAYMENT_METHOD,
   DEFAULT_PAY_PASSWORD,
   CARD_PRODUCTS,
-  USER_FPS_ID,
+  emptyCustomerDomains,
+  lookupFpsRegistration,
   cardPan,
   RISK_QUESTIONS,
   WEALTH_PRODUCTS,
   toleranceFromScore,
-  FPS_REGISTRY,
   FX_QUOTE_TTL,
   FX_SPREAD,
   findBank,
@@ -263,8 +263,10 @@ function withDerivedHoldings(db: ReturnType<typeof loadDb>): WealthHolding[] {
  */
 function withDerivedRisk(db: ReturnType<typeof loadDb>): RiskAssessment {
   const raw = db.riskAssessment
-  if (!raw.done) return { ...raw, expired: true }
-  return { ...raw, expired: Date.now() > new Date(raw.expiresAt).getTime() }
+  if (!raw.done) return { done: false, level: null, score: null, assessedAt: '', expiresAt: '', expired: false, status: 'unassessed', eligible: false }
+  const expiry = Date.parse(raw.expiresAt)
+  const expired = !Number.isFinite(expiry) || Date.now() >= expiry
+  return { ...raw, expired, status: expired ? 'expired' : 'valid', eligible: !expired }
 }
 
 function productByCode(code: string): WealthProduct {
@@ -355,13 +357,14 @@ function pushTransaction(
   tx: Omit<Transaction, 'id'>,
   detail: Omit<TransactionDetail, 'referenceNo' | 'balanceBefore' | 'balanceAfter'>,
   save = true,
+  identity?: Pick<TransferResult, 'transactionId' | 'referenceNo'>,
 ): TransactionRecord {
   const db = loadDb()
-  const id = nextId('txn')
+  const id = identity?.transactionId ?? nextId('txn')
   const created: TransactionRecord = {
     ...tx,
     id,
-    detail: { ...detail, referenceNo: makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
+    detail: { ...detail, referenceNo: identity?.referenceNo ?? makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
   }
   db.transactions.unshift(created)
   if (save) persist()
@@ -373,12 +376,13 @@ function pushTransaction(
  * 注意不能接收 findAccount() 的返回值 —— 那是 withDerived 生成的副本，
  * 改副本只会让接口响应里余额变了、库里没变，刷新后金额又跳回去。
  */
-function applyBalance(accountId: string, delta: Cents): void {
+function applyBalance(accountId: string, delta: Cents, save = true): void {
   const row = loadDb().accounts.find((a) => a.id === accountId)
-  if (!row) return
+  if (!row) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
+  if (!Number.isSafeInteger(delta) || !Number.isSafeInteger(row.balance + delta) || !Number.isSafeInteger(row.available + delta) || row.balance + delta < 0 || row.available + delta < 0) throw new ApiError('余额变动无效', 400, 'INVALID_AMOUNT')
   row.balance += delta
   row.available += delta
-  persist()
+  if (save) persist()
 }
 
 /* ---------------------------------------------------------------- 智能客服 */
@@ -568,12 +572,15 @@ export function createMockApi(options?: {
   holdWindowMs?: number
   acceptedQuote?: boolean
   settleImmediately?: boolean
+  /** 内部结算沿用已受理指令的编号；不从 HTTP 请求读取。 */
+  settlementIdentity?: Pick<TransferResult, 'transactionId' | 'referenceNo'>
 }): BankApi {
   const thresholdSource = options?.reviewThreshold
   const readThreshold = (): Cents | undefined =>
     typeof thresholdSource === 'function' ? thresholdSource() : thresholdSource
   const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000
   const settleImmediately = options?.settleImmediately === true
+  const exchangeQuotes = new Map<string, { ownerId: string; accountId: string; amount: number; toCurrency: Currency; rate: number; expiresAt: number }>()
   return {
     async login(phone, password, smsCode) {
       await delay()
@@ -659,6 +666,7 @@ export function createMockApi(options?: {
       }
       next.passwordDigest = await passwordDigest(req.password)
       next.accounts = [account]
+      Object.assign(next, emptyCustomerDomains(next.user, account.id))
       next.transactions = []
       // 新用户不能继承当前档案的演示收款人或支付密码状态。
       next.payees = []
@@ -874,15 +882,17 @@ export function createMockApi(options?: {
     async getReceivingInfo(): Promise<ReceivingInfo> {
       await delay(140)
       const db = loadDb()
-      const account = db.accounts[0]
+      const account = db.accounts.find(a => db.fpsRegistrations.some(r => r.accountId === a.id)) ?? db.accounts[0]
       return {
         holder: db.user.name,
         accountNo: account.accountNo,
         accountLabel: account.label,
-        bankName: '招财猫银行',
-        bankRegion: 'CN',
-        fpsMobile: db.user.phone,
-        fpsId: USER_FPS_ID,
+        bankName: db.fpsRegistrations.some(r => r.accountId === account.id) ? '招财猫银行（香港模拟通道）' : '招财猫银行',
+        bankRegion: db.fpsRegistrations.some(r => r.accountId === account.id) ? 'HK' : 'CN',
+        fpsRegistered: db.fpsRegistrations.some(r => r.accountId === account.id),
+        fpsMobile: db.fpsRegistrations.find(r => r.accountId === account.id && r.idType === 'mobile')?.id ?? '',
+        fpsId: db.fpsRegistrations.find(r => r.accountId === account.id && r.idType === 'fpsid')?.id ?? '',
+        fpsRegistrations: db.fpsRegistrations.filter(r => r.accountId === account.id),
       }
     },
 
@@ -903,7 +913,7 @@ export function createMockApi(options?: {
     async resolveFps(idType, fpsId): Promise<FpsResolveResult> {
       await delay(620)
       const value = (fpsId ?? '').replace(/\s/g, '')
-      const hit = FPS_REGISTRY.find((r) => r.idType === idType && r.id === value)
+      const hit = lookupFpsRegistration(idType, value)
 
       if (!hit) {
         return {
@@ -921,6 +931,20 @@ export function createMockApi(options?: {
         bankRegion: 'HK',
         bankCount: hit.bankCount,
       }
+    },
+
+    async registerFps(req): Promise<ReceivingInfo> {
+      const db = loadDb()
+      const account = findAccount(req.accountId)
+      if (req.region !== 'HK' || req.currency !== 'HKD' || account.currency !== 'HKD') throw new ApiError('模拟登记仅支持香港通道的港币账户', 400, 'FPS_UNSUPPORTED')
+      if (!['mobile', 'email', 'fpsid'].includes(req.idType) || typeof req.id !== 'string' || validateFpsValue(req.idType, req.id)) throw new ApiError('FPS 标识格式无效', 400, 'INVALID_FPS_ID')
+      const id = req.id.replace(/\s/g, '').toLowerCase()
+      if ((req.idType === 'mobile' && !/^[4-9]\d{7}$/.test(id)) || (req.idType === 'fpsid' && !/^\d{7}$/.test(id))) throw new ApiError('FPS 标识格式无效', 400, 'INVALID_FPS_ID')
+      if (lookupFpsRegistration(req.idType, id)) throw new ApiError('该标识已登记', 409, 'FPS_DUPLICATE')
+      verifyPayPassword(req.paymentPassword)
+      db.fpsRegistrations.push({ idType: req.idType, id, accountId: account.id, region: 'HK', currency: 'HKD', registeredAt: new Date().toISOString() })
+      persist()
+      return this.getReceivingInfo()
     },
 
     async quoteTransfer(req: TransferQuoteRequest): Promise<TransferQuote> {
@@ -1022,6 +1046,9 @@ export function createMockApi(options?: {
         } else {
           const err = validateFpsValue(method, req.fpsId ?? '')
           if (err) throw new ApiError(err, 400, 'INVALID_FPS_ID')
+          const registered = lookupFpsRegistration(method, req.fpsId ?? '')
+          if (!registered) throw new ApiError('该标识未登记转数快', 400, 'FPS_NOT_REGISTERED')
+          if (registered.bankCode !== req.payeeBankCode || req.payeeBankRegion !== 'HK' || hideMiddle(registered.name) !== req.payeeName) throw new ApiError('FPS 登记资料不匹配', 409, 'RECIPIENT_CHANGED')
           identifier = maskFpsValue(method, req.fpsId ?? '')
         }
       } else {
@@ -1040,7 +1067,7 @@ export function createMockApi(options?: {
       const quotedFx = buildFxQuote(account.currency, req.payeeCurrency ?? account.currency, req.amount)
       assertTransferConfirmation(req, fee, account.currency, quotedFx, options?.acceptedQuote)
       if (req.confirmedRecipient) {
-        const registered = FPS_REGISTRY.find(r => r.idType === req.fpsMethod && r.id === req.fpsId)
+        const registered = req.fpsMethod && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod, req.fpsId ?? '') : undefined
         if (!isFps || req.fpsMethod === 'account' || !registered ||
             hideMiddle(registered.name) !== req.confirmedRecipient.name || registered.bankCode !== req.confirmedRecipient.bankCode ||
             req.confirmedRecipient.bankRegion !== 'HK' || req.payeeName !== req.confirmedRecipient.name ||
@@ -1068,14 +1095,12 @@ export function createMockApi(options?: {
       const reviewThreshold = readThreshold()
       if (reviewThreshold !== undefined && total >= reviewThreshold) {
         const holdUntil = new Date(Date.now() + holdWindowMs).toISOString()
-        // 只冻结本金（不含手续费）：手续费在真正执行时才计。
-        // 冻结的是 available 不是 balance —— 客户端「可用余额」立刻减少、
-        // 「余额」不变，正是真实银行在途/预授权的表现。
+        // 本金与手续费一起预留，避免手续费在窗口内被花掉；到账时才实际扣款。
         const senderRow = loadDb().accounts.find((row) => row.id === req.fromAccountId)
         if (senderRow) {
-          senderRow.available -= req.amount
+          senderRow.available -= total
           if (senderRow.available < 0) {
-            senderRow.available += req.amount
+            senderRow.available += total
             throw new ApiError('账户可用余额不足', 400, 'INSUFFICIENT_FUNDS')
           }
         }
@@ -1107,6 +1132,7 @@ export function createMockApi(options?: {
           false,
         )
         held.heldRequest = { ...req }
+        held.heldFrozenAmount = total
         persist()
         return {
           transactionId: held.id,
@@ -1119,14 +1145,13 @@ export function createMockApi(options?: {
           settlementStatus: 'pending',
           pendingReason: 'inflight',
           holdUntil,
+          ...(quotedFx ? { fx: quotedFx } : {}),
         }
       }
 
       // 同一客户名下的本行账户划转：两边余额和台账在一次持久化中更新。
-      const recipient = !isFps && req.scope === 'domestic' &&
-        req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN'
-        ? findRecipientByNumber(req.payeeAccountNo ?? '')
-        : null
+      const fpsRecipient = isFps && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod ?? 'mobile', req.fpsId ?? '') : undefined
+      const recipient = fpsRecipient?.accountNo ? findRecipientByNumber(fpsRecipient.accountNo) : !isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN' ? findRecipientByNumber(req.payeeAccountNo ?? '') : null
       if (!isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' &&
           req.payeeBankRegion === 'CN' && !recipient) {
         throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND')
@@ -1138,7 +1163,7 @@ export function createMockApi(options?: {
         if (recipient.account.currency !== account.currency) {
           throw new ApiError('本行账户币种不一致', 400, 'CURRENCY_MISMATCH')
         }
-        if (req.payeeName.trim() !== recipient.profile.user.name) {
+        if (req.payeeName.trim() !== (isFps ? hideMiddle(recipient.profile.user.name) : recipient.profile.user.name)) {
           throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH')
         }
         const sender = db.accounts.find((row) => row.id === account.id)!
@@ -1160,7 +1185,7 @@ export function createMockApi(options?: {
           counterpartyAccountNo: maskBankAccount(req.payeeAccountNo ?? ''),
           counterpartyBank: '招财猫银行', location: '招财猫银行 App',
           remark: req.memo.trim() || undefined,
-        }, false)
+        }, false, options?.settlementIdentity)
         const incomingId = nextId('txn')
         recipient.profile.transactions.unshift({
           id: incomingId,
@@ -1249,6 +1274,8 @@ export function createMockApi(options?: {
               }
             : {}),
         },
+        true,
+        options?.settlementIdentity,
       )
 
       if (fee > 0) {
@@ -1315,7 +1342,7 @@ export function createMockApi(options?: {
 
       return {
         transactionId: tx.id,
-        referenceNo: `LC${Date.now().toString().slice(-10)}`,
+        referenceNo: tx.detail.referenceNo,
         amount: req.amount,
         fee,
         channel: req.channel,
@@ -1582,7 +1609,7 @@ export function createMockApi(options?: {
 
       // —— 风险测评：开投资户的前置，不是可选项 ——
       const risk = withDerivedRisk(db)
-      if (!risk.done || risk.expired) {
+      if (!risk.done || risk.expired || risk.level === null) {
         throw new ApiError('请先完成风险承受能力评估', 403, 'RISK_ASSESSMENT_REQUIRED')
       }
 
@@ -1674,6 +1701,7 @@ export function createMockApi(options?: {
         )
       }
 
+      if (!Number.isSafeInteger(req.amount) || req.amount <= 0) throw new ApiError('金额必须是正的安全整数分', 400, 'INVALID_AMOUNT')
       if (req.amount < product.minAmount) {
         throw new ApiError(
           `起购金额 ¥${(product.minAmount / 100).toLocaleString('zh-CN')}`,
@@ -2047,14 +2075,18 @@ export function createMockApi(options?: {
       if (req.toCurrency === from.currency) {
         throw new ApiError('目标币种与扣账币种相同', 400, 'SAME_CURRENCY')
       }
-      if (req.amount <= 0) throw new ApiError('金额必须大于 0', 400, 'INVALID_AMOUNT')
+      if (!Number.isSafeInteger(req.amount) || req.amount <= 0 || !['CNY', 'HKD', 'USD'].includes(req.toCurrency)) throw new ApiError('金额或币种无效', 400, 'INVALID_AMOUNT')
       if (req.amount > from.available) {
         throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
       }
       const rate = fxRate(from.currency, req.toCurrency)
       const toAmount = Math.round(req.amount * rate)
       const target = db.accounts.find((a) => a.currency === req.toCurrency)
+      for (const [id, quote] of exchangeQuotes) if (quote.expiresAt <= Date.now()) exchangeQuotes.delete(id)
+      const quoteId = crypto.randomUUID()
+      exchangeQuotes.set(quoteId, { ownerId: db.user.id, accountId: from.id, amount: req.amount, toCurrency: req.toCurrency, rate, expiresAt: Date.now() + FX_QUOTE_TTL * 1000 })
       return {
+        quoteId,
         fx: {
           fromCurrency: from.currency,
           toCurrency: req.toCurrency,
@@ -2075,13 +2107,15 @@ export function createMockApi(options?: {
       const db = loadDb()
       const from = db.accounts.find((a) => a.id === req.fromAccountId)
       if (!from) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
-      if (req.paymentPassword !== db.payPassword) {
-        throw new ApiError('支付密码不正确', 400, 'BAD_PAY_PASSWORD')
-      }
+      verifyPayPassword(req.paymentPassword)
+      const confirmed = exchangeQuotes.get(req.quoteId)
+      if (!confirmed || confirmed.expiresAt <= Date.now()) throw new ApiError('报价已过期，请重新询价', 409, 'QUOTE_EXPIRED')
+      if (confirmed.ownerId !== db.user.id || confirmed.accountId !== from.id || confirmed.amount !== req.amount || confirmed.toCurrency !== req.toCurrency || confirmed.rate !== fxRate(from.currency, req.toCurrency)) throw new ApiError('报价已变化，请重新确认', 409, 'QUOTE_CHANGED')
+      exchangeQuotes.delete(req.quoteId)
       if (req.toCurrency === from.currency) {
         throw new ApiError('目标币种与扣账币种相同', 400, 'SAME_CURRENCY')
       }
-      if (req.amount <= 0) throw new ApiError('金额必须大于 0', 400, 'INVALID_AMOUNT')
+      if (!Number.isSafeInteger(req.amount) || req.amount <= 0) throw new ApiError('金额必须是正的安全整数分', 400, 'INVALID_AMOUNT')
       if (req.amount > from.available) {
         throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
       }
@@ -2093,7 +2127,7 @@ export function createMockApi(options?: {
           id: nextId('acc'),
           kind: 'savings',
           label: `${req.toCurrency} 储蓄账户`,
-          accountNo: `8820000000112200${String(db.accounts.length).padStart(3, '0')}`,
+          accountNo: `882000${String(Math.floor(1e12 + Math.random() * 9e12))}`,
           currency: req.toCurrency,
           balance: 0,
           available: 0,
@@ -2102,8 +2136,8 @@ export function createMockApi(options?: {
         }
         db.accounts.push(target)
       }
-      applyBalance(from.id, -req.amount)
-      applyBalance(target.id, toAmount)
+      applyBalance(from.id, -req.amount, false)
+      applyBalance(target.id, toAmount, false)
       const now = new Date().toISOString()
       const crossLabel = `币种划转 · ${from.currency}→${req.toCurrency}`
       const outflow = pushTransaction(
@@ -2130,6 +2164,7 @@ export function createMockApi(options?: {
           exchangeRate: rate,
           exchangeRateNote: `1 ${from.currency} = ${req.toCurrency} ${formatRate(rate)}`,
         },
+        false,
       )
       pushTransaction(
         {
@@ -2155,7 +2190,9 @@ export function createMockApi(options?: {
           exchangeRate: rate,
           exchangeRateNote: `1 ${from.currency} = ${req.toCurrency} ${formatRate(rate)}`,
         },
+        false,
       )
+      persist()
       return {
         transactionId: outflow.id,
         referenceNo: outflow.detail.referenceNo,
@@ -2415,6 +2452,7 @@ export function createMockApi(options?: {
       const db = loadDb()
       const product = db.credit.products.find((p) => p.id === req.productId)
       if (!product) throw new ApiError('借款产品不存在', 404, 'PRODUCT_NOT_FOUND')
+      if (!Number.isSafeInteger(req.amount) || req.amount <= 0) throw new ApiError('金额必须是正的安全整数分', 400, 'INVALID_AMOUNT')
       if (req.amount < product.minAmount || req.amount > product.maxAmount) {
         throw new ApiError(
           `借款金额需在 ¥${formatAmount(product.minAmount)}–¥${formatAmount(product.maxAmount)} 之间`,
@@ -2422,13 +2460,13 @@ export function createMockApi(options?: {
           'INVALID_AMOUNT',
         )
       }
-      if (req.termMonths < product.minTermMonths || req.termMonths > product.maxTermMonths) {
+      if (!Number.isSafeInteger(req.termMonths) || req.termMonths < product.minTermMonths || req.termMonths > product.maxTermMonths) {
         throw new ApiError('借款期限超出可选范围', 400, 'INVALID_TERM')
       }
       if (req.amount > db.credit.availableCredit) {
         throw new ApiError('超过可用授信额度', 400, 'OVER_CREDIT_LIMIT')
       }
-      if (req.paymentPassword) verifyPayPassword(req.paymentPassword)
+      verifyPayPassword(req.paymentPassword)
       const totalInterest = Math.round((req.amount * product.apr * req.termMonths) / 12)
       const monthlyPayment = Math.round((req.amount + totalInterest) / req.termMonths)
       const account = findAccount(req.accountId)
@@ -2446,9 +2484,9 @@ export function createMockApi(options?: {
         status: 'active',
         createdAt: new Date().toISOString(),
       }
+      applyBalance(account.id, req.amount, false)
       db.credit.loans.unshift(loan)
       db.credit.availableCredit -= req.amount
-      applyBalance(account.id, req.amount)
       pushTransaction(
         {
           accountId: account.id,
@@ -2470,6 +2508,7 @@ export function createMockApi(options?: {
           location: '招财猫银行 App',
           remark: `借款放款 · ${req.purpose}`,
         },
+        false,
       )
       persist()
       return loan
@@ -2480,11 +2519,13 @@ export function createMockApi(options?: {
       const db = loadDb()
       const tx = db.transactions.find((t) => t.id === transactionId)
       if (!tx) throw new ApiError('交易不存在', 404, 'NOT_FOUND')
-      if (tx.direction !== 'out') throw new ApiError('只有支出交易可以办理分期', 400, 'INVALID_TARGET')
-      if (req.periods < 3 || req.periods > 24) throw new ApiError('分期期数需在 3–24 期之间', 400, 'INVALID_PERIODS')
+      if (tx.status !== 'success' || !['shopping', 'dining', 'transport', 'housing', 'subscription'].includes(tx.category) || !['card', 'quickpay'].includes(tx.detail.channel) || tx.direction !== 'out') throw new ApiError('只有支出交易可以办理分期', 400, 'INVALID_TARGET')
+      if (db.credit.installments.some(p => p.transactionId === transactionId)) throw new ApiError('该交易已办理分期', 409, 'ALREADY_INSTALLED')
+      if (!Number.isSafeInteger(req.periods) || req.periods < 3 || req.periods > 24) throw new ApiError('分期期数需在 3–24 期之间', 400, 'INVALID_PERIODS')
       const feeRate = 0.024
       const plan: InstallmentPlan = {
         id: nextId('inst'),
+        transactionId,
         title: tx.memo || tx.counterparty,
         merchant: tx.counterparty,
         totalAmount: tx.amount,
@@ -2532,13 +2573,20 @@ export function createMockApi(options?: {
     async createInvestPlan(req): Promise<InvestPlan> {
       await delay(760)
       const db = loadDb()
+      const account = findAccount(req.accountId)
+      const risk = withDerivedRisk(db)
+      if (!db.wealthAccount.opened || !risk.done || risk.expired || risk.level === null) throw new ApiError('请先开立理财账户并完成有效风险测评', 400, 'WEALTH_PREREQUISITE')
+      if (!['每周', '每两周', '每月'].includes(req.cycle)) throw new ApiError('请选择每月 1–28 日的周期', 400, 'INVALID_CYCLE')
       const product = db.investments.products.find((p) => p.code === req.productCode)
       if (!product) throw new ApiError('投资产品不存在', 404, 'PRODUCT_NOT_FOUND')
+      if (!Number.isSafeInteger(req.amount) || req.amount <= 0) throw new ApiError('金额必须是正的安全整数分', 400, 'INVALID_AMOUNT')
       if (req.amount < product.minAmount) {
         throw new ApiError(`该产品起投金额为 ¥${formatAmount(product.minAmount)}`, 400, 'INVALID_AMOUNT')
       }
-      if (req.paymentPassword) verifyPayPassword(req.paymentPassword)
+      verifyPayPassword(req.paymentPassword)
+      if ((product.risk === 'medium' && !['C3','C4','C5'].includes(risk.level)) || (product.risk === 'high' && !['C4','C5'].includes(risk.level))) throw new ApiError('风险承受能力不匹配', 400, 'RISK_MISMATCH')
       const plan: InvestPlan = {
+        accountId: account.id,
         id: nextId('ip'),
         productCode: product.code,
         productName: product.name,
@@ -2566,7 +2614,7 @@ export function createMockApi(options?: {
       const product = db.insurance.products.find((p) => p.id === req.productId)
       if (!product) throw new ApiError('保险产品不存在', 404, 'PRODUCT_NOT_FOUND')
       if (!req.insuredName.trim()) throw new ApiError('请填写被保人姓名', 400, 'VALIDATION_ERROR')
-      if (req.paymentPassword) verifyPayPassword(req.paymentPassword)
+      verifyPayPassword(req.paymentPassword)
       const account = settlementAccount(db)
       if (product.premiumPerYear > account.available) {
         throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
@@ -2585,7 +2633,7 @@ export function createMockApi(options?: {
       }
       db.insurance.policies.unshift(policy)
       db.insurance.totalCoverage += product.coverage
-      applyBalance(account.id, -product.premiumPerYear)
+      applyBalance(account.id, -product.premiumPerYear, false)
       pushTransaction(
         {
           accountId: account.id,
@@ -2607,6 +2655,7 @@ export function createMockApi(options?: {
           location: '招财猫银行 App',
           remark: `保费 · ${product.name}`,
         },
+        false,
       )
       persist()
       return policy
@@ -2636,11 +2685,11 @@ export interface HeldTransferInfo {
   request: TransferRequest
 }
 
-/** 解除可用余额冻结（冻结的是本金，见 submitTransfer 挂起分支的注释） */
+/** 解冻本次实际预留金额；兼容只冻结本金的旧指令。 */
 function releaseFreeze(db: ReturnType<typeof loadDb>, rec: TransactionRecord) {
   const row = db.accounts.find((a) => a.id === rec.accountId)
   if (row) {
-    row.available += rec.amount
+    row.available += rec.heldFrozenAmount ?? rec.amount
     if (row.available > row.balance + 0) {
       // 只在账目被外部改坏时才会发生；宁可夹住也不要出现可用>余额的脏数据
       row.available = row.balance
@@ -2697,6 +2746,7 @@ export async function settleHeldTransfer(
     delete rec.pendingReason
     delete rec.holdUntil
     delete rec.heldRequest
+    delete rec.heldFrozenAmount
     rec.memo = outcome === 'recalled'
       ? `${rec.memo} · 已撤销${reason ? `：${reason}` : ''}`
       : `${rec.memo} · 已拦截${reason ? `：${reason}` : ''}`
@@ -2712,13 +2762,18 @@ export async function settleHeldTransfer(
   try {
     // 不带 reviewThreshold = 纯执行，不会再进窗口。
     // settleImmediately = 到账就落定，不再挂「模拟清算」——这笔已经等过窗口了。
-    return await createMockApi({ acceptedQuote: true, settleImmediately: true }).submitTransfer(held)
+    return await createMockApi({
+      acceptedQuote: true,
+      settleImmediately: true,
+      settlementIdentity: { transactionId: rec.id, referenceNo: rec.detail.referenceNo },
+    }).submitTransfer(held)
   } catch (error) {
     // 极少数情况（如收款账户校验在窗口内失效）才走到这里：留痕，别静默吞掉
     rec.status = 'failed'
     delete rec.pendingReason
     delete rec.holdUntil
     delete rec.heldRequest
+    delete rec.heldFrozenAmount
     rec.memo = `${rec.memo} · 到账失败：${error instanceof Error ? error.message : '未知错误'}`
     db.transactions.unshift(rec)
     persist()

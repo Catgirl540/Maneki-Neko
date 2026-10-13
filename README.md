@@ -417,6 +417,7 @@ POST   /api/accounts/:id/deposit    转入
 GET    /api/banks                   收款银行列表（真实数据：内地行别代码 + 香港 HKICL 代码）
 POST   /api/cards/bin               卡 BIN 查询：卡号前 6 位 → 发卡行（见 §11 卡 BIN 识别）
 GET    /api/receiving               我的收款信息（户名 / 账户 / 转数快标识，见 §12.5）
+POST   /api/receiving/fps           模拟 FPS 登记（港币账户归属、标识唯一性、支付密码）
 GET    /api/payees                  常用收款人
 POST   /api/fps/resolve            转数快标识解析（返回登记姓名与收款银行）
 POST   /api/transfers/recipient     核对本行收款账户与户名

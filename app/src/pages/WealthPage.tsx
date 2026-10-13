@@ -186,7 +186,7 @@ export function WealthPage() {
           <CardHeader
             title="风险承受能力"
             action={
-              assessable ? (
+              assessable && risk?.level ? (
                 <ToleranceBadge level={risk!.level} />
               ) : (
                 <Tag tone="coral">{risk?.expired && risk.done ? '已过期' : '未评估'}</Tag>
@@ -401,7 +401,7 @@ export function WealthPage() {
           result={assessed}
           onClose={() => {
             setAssessed(null)
-            toast.show(`风险承受能力已更新为 ${assessed.level}（${TOLERANCE_LABEL[assessed.level]}）`, 'success')
+            toast.show(`风险承受能力已更新为 ${assessed.level}（${assessed.level ? TOLERANCE_LABEL[assessed.level] : '未评估'}）`, 'success')
           }}
         />
       )}

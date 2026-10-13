@@ -272,7 +272,7 @@ export function WealthAccountOpeningModal({
           </Button>
           <p className="text-[12px] leading-relaxed text-ink-mute">
             当前风险等级 <span className="font-medium text-ink">{currentRisk.level}</span>（
-            {TOLERANCE_LABEL[currentRisk.level]}）
+            {currentRisk.level ? TOLERANCE_LABEL[currentRisk.level] : '未评估'}）
           </p>
         </div>
       )}
@@ -367,7 +367,7 @@ export function WealthAccountOpeningModal({
             <div className="flex justify-between">
               <dt className="text-ink-soft">风险等级</dt>
               <dd className="text-ink">
-                {currentRisk.level} · {TOLERANCE_LABEL[currentRisk.level]}
+                {currentRisk.level} · {currentRisk.level ? TOLERANCE_LABEL[currentRisk.level] : '未评估'}
               </dd>
             </div>
           </dl>

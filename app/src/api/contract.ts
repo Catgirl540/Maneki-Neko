@@ -113,6 +113,7 @@ export const routes = {
   banks: () => '/api/banks',
   /** 本行的收款信息：别人转钱给你时照着填 */
   receiving: () => '/api/receiving',
+  fpsRegistration: () => '/api/receiving/fps',
   /** 卡 BIN 查询：输卡号前缀反查发卡行（银联/网联侧的接口） */
   cardBin: () => '/api/cards/bin',
   payees: () => '/api/payees',
@@ -237,6 +238,7 @@ export interface BankApi {
   listBanks(): Promise<Bank[]>
   /** 我的收款信息（户名 / 账户 / 转数快标识），由后端按账户与登记拼好 */
   getReceivingInfo(): Promise<ReceivingInfo>
+  registerFps(req: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; paymentPassword: string }): Promise<ReceivingInfo>
   /** 卡 BIN 查询：卡号前缀 → 发卡行。前缀不认识时明确回 unsupported，界面据此提示 */
   resolveCardBin(req: CardBinQuery): Promise<CardBinResolution>
   listPayees(): Promise<Payee[]>

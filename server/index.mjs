@@ -1,5 +1,5 @@
 import { createServer } from 'node:http'
-import { randomBytes } from 'node:crypto'
+import { createCustomerAuth } from './customer-auth.mjs'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,53 +12,9 @@ const host = process.env.BANK_HOST ?? '127.0.0.1'
 const port = Number(process.env.BANK_PORT ?? 8080)
 const databaseFile = process.env.BANK_DB_FILE ?? join(root, 'server/data/bank.sqlite')
 const legacyStateFile = process.env.BANK_STATE_FILE ?? join(root, 'server/data/demo-bank-state.json')
-const sessionLifetimeMs = 12 * 60 * 60 * 1000
-const sessions = new Map()
-
-function unauthorized() {
-  return Object.assign(new Error('请重新登录'), { status: 401, code: 'UNAUTHORIZED' })
-}
-
-function session(req) {
-  const match = /^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization ?? '')
-  if (!match) return null
-  const entry = sessions.get(match[1])
-  if (!entry) return null
-  if (entry.expiresAt <= Date.now()) {
-    sessions.delete(match[1])
-    return null
-  }
-  return entry
-}
-
-const auth = {
-  resolve(req, routeName) {
-    if (routeName === 'login' || routeName === 'register') return null
-    const current = session(req)
-    // 注册和登录前必须能获取验证码、完成演示核身。
-    // 已登录时则保持当前用户档案，供换绑手机号等流程使用。
-    if (routeName === 'smsCode' || routeName === 'verifyIdentity') return current?.phone ?? null
-    if (!current) throw unauthorized()
-    return current.phone
-  },
-  issue(user) {
-    const token = randomBytes(32).toString('base64url')
-    sessions.set(token, { phone: user.phone, expiresAt: Date.now() + sessionLifetimeMs })
-    return token
-  },
-  logout(req) {
-    const match = /^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization ?? '')
-    if (match) sessions.delete(match[1])
-  },
-  phoneChanged(previous, next) {
-    for (const entry of sessions.values()) {
-      if (entry.phone === previous) entry.phone = next
-    }
-  },
-}
-
 mkdirSync(dirname(databaseFile), { recursive: true })
 const database = openBankDatabase(databaseFile, legacyStateFile)
+const auth = createCustomerAuth(database.db)
 // 先建 staff 表：阈值读取走 staff_settings，必须在任何 getTransferReviewCents 之前存在。
 ensureStaffSchema(database.db)
 // 大额转账延迟到账阈值（清单 §9.1）：默认 ¥500,000 = 50000000 分。

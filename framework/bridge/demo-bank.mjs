@@ -70,6 +70,7 @@ const ROUTES = [
   // —— 转账 ——
   ['GET', 'banks', 'listBanks', () => []],
   ['GET', 'receiving', 'getReceivingInfo', () => []],
+  ['POST', 'fpsRegistration', 'registerFps', (id, b) => [b]],
   ['POST', 'cardBin', 'resolveCardBin', (id, b) => [b]],
   ['GET', 'payees', 'listPayees', () => []],
   ['POST', 'fpsResolve', 'resolveFps', (id, b) => [b.idType, b.fpsId]],
@@ -530,7 +531,14 @@ export async function createDemoBank({
           if (auth) await auth.logout(req)
           return undefined
         }
-        const value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+        let value
+        try {
+          value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+        } catch (error) {
+          if (auth?.failure && entry.bankMethod === 'login') await auth.failure(typeof body.phone === 'string' && /^\d{11}$/.test(body.phone) ? findProfileByPhone(body.phone)?.user : null)
+          throw error
+        }
+        if (auth?.security && entry.bankMethod === 'getSecurityOverview') return auth.security(req, value)
         // 大额转账进在途窗口：通知 server 侧建记录（清单 §9.4，只在真后端演示开启）
         if (entry.bankMethod === 'submitTransfer' && value?.pendingReason === 'inflight' && onTransferHeld) {
           await onTransferHeld({
@@ -552,7 +560,7 @@ export async function createDemoBank({
           await auth.phoneChanged(phone, value.phone)
         }
         if (auth && (entry.bankMethod === 'login' || entry.bankMethod === 'register')) {
-          return { ...value, token: await auth.issue(value.user) }
+          return { ...value, token: await auth.issue(value.user, req) }
         }
         return value
       })

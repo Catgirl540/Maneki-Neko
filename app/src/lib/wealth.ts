@@ -70,18 +70,21 @@ export const TOLERANCE_LEVELS: RiskTolerance[] = ['C1', 'C2', 'C3', 'C4', 'C5']
  * 反过来「误导投资者购买与其风险承受能力不相匹配的理财产品」是明令禁止的行为
  * （《销售管理暂行办法》第二十五条第一项），所以这里是硬拦截，不是提示。
  */
-export function maxRiskFor(tolerance: RiskTolerance): RiskLevel {
+export function maxRiskFor(tolerance: RiskTolerance | null): RiskLevel {
+  if (tolerance === null) return 'R1'
   const index = TOLERANCE_LEVELS.indexOf(tolerance)
   return RISK_LEVELS[Math.max(0, Math.min(RISK_LEVELS.length - 1, index))]
 }
 
 /** 该承受能力能否购买该风险等级的产品 */
-export function canBuyRisk(tolerance: RiskTolerance, risk: RiskLevel): boolean {
+export function canBuyRisk(tolerance: RiskTolerance | null, risk: RiskLevel): boolean {
+  if (tolerance === null) return false
   return RISK_LEVELS.indexOf(risk) <= RISK_LEVELS.indexOf(maxRiskFor(tolerance))
 }
 
 /** 不匹配时的说明文案 */
-export function suitabilityMessage(tolerance: RiskTolerance, risk: RiskLevel): string {
+export function suitabilityMessage(tolerance: RiskTolerance | null, risk: RiskLevel): string {
+  if (tolerance === null) return '请先完成风险测评'
   return `该产品风险等级为 ${risk}（${RISK_PLAIN_LABEL[risk]}），超过你的风险承受能力 ${tolerance}（${TOLERANCE_LABEL[tolerance]}）。按投资者适当性管理要求，无法购买。如风险承受能力已变化，请重新测评。`
 }
 

@@ -17,7 +17,7 @@ export interface ReceivingRow {
  * 界面上改了个标题、复制出去的还是旧文案，而且没人会发现。
  */
 export function receivingRows(info: ReceivingInfo): ReceivingRow[] {
-  return [
+  const rows: ReceivingRow[] = [
     { key: 'holder', label: '收款户名', value: info.holder },
     {
       key: 'accountNo',
@@ -30,8 +30,13 @@ export function receivingRows(info: ReceivingInfo): ReceivingRow[] {
       label: '收款银行',
       value: `${info.bankName}（${BANK_REGION_LABEL[info.bankRegion]}）`,
     },
-    // 当前接口未提供 FPS 登记归属/状态，不能将默认标识作为有效收款资料分享。
   ]
+  if (info.fpsRegistered === true) {
+    for (const registration of info.fpsRegistrations ?? []) {
+      rows.push({ key: `fps-${registration.idType}-${registration.id}`, label: registration.idType === 'mobile' ? 'FPS 手机号' : registration.idType === 'email' ? 'FPS 电邮' : 'FPS ID', value: registration.id, hint: '香港港币模拟登记账户' })
+    }
+  }
+  return rows
 }
 
 /** 「复制全部」用的整段文本：对方直接粘进备注就能核对 */
