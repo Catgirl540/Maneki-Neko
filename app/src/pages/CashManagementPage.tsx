@@ -9,8 +9,9 @@ import { Row, Toggle } from '@/components/ui/Toggle'
 import { Tag } from '@/components/ui/Segmented'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { AlertIcon, BoltIcon, PigIcon, WalletIcon } from '@/components/ui/icons'
-import { formatAmount, toCents } from '@/lib/format'
+import { formatAmount } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
+import { parseAmountInput } from '@/lib/amountInput'
 import { useToast } from '@/components/ui/toast-context'
 
 export function CashManagementPage() {
@@ -32,7 +33,7 @@ export function CashManagementPage() {
     try {
       const updated = await api.updateCashSweep({ enabled: next })
       cash.setData(updated)
-      toast.show(next ? '已开启自动转入活钱' : '已关闭自动转入', 'success')
+      toast.show('自动转入设置已保存', 'success')
     } catch (err) {
       toast.show(err instanceof ApiError ? err.message : '操作失败，请稍后重试', 'error')
     } finally {
@@ -41,8 +42,8 @@ export function CashManagementPage() {
   }
 
   async function saveThreshold() {
-    const cents = toCents(threshold)
-    if (cents < 0) return setFormError('保留金额不能为负')
+    const cents = parseAmountInput(threshold)
+    if (cents === null) return setFormError('请输入有效金额，最多两位小数')
     setBusy(true)
     setFormError(null)
     try {
@@ -76,19 +77,19 @@ export function CashManagementPage() {
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '70ms' }}>
-        <CardHeader title="自动转入活钱" action={<Tag tone={data.sweepEnabled ? 'gold' : 'neutral'}>{data.sweepEnabled ? '已开启' : '未开启'}</Tag>} />
+        <CardHeader title="自动转入设置" action={<Tag tone={data.sweepEnabled ? 'gold' : 'neutral'}>{data.sweepEnabled ? '已开启' : '未开启'}</Tag>} />
         <div className="mt-3 divide-y divide-line">
           <Row
             icon={<BoltIcon size={18} />}
             title="活期自动转入"
-            description={`活期账户超过保留额的部分自动转入货币基金，随时可取`}
+            description={`自动执行暂未开放`}
             right={<Toggle label="自动转入活钱" checked={data.sweepEnabled} disabled={busy} onChange={(next) => void toggleSweep(next)} />}
           />
           <Row
             icon={<WalletIcon size={18} />}
             title="活期保留金额"
-            description={`保留 ¥${formatAmount(data.sweepThreshold)} 在活期，超出部分用于理财`}
-            right={<Button size="sm" onClick={() => openEdit(data)}>修改</Button>}
+            description={`已设置保留 ¥${formatAmount(data.sweepThreshold)}`}
+            right={<Button size="sm" disabled={busy} onClick={() => openEdit(data)}>修改</Button>}
           />
         </div>
       </Card>
@@ -116,7 +117,7 @@ export function CashManagementPage() {
         open={editOpen}
         onClose={() => { if (!busy) setEditOpen(false) }}
         title="修改活期保留金额"
-        description="超过保留额的活期余额将自动转入货币基金。"
+        description="保存自动转入规则的保留金额。"
         closeDisabled={busy}
         footer={
           <>
@@ -126,9 +127,8 @@ export function CashManagementPage() {
         }
       >
         <div className="flex flex-col gap-4">
-          <Field label="活期保留金额" inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value.replace(/[^\d.]/g, ''))} trailing={<span className="text-[13px] text-ink-mute">元</span>} />
+          <Field label="活期保留金额" inputMode="decimal" value={threshold} onChange={(e) => setThreshold(e.target.value)} trailing={<span className="text-[13px] text-ink-mute">元</span>} />
           {formError && <p role="alert" className="flex items-start gap-2 text-[13px] text-coral"><AlertIcon size={16} className="mt-0.5 shrink-0" />{formError}</p>}
-          <p className="text-[12px] text-ink-mute">保留金额过低可能导致活期账户余额不足，影响自动扣款与转账。</p>
         </div>
       </Modal>
     </div>
