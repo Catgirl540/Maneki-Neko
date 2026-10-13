@@ -123,6 +123,7 @@ async function main() {
     check(Array.isArray(prof.cards) && prof.cards.length > 0, '档案含卡片', `${prof.cards?.length} 张`)
     check(Array.isArray(prof.recentTransactions), '档案含流水', `${prof.recentTransactions?.length} 条`)
     check(!prof.cards?.some((c) => c.pan || c.cvv), '卡片无明文卡号/安全码', JSON.stringify(prof.cards).slice(0, 120))
+    check(Array.isArray(prof.autoDebits) && prof.autoDebits.length > 0, '档案含代扣协议', `${prof.autoDebits?.length} 条`)
 
     // —— 代客锁卡：挑一张 active 卡锁掉，再读档案确认真落库 ——
     const activeCard = prof.cards.find((c) => c.status === 'active')
@@ -146,6 +147,30 @@ async function main() {
     )
     const lockedCard = profAfter.cards?.find((c) => c.id === activeCard.id)
     check(lockedCard?.status === 'locked', '锁卡真落库（档案回读已是 locked）', JSON.stringify(lockedCard))
+
+    // —— 代客关闭代扣：挑一条 enabled 代扣关掉，再读档案确认 ——
+    const enabledAd = prof.autoDebits?.find((a) => a.enabled)
+    check(Boolean(enabledAd), '有可关的代扣协议', JSON.stringify(enabledAd))
+    const adRes = await j(
+      await fetch(`${staffBase}/customers/u_0001/actions/patchAutodebit`, {
+        method: 'POST',
+        headers: authW,
+        body: JSON.stringify({
+          ticketId: 'T_demo0001',
+          verificationMethod: 'simulated',
+          verificationResult: 'passed',
+          reason: '客户要求取消自动扣款',
+          autoDebitId: enabledAd?.id,
+          enabled: false,
+        }),
+      }),
+    )
+    check(adRes.ok === true, '关闭代扣成功', JSON.stringify(adRes))
+    const profAfterAd = await j(
+      await fetch(`${staffBase}/customers/u_0001/profile?reason=${encodeURIComponent('复核关闭代扣')}`, { headers: authW }),
+    )
+    const disabledAd = profAfterAd.autoDebits?.find((a) => a.id === enabledAd?.id)
+    check(disabledAd?.enabled === false, '代扣真关闭（档案回读 enabled=false）', JSON.stringify(disabledAd))
 
     // —— 高影响动作（解锁）未核验 → 拦 ——
     const unlockReject = await j(

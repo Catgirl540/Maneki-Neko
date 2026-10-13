@@ -109,6 +109,7 @@ const demoProfile: CustomerProfile = {
   phoneMasked: '138****8000',
   accounts: [{ id: 'acc_1', label: '储蓄账户', balance: 1250000 }],
   cards: [{ id: 'card_1', last4: '6688', status: 'active' }],
+  autoDebits: [{ id: 'ad_1', merchant: '网易云音乐', amount: 2500, cycle: '每月 8 日', enabled: true }],
   recentTransactions: [
     // 挂起中的审核单：靠 pendingReason 区分「审核中」与「处理中」（§9.2）
     {
