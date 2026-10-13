@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+import { summarizeRiskAssessment } from '../framework/bridge/wealth-risk.mjs'
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const tmp = await mkdtemp(join(tmpdir(), 'agent-runtime-'))
 const free = async () => { const s=net();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p }
@@ -50,6 +51,8 @@ try{
  assert.equal((await api(agent,`/agent-api/consent/${challenge.challengeId}`,b.token,{decision:'approve'})).status,404)
  assert.equal((await api(agent,`/agent-api/consent/${challenge.challengeId}`,a.token,{decision:'approve'})).status,200)
  const result=await wait(e=>e.type==='tool-result');assert.equal(result.isError,false);assert(result.text.includes('http'))
+ const riskResult = JSON.parse(result.text).risk
+ assert.deepEqual(riskResult, summarizeRiskAssessment((await api(bank, '/api/wealth/overview', a.token)).data.risk))
  await wait(e=>e.type==='status'&&e.status==='idle');console.log('PASS 实际 Harness → 确认卡 → HTTP 工具 → SSE 返回账户数据')
  // Separate session to keep fixture provider deterministic.
  const transferSession=(await api(agent,'/agent-api/sessions',a.token,{})).data.sessionId

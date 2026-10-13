@@ -535,11 +535,11 @@ export function useVoice(
     mounted.current = true
     void (async () => {
       if (typeof navigator === 'undefined' || navigator.mediaDevices === undefined) {
-        setUnavailableReason('这个浏览器不支持录音（需要 https 或 localhost）。')
+        setUnavailableReason(window.isSecureContext ? '当前浏览器不支持录音。' : '当前连接不支持录音，请使用 HTTPS 地址。')
         return
       }
       if (typeof MediaRecorder === 'undefined') {
-        setUnavailableReason('这个浏览器不支持 MediaRecorder。')
+        setUnavailableReason('当前浏览器不支持录音。')
         return
       }
       const capability = await probeVoiceAvailable()

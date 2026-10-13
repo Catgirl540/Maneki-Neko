@@ -358,7 +358,11 @@ export function WealthPage() {
                 </span>
 
                 <span className="mt-3 flex items-center gap-2 text-[12px]">
-                  {purchasable ? (
+                  {!risk?.done ? (
+                    <span className="text-ink-mute">需先完成风险测评</span>
+                  ) : risk.expired ? (
+                    <span className="text-gold-deep">测评已过期，需重新评估</span>
+                  ) : purchasable ? (
                     <span className="text-gold-deep">查看详情</span>
                   ) : (
                     <span className="text-coral">超出你的风险承受能力</span>

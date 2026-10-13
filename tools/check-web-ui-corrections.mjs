@@ -42,7 +42,7 @@ try {
     switch (url.pathname) {
       case '/api/auth/profile': return respond(user)
       case '/api/accounts': return accountFailure ? respond({ message: '账户暂不可用' }, 503) : respond(accounts)
-      case '/api/security/overview': return respond({ logs: [], devices: [], rules: [], score: 80, level: '基础防护' })
+      case '/api/security/overview': return respond({ logs: [], devices: [], riskRules: [], score: 80, level: '基础防护' })
       case '/api/exchange/quote': {
         quotes.push(body)
         const fx = { fromCurrency: accounts.find(a => a.id === body.fromAccountId).currency, toCurrency: body.toCurrency,

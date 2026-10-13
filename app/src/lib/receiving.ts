@@ -6,7 +6,7 @@ export interface ReceivingRow {
   key: string
   label: string
   value: string
-  /** 这一行是给哪种转账方式用的 —— 转数快和银行账户转账填的不是同一个东西 */
+  /** 账户类型等必要补充信息。 */
   hint?: string
 }
 
@@ -30,8 +30,7 @@ export function receivingRows(info: ReceivingInfo): ReceivingRow[] {
       label: '收款银行',
       value: `${info.bankName}（${BANK_REGION_LABEL[info.bankRegion]}）`,
     },
-    { key: 'fpsMobile', label: '转数快手机号', value: info.fpsMobile },
-    { key: 'fpsId', label: 'FPS ID', value: info.fpsId },
+    // 当前接口未提供 FPS 登记归属/状态，不能将默认标识作为有效收款资料分享。
   ]
 }
 
