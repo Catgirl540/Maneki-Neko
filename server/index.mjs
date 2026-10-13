@@ -83,6 +83,10 @@ staffApi = createStaffApi({
   bankHooks: {
     getHeldTransfer: (args) => bank.getHeldTransfer(args),
     settleHeldTransfer: (args) => bank.settleHeldTransfer(args),
+    // 乙模块（客户查询 / 代客办理）：复用同一份 mock 业务规则，不复制校验
+    searchCustomers: (keyword) => bank.searchCustomers(keyword),
+    getCustomerProfile: (customerId) => bank.getCustomerProfile(customerId),
+    performCustomerAction: (args) => bank.performCustomerAction(args),
   },
 })
 

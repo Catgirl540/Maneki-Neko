@@ -724,6 +724,89 @@ export function createStaffApi({ db, bankHooks = {} }) {
         return true
       }
 
+      // —— 客户查询（清单 §2 P0，乙模块） ——
+      if (path === '/staff-api/customers' && req.method === 'GET') {
+        const who = auth.resolve(req, {})
+        if (typeof bankHooks.searchCustomers !== 'function') {
+          throw staffError(503, '银行侧未接入，无法查询客户', 'BANK_HOOK_MISSING')
+        }
+        const keyword = url.searchParams.get('keyword') ?? ''
+        const results = await bankHooks.searchCustomers(keyword)
+        writeAudit({ actorId: who.actorId, action: 'customer.search', reason: keyword || null })
+        json(res, 200, results)
+        return true
+      }
+
+      const customerProfileMatch = /^\/staff-api\/customers\/([^/]+)\/profile$/.exec(path)
+      if (customerProfileMatch && req.method === 'GET') {
+        const who = auth.resolve(req, {})
+        const reason = (url.searchParams.get('reason') ?? '').trim()
+        if (!reason) {
+          throw staffError(400, '查看完整资料必须填写事由', 'REASON_REQUIRED')
+        }
+        if (typeof bankHooks.getCustomerProfile !== 'function') {
+          throw staffError(503, '银行侧未接入，无法读取客户档案', 'BANK_HOOK_MISSING')
+        }
+        const profile = await bankHooks.getCustomerProfile(customerProfileMatch[1])
+        // 敏感资料访问与返回在同一接口内原子落账（清单 §2 / 不变量 6、10），
+        // 前端不再另发补记请求，杜绝「资料已返回但补记失败」的无记录查看。
+        db.prepare('INSERT INTO customer_access_logs (id, staff_id, customer_id, reason, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(newId('cal'), who.actorId, customerProfileMatch[1], reason, now())
+        writeAudit({ actorId: who.actorId, action: 'customer.profile.view', targetType: 'customer', targetId: customerProfileMatch[1], reason })
+        json(res, 200, profile)
+        return true
+      }
+
+      // —— 代客办理（清单 §2 P1，乙模块）：白名单动作 + 客户核验 ——
+      const customerActionMatch = /^\/staff-api\/customers\/([^/]+)\/actions\/([^/]+)$/.exec(path)
+      if (customerActionMatch && req.method === 'POST') {
+        const who = auth.resolve(req, {})
+        const [, customerId, action] = customerActionMatch
+        const WHITELIST = ['lockCard', 'unlockCard', 'updateCardSettings', 'patchAutodebit']
+        if (!WHITELIST.includes(action)) {
+          throw staffError(400, `不支持的代客动作：${action}`, 'BAD_ACTION')
+        }
+        const body = await readBody(req)
+        requireFields(body, ['ticketId', 'verificationMethod', 'verificationResult', 'reason'])
+        if (body.verificationResult === 'failed') {
+          throw staffError(403, '客户核验未通过，不能办理', 'VERIFICATION_FAILED')
+        }
+        // 高影响动作（解锁卡 / 调限额）必须核验通过，未核验禁止（清单 §2 P1）
+        const HIGH_IMPACT = ['unlockCard', 'updateCardSettings']
+        if (HIGH_IMPACT.includes(action) && body.verificationResult !== 'passed') {
+          throw staffError(403, '该动作影响资金安全，必须完成客户核验', 'VERIFICATION_REQUIRED')
+        }
+        // 组装 payload 交给 bankHooks（复用客户端业务规则，不复制校验逻辑）
+        let payload
+        if (action === 'updateCardSettings') {
+          requireFields(body, ['cardId', 'dailyLimit'])
+          const DAILY_LIMIT_OPTIONS = [200_000, 500_000, 1_000_000, 5_000_000]
+          if (!DAILY_LIMIT_OPTIONS.includes(body.dailyLimit)) {
+            throw staffError(400, '请选择有效的单日限额档位', 'INVALID_DAILY_LIMIT')
+          }
+          payload = { cardId: body.cardId, patch: { dailyLimit: body.dailyLimit } }
+        } else if (action === 'patchAutodebit') {
+          requireFields(body, ['autoDebitId', 'enabled'])
+          payload = { autoDebitId: body.autoDebitId, enabled: Boolean(body.enabled) }
+        } else {
+          requireFields(body, ['cardId'])
+          payload = { cardId: body.cardId }
+        }
+        if (typeof bankHooks.performCustomerAction !== 'function') {
+          throw staffError(503, '银行侧未接入，无法代客办理', 'BANK_HOOK_MISSING')
+        }
+        await bankHooks.performCustomerAction({ customerId, action, payload })
+        writeAudit({
+          actorId: who.actorId,
+          action: `customer.action.${action}`,
+          targetType: 'customer',
+          targetId: customerId,
+          reason: `工单 ${body.ticketId} · ${body.reason}`,
+        })
+        json(res, 200, { ok: true })
+        return true
+      }
+
       // —— 审计（清单 §2 P2，只给主管看） ——
       if (path === '/staff-api/audit-logs' && req.method === 'GET') {
         const who = auth.resolve(req, { roles: ['supervisor'] })
