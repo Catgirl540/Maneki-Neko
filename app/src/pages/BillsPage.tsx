@@ -5,9 +5,10 @@ import type { BankCard, Transaction, TransactionCategory } from '@/api/types'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
+import { PageHeader } from '@/components/layout/PageHeader'
 import { TransactionRow } from '@/components/ui/TransactionRow'
 import { EmptyState, Segmented, Skeleton } from '@/components/ui/Segmented'
-import { DownloadIcon } from '@/components/ui/icons'
+import { CloseIcon, DownloadIcon, SearchIcon } from '@/components/ui/icons'
 import { CATEGORY_LABEL } from '@/lib/categories'
 import { toCsv } from '@/lib/csv'
 import { downloadText } from '@/lib/download'
@@ -28,6 +29,7 @@ export function BillsPage() {
   const [exporting, setExporting] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const keyword = searchParams.get('q') ?? ''
+  const [keywordDraft, setKeywordDraft] = useState(keyword)
   const selectedAccountId = searchParams.get('account') ?? ''
   const candidate = searchParams.get('category') ?? 'all'
   const category = (FILTERS.some(item => item.value === candidate) ? candidate : 'all') as TransactionCategory | 'all'
@@ -71,14 +73,16 @@ export function BillsPage() {
   if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
   if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
   return (
-    <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">账单</h1>
-        <div className="flex flex-wrap gap-2 text-[13px] text-ink-soft">
-          <Link to="/analysis/statistics" className="inline-flex min-h-11 items-center rounded-chip border border-line bg-surface px-4 hover:border-gold">收支分析</Link>
-          <Link to="/analysis/autodebits" className="inline-flex min-h-11 items-center rounded-chip border border-line bg-surface px-4 hover:border-gold">自动扣款</Link>
-        </div>
-      </header>
+    <div className="page-stack">
+      <PageHeader
+        title="账单"
+        actions={
+          <>
+            <Link to="/analysis/statistics" className="inline-flex min-h-11 items-center rounded-chip border border-line bg-surface px-4 hover:border-gold">收支分析</Link>
+            <Link to="/analysis/autodebits" className="inline-flex min-h-11 items-center rounded-chip border border-line bg-surface px-4 hover:border-gold">自动扣款</Link>
+          </>
+        }
+      />
       {/* 流水 */}
       <Card className="float-up" style={{ animationDelay: '180ms' }}>
         <CardHeader
@@ -118,7 +122,32 @@ export function BillsPage() {
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
           <Segmented value={category} options={FILTERS} onChange={setCategory} />
-          {keyword && <span className="text-[13px] text-ink-soft">搜索：{keyword}<button type="button" onClick={() => setKeyword('')} className="ml-3 text-gold-deep hover:underline">清除关键词</button></span>}
+          <form
+            role="search"
+            onSubmit={(e) => { e.preventDefault(); setKeyword(keywordDraft.trim()) }}
+            className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-chip border border-line bg-surface px-3 transition-colors focus-within:border-gold sm:max-w-[360px] sm:gap-3 sm:px-4"
+          >
+            <SearchIcon size={18} className="shrink-0 text-ink-mute" />
+            <input
+              type="search"
+              value={keywordDraft}
+              onChange={(e) => setKeywordDraft(e.target.value)}
+              placeholder="搜索交易"
+              aria-label="交易搜索"
+              className="h-full min-w-0 w-full bg-transparent text-[14px] text-ink outline-none placeholder:text-ink-mute"
+            />
+            {keywordDraft && (
+              <button
+                type="button"
+                onClick={() => { setKeywordDraft(''); setKeyword('') }}
+                aria-label="清除关键词"
+                className="grid size-6 shrink-0 place-items-center rounded-chip text-ink-mute transition-colors hover:bg-sunk hover:text-ink"
+              >
+                <CloseIcon size={16} />
+              </button>
+            )}
+            <button type="submit" className="sr-only">搜索</button>
+          </form>
         </div>
 
         <div className="mt-3 divide-y divide-line">
@@ -143,6 +172,7 @@ export function BillsPage() {
                 <Button
                   size="sm"
                   onClick={() => {
+                    setKeywordDraft('')
                     setSearchParams(previous => {
                       const next = new URLSearchParams(previous)
                       next.delete('category')

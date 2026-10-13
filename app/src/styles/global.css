@@ -123,6 +123,41 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 
+  /* 内容容器：宽度上限与左右留白全站一个来源，随断点收放。
+     应用区宽度见 tokens.css 的 --content-max，营销页用 --content-max-narrow。 */
+  .content-shell {
+    width: 100%;
+    margin-inline: auto;
+    max-width: var(--content-max);
+    padding-inline: var(--gutter-x);
+  }
+
+  .content-shell--narrow {
+    max-width: var(--content-max-narrow);
+  }
+
+  /* 页面纵向节奏：一个页面里的区块只共用这一个间距值，
+     不再出现"这里 gap-6、那里 gap-7"的细微错位。 */
+  .page-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--stack-gap);
+  }
+}
+
+@media (min-width: 640px) {
+  .content-shell {
+    padding-inline: var(--gutter-x-sm);
+  }
+  .page-stack {
+    gap: var(--stack-gap-lg);
+  }
+}
+
+@media (min-width: 960px) {
+  .content-shell {
+    padding-inline: var(--gutter-x-lg);
+  }
 }
 
 @media (max-width: 959px) {

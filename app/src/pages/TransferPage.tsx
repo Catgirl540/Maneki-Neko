@@ -608,7 +608,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
-    <div ref={content} className="flex flex-col gap-7">
+    <div ref={content} className="page-stack">
       {/* 步骤条 */}
       <ol className="float-up flex items-center gap-1 sm:gap-3">
         {STEPS.map((s, index) => {
