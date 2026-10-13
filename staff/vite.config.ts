@@ -18,6 +18,16 @@ export default defineConfig({
   server: {
     port: 5181,
     proxy: {
+      '/staff-ops-agent-api': {
+        target: process.env.VITE_OPS_AGENT_TARGET ?? 'http://127.0.0.1:8790',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/staff-ops-agent-api/, '/agent-api'),
+      },
+      '/staff-agent-api': {
+        target: process.env.VITE_STAFF_AGENT_TARGET ?? 'http://127.0.0.1:8789',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/staff-agent-api/, '/agent-api'),
+      },
       '/staff-api': {
         target: process.env.VITE_PROXY_TARGET ?? 'http://127.0.0.1:8080',
         changeOrigin: true,

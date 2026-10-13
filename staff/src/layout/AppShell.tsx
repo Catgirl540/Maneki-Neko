@@ -7,6 +7,8 @@ import { useSession } from '@/store/session-context'
  * 菜单按角色显隐——但记住这只是 UX，**后端每个接口都独立校验角色**（清单 §1）。
  */
 const NAV: Array<{ to: string; label: string; roles: StaffRole[] }> = [
+  { to: '/assistant', label: '工作人员助手', roles: ['csr', 'supervisor', 'ops'] },
+  { to: '/operations', label: '运维监控', roles: ['ops'] },
   { to: '/workbench', label: '工作台', roles: ['csr', 'supervisor'] },
   { to: '/tickets', label: '工单中心', roles: ['csr', 'supervisor'] },
   { to: '/approvals', label: '处置中心', roles: ['csr', 'supervisor'] },
@@ -50,7 +52,7 @@ export function AppShell() {
           <div className="text-sm text-[var(--color-ink-soft)]">
             {user?.name}
             <span className="ml-2 rounded-full bg-[var(--color-blue-wash)] px-2 py-0.5 text-xs text-[var(--color-blue-deep)]">
-              {user?.role === 'supervisor' ? '主管' : '客服专员'}
+              {user?.role === 'ops' ? '运维人员' : user?.role === 'supervisor' ? '主管' : '客服专员'}
             </span>
           </div>
           <button

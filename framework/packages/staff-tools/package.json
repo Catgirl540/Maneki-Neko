@@ -1,0 +1,10 @@
+{
+  "name": "@luckycat/dsh-staff-tools",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": { ".": "./src/index.mjs", "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json" },
+  "peerDependencies": { "@deepseek-ai/dsh-tools": "0.1.6-alpha.2", "@luckycat/dsh-consent": "0.0.0" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

@@ -1,0 +1,40 @@
+# Native tools/providers from the installed DSH base composition. No replacement shell implementation.
+- insert:
+    - id: fs-sandbox
+      name: '@deepseek-ai/dsh-fs-sandbox'
+    - id: fs-observation-policy
+      name: '@deepseek-ai/dsh-fs-observation-policy'
+    - id: tool-fs
+      name: '@deepseek-ai/dsh-tool-fs'
+    - id: tool-fs-search
+      name: '@deepseek-ai/dsh-tool-fs-search'
+      config:
+        sampleOverCapGlobResults: false
+    - id: attachment-local
+      name: '@deepseek-ai/dsh-attachment-local'
+    - id: ops-pwsh-sandbox
+      name: '@deepseek-ai/dsh-pwsh-sandbox'
+      disabled: !!js process.platform !== 'win32'
+    - id: ops-bash-sandbox
+      name: '@deepseek-ai/dsh-bash-sandbox'
+      disabled: !!js process.platform === 'win32'
+    - id: shell-env
+      name: '@deepseek-ai/dsh-shell-env'
+    - id: ops-tool-pwsh
+      name: '@deepseek-ai/dsh-tool-pwsh'
+      disabled: !!js process.platform !== 'win32'
+    - id: ops-tool-bash
+      name: '@deepseek-ai/dsh-tool-bash'
+      disabled: !!js process.platform === 'win32'
+    - id: ops-jobs
+      name: '@deepseek-ai/dsh-jobs-local'
+    - id: ops-tool-jobs
+      name: '@deepseek-ai/dsh-tool-jobs'
+    - id: web
+      name: '@deepseek-ai/dsh-web'
+    - id: web-fetch-http
+      name: '@deepseek-ai/dsh-web-fetch-http'
+    - id: tool-web
+      name: '@deepseek-ai/dsh-tool-web'
+    - id: ops-native
+      name: '@luckycat/dsh-ops-native'

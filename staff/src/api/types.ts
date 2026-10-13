@@ -1,13 +1,25 @@
 /* ==========================================================================
    工作人员端类型定义 —— 与 contract.ts 配套
-   角色枚举 csr/supervisor（不叫 agent，与 AI agent 撞名，2026-10-09 拍板）
+   角色枚举 csr/supervisor/ops（业务人员与运维权限独立）
    金额一律整数分（Cents），与客户端一致
    ========================================================================== */
 
 /** 金额单位：整数分（¥5,000 = 500000） */
 export type Cents = number
 
-export type StaffRole = 'csr' | 'supervisor'
+export type StaffRole = 'csr' | 'supervisor' | 'ops'
+
+export interface OperationsOverview {
+  checkedAt: string
+  startedAt: string
+  uptimeSeconds: number
+  services: { id: string; name: string; status: 'up' | 'down' | 'unknown'; detail: string; latencyMs: number | null }[]
+  version: { revision: string | null; localChanges: boolean | null; node: string; environment: string; telemetrySince: string }
+  database: { sizeBytes: number | null }
+  backups: { status: string; detail: string; items: { name: string; sizeBytes: number; createdAt: string; valid: boolean }[] }
+  events: { id: string; createdAt: string; level: string; service: string; kind: string; status: number | null; code: string }[]
+  errors24h: number
+}
 
 export interface StaffUser {
   id: string

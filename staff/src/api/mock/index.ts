@@ -158,16 +158,18 @@ export function createMockApi(): StaffApi {
 
   return {
     login(name, password) {
+      if (!['王小明', '李主管', '运维人员'].includes(name)) return Promise.reject(new ApiError('员工账号或密码错误', 401, 'BAD_CREDENTIALS'))
       if (password !== '123456') {
         return Promise.reject(new ApiError('员工账号或密码错误', 401, 'BAD_CREDENTIALS'))
       }
       const staff: StaffUser =
-        name === '李主管'
+        name === '运维人员' ? { id: 'staff_ops', name: '运维人员', role: 'ops' } : name === '李主管'
           ? { id: 'staff_li', name: '李主管', role: 'supervisor' }
           : { id: 'staff_wang', name: '王小明', role: 'csr' }
       session = staff
       return ok<StaffLoginResult>({ token: 'mock-token', staff })
     },
+    getOperationsOverview: () => Promise.reject(new ApiError('请连接银行后端查看真实运维状态', 503, 'OPERATIONS_UNAVAILABLE')),
     logout() {
       session = null
       return ok<void>(undefined)

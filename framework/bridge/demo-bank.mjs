@@ -714,7 +714,7 @@ export async function createDemoBank({
           name: profile.user.name,
           phoneMasked: maskPhone(profile.user.phone),
           accounts: profile.accounts.map((a) => ({ id: a.id, label: a.label, balance: a.balance })),
-          cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status })),
+          cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status, dailyLimit: c.dailyLimit, onlinePayment: c.onlinePayment, overseasPayment: c.overseasPayment })),
           autoDebits: (profile.autoDebits ?? []).map((a) => ({
             id: a.id,
             merchant: a.merchant,

@@ -48,6 +48,10 @@ npm run dev
 
 ## 4. 演示登录
 
+工作人员端运行：在 `staff/` 设置 `$env:VITE_USE_MOCK='false'` 后 `npm run dev`，打开 <http://127.0.0.1:5181>。
+运维账号 `运维人员 / 123456` 可查看服务、事件、备份与版本；说明见 [运维监控](docs/api/operations.md)。
+工作人员助手入口 `/assistant`，客服/主管使用 `framework` 中 `npm run start:staff`（8789），运维使用 `npm run start:ops`（8790）。运维原生 DSH 工具和 Clef Flash 风险确认的配置见 [工作人员 Agent](docs/api/staff-agent.md#运维原生-dsh-与-clef-flash)。
+
 - 主账号：`13800138000`；另一个演示账号：`13600136000`。
 - 登录密码：`123456`；支付密码：`888888`。
 - 点击「获取验证码」，验证码会显示在输入框下方，再填入登录。

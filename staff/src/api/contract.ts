@@ -1,6 +1,6 @@
 /* ==========================================================================
    StaffApi —— 工作人员端前端唯一依赖的接口面
-   版本：v1.2（2026-10-13 补 CustomerActionRequest 目标字段 + CustomerProfile.autoDebits，
+   版本：v1.3（2026-10-13 新增 ops 角色与只读运维总览；v1.2 补 CustomerActionRequest 目标字段 + CustomerProfile.autoDebits，
         响应乙交付记录 §4.1/§4.2 的契约缺口；v1.1 仅新增可选字段 Ticket.customerName）
    变更规则：改签名/字段/错误码 → 单独 commit 带 [contract] 前缀 + 版本号 +1 + 群里广播
    两套实现：createHttpApi / createMockApi，组件只 import { api }
@@ -57,6 +57,7 @@ export const routes = {
   auditLogs: () => '/staff-api/audit-logs',
 
   health: () => '/staff-api/health',
+  operations: () => '/staff-api/ops/overview',
 } as const
 
 export class ApiError extends Error {
@@ -140,6 +141,7 @@ export interface DecideRequest {
 }
 
 export interface StaffApi {
+  getOperationsOverview(): Promise<import('./types').OperationsOverview>
   login(name: string, password: string): Promise<StaffLoginResult>
   logout(): Promise<void>
   me(): Promise<StaffUser>

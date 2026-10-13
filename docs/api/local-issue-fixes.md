@@ -1,7 +1,8 @@
 # 本地 issue 修改说明（2026-10-13）
 
 最新主分支基线：`ae11a96`。本地分支：`codex/local-issue-fixes`。
-本分支包含按 issue 建议实现并通过本地回归的修改。未部署或操作线上客户数据。
+代码位置：`C:\AI banking\Maneki-Neko`；原 `Maneki-Neko-main` 和根目录旧 Git 状态保留。
+本次只做本地修改，未推送、部署或操作线上客户数据。
 
 ## 已纳入的队友更新
 

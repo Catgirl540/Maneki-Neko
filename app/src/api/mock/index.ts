@@ -865,7 +865,7 @@ export function createMockApi(options?: {
           remark: salary ? '本月薪资' : '从绑定卡转入',
         },
       )
-      return withDerived(account)
+      return findAccount(accountId)
     },
 
     async listBanks() {

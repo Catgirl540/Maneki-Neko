@@ -25,6 +25,7 @@ import { get, patch, post, put, setStaffToken } from './base'
 
 export function createHttpApi(): StaffApi {
   return {
+    getOperationsOverview: () => get(routes.operations()),
     login: async (name, password) => {
       const result = await post<StaffLoginResult>(routes.login(), { name, password })
       setStaffToken(result.token)

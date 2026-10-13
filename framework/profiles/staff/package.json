@@ -1,0 +1,7 @@
+{
+  "name": "dsh-profile-staff",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-sdk-minimal", "@luckycat/dsh-hardening", "@luckycat/dsh-consent", "@luckycat/dsh-ask", "@luckycat/dsh-staff-tools"] } }
+}
