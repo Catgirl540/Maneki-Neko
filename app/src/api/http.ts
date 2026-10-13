@@ -65,6 +65,9 @@ const post = <T,>(path: string, body?: unknown) =>
 const patch = <T,>(path: string, body?: unknown) =>
   request<T>(path, { method: 'PATCH', body: body === undefined ? undefined : JSON.stringify(body) })
 
+const del = <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'DELETE', body: body === undefined ? undefined : JSON.stringify(body) })
+
 /**
  * 真后端实现。后端就绪后只需设置 VITE_API_BASE_URL（或走 vite proxy），
  * 业务代码与 mock 实现完全一致。
@@ -84,6 +87,7 @@ export function createHttpApi(): BankApi {
       if (query.size) params.set('size', String(query.size))
       if (query.category && query.category !== 'all') params.set('category', query.category)
       if (query.keyword) params.set('keyword', query.keyword)
+      if (query.currency && query.currency !== 'all') params.set('currency', query.currency)
       const qs = params.toString()
       return request(routes.transactions(id) + (qs ? `?${qs}` : ''))
     },
@@ -146,6 +150,44 @@ export function createHttpApi(): BankApi {
 
     listSupportMessages: () => request(routes.supportHistory()),
     sendSupportMessage: (text) => post(routes.supportChat(), { text }),
+
+    // —— 账户域扩展 ——
+    quoteExchange: (req) => post(routes.exchangeQuote(), req),
+    submitExchange: (req) => post(routes.exchange(), req),
+    getSavingsOverview: () => request(routes.savingsOverview()),
+    createSavingsGoal: (req) => post(routes.savingsGoals(), req),
+    updateSavingsGoal: (id, req) => patch(routes.savingsGoal(id), req),
+    deleteSavingsGoal: (id) => del<void>(routes.savingsGoal(id)),
+    updateSavingsRoundup: (req) => patch(routes.savingsRoundup(), req),
+    createVirtualCard: (id, req) => post(routes.virtualCard(id), req),
+
+    // —— 我的域扩展 ——
+    getInvitations: () => request(routes.invitations()),
+    getMembership: () => request(routes.membership()),
+    subscribeMembership: (planId) => post(routes.membershipSubscribe(), { planId }),
+    cancelMembership: () => post(routes.membershipCancel()),
+    getIdentityStatus: () => request(routes.identityStatus()),
+    runIdentityOcr: () => post(routes.identityOcr()),
+    runIdentityLiveness: () => post(routes.identityLiveness()),
+
+    // —— 工资与备用金 ——
+    getSalaryPlan: () => request(routes.salaryPlan()),
+    updateSalary: (req) => patch(routes.salaryPlan(), req),
+    getOverdraft: () => request(routes.overdraft()),
+    activateOverdraft: (active) => post(routes.overdraftActivate(), { active }),
+
+    // —— 借款与分期 ——
+    getCreditOverview: () => request(routes.creditOverview()),
+    applyLoan: (req) => post(routes.creditApply(), req),
+    convertToInstallment: (transactionId, req) => post(routes.creditInstallment(transactionId), req),
+
+    // —— 理财扩展 ——
+    getCashManagement: () => request(routes.cashManagement()),
+    updateCashSweep: (req) => patch(routes.cashManagementSweep(), req),
+    getInvestments: () => request(routes.investments()),
+    createInvestPlan: (req) => post(routes.investPlan(), req),
+    getInsurance: () => request(routes.insurance()),
+    enrollInsurance: (req) => post(routes.insuranceEnroll(), req),
   }
 }
 

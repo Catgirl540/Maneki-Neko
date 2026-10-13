@@ -29,6 +29,17 @@ import type {
   WealthAccount,
   WealthHolding,
   WealthProduct,
+  SavingsOverview,
+  VirtualCard,
+  InvitationsOverview,
+  MembershipOverview,
+  IdentityStatus,
+  SalaryPlan,
+  OverdraftFacility,
+  CreditOverview,
+  CashManagement,
+  InvestmentsOverview,
+  InsuranceOverview,
 } from '@/api/types'
 import { STORAGE_KEYS, storage } from '@/lib/storage'
 import { PRIMARY_BIN } from './bin-table'
@@ -61,8 +72,12 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  *  13 → 新增 cardSecrets（完整卡号与安全码，与卡列表分开存）
  *  14 → 卡号改用真实感号段（Visa 402688 / 银联 620522）
  *       —— 卡号存在 cardSecrets 里，不升版本的话浏览器会继续用旧号段
+ *  15 → 新增账户域（存钱计划 / 一次性虚拟卡）与我的域（邀请 / 会员 / 身份认证）：
+ *       savings / virtualCards / invitations / membership / identity
+ *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
+ *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
  */
-export const MOCK_SCHEMA = 15
+export const MOCK_SCHEMA = 17
 
 export interface MockDb {
   /** 结构版本，见 MOCK_SCHEMA */
@@ -101,6 +116,23 @@ export interface MockDb {
   pendingSms: { phone: string; code: string; expiresAt: string } | null
   /** 理财账户。默认未开立：要买理财必须先开 */
   wealthAccount: WealthAccount
+  /** 存钱计划：目标、凑整规则、打卡、奖励 */
+  savings: SavingsOverview
+  /** 动态一次性卡号（时效性凭据，过期即作废） */
+  virtualCards: VirtualCard[]
+  /** 邀请与奖励 */
+  invitations: InvitationsOverview
+  /** 会员与订阅 */
+  membership: MembershipOverview
+  /** 身份认证状态与开户验证进度 */
+  identity: IdentityStatus
+
+  salaryPlan: SalaryPlan
+  overdraft: OverdraftFacility
+  credit: CreditOverview
+  cashManagement: CashManagement
+  investments: InvestmentsOverview
+  insurance: InsuranceOverview
 }
 
 const DAY = 86_400_000
@@ -1400,6 +1432,273 @@ function seed(): MockDb {
         { id: 'rule_overseas', label: '境外交易拦截', description: '境外收款方自动触发人工复核', enabled: true },
         { id: 'rule_new_device', label: '新设备登录验证', description: '陌生设备登录需短信验证码', enabled: true },
         { id: 'rule_night', label: '深夜交易提醒', description: '23:00–06:00 的交易实时推送', enabled: false },
+      ],
+    },
+    savings: {
+      totalSaved: 0,
+      goals: [
+        {
+          id: 'goal_0001',
+          name: '旅行基金',
+          icon: 'travel',
+          targetAmount: 800_000,
+          savedAmount: 186_000,
+          deadline: '2027-03-01',
+          createdAt: daysAgo(60, 9, 12),
+          sweep: { amount: 50_000, cycle: '每月 1 日', accountId: currentAccountId },
+        },
+        {
+          id: 'goal_0002',
+          name: '换新手机',
+          icon: 'device',
+          targetAmount: 600_000,
+          savedAmount: 120_000,
+          deadline: null,
+          createdAt: daysAgo(20, 20, 5),
+          sweep: null,
+        },
+      ],
+      roundup: {
+        enabled: true,
+        roundupTo: 1_000,
+        dailyCap: 5_000,
+        accountId: currentAccountId,
+        goalId: null,
+      },
+      streak: {
+        days: 12,
+        longestDays: 34,
+        lastSavedAt: daysAgo(0, 8, 0),
+        badges: [
+          { id: 'b_first', label: '第一步', earned: true, hint: '完成首个存钱目标' },
+          { id: 'b_week', label: '坚持一周', earned: true, hint: '连续存钱 7 天' },
+          { id: 'b_month', label: '月度达人', earned: true, hint: '连续存钱 30 天' },
+          { id: 'b_year', label: '年度冠军', earned: false, hint: '连续存钱 365 天' },
+        ],
+      },
+      rewards: [
+        {
+          id: 'rw_0001',
+          title: '连续存钱 7 天奖励',
+          description: '利息加成 +0.3%，有效期 30 天',
+          status: 'credited',
+          amount: 1_000,
+          creditedAt: daysAgo(5, 8, 0),
+        },
+        {
+          id: 'rw_0002',
+          title: '本月存满 ¥1,000',
+          description: '达标后自动发放存钱红包',
+          status: 'qualified',
+          amount: 2_000,
+          creditedAt: null,
+        },
+      ],
+    },
+    virtualCards: [],
+    invitations: {
+      invite: {
+        code: 'LC2026XIAOMAN',
+        link: 'https://luckycat.bank/i/LC2026XIAOMAN',
+        createdAt: daysAgo(90, 10, 0),
+      },
+      friends: [
+        { id: 'inv_0001', name: '陈嘉禾', maskedPhone: '136****6000', stage: 'reward_earned', joinedAt: daysAgo(40, 14, 20), reward: 3000 },
+        { id: 'inv_0002', name: '苏晚', maskedPhone: '138****9028', stage: 'account_opened', joinedAt: daysAgo(12, 11, 5), reward: 0 },
+        { id: 'inv_0003', name: '梁乐怡', maskedPhone: '150****4471', stage: 'registered', joinedAt: daysAgo(3, 19, 40), reward: 0 },
+      ],
+      rewards: [
+        { id: 'ir_0001', title: '邀请开户奖励', description: '好友成功开户后发放', status: 'credited', amount: 3000, createdAt: daysAgo(38, 15, 0) },
+        { id: 'ir_0002', title: '好友首笔消费奖励', description: '好友完成首笔消费后发放', status: 'pending', amount: 5000, createdAt: daysAgo(2, 9, 30) },
+      ],
+      totalEarned: 3000,
+    },
+    membership: {
+      current: {
+        planId: 'free',
+        planName: '普通会员',
+        status: 'none',
+        price: 0,
+        period: '—',
+        startedAt: null,
+        renewAt: null,
+      },
+      plans: [
+        {
+          id: 'gold',
+          name: '招财金卡会员',
+          price: 1_900,
+          period: '每月',
+          perks: ['跨行转账手续费全免', '专属理财优先购', '生日双倍积分'],
+          highlight: true,
+        },
+        {
+          id: 'platinum',
+          name: '白金会员',
+          price: 4_900,
+          period: '每月',
+          perks: ['含金卡全部权益', '专属客户经理', '机场贵宾厅每年 6 次', '境外取现免手续费'],
+        },
+      ],
+      records: [],
+    },
+    identity: {
+      level: 'verified',
+      idType: '居民身份证',
+      maskedIdNumber: '330106********1234',
+      verifiedAt: daysAgo(120, 9, 0),
+      livenessVerified: true,
+      steps: [
+        { id: 'profile', label: '资料填写', status: 'done', note: '实名资料已登记', completedAt: daysAgo(120, 9, 5) },
+        { id: 'verify', label: '身份核验', status: 'done', note: '证件与人脸已通过', completedAt: daysAgo(120, 9, 12) },
+        { id: 'review', label: '合规审核', status: 'done', note: 'AML 与风险审核通过', completedAt: daysAgo(119, 10, 0) },
+        { id: 'card', label: '发卡', status: 'done', note: '借记卡已寄出', completedAt: daysAgo(118, 15, 30) },
+      ],
+      ocr: null,
+    },
+    salaryPlan: {
+      salaryDay: 8,
+      amount: 2_180_000,
+      employer: '星瀚科技（上海）有限公司',
+      accountId: currentAccountId,
+      nextPayday: daysAgo(-5, 10, 0).slice(0, 10),
+      history: [
+        { id: 'sal_0001', month: daysAgo(35).slice(0, 7), amount: 2_180_000, paidAt: daysAgo(35, 10, 0) },
+        { id: 'sal_0002', month: daysAgo(5).slice(0, 7), amount: 2_180_000, paidAt: daysAgo(5, 10, 0) },
+      ],
+    },
+    overdraft: {
+      active: false,
+      creditLimit: 500_000,
+      used: 0,
+      available: 500_000,
+      apr: 0.058,
+      activatedAt: null,
+      interestNote: '按日计息，随借随还，无手续费；单笔最长 30 天免息期内不计息。',
+    },
+    credit: {
+      creditLimit: 3_000_000,
+      availableCredit: 2_400_000,
+      products: [
+        {
+          id: 'loan_quick',
+          name: '秒借',
+          description: '实时审批，最快 1 分钟到账，按日计息',
+          minAmount: 100_000,
+          maxAmount: 2_000_000,
+          minTermMonths: 3,
+          maxTermMonths: 24,
+          apr: 0.049,
+          disbursement: '实时到账',
+          tags: ['按日计息', '随借随还'],
+        },
+        {
+          id: 'loan_installment',
+          name: '大额分期',
+          description: '最高 50 万分 36 期，适合装修购车等大额支出',
+          minAmount: 500_000,
+          maxAmount: 5_000_000,
+          minTermMonths: 6,
+          maxTermMonths: 36,
+          apr: 0.038,
+          disbursement: 'T+1 到账',
+          tags: ['等额本息', '大额低息'],
+        },
+      ],
+      loans: [
+        {
+          id: 'ln_0001',
+          productName: '秒借',
+          principal: 600_000,
+          outstanding: 225_000,
+          termMonths: 12,
+          monthlyPayment: 53_200,
+          apr: 0.049,
+          nextDueDate: daysAgo(-12, 8, 0).slice(0, 10),
+          paidPeriods: 8,
+          totalPeriods: 12,
+          status: 'active',
+          createdAt: daysAgo(240, 9, 30),
+        },
+      ],
+      installments: [
+        {
+          id: 'inst_0001',
+          title: 'MacBook Pro 分期',
+          merchant: 'Apple Store',
+          totalAmount: 1_599_000,
+          remainingAmount: 799_500,
+          periods: 12,
+          paidPeriods: 6,
+          monthlyPayment: 133_250,
+          nextDueDate: daysAgo(-9, 8, 0).slice(0, 10),
+          feeRate: 0.024,
+          createdAt: daysAgo(180, 15, 0),
+        },
+      ],
+      builder: {
+        score: 728,
+        level: '优秀',
+        streakMonths: 14,
+        nextMilestone: '连续按时还款 18 个月可提升额度',
+        tips: ['保持按时还款', '避免短期内频繁申请借款', '适度使用分期并按时结清'],
+      },
+    },
+    cashManagement: {
+      balance: 1_250_000,
+      totalYield: 3_420,
+      sevenDayYield: 0.0219,
+      accountId: currentAccountId,
+      sweepEnabled: true,
+      sweepThreshold: 500_000,
+      products: [
+        { id: 'cm_ymf', name: '招财宝货币A', sevenDayYield: 0.0219, minAmount: 100, flexible: true },
+        { id: 'cm_ymf_b', name: '招财宝货币B', sevenDayYield: 0.0231, minAmount: 100_000, flexible: true },
+      ],
+    },
+    investments: {
+      holding: 1_860_000,
+      totalReturn: 92_400,
+      plans: [
+        {
+          id: 'ip_0001',
+          productCode: 'CSI300',
+          productName: '沪深300指数基金',
+          amount: 100_000,
+          cycle: '每月 8 日',
+          nextRunAt: daysAgo(-3, 9, 0).slice(0, 10),
+          executedRuns: 9,
+          totalInvested: 900_000,
+          status: 'active',
+          createdAt: daysAgo(270, 9, 0),
+        },
+      ],
+      products: [
+        { id: 'inv_csi300', code: 'CSI300', name: '沪深300指数基金', category: 'etf', nav: 1.4321, risk: 'medium', oneYearReturn: 0.0821, minAmount: 10_000 },
+        { id: 'inv_sp500', code: 'SP500', name: '标普500指数基金', category: 'etf', nav: 2.1140, risk: 'medium', oneYearReturn: 0.1205, minAmount: 10_000 },
+        { id: 'inv_bond', code: 'BOND-A', name: '稳利纯债基金A', category: 'fund', nav: 1.0876, risk: 'low', oneYearReturn: 0.0342, minAmount: 10_000 },
+        { id: 'inv_robo', code: 'ROBO-1', name: '智能投顾·稳健组合', category: 'robo', nav: 1.2055, risk: 'low', oneYearReturn: 0.0528, minAmount: 50_000 },
+      ],
+    },
+    insurance: {
+      totalCoverage: 1_000_000,
+      policies: [
+        {
+          id: 'pol_0001',
+          productName: '百万医疗险',
+          insurer: '招财人寿',
+          premium: 38_800,
+          coverage: 6_000_000,
+          status: 'active',
+          effectiveAt: daysAgo(300, 0, 0),
+          expireAt: daysAgo(-65, 0, 0),
+          insuredName: '林小满',
+        },
+      ],
+      products: [
+        { id: 'ins_medical', name: '百万医疗险', category: '医疗', insurer: '招财人寿', premiumPerYear: 38_800, coverage: 6_000_000, highlight: '住院可垫付，不限社保用药', tags: ['高杠杆', '门急诊可报'] },
+        { id: 'ins_critical', name: '守护重疾险', category: '重疾', insurer: '招财人寿', premiumPerYear: 128_000, coverage: 3_000_000, highlight: '确诊即赔，覆盖 120 种重疾', tags: ['确诊即赔', '含轻症'] },
+        { id: 'ins_accident', name: '出行意外险', category: '意外', insurer: '招财财险', premiumPerYear: 9_900, coverage: 1_000_000, highlight: '全年不限次数，含交通意外', tags: ['低保费', '含航空'] },
       ],
     },
   }

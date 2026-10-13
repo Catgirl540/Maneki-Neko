@@ -75,7 +75,7 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 
 一级导航固定为 **账户、理财、助手、我的**，桌面与手机顺序一致。
 助手使用全屏工作区：`AppShell.tsx` 隐藏通用顶栏，`global.css` 的 `chat-workspace` 与 `app-content-chat` 控制视口高度和手机导航留位；`SupportPage.tsx` 只滚动消息，输入栏固定在底部。
-账户概览集中展示余额、近 30 天收支、最近交易和资金账户，不设置横排子标签。
+账户概览首屏是「余额主卡 + 常用功能入口卡」：五个高频入口（转账 / 账单 / 银行卡 / 存钱计划 / 多币种换汇）在桌面 ≥1024 宽的一屏内即可点开；近 30 天收支、最近交易与资金账户下移到首屏之下，末尾是「更多服务」分区。不设置横排子标签。
 **转入、转出只在概览提供入口，各自打开一个弹窗**；大额二次确认也在转出弹窗内完成。
 
 | 功能 | 路径 / 组件 |
@@ -84,16 +84,22 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 | 转入 / 转出弹窗 | `src/components/account/MoneyDialogs.tsx`，内容为 `ReceivingContent` / `TransferForm` |
 | 账单 | `/analysis`，从概览的“查看账单”进入 |
 | 收支分析 / 自动扣款 | `/analysis/statistics` / `/analysis/autodebits`，从账单进入 |
+| 存钱计划 / 多币种换汇 | `/dashboard/savings` / `/exchange`，入口在概览的常用功能 |
+| 工资与备用金 / 借款与分期 | `/cashflow` / `/credit`，入口在概览的「更多服务」 |
+| 现金管理 / 投资与定投 / 保险保障 | `/wealth/cash-management` / `/wealth/investments` / `/wealth/insurance`，入口在概览的「更多服务」 |
+| 身份认证 / 邀请与奖励 / 会员与订阅 | `/security/identity` / `/security/invitations` / `/security/membership`，入口在「我的」 |
 
 旧地址 `/receiving`、`/transfer` 分别跳转到 `/dashboard?flow=in`、`/dashboard?flow=out`。
 弹窗开关保存在 `flow` 查询参数中；关闭后清除参数，重新打开重置表单，提交期间禁止关闭。
 
 理财开户复用储蓄开户的实名资料，身份核验只要求短信码与人脸；保留风险测评和协议签署。
 
-交易搜索统一在顶栏，账单用 URL 的 `q`、`account`、`category` 保存筛选。
+交易搜索在 账单页 `/analysis` 内（跟在分类筛选旁，不置顶），用 URL 的 `q`、`account`、`category` 保存筛选。
+桌面端通知入口在左侧栏底部（用户信息上方），移动端没有侧栏，改用悬浮铃铛；两者共用 `NotificationsButton.tsx`。
 登录默认进入账户概览；`/security` 对应“我的”，保留原有安全功能与退出登录。
 
 **调整样式**：先修改设计 token，再调整组件布局。通用交互优先复用现有控件。
+页面骨架用统一类：`.content-shell`（内容宽度与左右留白，随断点收放）、`.page-stack`（页面区块纵向节奏），标题用 `PageHeader` 组件；布局 token（`--content-max` / `--gutter-x*` / `--page-y*` / `--stack-gap*`）都在 `tokens.css`。
 客户端 `lg` 断点为 **960px**，检查手机布局和浏览器“桌面版网站”，不要按默认 1024px 推断。
 
 **新增银行接口**：同步修改 `contract.ts`、`types.ts`、`http.ts`、mock 实现和后端路由映射，

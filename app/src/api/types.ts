@@ -611,6 +611,12 @@ export interface BankCard {
   /** 境外交易开关 */
   overseasPayment: boolean
   dailyLimit: Cents
+  /** 按卡关闭消费开关（与锁卡是两件事：锁卡是冻结，这里是停用消费） */
+  paymentEnabled?: boolean
+  /** 渠道消费限额：线上 / 线下 / 境外 */
+  channelLimits?: { online: Cents; offline: Cents; overseas: Cents }
+  /** 商户类别限额：餐饮 / 购物 / 其他 */
+  merchantLimits?: { dining: Cents; shopping: Cents; other: Cents }
   /** 申请时填写的邮寄地址，卡还在路上时用于回显 */
   shippingAddress?: MailingAddress
   /** 已收取的制卡费用合计（工本费 + 寄送费） */
@@ -1020,4 +1026,498 @@ export interface ChangePhoneRequest {
   /** 发到**新**手机号的验证码 */
   smsCode: string
   faceTicket: string
+}
+
+/* ==========================================================================
+   账户域扩展 —— 多币种划转 / 存钱计划 / 银行卡一次性卡号
+   --------------------------------------------------------------------------
+   币种间划转复用账户内部换汇（不是向外部账户转账），复用现成汇率口径
+   （见 db.ts 的 fxRate / FX_SPREAD）。存钱计划、虚拟卡为新增域。
+   ========================================================================== */
+
+/** 账户内部换汇报价请求。 */
+export interface ExchangeQuoteRequest {
+  /** 扣账账户（币种 = fromCurrency） */
+  fromAccountId: string
+  /** 目标币种 */
+  toCurrency: Currency
+  /** 扣账金额（扣账币） */
+  amount: Cents
+}
+
+/** 账户内部换汇。报价锁价口径与转账一致，见 FxQuote。 */
+export interface ExchangeQuote {
+  fx: FxQuote
+  /** 目标币种账户；不存在时后端会自动开立一个同币种子账户 */
+  toAccountNo: string
+  /** 换汇后目标账户可用余额（预估） */
+  toAvailableAfter: Cents
+}
+
+export interface ExchangeRequest {
+  fromAccountId: string
+  toCurrency: Currency
+  amount: Cents
+  /** 6 位数字支付密码 */
+  paymentPassword: string
+}
+
+export interface ExchangeResult {
+  transactionId: string
+  referenceNo: string
+  fromAccountId: string
+  toAccountId: string
+  fx: FxQuote
+  createdAt: string
+}
+
+/** 存钱计划：自动归集规则 */
+export interface SavingsSweep {
+  amount: Cents
+  cycle: string
+  accountId: string
+}
+
+export interface SavingsGoal {
+  id: string
+  name: string
+  /** 成就/目标图标标识，前端映射到本地图标 */
+  icon: string
+  targetAmount: Cents
+  savedAmount: Cents
+  /** 目标日期 YYYY-MM-DD；无期限为 null */
+  deadline: string | null
+  createdAt: string
+  /** 定期自动归集；未开启为 null */
+  sweep: SavingsSweep | null
+}
+
+export interface SavingsGoalRequest {
+  name: string
+  targetAmount: Cents
+  icon?: string
+  deadline?: string | null
+}
+
+export interface SavingsGoalUpdate {
+  name?: string
+  targetAmount?: Cents
+  icon?: string
+  deadline?: string | null
+}
+
+/** 消费凑整转存规则 */
+export interface SavingsRoundupRule {
+  enabled: boolean
+  /** 凑整到多少元（分） */
+  roundupTo: Cents
+  /** 单日上限（分） */
+  dailyCap: Cents
+  accountId: string
+  /** 转入目标 */
+  goalId: string | null
+}
+
+/** 存钱打卡与徽章 */
+export interface SavingsStreak {
+  days: number
+  longestDays: number
+  lastSavedAt: string
+  badges: { id: string; label: string; earned: boolean; hint: string }[]
+}
+
+/** 存钱奖励 / 利息加成 */
+export interface SavingsReward {
+  id: string
+  title: string
+  description: string
+  /** qualified=已达标待入账，credited=已入账 */
+  status: 'qualified' | 'credited'
+  amount: Cents
+  creditedAt: string | null
+}
+
+export interface SavingsOverview {
+  totalSaved: Cents
+  goals: SavingsGoal[]
+  roundup: SavingsRoundupRule
+  streak: SavingsStreak
+  rewards: SavingsReward[]
+}
+
+export interface SavingsRuleUpdate {
+  enabled?: boolean
+  roundupTo?: Cents
+  dailyCap?: Cents
+  accountId?: string
+  goalId?: string | null
+}
+
+/** 银行卡：动态一次性卡号 */
+export interface VirtualCardRequest {
+  /** 单笔限额（分） */
+  amountLimit: Cents
+  /** 可用商户备注（选填，空 = 不限） */
+  merchantNote?: string
+  /** 有效期（小时） */
+  validHours: number
+}
+
+export interface VirtualCard {
+  id: string
+  /** 一次性卡号 */
+  pan: string
+  cvv: string
+  expiry: string
+  amountLimit: Cents
+  merchantNote: string
+  createdAt: string
+  expiresAt: string
+}
+
+/** 银行卡消费开关与限额（扩展 updateCardSettings） */
+export interface CardLimitPatch {
+  /** 按卡关闭消费；与锁卡是两件事 */
+  paymentEnabled?: boolean
+  /** 渠道限额 */
+  channelLimits?: { online: Cents; offline: Cents; overseas: Cents }
+  /** 商户类别限额 */
+  merchantLimits?: { dining: Cents; shopping: Cents; other: Cents }
+}
+
+/* ==========================================================================
+   我的域扩展 —— 邀请与奖励 / 会员与订阅 / 身份认证
+   ========================================================================== */
+
+export interface InviteCode {
+  code: string
+  link: string
+  createdAt: string
+}
+
+export interface InviteFriend {
+  id: string
+  name: string
+  maskedPhone: string
+  /** registered=已注册，account_opened=已开户，reward_earned=奖励达标 */
+  stage: 'registered' | 'account_opened' | 'reward_earned'
+  joinedAt: string
+  reward: Cents
+}
+
+export interface InviteReward {
+  id: string
+  title: string
+  description: string
+  status: 'credited' | 'pending'
+  amount: Cents
+  createdAt: string
+}
+
+export interface InvitationsOverview {
+  invite: InviteCode
+  friends: InviteFriend[]
+  rewards: InviteReward[]
+  totalEarned: Cents
+}
+
+export interface MembershipPlan {
+  id: string
+  name: string
+  price: Cents
+  /** 计费周期说明，如「每月」 */
+  period: string
+  perks: string[]
+  highlight?: boolean
+}
+
+export interface MembershipSubscription {
+  planId: string
+  planName: string
+  status: 'active' | 'canceled' | 'none'
+  price: Cents
+  period: string
+  startedAt: string | null
+  /** 下次续费日；已取消为 null */
+  renewAt: string | null
+}
+
+export interface MembershipOverview {
+  current: MembershipSubscription
+  plans: MembershipPlan[]
+  records: { id: string; label: string; amount: Cents; createdAt: string }[]
+}
+
+/** 证件 OCR 识别结果（演示：服务端按登记资料回填） */
+export interface IdentityOcrResult {
+  holderName: string
+  idNumber: string
+  birthDate: string
+  expiryDate: string
+  address: string
+  confidence: number
+}
+
+export interface IdentityStep {
+  id: string
+  label: string
+  status: 'done' | 'active' | 'pending'
+  note: string
+  completedAt: string | null
+}
+
+export interface IdentityStatus {
+  level: 'none' | 'basic' | 'verified'
+  idType: string
+  maskedIdNumber: string
+  verifiedAt: string
+  livenessVerified: boolean
+  /** 开户验证进度：资料 → 核验 → 审核 → 发卡 */
+  steps: IdentityStep[]
+  ocr: IdentityOcrResult | null
+}
+
+/* ==========================================================================
+   工资与备用金（Cashflow）
+   ========================================================================== */
+
+export interface SalaryRecord {
+  id: string
+  /** 归属月份 YYYY-MM */
+  month: string
+  amount: Cents
+  paidAt: string
+}
+
+/** 工资入账计划：发薪日与到账预测 */
+export interface SalaryPlan {
+  /** 每月发薪日，1–28 */
+  salaryDay: number
+  /** 预计月薪（分） */
+  amount: Cents
+  employer: string
+  accountId: string
+  /** 下次发薪日 YYYY-MM-DD */
+  nextPayday: string
+  history: SalaryRecord[]
+}
+
+export interface SalaryUpdate {
+  salaryDay?: number
+  amount?: Cents
+  accountId?: string
+  employer?: string
+}
+
+/** 备用金（小额透支额度） */
+export interface OverdraftFacility {
+  active: boolean
+  creditLimit: Cents
+  used: Cents
+  available: Cents
+  /** 年化利率，如 0.058 表示 5.8% */
+  apr: number
+  activatedAt: string | null
+  /** 计息口径说明 */
+  interestNote: string
+}
+
+/* ==========================================================================
+   借款与分期（Credit）
+   ========================================================================== */
+
+export interface LoanProduct {
+  id: string
+  name: string
+  description: string
+  minAmount: Cents
+  maxAmount: Cents
+  minTermMonths: number
+  maxTermMonths: number
+  /** 年化利率（起） */
+  apr: number
+  /** 最快放款说明，如「实时到账」 */
+  disbursement: string
+  tags: string[]
+}
+
+export interface Loan {
+  id: string
+  productName: string
+  principal: Cents
+  outstanding: Cents
+  termMonths: number
+  monthlyPayment: Cents
+  apr: number
+  nextDueDate: string
+  paidPeriods: number
+  totalPeriods: number
+  status: 'active' | 'repaid' | 'reviewing'
+  createdAt: string
+}
+
+/** 把某笔消费转成的分期计划 */
+export interface InstallmentPlan {
+  id: string
+  title: string
+  merchant: string
+  totalAmount: Cents
+  remainingAmount: Cents
+  periods: number
+  paidPeriods: number
+  monthlyPayment: Cents
+  nextDueDate: string
+  /** 总手续费率，如 0.024 表示 2.4% */
+  feeRate: number
+  createdAt: string
+}
+
+/** 信用培养进度（还款打卡） */
+export interface CreditBuilder {
+  score: number
+  level: string
+  streakMonths: number
+  nextMilestone: string
+  tips: string[]
+}
+
+export interface CreditOverview {
+  creditLimit: Cents
+  availableCredit: Cents
+  products: LoanProduct[]
+  loans: Loan[]
+  installments: InstallmentPlan[]
+  builder: CreditBuilder
+}
+
+export interface LoanApplyRequest {
+  productId: string
+  amount: Cents
+  termMonths: number
+  purpose: string
+  /** 放款账户 */
+  accountId: string
+  /** 6 位数字支付密码 */
+  paymentPassword?: string
+}
+
+export interface InstallmentConvertRequest {
+  /** 待分期的交易 id */
+  transactionId: string
+  periods: number
+}
+
+/* ==========================================================================
+   理财扩展 —— 现金管理 / 投资与定投 / 保险保障
+   ========================================================================== */
+
+export interface CashManagementProduct {
+  id: string
+  name: string
+  /** 7 日年化，如 0.0219 表示 2.19% */
+  sevenDayYield: number
+  minAmount: Cents
+  /** 是否随时可取 */
+  flexible: boolean
+}
+
+/** 活钱管理：自动把超过保留额的活期转入货币基金 */
+export interface CashManagement {
+  balance: Cents
+  totalYield: Cents
+  sevenDayYield: number
+  accountId: string
+  sweepEnabled: boolean
+  /** 活期保留金额（分） */
+  sweepThreshold: Cents
+  products: CashManagementProduct[]
+}
+
+export interface CashSweepUpdate {
+  enabled?: boolean
+  threshold?: Cents
+  accountId?: string
+}
+
+export interface InvestProduct {
+  id: string
+  code: string
+  name: string
+  /** fund 基金 / etf 指数基金 / stock 股票 / robo 智能投顾 */
+  category: 'fund' | 'etf' | 'stock' | 'robo'
+  nav: number
+  risk: 'low' | 'medium' | 'high'
+  /** 近一年收益率，如 0.082 表示 8.2% */
+  oneYearReturn: number
+  minAmount: Cents
+}
+
+/** 定投计划 */
+export interface InvestPlan {
+  id: string
+  productCode: string
+  productName: string
+  amount: Cents
+  /** 周期说明，如「每月 8 日」 */
+  cycle: string
+  nextRunAt: string
+  executedRuns: number
+  totalInvested: Cents
+  status: 'active' | 'paused'
+  createdAt: string
+}
+
+export interface InvestmentsOverview {
+  holding: Cents
+  totalReturn: Cents
+  plans: InvestPlan[]
+  products: InvestProduct[]
+}
+
+export interface InvestPlanRequest {
+  productCode: string
+  amount: Cents
+  cycle: string
+  accountId: string
+  /** 6 位数字支付密码 */
+  paymentPassword?: string
+}
+
+export interface InsuranceProduct {
+  id: string
+  name: string
+  /** 重疾 / 医疗 / 意外 / 寿险 */
+  category: string
+  insurer: string
+  /** 年缴保费（分） */
+  premiumPerYear: Cents
+  /** 保额（分） */
+  coverage: Cents
+  highlight: string
+  tags: string[]
+}
+
+export interface InsurancePolicy {
+  id: string
+  productName: string
+  insurer: string
+  premium: Cents
+  coverage: Cents
+  status: 'active' | 'expired' | 'pending'
+  effectiveAt: string
+  expireAt: string
+  insuredName: string
+}
+
+export interface InsuranceOverview {
+  totalCoverage: Cents
+  policies: InsurancePolicy[]
+  products: InsuranceProduct[]
+}
+
+export interface InsuranceEnrollRequest {
+  productId: string
+  insuredName: string
+  /** 6 位数字支付密码 */
+  paymentPassword?: string
 }

@@ -4,6 +4,7 @@ import { CatMark, Logo } from '@/components/brand/Logo'
 import { useSession } from '@/store/session-context'
 import { cn } from '@/lib/cn'
 import { isNavigationActive, navigationItems } from './navigation'
+import { NotificationsButton } from './NotificationsButton'
 
 interface SidebarProps {
   collapsed: boolean
@@ -41,12 +42,15 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           )
         })}
       </nav>
-      <div className={cn('flex shrink-0 items-center gap-3 border-t border-line pt-4', collapsed && 'justify-center')}>
-        <span title={collapsed ? user?.name : undefined} className="grid size-9 shrink-0 place-items-center rounded-chip bg-gold-wash text-[13px] font-semibold text-gold-deep">
-          {user?.avatarInitial ?? '喵'}
-        </span>
-        {!collapsed && <span className="min-w-0"><span className="block truncate text-[14px] font-medium text-ink">{user?.name}</span>
-          <span className="block truncate text-[12px] text-ink-mute">{user?.memberLevel}</span></span>}
+      <div className={cn('flex shrink-0 flex-col gap-1 border-t border-line pt-4', collapsed && 'gap-2')}>
+        <NotificationsButton variant="sidebar" collapsed={collapsed} />
+        <div className={cn('flex items-center gap-3', collapsed && 'flex-col gap-2')}>
+          <span title={collapsed ? user?.name : undefined} className="grid size-9 shrink-0 place-items-center rounded-chip bg-gold-wash text-[13px] font-semibold text-gold-deep">
+            {user?.avatarInitial ?? '喵'}
+          </span>
+          {!collapsed && <span className="min-w-0"><span className="block truncate text-[14px] font-medium text-ink">{user?.name}</span>
+            <span className="block truncate text-[12px] text-ink-mute">{user?.memberLevel}</span></span>}
+        </div>
       </div>
     </aside>
   )

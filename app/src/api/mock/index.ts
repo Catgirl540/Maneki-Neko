@@ -80,6 +80,22 @@ import type {
   WealthRedeemRequest,
   WealthRedeemResult,
   WealthSubscribeResult,
+  ExchangeQuote,
+  ExchangeResult,
+  SavingsOverview,
+  SavingsGoal,
+  SavingsRoundupRule,
+  VirtualCard,
+  IdentityOcrResult,
+  SalaryPlan,
+  OverdraftFacility,
+  Loan,
+  InstallmentPlan,
+  CashManagement,
+  InvestmentsOverview,
+  InvestPlan,
+  InsuranceOverview,
+  InsurancePolicy,
 } from '../types'
 import {
   CARD_PAYMENT_METHOD,
@@ -299,6 +315,14 @@ function oneOffFee(
  * 取不到时退回第一个账户只是**兜底**（老数据 / 账户被销户）：真实后端应当直接报错，
  * 这里静默退回是为了不让演示卡死；真接后端时这一条要改成抛 `SETTLEMENT_ACCOUNT_NOT_FOUND`。
  */
+/** 根据每月发薪日推算下一次发薪日（YYYY-MM-DD）。 */
+function nextPaydayFrom(day: number): string {
+  const now = new Date()
+  const candidate = new Date(now.getFullYear(), now.getMonth(), day)
+  if (candidate.getTime() <= now.getTime()) candidate.setMonth(candidate.getMonth() + 1)
+  return candidate.toISOString().slice(0, 10)
+}
+
 function settlementAccount(db: MockDb): Account {
   return (
     db.accounts.find((a) => a.id === db.wealthAccount.settlementAccountId) ?? db.accounts[0]
@@ -684,6 +708,11 @@ export function createMockApi(options?: {
           (t) =>
             t.counterparty.toLowerCase().includes(kw) || t.memo.toLowerCase().includes(kw),
         )
+      }
+      // 多币种对账：账户是单币种的，币种对不上就没有可对账的流水
+      if (query.currency && query.currency !== 'all') {
+        const acc = loadDb().accounts.find((a) => a.id === accountId)
+        if (acc && acc.currency !== query.currency) rows = []
       }
       const start = (page - 1) * size
       const result: Paged<Transaction> = {
@@ -2006,6 +2035,581 @@ export function createMockApi(options?: {
     async sendSupportMessage(text) {
       await delay(650)
       return cannedReply(text)
+    },
+
+    /* -------------------------------------------------- 账户域扩展 */
+
+    async quoteExchange(req): Promise<ExchangeQuote> {
+      await delay(180)
+      const db = loadDb()
+      const from = db.accounts.find((a) => a.id === req.fromAccountId)
+      if (!from) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
+      if (req.toCurrency === from.currency) {
+        throw new ApiError('目标币种与扣账币种相同', 400, 'SAME_CURRENCY')
+      }
+      if (req.amount <= 0) throw new ApiError('金额必须大于 0', 400, 'INVALID_AMOUNT')
+      if (req.amount > from.available) {
+        throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
+      }
+      const rate = fxRate(from.currency, req.toCurrency)
+      const toAmount = Math.round(req.amount * rate)
+      const target = db.accounts.find((a) => a.currency === req.toCurrency)
+      return {
+        fx: {
+          fromCurrency: from.currency,
+          toCurrency: req.toCurrency,
+          rate,
+          fromAmount: req.amount,
+          toAmount,
+          spread: FX_SPREAD,
+          quoteTtlSeconds: FX_QUOTE_TTL,
+          quotedAt: new Date().toISOString(),
+        },
+        toAccountNo: target ? target.accountNo : '将自动开立',
+        toAvailableAfter: (target?.available ?? 0) + toAmount,
+      }
+    },
+
+    async submitExchange(req): Promise<ExchangeResult> {
+      await delay(420)
+      const db = loadDb()
+      const from = db.accounts.find((a) => a.id === req.fromAccountId)
+      if (!from) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
+      if (req.paymentPassword !== db.payPassword) {
+        throw new ApiError('支付密码不正确', 400, 'BAD_PAY_PASSWORD')
+      }
+      if (req.toCurrency === from.currency) {
+        throw new ApiError('目标币种与扣账币种相同', 400, 'SAME_CURRENCY')
+      }
+      if (req.amount <= 0) throw new ApiError('金额必须大于 0', 400, 'INVALID_AMOUNT')
+      if (req.amount > from.available) {
+        throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
+      }
+      const rate = fxRate(from.currency, req.toCurrency)
+      const toAmount = Math.round(req.amount * rate)
+      let target = db.accounts.find((a) => a.currency === req.toCurrency)
+      if (!target) {
+        target = {
+          id: nextId('acc'),
+          kind: 'savings',
+          label: `${req.toCurrency} 储蓄账户`,
+          accountNo: `8820000000112200${String(db.accounts.length).padStart(3, '0')}`,
+          currency: req.toCurrency,
+          balance: 0,
+          available: 0,
+          interestRate: 0.0155,
+          monthNetChange: 0,
+        }
+        db.accounts.push(target)
+      }
+      applyBalance(from.id, -req.amount)
+      applyBalance(target.id, toAmount)
+      const now = new Date().toISOString()
+      const crossLabel = `币种划转 · ${from.currency}→${req.toCurrency}`
+      const outflow = pushTransaction(
+        {
+          accountId: from.id,
+          direction: 'out',
+          amount: req.amount,
+          signedAmount: -req.amount,
+          counterparty: crossLabel,
+          memo: `账户内换汇 → ${target.label}`,
+          category: 'other',
+          createdAt: now,
+          status: 'success',
+        },
+        {
+          channel: 'account',
+          paymentMethod: '账户内换汇',
+          accountLabel: from.label,
+          accountNo: from.accountNo,
+          settleCurrency: from.currency,
+          counterpartyName: '账户内换汇',
+          originAmount: req.amount,
+          originCurrency: from.currency,
+          exchangeRate: rate,
+          exchangeRateNote: `1 ${from.currency} = ${req.toCurrency} ${formatRate(rate)}`,
+        },
+      )
+      pushTransaction(
+        {
+          accountId: target.id,
+          direction: 'in',
+          amount: toAmount,
+          signedAmount: toAmount,
+          counterparty: crossLabel,
+          memo: `账户内换汇入账 ← ${from.label}`,
+          category: 'other',
+          createdAt: now,
+          status: 'success',
+        },
+        {
+          channel: 'account',
+          paymentMethod: '账户内换汇',
+          accountLabel: target.label,
+          accountNo: target.accountNo,
+          settleCurrency: target.currency,
+          counterpartyName: '账户内换汇',
+          originAmount: req.amount,
+          originCurrency: from.currency,
+          exchangeRate: rate,
+          exchangeRateNote: `1 ${from.currency} = ${req.toCurrency} ${formatRate(rate)}`,
+        },
+      )
+      return {
+        transactionId: outflow.id,
+        referenceNo: outflow.detail.referenceNo,
+        fromAccountId: from.id,
+        toAccountId: target.id,
+        fx: {
+          fromCurrency: from.currency,
+          toCurrency: req.toCurrency,
+          rate,
+          fromAmount: req.amount,
+          toAmount,
+          spread: FX_SPREAD,
+          quoteTtlSeconds: FX_QUOTE_TTL,
+          quotedAt: now,
+        },
+        createdAt: now,
+      }
+    },
+
+    async getSavingsOverview(): Promise<SavingsOverview> {
+      await delay(200)
+      const db = loadDb()
+      const totalSaved = db.savings.goals.reduce((sum, g) => sum + g.savedAmount, 0)
+      return { ...db.savings, totalSaved }
+    },
+
+    async createSavingsGoal(req): Promise<SavingsGoal> {
+      await delay(280)
+      const db = loadDb()
+      if (!req.name || !req.name.trim()) throw new ApiError('请填写目标名称', 400, 'INVALID_NAME')
+      if (req.targetAmount <= 0) throw new ApiError('目标金额必须大于 0', 400, 'INVALID_AMOUNT')
+      const goal: SavingsGoal = {
+        id: nextId('goal'),
+        name: req.name.trim(),
+        icon: req.icon ?? 'flag',
+        targetAmount: req.targetAmount,
+        savedAmount: 0,
+        deadline: req.deadline ?? null,
+        createdAt: new Date().toISOString(),
+        sweep: null,
+      }
+      db.savings.goals.push(goal)
+      persist()
+      return goal
+    },
+
+    async updateSavingsGoal(id, req): Promise<SavingsGoal> {
+      await delay(240)
+      const db = loadDb()
+      const goal = db.savings.goals.find((g) => g.id === id)
+      if (!goal) throw new ApiError('存钱目标不存在', 404, 'GOAL_NOT_FOUND')
+      if (req.name !== undefined && req.name.trim()) goal.name = req.name.trim()
+      if (req.targetAmount !== undefined) {
+        if (req.targetAmount <= 0) throw new ApiError('目标金额必须大于 0', 400, 'INVALID_AMOUNT')
+        goal.targetAmount = req.targetAmount
+      }
+      if (req.icon !== undefined) goal.icon = req.icon
+      if (req.deadline !== undefined) goal.deadline = req.deadline
+      persist()
+      return goal
+    },
+
+    async deleteSavingsGoal(id): Promise<void> {
+      await delay(200)
+      const db = loadDb()
+      const index = db.savings.goals.findIndex((g) => g.id === id)
+      if (index < 0) throw new ApiError('存钱目标不存在', 404, 'GOAL_NOT_FOUND')
+      db.savings.goals.splice(index, 1)
+      if (db.savings.roundup.goalId === id) db.savings.roundup.goalId = null
+      persist()
+    },
+
+    async updateSavingsRoundup(req): Promise<SavingsRoundupRule> {
+      await delay(200)
+      const db = loadDb()
+      const rule = db.savings.roundup
+      if (req.enabled !== undefined) rule.enabled = req.enabled
+      if (req.roundupTo !== undefined) rule.roundupTo = req.roundupTo
+      if (req.dailyCap !== undefined) rule.dailyCap = req.dailyCap
+      if (req.accountId !== undefined) rule.accountId = req.accountId
+      if (req.goalId !== undefined) rule.goalId = req.goalId
+      persist()
+      return rule
+    },
+
+    async createVirtualCard(id, req): Promise<VirtualCard> {
+      await delay(560)
+      const db = loadDb()
+      const card = db.cards.find((c) => c.id === id)
+      if (!card) throw new ApiError('银行卡不存在', 404, 'CARD_NOT_FOUND')
+      if (card.status !== 'active') {
+        throw new ApiError('卡未激活，无法生成一次性卡号', 400, 'CARD_NOT_ACTIVE')
+      }
+      if (req.amountLimit <= 0) throw new ApiError('限额必须大于 0', 400, 'INVALID_AMOUNT')
+      const hours = Math.min(Math.max(Math.round(req.validHours) || 24, 1), 72)
+      const now = Date.now()
+      const virtual: VirtualCard = {
+        id: nextId('vc'),
+        pan: cardPan('visa', String(Math.floor(1000 + Math.random() * 9000))),
+        cvv: String(Math.floor(100 + Math.random() * 900)),
+        expiry: card.expiry,
+        amountLimit: req.amountLimit,
+        merchantNote: (req.merchantNote ?? '').trim(),
+        createdAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + hours * 3_600_000).toISOString(),
+      }
+      db.virtualCards.unshift(virtual)
+      persist()
+      return virtual
+    },
+
+    /* -------------------------------------------------- 我的域扩展 */
+
+    async getInvitations() {
+      await delay(180)
+      return loadDb().invitations
+    },
+
+    async getMembership() {
+      await delay(180)
+      return loadDb().membership
+    },
+
+    async subscribeMembership(planId) {
+      await delay(620)
+      const db = loadDb()
+      const plan = db.membership.plans.find((p) => p.id === planId)
+      if (!plan) throw new ApiError('会员套餐不存在', 404, 'PLAN_NOT_FOUND')
+      const now = new Date()
+      db.membership.current = {
+        planId: plan.id,
+        planName: plan.name,
+        status: 'active',
+        price: plan.price,
+        period: plan.period,
+        startedAt: now.toISOString(),
+        renewAt: new Date(now.getTime() + 30 * 86_400_000).toISOString(),
+      }
+      db.membership.records.unshift({
+        id: nextId('mbr'),
+        label: `开通 ${plan.name}`,
+        amount: plan.price,
+        createdAt: now.toISOString(),
+      })
+      persist()
+      return db.membership
+    },
+
+    async cancelMembership() {
+      await delay(420)
+      const db = loadDb()
+      if (db.membership.current.status !== 'active') {
+        throw new ApiError('当前没有生效的会员', 400, 'NO_ACTIVE_MEMBERSHIP')
+      }
+      db.membership.current.status = 'canceled'
+      db.membership.current.renewAt = null
+      db.membership.records.unshift({
+        id: nextId('mbr'),
+        label: '取消自动续费',
+        amount: 0,
+        createdAt: new Date().toISOString(),
+      })
+      persist()
+      return db.membership
+    },
+
+    async getIdentityStatus() {
+      await delay(200)
+      return loadDb().identity
+    },
+
+    async runIdentityOcr(): Promise<IdentityOcrResult> {
+      await delay(760)
+      const db = loadDb()
+      const result: IdentityOcrResult = {
+        holderName: db.user.name,
+        idNumber: '330106199203047234',
+        birthDate: '1992-03-04',
+        expiryDate: '2031-06-30',
+        address: '上海市浦东新区世纪大道 100 号',
+        confidence: 0.98,
+      }
+      db.identity.ocr = result
+      persist()
+      return result
+    },
+
+    async runIdentityLiveness() {
+      await delay(640)
+      const db = loadDb()
+      db.identity.livenessVerified = true
+      persist()
+      return { verified: true, verifiedAt: new Date().toISOString() }
+    },
+
+    /* -------------------------------------------------- 工资与备用金 */
+
+    async getSalaryPlan(): Promise<SalaryPlan> {
+      await delay(180)
+      return loadDb().salaryPlan
+    },
+
+    async updateSalary(req): Promise<SalaryPlan> {
+      await delay(420)
+      const db = loadDb()
+      if (req.salaryDay !== undefined) {
+        if (!Number.isInteger(req.salaryDay) || req.salaryDay < 1 || req.salaryDay > 28) {
+          throw new ApiError('发薪日需在 1–28 之间', 400, 'INVALID_SALARY_DAY')
+        }
+        db.salaryPlan.salaryDay = req.salaryDay
+        db.salaryPlan.nextPayday = nextPaydayFrom(req.salaryDay)
+      }
+      if (req.amount !== undefined) {
+        if (req.amount <= 0) throw new ApiError('月薪必须大于 0', 400, 'INVALID_AMOUNT')
+        db.salaryPlan.amount = req.amount
+      }
+      if (req.accountId) {
+        const account = findAccount(req.accountId)
+        db.salaryPlan.accountId = account.id
+      }
+      if (req.employer !== undefined) db.salaryPlan.employer = req.employer
+      persist()
+      return db.salaryPlan
+    },
+
+    async getOverdraft(): Promise<OverdraftFacility> {
+      await delay(180)
+      return loadDb().overdraft
+    },
+
+    async activateOverdraft(active): Promise<OverdraftFacility> {
+      await delay(520)
+      const db = loadDb()
+      if (active && !db.overdraft.active) {
+        db.overdraft.active = true
+        db.overdraft.activatedAt = new Date().toISOString()
+      } else if (!active) {
+        if (db.overdraft.used > 0) {
+          throw new ApiError('存在未还清的备用金，暂时无法关闭', 400, 'OVERDRAFT_IN_USE')
+        }
+        db.overdraft.active = false
+        db.overdraft.activatedAt = null
+      }
+      persist()
+      return db.overdraft
+    },
+
+    /* -------------------------------------------------- 借款与分期 */
+
+    async getCreditOverview() {
+      await delay(200)
+      return loadDb().credit
+    },
+
+    async applyLoan(req): Promise<Loan> {
+      await delay(900)
+      const db = loadDb()
+      const product = db.credit.products.find((p) => p.id === req.productId)
+      if (!product) throw new ApiError('借款产品不存在', 404, 'PRODUCT_NOT_FOUND')
+      if (req.amount < product.minAmount || req.amount > product.maxAmount) {
+        throw new ApiError(
+          `借款金额需在 ¥${formatAmount(product.minAmount)}–¥${formatAmount(product.maxAmount)} 之间`,
+          400,
+          'INVALID_AMOUNT',
+        )
+      }
+      if (req.termMonths < product.minTermMonths || req.termMonths > product.maxTermMonths) {
+        throw new ApiError('借款期限超出可选范围', 400, 'INVALID_TERM')
+      }
+      if (req.amount > db.credit.availableCredit) {
+        throw new ApiError('超过可用授信额度', 400, 'OVER_CREDIT_LIMIT')
+      }
+      if (req.paymentPassword) verifyPayPassword(req.paymentPassword)
+      const totalInterest = Math.round((req.amount * product.apr * req.termMonths) / 12)
+      const monthlyPayment = Math.round((req.amount + totalInterest) / req.termMonths)
+      const account = findAccount(req.accountId)
+      const loan: Loan = {
+        id: nextId('ln'),
+        productName: product.name,
+        principal: req.amount,
+        outstanding: req.amount + totalInterest,
+        termMonths: req.termMonths,
+        monthlyPayment,
+        apr: product.apr,
+        nextDueDate: nextPaydayFrom(8),
+        paidPeriods: 0,
+        totalPeriods: req.termMonths,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+      }
+      db.credit.loans.unshift(loan)
+      db.credit.availableCredit -= req.amount
+      applyBalance(account.id, req.amount)
+      pushTransaction(
+        {
+          accountId: account.id,
+          direction: 'in',
+          amount: req.amount,
+          signedAmount: req.amount,
+          counterparty: product.name,
+          memo: `借款放款 · ${req.purpose}`,
+          category: 'other',
+          createdAt: new Date().toISOString(),
+          status: 'success',
+        },
+        {
+          channel: 'account',
+          paymentMethod: account.label,
+          accountLabel: account.label,
+          accountNo: account.accountNo,
+          settleCurrency: account.currency,
+          location: '招财猫银行 App',
+          remark: `借款放款 · ${req.purpose}`,
+        },
+      )
+      persist()
+      return loan
+    },
+
+    async convertToInstallment(transactionId, req): Promise<InstallmentPlan> {
+      await delay(700)
+      const db = loadDb()
+      const tx = db.transactions.find((t) => t.id === transactionId)
+      if (!tx) throw new ApiError('交易不存在', 404, 'NOT_FOUND')
+      if (tx.direction !== 'out') throw new ApiError('只有支出交易可以办理分期', 400, 'INVALID_TARGET')
+      if (req.periods < 3 || req.periods > 24) throw new ApiError('分期期数需在 3–24 期之间', 400, 'INVALID_PERIODS')
+      const feeRate = 0.024
+      const plan: InstallmentPlan = {
+        id: nextId('inst'),
+        title: tx.memo || tx.counterparty,
+        merchant: tx.counterparty,
+        totalAmount: tx.amount,
+        remainingAmount: tx.amount,
+        periods: req.periods,
+        paidPeriods: 0,
+        monthlyPayment: Math.round((tx.amount * (1 + feeRate)) / req.periods),
+        nextDueDate: nextPaydayFrom(8),
+        feeRate,
+        createdAt: new Date().toISOString(),
+      }
+      db.credit.installments.unshift(plan)
+      persist()
+      return plan
+    },
+
+    /* -------------------------------------------------- 理财扩展 */
+
+    async getCashManagement(): Promise<CashManagement> {
+      await delay(200)
+      return loadDb().cashManagement
+    },
+
+    async updateCashSweep(req): Promise<CashManagement> {
+      await delay(480)
+      const db = loadDb()
+      if (req.threshold !== undefined && req.threshold < 0) {
+        throw new ApiError('保留金额不能为负', 400, 'INVALID_AMOUNT')
+      }
+      if (req.enabled !== undefined) db.cashManagement.sweepEnabled = req.enabled
+      if (req.threshold !== undefined) db.cashManagement.sweepThreshold = req.threshold
+      if (req.accountId) {
+        const account = findAccount(req.accountId)
+        db.cashManagement.accountId = account.id
+      }
+      persist()
+      return db.cashManagement
+    },
+
+    async getInvestments(): Promise<InvestmentsOverview> {
+      await delay(220)
+      return loadDb().investments
+    },
+
+    async createInvestPlan(req): Promise<InvestPlan> {
+      await delay(760)
+      const db = loadDb()
+      const product = db.investments.products.find((p) => p.code === req.productCode)
+      if (!product) throw new ApiError('投资产品不存在', 404, 'PRODUCT_NOT_FOUND')
+      if (req.amount < product.minAmount) {
+        throw new ApiError(`该产品起投金额为 ¥${formatAmount(product.minAmount)}`, 400, 'INVALID_AMOUNT')
+      }
+      if (req.paymentPassword) verifyPayPassword(req.paymentPassword)
+      const plan: InvestPlan = {
+        id: nextId('ip'),
+        productCode: product.code,
+        productName: product.name,
+        amount: req.amount,
+        cycle: req.cycle,
+        nextRunAt: nextPaydayFrom(8),
+        executedRuns: 0,
+        totalInvested: 0,
+        status: 'active',
+        createdAt: new Date().toISOString(),
+      }
+      db.investments.plans.unshift(plan)
+      persist()
+      return plan
+    },
+
+    async getInsurance(): Promise<InsuranceOverview> {
+      await delay(220)
+      return loadDb().insurance
+    },
+
+    async enrollInsurance(req): Promise<InsurancePolicy> {
+      await delay(820)
+      const db = loadDb()
+      const product = db.insurance.products.find((p) => p.id === req.productId)
+      if (!product) throw new ApiError('保险产品不存在', 404, 'PRODUCT_NOT_FOUND')
+      if (!req.insuredName.trim()) throw new ApiError('请填写被保人姓名', 400, 'VALIDATION_ERROR')
+      if (req.paymentPassword) verifyPayPassword(req.paymentPassword)
+      const account = settlementAccount(db)
+      if (product.premiumPerYear > account.available) {
+        throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
+      }
+      const now = new Date()
+      const policy: InsurancePolicy = {
+        id: nextId('pol'),
+        productName: product.name,
+        insurer: product.insurer,
+        premium: product.premiumPerYear,
+        coverage: product.coverage,
+        status: 'active',
+        effectiveAt: now.toISOString(),
+        expireAt: new Date(now.getTime() + 365 * 86_400_000).toISOString(),
+        insuredName: req.insuredName.trim(),
+      }
+      db.insurance.policies.unshift(policy)
+      db.insurance.totalCoverage += product.coverage
+      applyBalance(account.id, -product.premiumPerYear)
+      pushTransaction(
+        {
+          accountId: account.id,
+          direction: 'out',
+          amount: product.premiumPerYear,
+          signedAmount: -product.premiumPerYear,
+          counterparty: product.insurer,
+          memo: `保费 · ${product.name}`,
+          category: 'other',
+          createdAt: now.toISOString(),
+          status: 'success',
+        },
+        {
+          channel: 'account',
+          paymentMethod: account.label,
+          accountLabel: account.label,
+          accountNo: account.accountNo,
+          settleCurrency: account.currency,
+          location: '招财猫银行 App',
+          remark: `保费 · ${product.name}`,
+        },
+      )
+      persist()
+      return policy
     },
   }
 }

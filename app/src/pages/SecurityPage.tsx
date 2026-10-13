@@ -9,14 +9,18 @@ import { Field } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
 import { Skeleton, Tag } from '@/components/ui/Segmented'
 import { Row, Toggle } from '@/components/ui/Toggle'
+import { Link } from 'react-router-dom'
 import {
   AlertIcon,
   CheckIcon,
+  ChevronRightIcon,
   DeviceIcon,
   LockIcon,
   PhoneIcon,
   ShieldIcon,
   SlidersIcon,
+  SparkleIcon,
+  UsersIcon,
 } from '@/components/ui/icons'
 import { formatDateTime, maskPhone } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
@@ -149,6 +153,36 @@ export function SecurityPage() {
                 <Button size="sm" onClick={() => setPasswordOpen(true)}>
                   修改
                 </Button>
+              }
+            />
+            <Row
+              icon={<ShieldIcon size={20} />}
+              title="身份认证"
+              description="证件识别、人脸核验与开户验证进度"
+              right={
+                <Link to="/security/identity" className="inline-flex min-h-10 items-center gap-1 text-[13px] text-gold-deep hover:underline">
+                  前往<ChevronRightIcon size={15} />
+                </Link>
+              }
+            />
+            <Row
+              icon={<UsersIcon size={20} />}
+              title="邀请与奖励"
+              description="邀请好友，双方都得奖励"
+              right={
+                <Link to="/security/invitations" className="inline-flex min-h-10 items-center gap-1 text-[13px] text-gold-deep hover:underline">
+                  前往<ChevronRightIcon size={15} />
+                </Link>
+              }
+            />
+            <Row
+              icon={<SparkleIcon size={20} />}
+              title="会员与订阅"
+              description="会员权益、续费与扣款记录"
+              right={
+                <Link to="/security/membership" className="inline-flex min-h-10 items-center gap-1 text-[13px] text-gold-deep hover:underline">
+                  前往<ChevronRightIcon size={15} />
+                </Link>
               }
             />
           </div>

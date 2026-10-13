@@ -113,6 +113,44 @@ const ROUTES = [
   // —— 客服（固定话术那套；真 agent 走 /agent-api，不是这里）——
   ['GET', 'supportHistory', 'listSupportMessages', () => []],
   ['POST', 'supportChat', 'sendSupportMessage', (id, b) => [b.text]],
+
+  // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
+  ['POST', 'exchangeQuote', 'quoteExchange', (id, b) => [b]],
+  ['POST', 'exchange', 'submitExchange', (id, b) => [b]],
+  ['GET', 'savingsOverview', 'getSavingsOverview', () => []],
+  ['POST', 'savingsGoals', 'createSavingsGoal', (id, b) => [b]],
+  ['PATCH', 'savingsGoal', 'updateSavingsGoal', (id, b) => [id, b]],
+  ['DELETE', 'savingsGoal', 'deleteSavingsGoal', (id) => [id]],
+  ['PATCH', 'savingsRoundup', 'updateSavingsRoundup', (id, b) => [b]],
+  ['POST', 'virtualCard', 'createVirtualCard', (id, b) => [id, b]],
+
+  // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
+  ['GET', 'invitations', 'getInvitations', () => []],
+  ['GET', 'membership', 'getMembership', () => []],
+  ['POST', 'membershipSubscribe', 'subscribeMembership', (id, b) => [b.planId]],
+  ['POST', 'membershipCancel', 'cancelMembership', () => []],
+  ['GET', 'identityStatus', 'getIdentityStatus', () => []],
+  ['POST', 'identityOcr', 'runIdentityOcr', () => []],
+  ['POST', 'identityLiveness', 'runIdentityLiveness', () => []],
+
+  // —— 工资与备用金 ——
+  ['GET', 'salaryPlan', 'getSalaryPlan', () => []],
+  ['PATCH', 'salaryPlan', 'updateSalary', (id, b) => [b]],
+  ['GET', 'overdraft', 'getOverdraft', () => []],
+  ['POST', 'overdraftActivate', 'activateOverdraft', (id, b) => [b.active]],
+
+  // —— 借款与分期 ——
+  ['GET', 'creditOverview', 'getCreditOverview', () => []],
+  ['POST', 'creditApply', 'applyLoan', (id, b) => [b]],
+  ['POST', 'creditInstallment', 'convertToInstallment', (id, b) => [id, b]],
+
+  // —— 理财扩展：现金管理 / 投资与定投 / 保险 ——
+  ['GET', 'cashManagement', 'getCashManagement', () => []],
+  ['PATCH', 'cashManagementSweep', 'updateCashSweep', (id, b) => [b]],
+  ['GET', 'investments', 'getInvestments', () => []],
+  ['POST', 'investPlan', 'createInvestPlan', (id, b) => [b]],
+  ['GET', 'insurance', 'getInsurance', () => []],
+  ['POST', 'insuranceEnroll', 'enrollInsurance', (id, b) => [b]],
 ]
 
 /** 与 http.ts 的 `listTransactions` 拼参数保持一致（`size` 不是 `pageSize`）。 */
