@@ -328,6 +328,208 @@ async function main() {
       JSON.stringify(logs).slice(0, 200),
     )
 
+    // ── 场景 F：延迟到账阈值是运行时配置（清单 §9.1，2026-10-12） ──
+    const th1 = await j(await fetch(`${staffBase}/settings/transfer-threshold`, { headers: authW }))
+    check(th1.transferReviewCents === 500_000, '阈值读回 env 种子值', JSON.stringify(th1))
+
+    // 客服只能看不能改
+    const csrPut = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authW,
+      body: JSON.stringify({ transferReviewCents: 900_000 }),
+    })
+    check(csrPut.status === 403, '客服改阈值 403', String(csrPut.status))
+
+    // 非整数分 / 负数 / 超上限都要被拒
+    const badFloat = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authL,
+      body: JSON.stringify({ transferReviewCents: 12.5 }),
+    })
+    check(badFloat.status === 400, '非整数分 400', String(badFloat.status))
+    const badNeg = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authL,
+      body: JSON.stringify({ transferReviewCents: -1 }),
+    })
+    check(badNeg.status === 400, '负阈值 400', String(badNeg.status))
+    const badMax = await fetch(`${staffBase}/settings/transfer-threshold`, {
+      method: 'PUT',
+      headers: authL,
+      body: JSON.stringify({ transferReviewCents: 200_000_000 }),
+    })
+    check(badMax.status === 400, '超上限 400', String(badMax.status))
+
+    // 主管把阈值从 ¥5,000 抬到 ¥8,000 —— 立刻生效，不用重启
+    const th2 = await j(
+      await fetch(`${staffBase}/settings/transfer-threshold`, {
+        method: 'PUT',
+        headers: authL,
+        body: JSON.stringify({ transferReviewCents: 800_000 }),
+      }),
+    )
+    check(th2.transferReviewCents === 800_000, '主管改阈值落库', JSON.stringify(th2))
+
+    // 热生效验证：¥6,000 原本进窗口，阈值抬到 ¥8,000 后应**不再**进
+    const afterRaise = await mkTransfer(600_000, '苏晚', '阈值抬高后的小额')
+    check(
+      afterRaise.pendingReason !== 'inflight' && Boolean(afterRaise.transactionId),
+      '阈值热生效（6000 不再进窗口）',
+      JSON.stringify(afterRaise),
+    )
+
+    // 再调回 ¥5,000，¥5,500 应重新进窗口
+    const th3 = await j(
+      await fetch(`${staffBase}/settings/transfer-threshold`, {
+        method: 'PUT',
+        headers: authL,
+        body: JSON.stringify({ transferReviewCents: 500_000 }),
+      }),
+    )
+    check(th3.transferReviewCents === 500_000, '阈值调回', JSON.stringify(th3))
+    const afterLower = await mkTransfer(550_000, '梁乐怡', '阈值调回后的大额')
+    check(afterLower.pendingReason === 'inflight', '阈值调回后再进窗口', JSON.stringify(afterLower))
+
+    // 改阈值必须留痕
+    const audit2 = await j(await fetch(`${staffBase}/audit-logs`, { headers: authL }))
+    const logs2 = audit2.logs ?? audit2
+    check(
+      Array.isArray(logs2) && logs2.some((l) => l.action === 'settings.transferThreshold.update'),
+      '审计留痕 settings.*',
+      JSON.stringify(logs2).slice(0, 240),
+    )
+
+    // ── 场景 G：模拟清算不能吞钱（2026-10-12 事故回归） ──
+    // 小额外行转账走「模拟清算」：钱当场扣、单据先挂 pending，几秒后由扫账翻 success。
+    // 事故根因：这个 pending 没有调度器，钱扣了单据永远挂着 —— 用户看到的就是「钱被吞」。
+    // 此刻阈值是 ¥5,000，¥200 走不到在途窗口，正好覆盖这条路。
+    const beforeClearing = await readAcc()
+    const clearing = await mkTransfer(20_000, '苏晚', '清算回归')
+    check(
+      clearing.pendingReason === 'clearing' && clearing.settlementStatus === 'pending',
+      '小额外行转账进模拟清算',
+      JSON.stringify(clearing),
+    )
+    check(Boolean(clearing.transactionId), '清算单拿到指令号', JSON.stringify(clearing))
+    // 提交即扣钱（applyBalance），但**余额不能少于本金**——冻结只动 available，
+    // 而这条路根本不冻结，balance 与 available 同步扣才是对的
+    const duringClearing = await readAcc()
+    check(
+      duringClearing.balance === beforeClearing.balance - 20_000,
+      '清算期间本金已扣',
+      JSON.stringify({ before: beforeClearing.balance, now: duringClearing.balance }),
+    )
+
+    // 等扫账结清（CLEARING_SETTLE_MS=3s + 1s tick 间隔，留足余量）
+    await new Promise((r) => setTimeout(r, 5_500))
+    const clearingTx = await j(
+      await fetch(`${bank}/api/transactions/${clearing.transactionId}`, { headers: cus }),
+    )
+    check(
+      clearingTx.status === 'success',
+      '清算单结清为 success（不再卡在 pending）',
+      JSON.stringify(clearingTx).slice(0, 200),
+    )
+    check(
+      clearingTx.pendingReason === undefined || clearingTx.pendingReason === null,
+      '结清后清掉 pendingReason',
+      JSON.stringify(clearingTx.pendingReason),
+    )
+
+    // 兜底：非 inflight 的 pending 不能无限挂着。
+    // 判定用「存续时间」而不是「有 pending」——刚建几秒的清算单是正常在途。
+    const txList = await j(
+      await fetch(`${bank}/api/accounts/${acc.id}/transactions?size=50`, { headers: cus }),
+    )
+    const rows = txList.items ?? txList.transactions ?? txList ?? []
+    const nowMs = Date.now()
+    const stuck = (Array.isArray(rows) ? rows : []).filter(
+      (t) =>
+        t.status === 'pending' &&
+        t.pendingReason !== 'inflight' &&
+        // 清算延迟 3s + 1s tick + 余量；超过还挂着 = 真卡死
+        nowMs - new Date(t.createdAt).getTime() > 8_000,
+    )
+    check(
+      stuck.length === 0,
+      '扫账后无滞留 pending（孤儿单兜底结清）',
+      JSON.stringify(stuck).slice(0, 200),
+    )
+
+    // ── 场景 H：本行大额自动到账，收款方的钱不能被旧快照盖掉（issue #3 回归） ──
+    // tickHolds() 跨档案遍历：处理付款方时会把收款方新余额写盘，
+    // 但遍历数组里那只是「扫描开始时」的旧快照。旧快照一旦被 activateDb 写回，
+    // saveLedger 删表重建，收款方刚入账的行就没了 —— 付款 success、收款 0 元。
+    const payee = await j(
+      await fetch(`${bank}/api/auth/sms-code`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phone: '13600136000' }),
+      }),
+    )
+    const payeeLogin = await j(
+      await fetch(`${bank}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ phone: '13600136000', password: '123456', smsCode: payee.demoCode }),
+      }),
+    )
+    check(Boolean(payeeLogin.token), '收款方登录', JSON.stringify(payeeLogin).slice(0, 160))
+    const payeeH = { authorization: `Bearer ${payeeLogin.token}`, 'content-type': 'application/json' }
+    const readPayeeAcc = async () => {
+      const accounts = await j(await fetch(`${bank}/api/accounts`, { headers: payeeH }))
+      return (accounts.accounts ?? accounts)[0]
+    }
+    const payeeAccBefore = await readPayeeAcc()
+    const payeeTxsBefore = await j(
+      await fetch(`${bank}/api/accounts/${payeeAccBefore.id}/transactions?size=50`, { headers: payeeH }),
+    )
+    const payeeRowsBefore = payeeTxsBefore.items ?? payeeTxsBefore.transactions ?? payeeTxsBefore ?? []
+    const payeeCountBefore = (Array.isArray(payeeRowsBefore) ? payeeRowsBefore : []).length
+
+    // 回到付款方，走本行（LCB/CN）+ 大额 → 进在途窗口
+    const held5 = await j(
+      await fetch(`${bank}/api/transfers`, {
+        method: 'POST',
+        headers: cus,
+        body: JSON.stringify({
+          fromAccountId: acc.id,
+          channel: 'bank',
+          scope: 'domestic',
+          payeeName: payeeLogin.user?.name ?? '陈嘉禾',
+          payeeBankCode: 'LCB',
+          payeeBankRegion: 'CN',
+          payeeAccountNo: payeeAccBefore.accountNo,
+          amount: 600_000,
+          memo: 'issue3 回归',
+        }),
+      }),
+    )
+    check(held5.pendingReason === 'inflight', '本行大额也进在途窗口', JSON.stringify(held5))
+
+    // 等窗口到点自动到账（5s 窗口 + 扫账周期）
+    await new Promise((r) => setTimeout(r, Number(HOLD_SECONDS) * 1000 + 2500))
+
+    const payeeAccAfter = await readPayeeAcc()
+    check(
+      payeeAccAfter.balance === payeeAccBefore.balance + 600_000,
+      '收款方余额如数入账（没被旧快照盖掉）',
+      `${payeeAccBefore.balance} → ${payeeAccAfter.balance}，应 +600000`,
+    )
+    const payeeTxsAfter = await j(
+      await fetch(`${bank}/api/accounts/${payeeAccAfter.id}/transactions?size=50`, { headers: payeeH }),
+    )
+    const payeeRowsAfter = payeeTxsAfter.items ?? payeeTxsAfter.transactions ?? payeeTxsAfter ?? []
+    const payeeIncoming = (Array.isArray(payeeRowsAfter) ? payeeRowsAfter : []).filter(
+      (t) => t.memo === 'issue3 回归' && (t.direction === 'in' || t.signedAmount > 0),
+    )
+    check(payeeIncoming.length === 1, '收款方入账流水恰好一条', JSON.stringify(payeeIncoming).slice(0, 200))
+    check(
+      (Array.isArray(payeeRowsAfter) ? payeeRowsAfter : []).length === payeeCountBefore + 1,
+      '收款方流水只多这一条（没有被重建抹掉历史）',
+      `${payeeCountBefore} → ${(Array.isArray(payeeRowsAfter) ? payeeRowsAfter : []).length}`,
+    )
+
     console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
     process.exitCode = fail === 0 ? 0 : 1
   } finally {

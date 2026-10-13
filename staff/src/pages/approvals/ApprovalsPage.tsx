@@ -8,6 +8,7 @@ import {
   type InterceptReason,
 } from '@/api'
 import { formatTime } from '../tickets/labels'
+import { ThresholdPanel } from './ThresholdPanel'
 import {
   APPROVAL_STATUS_CLASS,
   APPROVAL_STATUS_LABEL,
@@ -174,6 +175,8 @@ export function ApprovalsPage() {
       <p className="mt-1 text-xs text-[var(--color-ink-mute)]">
         大额转账默认在窗口到点自动到账；员工只有拦截权（一票否决），拦截须选理由。
       </p>
+
+      <ThresholdPanel />
 
       {error && (
         <div className="mt-4 rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-4 py-3 text-sm text-[var(--color-coral)]">

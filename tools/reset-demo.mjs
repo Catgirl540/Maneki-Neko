@@ -82,14 +82,14 @@ insertTicket.run(
   'T_demo0001',
   'u_0001', // 林小满（db.ts seed 的演示客户）
   'app',
-  '客户对一笔 8000 元转账不放心，要求转人工',
+  '客户对一笔 60 万元大额转账不放心，要求转人工',
   'high',
   'open',
   null,
-  'txn_demo8000',
+  'txn_demo600k',
   'A_demo0001',
   JSON.stringify([
-    { role: 'user', text: '我要转 8000 给梁乐怡，不放心，帮我找人工' },
+    { role: 'user', text: '我要转 60 万给梁乐怡，不放心，帮我找人工' },
     { role: 'assistant', text: '好的，已为您转接人工客服。' },
   ]),
   NOW,
@@ -111,8 +111,8 @@ const insertApproval = db.prepare(`
 insertApproval.run(
   'A_demo0001',
   'transfer',
-  JSON.stringify({ amount: 800000, payeeName: '梁乐怡', transactionId: 'txn_demo8000' }),
-  '单笔 8000 元，超过审核阈值 5000 元',
+  JSON.stringify({ amount: 60_000_000, payeeName: '梁乐怡', transactionId: 'txn_demo600k' }),
+  '单笔 600,000 元，超过延迟到账阈值 500,000 元',
   null,
   'pending',
   'pending',
@@ -127,7 +127,7 @@ db.close()
 
 console.log('[reset-demo] ✓ 已撒回演示种子：')
 console.log('    员工   王小明（客服）/ 李主管（主管），密码都是 123456')
-console.log('    工单   T_demo0001（待处理，关联 txn_demo8000）')
-console.log('    审批   A_demo0001（待裁决，8000 元超阈值）')
+console.log('    工单   T_demo0001（待处理，关联 txn_demo600k）')
+console.log('    审批   A_demo0001（待裁决，60 万元超阈值）')
 console.log('    客户   林小满 u_0001（下次启动 server 时由 loadDb() 重新长出余额与流水）')
 console.log('[reset-demo] 现在可以重新启动 server（node server/index.mjs）。')

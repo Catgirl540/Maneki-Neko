@@ -1,6 +1,7 @@
 /* ==========================================================================
    StaffApi —— 工作人员端前端唯一依赖的接口面
-   版本：v1.1（2026-10-09 Phase 1 工单前端；v1 冻结后仅新增可选字段 Ticket.customerName）
+   版本：v1.2（2026-10-13 补 CustomerActionRequest 目标字段 + CustomerProfile.autoDebits，
+        响应乙交付记录 §4.1/§4.2 的契约缺口；v1.1 仅新增可选字段 Ticket.customerName）
    变更规则：改签名/字段/错误码 → 单独 commit 带 [contract] 前缀 + 版本号 +1 + 群里广播
    两套实现：createHttpApi / createMockApi，组件只 import { api }
    功能规格：design/staff-console/工作人员端清单.md
@@ -10,6 +11,7 @@ import type {
   Approval,
   ApprovalBizType,
   AuditLog,
+  Cents,
   CustomerProfile,
   CustomerSummary,
   StaffLoginResult,
@@ -21,6 +23,13 @@ import type {
   TicketStatus,
   TranscriptEntry,
 } from './types'
+
+/** 大额延迟到账阈值（清单 §9.1）。金额一律整数分，¥500,000 = 50000000 */
+export interface TransferThreshold {
+  transferReviewCents: Cents
+  /** 后端允许的上限：阈值必须低于单笔转账上限，否则永远进不了窗口 */
+  maxTransferReviewCents: Cents
+}
 
 /** 与后端约定的 REST 路径表，mock 与 http 共用（照抄客户端 check-contract 的纪律） */
 export const routes = {
@@ -41,6 +50,9 @@ export const routes = {
   customerProfile: (id: string) => `/staff-api/customers/${id}/profile`,
 
   customerActions: (id: string, action: string) => `/staff-api/customers/${id}/actions/${action}`,
+
+  /** 运行时参数：大额延迟到账阈值（清单 §9.1，2026-10-12 起可在员工端随时改） */
+  transferThreshold: () => '/staff-api/settings/transfer-threshold',
 
   auditLogs: () => '/staff-api/audit-logs',
 
@@ -84,6 +96,19 @@ export interface CustomerActionRequest {
   verificationMethod: 'phone' | 'sms' | 'face' | 'simulated'
   verificationResult: 'passed' | 'failed'
   reason: string
+  /**
+   * 目标字段（v1.2 补，乙交付记录 §4.1）：按动作二选一带入，服务端逐动作校验必填。
+   * - lockCard / unlockCard / updateCardSettings → cardId（updateCardSettings 另需 dailyLimit）
+   * - patchAutodebit → autoDebitId + enabled
+   */
+  /** 目标卡 id（卡类动作必填） */
+  cardId?: string
+  /** 新单日限额，整数分（updateCardSettings 必填；服务端只收限额档位枚举） */
+  dailyLimit?: Cents
+  /** 目标代扣协议 id（patchAutodebit 必填） */
+  autoDebitId?: string
+  /** 代扣开关（patchAutodebit 必填） */
+  enabled?: boolean
 }
 
 /**
@@ -143,4 +168,12 @@ export interface StaffApi {
   performCustomerAction(id: string, action: string, req: CustomerActionRequest): Promise<{ ok: true }>
 
   listAuditLogs(): Promise<AuditLog[]>
+
+  /**
+   * 大额延迟到账阈值（整数分）。运行时配置，员工端可改（清单 §9.1）。
+   * 默认 ¥500,000 = 50000000 分。改完立刻对下一笔转账生效，不用重启。
+   */
+  getTransferThreshold(): Promise<TransferThreshold>
+  /** 只有主管能改；超上限或非整数分会被 400 拒掉 */
+  updateTransferThreshold(cents: Cents): Promise<TransferThreshold>
 }

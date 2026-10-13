@@ -23,6 +23,7 @@ import {
   type CustomerActionRequest,
   type DecideRequest,
   type StaffApi,
+  type TransferThreshold,
 } from '../contract'
 
 const now = '2026-10-09T12:00:00.000Z'
@@ -108,6 +109,7 @@ const demoProfile: CustomerProfile = {
   phoneMasked: '138****8000',
   accounts: [{ id: 'acc_1', label: '储蓄账户', balance: 1250000 }],
   cards: [{ id: 'card_1', last4: '6688', status: 'active' }],
+  autoDebits: [{ id: 'ad_1', merchant: '网易云音乐', amount: 2500, cycle: '每月 8 日', enabled: true }],
   recentTransactions: [
     // 挂起中的审核单：靠 pendingReason 区分「审核中」与「处理中」（§9.2）
     {
@@ -146,6 +148,11 @@ const demoLogs: AuditLog[] = [
 export function createMockApi(): StaffApi {
   // mock 里也模拟内存会话，让「登录后才进得去」的守卫在演示时成立
   let session: StaffUser | null = null
+  // 默认 ¥500,000 = 50000000 分（清单 §9.1）
+  const thresholdState: TransferThreshold = {
+    transferReviewCents: 50_000_000,
+    maxTransferReviewCents: 90_000_000,
+  }
 
   const ok = <T,>(value: T): Promise<T> => Promise.resolve(value)
 
@@ -277,5 +284,18 @@ export function createMockApi(): StaffApi {
     performCustomerAction: (_id: string, _action: string, _req: CustomerActionRequest) => ok({ ok: true as const }),
 
     listAuditLogs: () => ok<AuditLog[]>(demoLogs),
+
+    // 运行时阈值（清单 §9.1）。mock 里也做成可改的，演示时两条路径行为一致。
+    getTransferThreshold: () => ok<TransferThreshold>({ ...thresholdState }),
+    updateTransferThreshold: (cents: number) => {
+      if (!Number.isInteger(cents) || cents <= 0) {
+        return Promise.reject(new ApiError('阈值必须是正整数分（¥1 = 100）', 400, 'BAD_THRESHOLD'))
+      }
+      if (cents > thresholdState.maxTransferReviewCents) {
+        return Promise.reject(new ApiError('阈值不能超过单笔转账上限', 400, 'BAD_THRESHOLD'))
+      }
+      thresholdState.transferReviewCents = cents
+      return ok<TransferThreshold>({ ...thresholdState })
+    },
   }
 }

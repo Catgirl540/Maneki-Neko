@@ -337,13 +337,30 @@ function findAssetRoot(start) {
  * @param options.searchFrom - 从哪个目录开始向上找 app 源码与转译钩子。
  * @param options.auth - 可选的服务端会话适配器；不传时保留原演示桥接行为。
  * @param options.storage - 可选的 localStorage 适配器，供 SQLite 后端持久化。
- * @param options.reviewThreshold - 大额转账延迟到账阈值（整数分）。传了才启用在途窗口
+ * @param options.reviewThreshold - 大额转账延迟到账阈值（整数分或取值函数）。
+ *   传函数 = 阈值运行时可改，每笔转账现读（清单 §9.1）。传了才启用在途窗口
  *   （清单 §9）：≥ 阈值的转账先冻结、进窗口；不传 = 一律立即到账（浏览器 mock 同款）。
  * @param options.holdWindowMs - 在途窗口时长（毫秒），默认 5 分钟，演示可调小。
  * @param options.onTransferHeld - 转账进窗口时的回调（server 侧建拦截窗口记录）。
  * @param options.onHoldClosed - 窗口了结时的回调（到账/拦截/撤销，server 侧关单）。
- * @returns `{ handle, reset, stats, getHeldTransfer, settleHeldTransfer, tickHolds }`
+ * @returns `{ handle, reset, stats, getHeldTransfer, settleHeldTransfer, tickHolds, searchCustomers, getCustomerProfile, performCustomerAction }`
  */
+
+/** 手机号脱敏：`138****8000`（员工端客户查询用，清单 §6 敏感字段默认脱敏）。 */
+function maskPhone(phone) {
+  const digits = String(phone ?? '').replace(/\D/g, '')
+  if (digits.length < 7) return digits
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`
+}
+
+/** 从档案里推几条可审计的风险标签（demo 级，只做两条确定性规则）。 */
+function riskTagsFor(profile) {
+  const tags = []
+  if (profile.transactions.some((t) => t.pendingReason === 'inflight')) tags.push('大额转账关注')
+  if (profile.cards.some((c) => c.status === 'locked')) tags.push('有锁卡')
+  return tags
+}
+
 export async function createDemoBank({
   stateFile,
   searchFrom,
@@ -384,6 +401,7 @@ export async function createDemoBank({
     getHeldTransfer: mockGetHeldTransfer,
     settleHeldTransfer: mockSettleHeldTransfer,
     settleExpiredHolds: mockSettleExpiredHolds,
+    settleClearingTransactions: mockSettleClearing,
   } = mockModule
   const { routes, ApiError } = contractModule
   const { resetDb, findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb } = dbModule
@@ -394,6 +412,7 @@ export async function createDemoBank({
       ? {}
       : { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000 },
   )
+  // reviewThreshold 允许是函数：mock 内部每笔转账现读，员工端改完立刻生效。
   const patterns = compilePatterns(routes)
   // mock 原本是单标签页内存对象。HTTP 桥接会同时服务多个用户，
   // 所以请求先按 bearer token 切到对应档案，并串行执行以避免切档串号。
@@ -619,7 +638,9 @@ export async function createDemoBank({
     },
 
     /**
-     * 定时扫账：把所有到点的在途指令自动到账（清单 §9.1，没人拦 = 默认放行）。
+     * 定时扫账（清单 §9.1 / §9.2）：
+     * - 到点的在途指令自动到账（没人拦 = 默认放行）
+     * - 模拟清算单翻 success，含孤儿 pending 兜底（钱已扣，绝不许停在 pending）
      * 跨用户逐档案切换——每个档案是独立台账，只扫当前档会漏掉别人的到期转账。
      * 返回本次自动到账的笔数。
      */
@@ -637,6 +658,9 @@ export async function createDemoBank({
           for (const transactionId of ids) {
             closed.push({ customerId: profile.user.id, transactionId })
           }
+          // 清算单只改状态、不动资金，也没有员工端窗口要关，
+          // 所以不进 closed —— 别让 onHoldClosed 误以为是拦截窗口了结。
+          mockSettleClearing()
         }
         activateDb(before)
         if (onHoldClosed) {
@@ -645,6 +669,91 @@ export async function createDemoBank({
           }
         }
         return closed.length
+      })
+    },
+
+    /** 员工端客户查询：跨档案按姓名/手机号/客户 id 搜，返回脱敏摘要（清单 §6）。 */
+    searchCustomers(keyword) {
+      return exclusive(async () => {
+        const kw = String(keyword ?? '').trim().toLowerCase()
+        const out = []
+        for (const profile of listAllProfiles()) {
+          const { id, name, phone } = profile.user
+          if (kw && !`${name} ${phone} ${id}`.toLowerCase().includes(kw)) continue
+          out.push({
+            customerId: id,
+            name,
+            phoneMasked: maskPhone(phone),
+            riskTags: riskTagsFor(profile),
+          })
+        }
+        return out
+      })
+    },
+
+    /** 员工端客户 360：读账户/卡/最近流水摘要（脱敏，不碰支付密码/卡安全码）。 */
+    getCustomerProfile(customerId) {
+      return exclusive(async () => {
+        const profile = findProfileByUserId(customerId)
+        if (profile === null) {
+          throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
+        }
+        const txs = [...profile.transactions]
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          .slice(0, 20)
+        return {
+          customerId: profile.user.id,
+          name: profile.user.name,
+          phoneMasked: maskPhone(profile.user.phone),
+          accounts: profile.accounts.map((a) => ({ id: a.id, label: a.label, balance: a.balance })),
+          cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status })),
+          autoDebits: (profile.autoDebits ?? []).map((a) => ({
+            id: a.id,
+            merchant: a.merchant,
+            amount: a.amount,
+            cycle: a.cycle,
+            enabled: a.enabled,
+          })),
+          recentTransactions: txs.map((t) => ({
+            id: t.id,
+            amount: t.signedAmount,
+            counterparty: t.counterparty,
+            status: t.status,
+            ...(t.pendingReason ? { pendingReason: t.pendingReason } : {}),
+            createdAt: t.createdAt,
+          })),
+        }
+      })
+    },
+
+    /**
+     * 员工端代客办理：切到客户档案，复用客户端既有卡/代扣业务规则（清单 §2 P1）。
+     * 不复制校验逻辑 —— 锁卡联动（onlinePayment/overseasPayment 一并关）由 mock 自己保证。
+     */
+    performCustomerAction({ customerId, action, payload }) {
+      return exclusive(async () => {
+        const before = dbModule.loadDb()
+        const profile = findProfileByUserId(customerId)
+        if (profile === null) {
+          throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
+        }
+        try {
+          activateDb(profile)
+          switch (action) {
+            case 'lockCard':
+              return await api.setCardLock(payload.cardId, true)
+            case 'unlockCard':
+              return await api.setCardLock(payload.cardId, false)
+            case 'updateCardSettings':
+              return await api.updateCardSettings(payload.cardId, payload.patch)
+            case 'patchAutodebit':
+              return await api.setAutoDebitEnabled(payload.autoDebitId, payload.enabled)
+            default:
+              throw Object.assign(new Error('不支持的代客动作'), { status: 400, code: 'BAD_ACTION' })
+          }
+        } finally {
+          activateDb(before)
+        }
       })
     },
   }

@@ -58,6 +58,8 @@ export const post = <T,>(path: string, body?: unknown) =>
   request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })
 export const patch = <T,>(path: string, body?: unknown) =>
   request<T>(path, { method: 'PATCH', body: body === undefined ? undefined : JSON.stringify(body) })
+export const put = <T,>(path: string, body?: unknown) =>
+  request<T>(path, { method: 'PUT', body: body === undefined ? undefined : JSON.stringify(body) })
 
 /** 健康检查（不走鉴权），给「后端没起」的回落提示用 */
 export async function ping(): Promise<boolean> {

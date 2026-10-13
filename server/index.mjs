@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDemoBank } from '../framework/bridge/demo-bank.mjs'
 import { openBankDatabase } from './database.mjs'
-import { createStaffApi } from './staff-api.mjs'
+import { createStaffApi, ensureStaffSchema, getTransferReviewCents } from './staff-api.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const host = process.env.BANK_HOST ?? '127.0.0.1'
@@ -59,8 +59,10 @@ const auth = {
 
 mkdirSync(dirname(databaseFile), { recursive: true })
 const database = openBankDatabase(databaseFile, legacyStateFile)
-// 大额转账延迟到账阈值（清单 §9.1）：demo ¥5,000 = 500000 分，服务端可调，不写死前端。
-const reviewThreshold = Number(process.env.BANK_TRANSFER_REVIEW_CENTS ?? 500_000)
+// 先建 staff 表：阈值读取走 staff_settings，必须在任何 getTransferReviewCents 之前存在。
+ensureStaffSchema(database.db)
+// 大额转账延迟到账阈值（清单 §9.1）：默认 ¥500,000 = 50000000 分。
+// 2026-10-12 起是**运行时配置**：存 staff_settings，员工端随时改，这里每笔现读。
 // 在途窗口时长：业务默认 5 分钟，演示调成 30 秒（BANK_TRANSFER_HOLD_SECONDS=30）。
 const holdWindowMs = Number(process.env.BANK_TRANSFER_HOLD_SECONDS ?? 300) * 1000
 // staffApi 依赖 bank 的资金钩子，bank 的回调又要回写 staffApi 的记录，
@@ -70,7 +72,7 @@ const bank = await createDemoBank({
   searchFrom: root,
   auth,
   storage: database.storage,
-  reviewThreshold,
+  reviewThreshold: () => getTransferReviewCents(database.db),
   holdWindowMs,
   onTransferHeld: (held) => staffApi.createTransferApproval(held),
   onHoldClosed: (closed) => staffApi.closeTransferApproval(closed),
@@ -81,6 +83,10 @@ staffApi = createStaffApi({
   bankHooks: {
     getHeldTransfer: (args) => bank.getHeldTransfer(args),
     settleHeldTransfer: (args) => bank.settleHeldTransfer(args),
+    // 乙模块（客户查询 / 代客办理）：复用同一份 mock 业务规则，不复制校验
+    searchCustomers: (keyword) => bank.searchCustomers(keyword),
+    getCustomerProfile: (customerId) => bank.getCustomerProfile(customerId),
+    performCustomerAction: (args) => bank.performCustomerAction(args),
   },
 })
 
@@ -150,5 +156,5 @@ const server = createServer(async (req, res) => {
 server.listen(port, host, () => {
   console.log(`[bank-server] http://${host}:${port}`)
   console.log(`[bank-server] SQLite: ${databaseFile}`)
-  console.log(`[bank-server] 大额延迟到账：阈值 ¥${(reviewThreshold / 100).toFixed(2)}，窗口 ${holdWindowMs / 1000}s`)
+  console.log(`[bank-server] 大额延迟到账：阈值 ¥${(getTransferReviewCents(database.db) / 100).toFixed(2)}（员工端可改），窗口 ${holdWindowMs / 1000}s`)
 })

@@ -1,12 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AppShell } from '@/layout/AppShell'
 import { LoginPage } from '@/layout/LoginPage'
-import {
-  ActionsPage,
-  AuditPage,
-  CustomersPage,
-  WorkbenchPage,
-} from '@/pages/PlaceholderPages'
+import { WorkbenchPage } from '@/pages/workbench/WorkbenchPage'
+import { CustomersPage } from '@/pages/customers/CustomersPage'
+import { ActionsPage } from '@/pages/actions/ActionsPage'
+import { AuditPage } from '@/pages/audit/AuditPage'
 import { ApprovalsPage } from '@/pages/approvals/ApprovalsPage'
 import { TicketsPage } from '@/pages/tickets/TicketsPage'
 import { RequireAuth, SessionProvider } from '@/store/session'
