@@ -3,7 +3,7 @@
  *
  * 「转入」在真实银行 App 里不是把余额改大的按钮，而是**把你的收款信息给对方**。
  * 这件事要保的性质是：展示的字段与复制出去的内容**一致且够用** ——
- * 对方照着抄能填完收款人（户名 / 账户 / 转数快标识），少一项就转不成。
+ * 对方照着抄能填完银行账户收款人；未经确认归属的 FPS 标识不能进入分享文本。
  *
  * 顺带守住两条容易回退的点：
  *   · 收款账号**不该被隐藏**（它是收款项，遮起来反而妨碍用）
@@ -85,9 +85,9 @@ const dialog = tab.getByRole('dialog', { name: '转入', exact: true })
 await dialog.waitFor()
 await tab.waitForTimeout(500)
 const text = await dialog.innerText()
-const need = ['收款户名', '收款账户', '收款银行', '转数快手机号', 'FPS ID']
+const need = ['收款户名', '收款账户', '收款银行']
 const missing = need.filter((k) => !text.includes(k))
-report(missing.length === 0, '② 转入弹窗信息五项齐全', [
+report(missing.length === 0 && !text.includes('FPS ID'), '② 银行账户收款信息完整，不展示未确认的 FPS 标识', [
   `缺失：${missing.length ? missing.join('、') : '无'}`,
 ])
 
@@ -108,7 +108,7 @@ await tab.waitForTimeout(400)
 const all = await readClipboard()
 const lines = all.split('\n')
 report(
-  need.every((k) => all.includes(k)) && lines.length === 5 && accountNo !== null && all.includes(accountNo),
+  need.every((k) => all.includes(k)) && lines.length === 3 && accountNo !== null && all.includes(accountNo) && !all.includes('FPS'),
   '④ 「复制全部」给出的是一段能直接粘的完整信息',
   [`${lines.length} 行：${lines.map((l) => l.split('：')[0]).join(' / ')}`],
 )

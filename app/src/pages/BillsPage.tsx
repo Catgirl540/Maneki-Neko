@@ -23,6 +23,7 @@ const FILTERS: { value: TransactionCategory | 'all'; label: string }[] = [
   { value: 'transport', label: '交通' },
   { value: 'subscription', label: '订阅' },
 ]
+const PAGE_SIZE = 6
 
 export function BillsPage() {
   const toast = useToast()
@@ -33,8 +34,11 @@ export function BillsPage() {
   const selectedAccountId = searchParams.get('account') ?? ''
   const candidate = searchParams.get('category') ?? 'all'
   const category = (FILTERS.some(item => item.value === candidate) ? candidate : 'all') as TransactionCategory | 'all'
+  const rawPage = Number(searchParams.get('page') ?? '1')
+  const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1
   const setFilter = (key: string, value: string) => setSearchParams(previous => {
     const next = new URLSearchParams(previous)
+    next.delete('page')
     if (value && value !== 'all') next.set(key, value)
     else next.delete(key)
     return next
@@ -45,10 +49,20 @@ export function BillsPage() {
   const account = useAsync(() => api.listAccounts(), [])
   const cards = useAsync<BankCard[]>(() => api.listCards(), [])
   const accountId = account.data?.find(row => row.id === selectedAccountId)?.id ?? account.data?.[0]?.id
-  const transactions = useAsync<{ items: Transaction[]; total: number }>(
-    () => accountId ? api.listTransactions(accountId, { size: 6, category, keyword }) : Promise.resolve({ items: [], total: 0 }),
-    [accountId, category, keyword],
+  const queryKey = JSON.stringify([accountId, category, keyword, page])
+  const transactions = useAsync<{ items: Transaction[]; total: number; queryKey: string }>(
+    async () => ({ ...(accountId ? await api.listTransactions(accountId, { page, size: PAGE_SIZE, category, keyword }) : { items: [], total: 0 }), queryKey }),
+    [accountId, category, keyword, page],
   )
+  // 换页/筛选后不能将上一页的缓存显示为新页结果。
+  const visibleTransactions = transactions.data?.queryKey === queryKey ? transactions.data : null
+  const totalPages = Math.max(1, Math.ceil((visibleTransactions?.total ?? 0) / PAGE_SIZE))
+  const setPage = (value: number) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    if (value === 1) next.delete('page')
+    else next.set('page', String(value))
+    return next
+  })
 
   async function exportCsv() {
     if (!accountId) return
@@ -90,7 +104,7 @@ export function BillsPage() {
           action={
             <div className="flex items-center gap-4">
               <span className="num text-[13px] text-ink-mute">
-                共 {transactions.data?.total ?? 0} 笔
+                共 {visibleTransactions?.total ?? '—'} 笔
               </span>
               <Button
                 size="sm"
@@ -151,7 +165,7 @@ export function BillsPage() {
         </div>
 
         <div className="mt-3 divide-y divide-line">
-          {transactions.loading &&
+          {!visibleTransactions && !transactions.error &&
             Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="flex items-center gap-4 py-4">
                 <Skeleton className="size-10 rounded-chip" />
@@ -160,33 +174,46 @@ export function BillsPage() {
               </div>
             ))}
 
-          {transactions.data?.items.map((tx) => (
+          {transactions.error && <div role="alert" className="py-4 text-[13px] text-coral"><p>{transactions.error}</p><Button size="sm" className="mt-3" onClick={transactions.reload}>重新加载流水</Button></div>}
+
+          {visibleTransactions?.items.map((tx) => (
             <TransactionRow key={tx.id} tx={tx} showAccount={CATEGORY_LABEL[tx.category]} />
           ))}
 
-          {!transactions.loading && transactions.data?.items.length === 0 && (
+          {visibleTransactions?.items.length === 0 && (
             <EmptyState
-              title="没有匹配的流水"
-              description="换个分类或关键词再试试。"
+              title={page > 1 ? '此页暂无流水' : '没有匹配的流水'}
+              description={page > 1 ? undefined : '换个分类或关键词再试试。'}
               action={
                 <Button
                   size="sm"
                   onClick={() => {
+                    if (page > 1) { setPage(1); return }
                     setKeywordDraft('')
                     setSearchParams(previous => {
                       const next = new URLSearchParams(previous)
                       next.delete('category')
                       next.delete('q')
+                      next.delete('page')
                       return next
                     }, { replace: true })
                   }}
                 >
-                  清空筛选
+                  {page > 1 ? '回到第一页' : '清空筛选'}
                 </Button>
               }
             />
           )}
         </div>
+        {visibleTransactions && (totalPages > 1 || page > 1) && (
+          <nav aria-label="流水分页" className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4">
+            <span className="num text-[13px] text-ink-mute">第 {page} 页 / 共 {totalPages} 页</span>
+            <div className="flex gap-2">
+              <Button size="sm" disabled={page <= 1 || transactions.refreshing} onClick={() => setPage(Math.min(page - 1, totalPages))}>上一页</Button>
+              <Button size="sm" disabled={page >= totalPages || transactions.refreshing} onClick={() => setPage(page + 1)}>下一页</Button>
+            </div>
+          </nav>
+        )}
       </Card>
 
     </div>

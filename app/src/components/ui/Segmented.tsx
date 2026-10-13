@@ -5,11 +5,13 @@ export function Segmented<T extends string>({
   options,
   onChange,
   className,
+  disabled = false,
 }: {
   value: T
   options: { value: T; label: string }[]
   onChange: (next: T) => void
   className?: string
+  disabled?: boolean
 }) {
   return (
     <div
@@ -27,6 +29,7 @@ export function Segmented<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            disabled={disabled}
             onClick={() => onChange(opt.value)}
             className={cn(
               'min-h-10 rounded-chip px-3 text-[13px] font-medium whitespace-nowrap transition-colors duration-200 sm:px-4',

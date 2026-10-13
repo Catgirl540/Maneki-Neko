@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { SavingsGoal, SavingsOverview } from '@/api/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -9,8 +9,9 @@ import { Row, Toggle } from '@/components/ui/Toggle'
 import { EmptyState, Tag } from '@/components/ui/Segmented'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { BoltIcon, PigIcon, PlusIcon, SparkleIcon, TrashIcon, WalletIcon } from '@/components/ui/icons'
-import { formatAmount, formatDate, toCents } from '@/lib/format'
+import { formatAmount, formatDate } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
+import { parseAmountInput } from '@/lib/amountInput'
 import { useToast } from '@/components/ui/toast-context'
 
 const GOAL_ICONS: { value: string; label: string }[] = [
@@ -20,7 +21,7 @@ const GOAL_ICONS: { value: string; label: string }[] = [
   { value: 'flag', label: '其他' },
 ]
 
-function GoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (goal: SavingsGoal) => void }) {
+function GoalCard({ goal, onDelete, disabled }: { goal: SavingsGoal; onDelete: (goal: SavingsGoal) => void; disabled: boolean }) {
   const ratio = goal.targetAmount > 0 ? Math.min(1, goal.savedAmount / goal.targetAmount) : 0
   const percent = Math.round(ratio * 100)
   return (
@@ -35,6 +36,7 @@ function GoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (goal: Savi
         <button
           type="button"
           aria-label={`删除目标 ${goal.name}`}
+          disabled={disabled}
           onClick={() => onDelete(goal)}
           className="grid size-9 shrink-0 place-items-center rounded-chip text-ink-mute transition-colors hover:bg-coral-wash hover:text-coral"
         >
@@ -50,7 +52,7 @@ function GoalCard({ goal, onDelete }: { goal: SavingsGoal; onDelete: (goal: Savi
           <div className="h-full rounded-chip bg-gold transition-[width] duration-[var(--duration-state)] ease-[var(--ease-out-soft)]" style={{ width: `${percent}%` }} />
         </div>
         <div className="mt-2 flex items-center justify-between text-[12px] text-ink-mute">
-          <span>{goal.sweep ? `${goal.sweep.cycle} 自动存 ¥${formatAmount(goal.sweep.amount)}` : '未开启自动归集'}</span>
+          <span>{goal.sweep ? `归集设置 · ${goal.sweep.cycle} ¥${formatAmount(goal.sweep.amount)}` : '暂无归集设置'}</span>
           <span className="num">{percent}%</span>
         </div>
       </div>
@@ -67,6 +69,8 @@ export function SavingsPage() {
   const [deadline, setDeadline] = useState('')
   const [icon, setIcon] = useState('travel')
   const [submitting, setSubmitting] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const writing = useRef(false)
   const [formError, setFormError] = useState<string | null>(null)
 
   function resetForm() {
@@ -78,9 +82,11 @@ export function SavingsPage() {
   }
 
   async function createGoal() {
-    const amount = toCents(target)
+    if (writing.current) return
+    const amount = parseAmountInput(target)
     if (!name.trim()) return setFormError('请填写目标名称')
-    if (amount <= 0) return setFormError('目标金额必须大于 0')
+    if (amount === null || amount <= 0) return setFormError('请输入有效目标金额，最多两位小数')
+    writing.current = true
     setSubmitting(true)
     setFormError(null)
     try {
@@ -92,13 +98,17 @@ export function SavingsPage() {
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : '创建失败，请稍后重试')
     } finally {
+      writing.current = false
       setSubmitting(false)
     }
   }
 
   async function removeGoal(goal: SavingsGoal) {
+    if (writing.current) return
     const snapshot = savings.data
     if (!snapshot) return
+    writing.current = true
+    setUpdating(true)
     savings.setData({ ...snapshot, goals: snapshot.goals.filter((g) => g.id !== goal.id) })
     try {
       await api.deleteSavingsGoal(goal.id)
@@ -107,19 +117,27 @@ export function SavingsPage() {
     } catch (err) {
       savings.setData(snapshot)
       toast.show(err instanceof ApiError ? err.message : '删除失败，请稍后重试', 'error')
+    } finally {
+      writing.current = false
+      setUpdating(false)
     }
   }
 
   async function toggleRoundup(next: boolean) {
-    const snapshot = savings.data
-    if (!snapshot) return
-    savings.setData({ ...snapshot, roundup: { ...snapshot.roundup, enabled: next } })
+    if (writing.current) return
+    if (!savings.data) return
+    writing.current = true
+    setUpdating(true)
     try {
       await api.updateSavingsRoundup({ enabled: next })
-      toast.show(next ? '已开启消费凑整转存' : '已关闭消费凑整转存', 'success')
+      // 等待设置期间，目标列表可能已经刷新；重读总览，不用旧快照覆盖它。
+      savings.reload()
+      toast.show('凑整规则已保存', 'success')
     } catch (err) {
-      savings.setData(snapshot)
       toast.show(err instanceof ApiError ? err.message : '操作失败，请稍后重试', 'error')
+    } finally {
+      writing.current = false
+      setUpdating(false)
     }
   }
 
@@ -133,7 +151,7 @@ export function SavingsPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">存钱计划</h1>
-        <Button variant="primary" size="sm" icon={<PlusIcon size={16} />} onClick={() => setCreateOpen(true)}>
+        <Button variant="primary" size="sm" disabled={updating || submitting} icon={<PlusIcon size={16} />} onClick={() => setCreateOpen(true)}>
           新建目标
         </Button>
       </div>
@@ -161,18 +179,18 @@ export function SavingsPage() {
         <CardHeader title="存钱目标" action={<span className="text-[13px] text-ink-mute">{data.goals.length} 个</span>} />
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           {data.goals.map((goal) => (
-            <GoalCard key={goal.id} goal={goal} onDelete={(g) => void removeGoal(g)} />
+            <GoalCard key={goal.id} goal={goal} disabled={updating || submitting} onDelete={(g) => void removeGoal(g)} />
           ))}
         </div>
         {data.goals.length === 0 && (
-          <EmptyState title="还没有存钱目标" description="设置一个目标金额与期限，开始为它存钱。" action={<Button variant="primary" size="sm" icon={<PlusIcon size={16} />} onClick={() => setCreateOpen(true)}>新建目标</Button>} />
+          <EmptyState title="还没有存钱目标" description="设置目标金额与期限。" action={<Button variant="primary" size="sm" disabled={updating || submitting} icon={<PlusIcon size={16} />} onClick={() => setCreateOpen(true)}>新建目标</Button>} />
         )}
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '120ms' }}>
-        <CardHeader title="消费凑整转存" action={<Toggle label="消费凑整转存" checked={data.roundup.enabled} onChange={(next) => void toggleRoundup(next)} />} />
+        <CardHeader title="消费凑整规则" action={<Toggle label="消费凑整转存" disabled={updating || submitting} checked={data.roundup.enabled} onChange={(next) => void toggleRoundup(next)} />} />
         <div className="mt-3 divide-y divide-line">
-          <Row icon={<BoltIcon size={18} />} title="凑整到整数" description={`每笔消费的零头凑整到 ¥${formatAmount(data.roundup.roundupTo)} 后转入目标`} />
+          <Row icon={<BoltIcon size={18} />} title="凑整到整数" description={`已设置凑整到 ¥${formatAmount(data.roundup.roundupTo)}，自动执行暂未开放`} />
           <Row icon={<WalletIcon size={18} />} title="单日上限" description={`每天最多转存 ¥${formatAmount(data.roundup.dailyCap)}`} />
         </div>
       </Card>
@@ -209,7 +227,7 @@ export function SavingsPage() {
               }
             />
           ))}
-          {data.rewards.length === 0 && <EmptyState title="暂无奖励" description="持续存钱即可解锁利息加成与奖励。" />}
+          {data.rewards.length === 0 && <EmptyState title="暂无奖励" description="奖励以实际记录为准。" />}
         </div>
       </Card>
 
@@ -217,7 +235,7 @@ export function SavingsPage() {
         open={createOpen}
         onClose={() => { if (!submitting) { setCreateOpen(false); resetForm() } }}
         title="新建存钱目标"
-        description="设定目标金额与期限，之后可为它开启定期自动归集。"
+        description="设定目标金额与期限。"
         closeDisabled={submitting}
         footer={
           <>
@@ -253,7 +271,7 @@ export function SavingsPage() {
           </div>
           <Field label="目标日期（选填）" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
           {formError && <p role="alert" className="text-[13px] text-coral">{formError}</p>}
-          <p className="text-[12px] text-ink-mute">目标金额按元填写；存钱计划的资金来自你的储蓄账户。</p>
+          <p className="text-[12px] text-ink-mute">目标仅保存金额与期限。</p>
         </div>
       </Modal>
 

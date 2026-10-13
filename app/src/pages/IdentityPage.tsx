@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { api, ApiError } from '@/api'
+import { api } from '@/api'
 import type { IdentityStatus } from '@/api/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -8,7 +7,7 @@ import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { AlertIcon, CheckIcon, EyeIcon, ShieldIcon, UserIcon } from '@/components/ui/icons'
 import { formatDate } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
-import { useToast } from '@/components/ui/toast-context'
+import { maskIdentityNumber } from '@/lib/identityDisplay'
 import { cn } from '@/lib/cn'
 
 const LEVEL: Record<IdentityStatus['level'], { label: string; tone: 'gold' | 'blue' | 'neutral' }> = {
@@ -18,35 +17,7 @@ const LEVEL: Record<IdentityStatus['level'], { label: string; tone: 'gold' | 'bl
 }
 
 export function IdentityPage() {
-  const toast = useToast()
   const identity = useAsync<IdentityStatus>(() => api.getIdentityStatus(), [])
-  const [busy, setBusy] = useState<'ocr' | 'liveness' | null>(null)
-
-  async function runOcr() {
-    setBusy('ocr')
-    try {
-      await api.runIdentityOcr()
-      toast.show('证件识别完成', 'success')
-      identity.reload()
-    } catch (err) {
-      toast.show(err instanceof ApiError ? err.message : '识别失败，请稍后重试', 'error')
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  async function runLiveness() {
-    setBusy('liveness')
-    try {
-      await api.runIdentityLiveness()
-      toast.show('人脸核验通过', 'success')
-      identity.reload()
-    } catch (err) {
-      toast.show(err instanceof ApiError ? err.message : '核验失败，请稍后重试', 'error')
-    } finally {
-      setBusy(null)
-    }
-  }
 
   if (!identity.data) return identity.error ? <DataUnavailable message={identity.error} onRetry={identity.reload} /> : <DataLoading />
   const data = identity.data
@@ -62,14 +33,14 @@ export function IdentityPage() {
           <span className="grid size-14 shrink-0 place-items-center rounded-tile bg-gold-tint text-gold-deep">
             <ShieldIcon size={26} />
           </span>
-          <dl className="flex min-w-[220px] flex-1 flex-col gap-3 text-[13px]">
+          <dl className="flex min-w-0 flex-1 flex-col gap-3 text-[13px]">
             <div className="flex justify-between gap-4">
               <dt className="text-ink-soft">证件类型</dt>
               <dd className="text-ink">{data.idType}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-ink-soft">证件号码</dt>
-              <dd className="num text-ink">{data.maskedIdNumber}</dd>
+              <dd className="num text-ink">{maskIdentityNumber(data.maskedIdNumber)}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-ink-soft">人脸核验</dt>
@@ -120,7 +91,7 @@ export function IdentityPage() {
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-ink-soft">号码</dt>
-              <dd className="num text-ink">{data.ocr.idNumber}</dd>
+              <dd className="num text-ink">{maskIdentityNumber(data.ocr.idNumber)}</dd>
             </div>
             <div className="flex justify-between gap-4">
               <dt className="text-ink-soft">出生日期</dt>
@@ -143,9 +114,9 @@ export function IdentityPage() {
           <div className="mt-4 flex flex-col items-start gap-4">
             <p className="flex items-start gap-2 text-[13px] text-ink-mute">
               <UserIcon size={16} className="mt-0.5 shrink-0" />
-              还没有证件识别记录，上传证件照片后自动识别。
+              暂无证件识别记录。
             </p>
-            <Button variant="primary" size="sm" loading={busy === 'ocr'} onClick={() => void runOcr()}>上传并识别证件</Button>
+            <Button size="sm" disabled>证件识别暂未开放</Button>
           </div>
         )}
       </Card>
@@ -155,17 +126,17 @@ export function IdentityPage() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
           <p className="flex items-start gap-2 text-[13px] text-ink-soft">
             <EyeIcon size={16} className="mt-0.5 shrink-0" />
-            {data.livenessVerified ? '已完成人脸活体核验。' : '完成人脸活体核验后可提升账户权限。'}
+            {data.livenessVerified ? '已有核验记录。' : '暂无核验记录。'}
           </p>
           {!data.livenessVerified && (
-            <Button variant="primary" size="sm" loading={busy === 'liveness'} onClick={() => void runLiveness()}>开始人脸核验</Button>
+            <Button size="sm" disabled>人脸核验暂未开放</Button>
           )}
         </div>
       </Card>
 
       <p className="flex items-start gap-2 text-[12px] leading-relaxed text-ink-mute">
         <AlertIcon size={15} className="mt-0.5 shrink-0" />
-        证件号码仅用于核验，界面一律脱敏展示；明文不落前端存储。演示环境按登记资料回填，真机需接入第三方核身服务。
+        证件号码已隐藏部分信息。
       </p>
     </div>
   )

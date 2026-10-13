@@ -123,7 +123,7 @@ export function SecurityPage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <AlertIcon size={16} className="text-gold-deep" />
-                  {overview.data?.devices.length ?? 0} 台设备可访问此账户
+                  {overview.data?.devices.length ? `${overview.data.devices.length} 台设备有登录记录` : '暂无设备记录'}
                 </li>
               </ul>
             </>
@@ -225,6 +225,7 @@ export function SecurityPage() {
       {/* 登录设备 */}
       <Card className="float-up" style={{ animationDelay: '150ms' }}>
         <CardHeader title="登录设备" />
+        {overview.data?.devices.length === 0 && <p className="mt-4 text-[13px] text-ink-mute">暂无设备记录</p>}
         <ul className="mt-3 divide-y divide-line">
           {overview.data?.devices.map((device) => (
             <li key={device.id} className="flex items-center gap-4 py-4">
@@ -252,6 +253,7 @@ export function SecurityPage() {
       {/* 安全日志 */}
       <Card className="float-up" style={{ animationDelay: '180ms' }}>
         <CardHeader title="安全日志" />
+        {overview.data?.logs.length === 0 && <p className="mt-4 text-[13px] text-ink-mute">暂无安全日志</p>}
         <ul className="mt-3 divide-y divide-line">
           {overview.data?.logs.map((log) => (
             <li key={log.id} className="flex items-start gap-4 py-4">

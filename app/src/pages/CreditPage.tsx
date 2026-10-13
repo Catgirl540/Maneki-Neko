@@ -9,8 +9,9 @@ import { PinInput } from '@/components/ui/PinInput'
 import { Segmented, Tag } from '@/components/ui/Segmented'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { AlertIcon, BoltIcon, CheckIcon, PigIcon, SparkleIcon, WalletIcon } from '@/components/ui/icons'
-import { formatAmount, formatDate, toCents } from '@/lib/format'
+import { formatAmount, formatDate } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
+import { parseAmountInput } from '@/lib/amountInput'
 import { useToast } from '@/components/ui/toast-context'
 
 function ProgressBar({ ratio }: { ratio: number }) {
@@ -36,7 +37,7 @@ export function CreditPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [result, setResult] = useState<Loan | null>(null)
 
-  const payoutAccount = useMemo(() => (accounts.data ?? [])[0] ?? null, [accounts.data])
+  const payoutAccount = useMemo(() => accounts.data?.find(account => account.currency === 'CNY') ?? null, [accounts.data])
 
   function openApply(product: LoanProduct) {
     setApplyFor(product)
@@ -49,7 +50,8 @@ export function CreditPage() {
 
   async function submitApply() {
     if (!applyFor || !payoutAccount) return
-    const amount = toCents(amountText)
+    const amount = parseAmountInput(amountText)
+    if (amount === null) return setFormError('请输入有效金额，最多两位小数')
     if (amount < applyFor.minAmount || amount > applyFor.maxAmount) {
       return setFormError(`金额需在 ¥${formatAmount(applyFor.minAmount)}–¥${formatAmount(applyFor.maxAmount)} 之间`)
     }
@@ -71,7 +73,10 @@ export function CreditPage() {
     }
   }
 
-  if (!credit.data) return credit.error ? <DataUnavailable message={credit.error} onRetry={credit.reload} /> : <DataLoading />
+  if (!credit.data || !accounts.data) {
+    const error = credit.error ?? accounts.error
+    return error ? <DataUnavailable message={error} onRetry={() => { credit.reload(); accounts.reload() }} /> : <DataLoading />
+  }
   const data = credit.data
   const termOptions = applyFor
     ? Array.from({ length: Math.floor((applyFor.maxTermMonths - applyFor.minTermMonths) / 3) + 1 }, (_, i) => applyFor.minTermMonths + i * 3).map((m) => ({ value: String(m), label: `${m} 期` }))
@@ -110,7 +115,7 @@ export function CreditPage() {
                 <div className="flex justify-between"><dt>放款</dt><dd className="text-ink">{product.disbursement}</dd></div>
               </dl>
               <div className="mt-4">
-                <Button block variant="primary" size="sm" icon={<BoltIcon size={15} />} onClick={() => openApply(product)}>立即借款</Button>
+                <Button block variant="primary" size="sm" icon={<BoltIcon size={15} />} disabled={!payoutAccount} onClick={() => openApply(product)}>立即借款</Button>
               </div>
             </div>
           ))}
@@ -176,7 +181,7 @@ export function CreditPage() {
         open={Boolean(applyFor)}
         onClose={() => { if (!busy) setApplyFor(null) }}
         title={applyFor ? `借款 · ${applyFor.name}` : '借款'}
-        description="提交后按产品规则审批并放款至你的储蓄账户。"
+        description="核对金额、期限和收款账户后提交。"
         closeDisabled={busy}
         footer={
           <>
@@ -187,7 +192,7 @@ export function CreditPage() {
       >
         {applyFor && (
           <div className="flex flex-col gap-4">
-            <Field label="借款金额" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d.]/g, ''))} trailing={<span className="text-[13px] text-ink-mute">元</span>} />
+            <Field label="借款金额" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} trailing={<span className="text-[13px] text-ink-mute">元</span>} />
             <div>
               <p className="mb-2 text-[13px] font-medium text-ink-soft">借款期限</p>
               <Segmented value={String(term)} options={termOptions} onChange={(next) => setTerm(Number(next))} />
@@ -197,7 +202,7 @@ export function CreditPage() {
             {formError && !formError.includes('密码') && (
               <p role="alert" className="flex items-start gap-2 text-[13px] text-coral"><AlertIcon size={16} className="mt-0.5 shrink-0" />{formError}</p>
             )}
-            <p className="text-[12px] text-ink-mute">放款至 {payoutAccount ? payoutAccount.label : '储蓄账户'}；实际利率与到账时间以审批结果为准。</p>
+            <p className="text-[12px] text-ink-mute">放款至 {payoutAccount ? payoutAccount.label : '储蓄账户'}；办理结果以返回记录为准。</p>
           </div>
         )}
       </Modal>

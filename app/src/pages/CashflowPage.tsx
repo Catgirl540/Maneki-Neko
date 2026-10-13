@@ -9,8 +9,9 @@ import { Row, Toggle } from '@/components/ui/Toggle'
 import { Tag } from '@/components/ui/Segmented'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { AlertIcon, HistoryIcon, PencilIcon, PigIcon, WalletIcon } from '@/components/ui/icons'
-import { formatAmount, formatDate, toCents } from '@/lib/format'
+import { formatAmount, formatDate } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
+import { parseAmountInput } from '@/lib/amountInput'
 import { useToast } from '@/components/ui/toast-context'
 
 export function CashflowPage() {
@@ -32,16 +33,16 @@ export function CashflowPage() {
   }
 
   async function saveSalary() {
-    const amountCents = toCents(amount)
+    const amountCents = parseAmountInput(amount)
     const salaryDay = Number(day)
     if (!Number.isInteger(salaryDay) || salaryDay < 1 || salaryDay > 28) return setFormError('发薪日需在 1–28 之间')
-    if (amountCents <= 0) return setFormError('月薪必须大于 0')
+    if (amountCents === null || amountCents <= 0) return setFormError('请输入有效月薪，最多两位小数')
     setSaving(true)
     setFormError(null)
     try {
       const next = await api.updateSalary({ salaryDay, amount: amountCents })
       salary.setData(next)
-      toast.show('工资计划已更新', 'success')
+      toast.show('工资计划已保存', 'success')
       setEditOpen(false)
     } catch (err) {
       setFormError(err instanceof ApiError ? err.message : '保存失败，请稍后重试')
@@ -55,7 +56,7 @@ export function CashflowPage() {
     try {
       const updated = await api.activateOverdraft(next)
       overdraft.setData(updated)
-      toast.show(next ? '已开设备用金' : '已关闭备用金', 'success')
+      toast.show('备用金设置已保存', 'success')
     } catch (err) {
       toast.show(err instanceof ApiError ? err.message : '操作失败，请稍后重试', 'error')
     } finally {
@@ -65,7 +66,7 @@ export function CashflowPage() {
 
   if (!salary.data || !overdraft.data) {
     const error = salary.error ?? overdraft.error
-    const retry = !salary.data ? salary.reload : overdraft.reload
+    const retry = () => { salary.reload(); overdraft.reload() }
     return error ? <DataUnavailable message={error} onRetry={retry} /> : <DataLoading />
   }
   const plan = salary.data
@@ -79,7 +80,7 @@ export function CashflowPage() {
         <CardHeader title="工资入账计划" action={<Button size="sm" icon={<PencilIcon size={15} />} onClick={() => openEdit(plan)}>修改</Button>} />
         <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
           <div>
-            <p className="text-[13px] text-ink-soft">下次发薪</p>
+            <p className="text-[13px] text-ink-soft">预计发薪</p>
             <p className="num mt-1 text-[34px] leading-none font-bold text-ink">¥{formatAmount(plan.amount)}</p>
             <p className="mt-2 text-[13px] text-ink-mute">{formatDate(plan.nextPayday)} · 每月 {plan.salaryDay} 日</p>
           </div>
@@ -93,7 +94,7 @@ export function CashflowPage() {
             </div>
           </div>
         </div>
-        <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">到账日按银行清算时间可能顺延；设置后每月发薪自动入账到指定储蓄账户。</p>
+        <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">计划仅记录预计发薪信息，不触发工资入账。</p>
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '70ms' }}>
@@ -116,8 +117,8 @@ export function CashflowPage() {
           <Row icon={<PigIcon size={18} />} title="年化利率" description={`${(od.apr * 100).toFixed(2)}% · ${od.interestNote}`} />
           <Row
             icon={<WalletIcon size={18} />}
-            title={od.active ? '关闭备用金' : '开设备用金'}
-            description={od.active ? (od.activatedAt ? `${formatDate(od.activatedAt)} 开通` : '已开通') : '开通后可随时小额透支，按日计息'}
+            title="备用金设置"
+            description="支用与还款暂未开放"
             right={<Toggle label="备用金开关" checked={od.active} disabled={overdraftBusy} onChange={(next) => void toggleOverdraft(next)} />}
           />
         </div>
@@ -145,7 +146,7 @@ export function CashflowPage() {
         open={editOpen}
         onClose={() => { if (!saving) setEditOpen(false) }}
         title="修改工资计划"
-        description="设置发薪日与预计月薪，用于到账预测与备用金额度评估。"
+        description="记录发薪日与预计月薪。"
         closeDisabled={saving}
         footer={
           <>
@@ -155,8 +156,8 @@ export function CashflowPage() {
         }
       >
         <div className="flex flex-col gap-4">
-          <Field label="每月发薪日" inputMode="numeric" value={day} onChange={(e) => setDay(e.target.value.replace(/[^\d]/g, ''))} placeholder="8" trailing={<span className="text-[13px] text-ink-mute">日</span>} />
-          <Field label="预计月薪" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))} placeholder="0.00" trailing={<span className="text-[13px] text-ink-mute">元</span>} />
+          <Field label="每月发薪日" inputMode="numeric" value={day} onChange={(e) => setDay(e.target.value)} placeholder="8" trailing={<span className="text-[13px] text-ink-mute">日</span>} />
+          <Field label="预计月薪" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" trailing={<span className="text-[13px] text-ink-mute">元</span>} />
           {formError && (
             <p role="alert" className="flex items-start gap-2 text-[13px] text-coral">
               <AlertIcon size={16} className="mt-0.5 shrink-0" />{formError}

@@ -9,8 +9,9 @@ import { PinInput } from '@/components/ui/PinInput'
 import { Segmented, Tag } from '@/components/ui/Segmented'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { AlertIcon, BoltIcon, ChartIcon, SparkleIcon, WalletIcon } from '@/components/ui/icons'
-import { formatAmount, formatDate, toCents } from '@/lib/format'
+import { formatAmount, formatDate } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
+import { parseAmountInput } from '@/lib/amountInput'
 import { useToast } from '@/components/ui/toast-context'
 
 const CATEGORY_LABEL: Record<InvestProduct['category'], string> = {
@@ -38,7 +39,7 @@ export function InvestPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [result, setResult] = useState<InvestPlan | null>(null)
 
-  const account = useMemo(() => (accounts.data ?? [])[0] ?? null, [accounts.data])
+  const account = useMemo(() => accounts.data?.find(account => account.currency === 'CNY') ?? null, [accounts.data])
 
   function openPlan(product: InvestProduct) {
     setTarget(product)
@@ -50,7 +51,8 @@ export function InvestPage() {
 
   async function submitPlan() {
     if (!target || !account) return
-    const amount = toCents(amountText)
+    const amount = parseAmountInput(amountText)
+    if (amount === null) return setFormError('请输入有效金额，最多两位小数')
     if (amount < target.minAmount) return setFormError(`该产品起投 ¥${formatAmount(target.minAmount)}`)
     if (password.length < 6) return setFormError('请输入 6 位支付密码')
     setBusy(true)
@@ -60,7 +62,7 @@ export function InvestPage() {
       investments.reload()
       setTarget(null)
       setResult(plan)
-      toast.show('定投计划已创建', 'success')
+      toast.show('定投计划已保存', 'success')
     } catch (err) {
       if (err instanceof ApiError && err.code === 'BAD_PAY_PASSWORD') setPassword('')
       setFormError(err instanceof ApiError ? err.message : '创建失败，请稍后重试')
@@ -69,7 +71,10 @@ export function InvestPage() {
     }
   }
 
-  if (!investments.data) return investments.error ? <DataUnavailable message={investments.error} onRetry={investments.reload} /> : <DataLoading />
+  if (!investments.data || !accounts.data) {
+    const error = investments.error ?? accounts.error
+    return error ? <DataUnavailable message={error} onRetry={() => { investments.reload(); accounts.reload() }} /> : <DataLoading />
+  }
   const data = investments.data
 
   return (
@@ -96,10 +101,10 @@ export function InvestPage() {
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-medium text-ink">{plan.productName}</span>
                 <span className="mt-0.5 block text-[13px] text-ink-mute">{plan.cycle}定投 ¥{formatAmount(plan.amount)} · 已投 {plan.executedRuns} 次</span>
-                <span className="mt-0.5 block text-[12px] text-ink-mute">下次 {formatDate(plan.nextRunAt)}</span>
+                <span className="mt-0.5 block text-[12px] text-ink-mute">计划日期 {formatDate(plan.nextRunAt)}</span>
               </span>
               <span className="shrink-0 text-right">
-                <Tag tone={plan.status === 'active' ? 'gold' : 'neutral'}>{plan.status === 'active' ? '进行中' : '已暂停'}</Tag>
+                <Tag tone={plan.status === 'active' ? 'gold' : 'neutral'}>{plan.status === 'active' ? '已保存' : '已暂停'}</Tag>
                 <span className="num mt-1 block text-[13px] text-ink-mute">累计 ¥{formatAmount(plan.totalInvested)}</span>
               </span>
             </div>
@@ -126,20 +131,20 @@ export function InvestPage() {
                 <div className="flex justify-between"><dt>起投</dt><dd className="num text-ink">¥{formatAmount(product.minAmount)}</dd></div>
               </dl>
               <div className="mt-4">
-                <Button block variant="primary" size="sm" icon={<SparkleIcon size={15} />} onClick={() => openPlan(product)}>开始定投</Button>
+                <Button block variant="primary" size="sm" icon={<SparkleIcon size={15} />} disabled={!account} onClick={() => openPlan(product)}>新建计划</Button>
               </div>
             </div>
           ))}
         </div>
       </Card>
 
-      <p className="text-[12px] leading-relaxed text-ink-mute">基金投资有风险，过往业绩不代表未来表现。定投按期自动扣款，可随时暂停或终止。</p>
+      <p className="text-[12px] leading-relaxed text-ink-mute">基金投资有风险，过往业绩不代表未来表现。自动扣款暂未开放。</p>
 
       <Modal
         open={Boolean(target)}
         onClose={() => { if (!busy) setTarget(null) }}
         title={target ? `定投 · ${target.name}` : '定投'}
-        description="按期自动申购，用支付密码确认后生效。"
+        description="保存产品、金额与周期。"
         closeDisabled={busy}
         footer={
           <>
@@ -150,16 +155,16 @@ export function InvestPage() {
       >
         {target && (
           <div className="flex flex-col gap-4">
-            <Field label="每期金额" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value.replace(/[^\d.]/g, ''))} trailing={<span className="text-[13px] text-ink-mute">元</span>} hint={`起投 ¥${formatAmount(target.minAmount)}`} />
+            <Field label="每期金额" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} trailing={<span className="text-[13px] text-ink-mute">元</span>} hint={`起投 ¥${formatAmount(target.minAmount)}`} />
             <div>
               <p className="mb-2 text-[13px] font-medium text-ink-soft">定投周期</p>
-              <Segmented value={cycle} options={CYCLES} onChange={setCycle} />
+              <Segmented disabled={busy} value={cycle} options={CYCLES} onChange={setCycle} />
             </div>
             <PinInput label="支付密码" value={password} onChange={(next) => { setPassword(next); setFormError(null) }} error={formError && formError.includes('密码') ? formError : undefined} />
             {formError && !formError.includes('密码') && (
               <p role="alert" className="flex items-start gap-2 text-[13px] text-coral"><AlertIcon size={16} className="mt-0.5 shrink-0" />{formError}</p>
             )}
-            <p className="text-[12px] text-ink-mute">扣款账户：{account ? account.label : '储蓄账户'}。</p>
+            <p className="text-[12px] text-ink-mute">计划账户：{account ? account.label : '暂无可用人民币账户'}。</p>
           </div>
         )}
       </Modal>
@@ -167,7 +172,7 @@ export function InvestPage() {
       <Modal
         open={Boolean(result)}
         onClose={() => setResult(null)}
-        title="定投已创建"
+        title="计划已保存"
         footer={<Button block variant="primary" onClick={() => setResult(null)}>完成</Button>}
       >
         {result && (
@@ -175,7 +180,7 @@ export function InvestPage() {
             <span className="mx-auto grid size-14 place-items-center rounded-chip bg-blue-wash text-blue"><WalletIcon size={28} /></span>
             <p className="mt-4 text-[18px] font-semibold text-ink">{result.productName}</p>
             <p className="num mt-2 text-[13px] text-ink-mute">{result.cycle}定投 ¥{formatAmount(result.amount)}</p>
-            <p className="mt-1 text-[12px] text-ink-mute">首次扣款 {formatDate(result.nextRunAt)}</p>
+            <p className="mt-1 text-[12px] text-ink-mute">计划日期 {formatDate(result.nextRunAt)}</p>
           </div>
         )}
       </Modal>

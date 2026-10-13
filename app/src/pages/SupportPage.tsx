@@ -330,24 +330,25 @@ export function SupportPage() {
             <span className="ml-auto shrink-0"><ModeTag status={agent.status} /></span>
             {usingAgent && (
               <span className="flex w-full flex-wrap items-center gap-1 border-t border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
-                {/* 语音模式开关。服务端没开语音能力时**不显示**这个按钮，
-                    而不是显示了再报错——用户点一个注定失败的东西没有意义。 */}
-                {voice.available && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className={cn(voiceMode && 'bg-gold-wash text-gold-deep')}
-                    icon={<WaveIcon size={15} />}
-                    aria-pressed={voiceMode}
-                    onClick={() => {
-                      // 这里**只**管麦克风。朗读是每条消息自己的动作
-                      // （消息上就有播放/停止），关掉"语音输入"顺手把声音掐掉，
-                      // 会让"我只是不想说话"变成"我什么都听不到了"。
-                      setVoiceMode(on => !on)
-                    }}
-                  >
-                    语音
-                  </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className={cn(voiceMode && 'bg-gold-wash text-gold-deep')}
+                  icon={<WaveIcon size={15} />}
+                  aria-pressed={voiceMode}
+                  disabled={!voice.available}
+                  title={voice.available ? '语音输入' : voice.unavailableReason ?? '正在检查语音可用性'}
+                  onClick={() => {
+                    // 这里**只**管麦克风。朗读是每条消息自己的动作
+                    // （消息上就有播放/停止），关掉"语音输入"顺手把声音掐掉，
+                    // 会让"我只是不想说话"变成"我什么都听不到了"。
+                    setVoiceMode(on => !on)
+                  }}
+                >
+                  语音
+                </Button>
+                {!voice.available && voice.unavailableReason && (
+                  <span role="status" className="w-full text-[12px] text-ink-mute sm:order-last">{voice.unavailableReason}</span>
                 )}
                 <Button
                   size="sm"

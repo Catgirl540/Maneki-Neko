@@ -4,7 +4,7 @@ title: "注册开户与账户"
 navigation: "账户"
 routes: ["/open-account", "/dashboard"]
 keywords: ["开户", "储蓄账户", "资金账户"]
-sources: ["app/src/pages/OpenAccountPage.tsx", "app/src/pages/DashboardPage.tsx", "app/src/api/mock/index.ts"]
+sources: ["app/src/pages/OpenAccountPage.tsx", "app/src/pages/DashboardPage.tsx", "app/src/pages/ReceivingPage.tsx", "app/src/lib/receiving.ts", "app/src/api/mock/index.ts"]
 ---
 
 ## 注册开户需要什么？ {#register}
@@ -25,4 +25,4 @@ sources: ["app/src/pages/OpenAccountPage.tsx", "app/src/pages/DashboardPage.tsx"
 
 ## 怎么往账户转入钱？ {#deposit}
 
-打开「账户 → 转入」，查看并复制银行收款信息，由付款方按收款信息转账。弹窗中的「模拟一笔转入」是演示操作，不表示已从外部银行卡真实扣款；当前模拟单笔转入上限为五万元。实际入账以账户及流水查询为准，助手不能代办转入。
+打开「账户 → 转入」，查看并复制户名、银行账户及银行信息，由付款方按收款信息转账。当前页面无法确认 FPS 登记归属，暂不展示或分享 FPS 手机号、ID，请使用银行账户收款。「模拟一笔转入」仅在本地 mock 模式可见，不表示已从外部银行卡真实扣款；当前模拟单笔转入上限为五万元。实际入账以账户及流水查询为准，助手不能代办转入。

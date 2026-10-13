@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, ApiError } from '@/api'
-import type { Account, Currency, ExchangeQuote, ExchangeResult } from '@/api/types'
+import type { Account, Currency, ExchangeQuote, ExchangeQuoteRequest, ExchangeResult } from '@/api/types'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
@@ -9,19 +9,32 @@ import { PinInput } from '@/components/ui/PinInput'
 import { Segmented, Tag } from '@/components/ui/Segmented'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { AlertIcon, CheckIcon, GlobalIcon, TransferIcon } from '@/components/ui/icons'
-import { CURRENCY_LABEL, formatCurrency, formatFxAmount, formatRate, toCents } from '@/lib/format'
+import { CURRENCY_LABEL, formatCurrency, formatFxAmount, formatRate } from '@/lib/format'
+import { parseAmountInput } from '@/lib/amountInput'
 import { useAsync } from '@/lib/useAsync'
 
 const CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 
+type QuoteSnapshot = { request: ExchangeQuoteRequest; quote: ExchangeQuote; receivedAt: number }
+function validateQuote(quote: ExchangeQuote, request: ExchangeQuoteRequest, fromCurrency: Currency) {
+  const fx = quote.fx
+  if (fx.fromCurrency !== fromCurrency || fx.toCurrency !== request.toCurrency ||
+    fx.fromAmount !== request.amount || !Number.isSafeInteger(fx.toAmount) || fx.toAmount <= 0 ||
+    !Number.isFinite(fx.rate) || fx.rate <= 0 || !Number.isFinite(fx.quoteTtlSeconds) || fx.quoteTtlSeconds <= 0) {
+    throw new Error('报价异常，请重新获取')
+  }
+}
+
 export function ExchangePage() {
   const accounts = useAsync<Account[]>(() => api.listAccounts(), [])
+  const reloadAccounts = accounts.reload
 
   const [fromId, setFromId] = useState('')
   const [toCurrency, setToCurrency] = useState<Currency>('USD')
   const [amountText, setAmountText] = useState('')
-  const [quote, setQuote] = useState<ExchangeQuote | null>(null)
-  const [quotedAt, setQuotedAt] = useState(0)
+  const [snapshot, setSnapshot] = useState<QuoteSnapshot | null>(null)
+  const quoteVersion = useRef(0)
+  const submittingRef = useRef(false)
   const [now, setNow] = useState(() => Date.now())
   const [quoting, setQuoting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -35,6 +48,13 @@ export function ExchangePage() {
   const list = useMemo(() => accounts.data ?? [], [accounts.data])
   const selectedFromId = fromId || (list.find((a) => a.currency === 'CNY')?.id ?? list[0]?.id ?? '')
   const fromAccount = list.find((a) => a.id === selectedFromId) ?? null
+  const amount = parseAmountInput(amountText)
+  const quoteMatches = snapshot?.request.fromAccountId === selectedFromId &&
+    snapshot.request.toCurrency === toCurrency && snapshot.request.amount === amount
+  const quote = quoteMatches ? snapshot.quote : null
+  const quotedAt = snapshot?.receivedAt ?? 0
+
+  useEffect(() => () => { quoteVersion.current++ }, [])
 
   useEffect(() => {
     if (!quote) return
@@ -45,6 +65,20 @@ export function ExchangePage() {
   const ttlLeft = quote ? Math.max(0, quote.fx.quoteTtlSeconds - Math.floor((now - quotedAt) / 1000)) : 0
   const liveQuote = quote && ttlLeft > 0 ? quote : null
 
+  const invalidateQuote = useCallback(() => {
+    quoteVersion.current++
+    setSnapshot(null)
+    setQuoting(false)
+    setFormError(null)
+  }, [])
+
+  const closeConfirm = useCallback(() => {
+    if (submittingRef.current) return
+    setConfirmOpen(false)
+    setPassword('')
+    setPvError(null)
+  }, [])
+
   const toOptions = CURRENCIES.filter((c) => c !== fromAccount?.currency).map((c) => ({
     value: c,
     label: CURRENCY_LABEL[c],
@@ -52,7 +86,7 @@ export function ExchangePage() {
 
   function pickFrom(id: string) {
     setFromId(id)
-    setQuote(null)
+    invalidateQuote()
     const account = list.find((a) => a.id === id)
     if (account && account.currency === toCurrency) {
       const alt = CURRENCIES.find((c) => c !== account.currency)
@@ -60,50 +94,73 @@ export function ExchangePage() {
     }
   }
 
-  async function fetchQuote() {
+  const handleFetchQuote = useCallback(async () => {
     if (!fromAccount) return setFormError('请选择扣账账户')
-    const amount = toCents(amountText)
-    if (amount <= 0) return setFormError('请输入大于 0 的换汇金额')
+    if (amount === null || amount <= 0) return setFormError('请输入有效金额，最多两位小数')
     if (amount > fromAccount.available) return setFormError('金额超过该账户可用余额')
+    const request = { fromAccountId: fromAccount.id, toCurrency, amount }
+    const version = ++quoteVersion.current
+    setSnapshot(null)
     setQuoting(true)
     setFormError(null)
     try {
-      const next = await api.quoteExchange({ fromAccountId: fromAccount.id, toCurrency, amount })
-      setQuote(next)
-      setQuotedAt(Date.now())
+      const next = await api.quoteExchange(request)
+      if (version !== quoteVersion.current) return
+      validateQuote(next, request, fromAccount.currency)
+      setSnapshot({ request, quote: next, receivedAt: Date.now() })
       setNow(Date.now())
     } catch (err) {
-      setQuote(null)
-      setFormError(err instanceof ApiError ? err.message : '获取报价失败，请稍后重试')
+      if (version !== quoteVersion.current) return
+      setSnapshot(null)
+      setFormError(err instanceof Error ? err.message : '获取报价失败，请稍后重试')
     } finally {
-      setQuoting(false)
+      if (version === quoteVersion.current) setQuoting(false)
     }
-  }
+  }, [amount, fromAccount, toCurrency])
 
-  async function submit() {
-    if (!fromAccount || !liveQuote) return
-    if (password.length < 6) return setPvError('请输入 6 位支付密码')
+  const handleSubmit = useCallback(async () => {
+    if (submittingRef.current) return
+    if (!fromAccount || !quoteMatches || !snapshot) return
+    if (Date.now() >= snapshot.receivedAt + snapshot.quote.fx.quoteTtlSeconds * 1000) {
+      setNow(Date.now())
+      return setPvError('参考报价已过期，请重新获取并确认')
+    }
+    if (!/^\d{6}$/.test(password)) return setPvError('请输入 6 位支付密码')
+    submittingRef.current = true
+    const version = quoteVersion.current
     setSubmitting(true)
     setPvError(null)
     try {
+      // 现有契约没有锁价凭据；提交前复核参考报价，变化后须再次确认。
+      const latest = await api.quoteExchange(snapshot.request)
+      if (version !== quoteVersion.current) return
+      validateQuote(latest, snapshot.request, fromAccount.currency)
+      const changed = latest.fx.rate !== snapshot.quote.fx.rate || latest.fx.toAmount !== snapshot.quote.fx.toAmount
+      if (changed) {
+        setSnapshot({ ...snapshot, quote: latest, receivedAt: Date.now() })
+        setNow(Date.now())
+        setPassword('')
+        setPvError('参考报价已更新，请核对后重新确认')
+        return
+      }
       const res = await api.submitExchange({
-        fromAccountId: fromAccount.id,
-        toCurrency,
-        amount: liveQuote.fx.fromAmount,
+        ...snapshot.request,
         paymentPassword: password,
       })
       setResult(res)
       setConfirmOpen(false)
-      setQuote(null)
+      invalidateQuote()
+      setPassword('')
       setAmountText('')
-      accounts.reload()
+      reloadAccounts()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'BAD_PAY_PASSWORD') setPassword('')
-      setPvError(err instanceof ApiError ? err.message : '换汇失败，请稍后重试')
+      setPvError(err instanceof Error ? err.message : '换汇失败，请稍后重试')
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
-  }
+  }, [fromAccount, quoteMatches, snapshot, password, invalidateQuote, reloadAccounts])
 
   if (!accounts.data) return accounts.error ? <DataUnavailable message={accounts.error} onRetry={accounts.reload} /> : <DataLoading />
   const data = accounts.data
@@ -131,7 +188,7 @@ export function ExchangePage() {
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '80ms' }}>
-        <CardHeader title="账户内换汇" action={<Tag tone="blue">锁价 {liveQuote ? `${ttlLeft}s` : '30s'}</Tag>} />
+        <CardHeader title="账户内换汇" action={<Tag tone="blue">{liveQuote ? `参考报价 · ${ttlLeft}s` : '参考报价'}</Tag>} />
         <div className="mt-4 flex flex-col gap-4">
           <div>
             <p className="mb-2 text-[13px] font-medium text-ink-soft">扣账账户</p>
@@ -141,6 +198,7 @@ export function ExchangePage() {
                   key={account.id}
                   type="button"
                   onClick={() => pickFrom(account.id)}
+                  disabled={confirmOpen || submitting}
                   className={`flex min-h-11 items-center gap-2 rounded-chip border px-4 text-[13px] font-medium transition-colors ${selectedFromId === account.id ? 'border-gold-wash bg-gold-wash text-gold-deep' : 'border-line bg-surface text-ink-soft hover:text-ink'}`}
                 >
                   {account.label}
@@ -150,20 +208,21 @@ export function ExchangePage() {
             </div>
           </div>
 
-          <div className="flex items-end gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="min-w-0 flex-1">
               <Field
                 label="换汇金额"
                 inputMode="decimal"
                 value={amountText}
-                onChange={(e) => { setAmountText(e.target.value.replace(/[^\d.]/g, '')); setQuote(null) }}
+                onChange={(e) => { setAmountText(e.target.value); invalidateQuote() }}
+                disabled={confirmOpen || submitting}
                 placeholder="0.00"
                 trailing={<span className="text-[13px] text-ink-mute">{fromAccount?.currency ?? 'CNY'}</span>}
               />
             </div>
             <div className="flex shrink-0 items-center gap-2 pb-1">
               <TransferIcon size={18} />
-              <Segmented value={toCurrency} options={toOptions} onChange={(next) => { setToCurrency(next); setQuote(null) }} />
+              <Segmented disabled={confirmOpen || submitting} value={toCurrency} options={toOptions} onChange={(next) => { setToCurrency(next); invalidateQuote() }} />
             </div>
           </div>
 
@@ -184,7 +243,7 @@ export function ExchangePage() {
             </dl>
           ) : (
             <p className="rounded-field bg-sunk px-4 py-3.5 text-[13px] text-ink-mute">
-              选择扣账账户与目标币种，输入金额后获取锁价报价。目标币种账户不存在时会自动开立。
+              选择扣账账户、目标币种与金额，获取参考报价。
             </p>
           )}
 
@@ -197,36 +256,39 @@ export function ExchangePage() {
 
           {liveQuote ? (
             <div className="flex gap-3">
-              <Button block variant="secondary" onClick={() => setQuote(null)} disabled={submitting}>重新输入</Button>
+              <Button block variant="secondary" onClick={invalidateQuote} disabled={submitting}>重新输入</Button>
               <Button block variant="primary" onClick={() => { setPassword(''); setPvError(null); setConfirmOpen(true) }}>确认换汇</Button>
             </div>
           ) : (
-            <Button block variant="primary" loading={quoting} onClick={() => void fetchQuote()}>获取报价</Button>
+            <Button block variant="primary" loading={quoting} onClick={() => void handleFetchQuote()}>获取报价</Button>
           )}
         </div>
       </Card>
 
       <p className="text-[12px] leading-relaxed text-ink-mute">
-        报价有效期 30 秒，逾期需重新获取。换汇在扣账账户所在币种与目标币种之间完成，手续并入汇率点差，不单独收取。
+        参考报价不锁价，实际到账金额以成交结果为准。
       </p>
 
       <Modal
         open={confirmOpen}
-        onClose={() => { if (!submitting) setConfirmOpen(false) }}
+        onClose={closeConfirm}
         title="确认换汇"
-        description={fromAccount && liveQuote ? `${formatFxAmount(liveQuote.fx.fromAmount, liveQuote.fx.fromCurrency)} → ${formatFxAmount(liveQuote.fx.toAmount, liveQuote.fx.toCurrency)}` : undefined}
+        description={quote ? `${formatFxAmount(quote.fx.fromAmount, quote.fx.fromCurrency)} → ${formatFxAmount(quote.fx.toAmount, quote.fx.toCurrency)}` : undefined}
         closeDisabled={submitting}
         footer={
           <>
-            <Button block variant="secondary" onClick={() => setConfirmOpen(false)} disabled={submitting}>取消</Button>
-            <Button block variant="primary" loading={submitting} onClick={() => void submit()}>确认换汇</Button>
+            <Button block variant="secondary" onClick={closeConfirm} disabled={submitting}>取消</Button>
+            {liveQuote || submitting
+              ? <Button block variant="primary" loading={submitting} onClick={() => void handleSubmit()}>确认换汇</Button>
+              : <Button block variant="primary" onClick={() => { closeConfirm(); void handleFetchQuote() }}>重新获取报价</Button>}
           </>
         }
       >
         <div className="flex flex-col gap-4">
           <PinInput label="支付密码" value={password} onChange={(next) => { setPassword(next); setPvError(null) }} error={pvError ?? undefined} autoFocus disabled={submitting} />
           {pvError && <p role="alert" className="text-[13px] text-coral">{pvError}</p>}
-          <p className="text-[12px] text-ink-mute">确认后立即按当前报价成交，汇率以成交时为准。</p>
+          {!liveQuote && <p role="alert" className="text-[13px] text-coral">参考报价已过期，请重新获取并确认。</p>}
+          <p className="text-[12px] text-ink-mute">实际到账金额以成交结果为准。</p>
         </div>
       </Modal>
 

@@ -2,6 +2,8 @@ import { useToast } from './toast-context'
 import { CopyIcon } from './icons'
 import { cn } from '@/lib/cn'
 import { copyText } from '@/lib/clipboard'
+import { useState } from 'react'
+import { ManualCopyModal } from './ManualCopyModal'
 
 /**
  * 复制一小段文本。
@@ -23,19 +25,23 @@ export function CopyButton({
   size?: 'sm' | 'md'
 }) {
   const toast = useToast()
+  const [manualText, setManualText] = useState<string | null>(null)
   return (
-    <button
-      type="button"
-      aria-label={`复制${label}`}
-      title={`复制${label}`}
-      onClick={() => copyText(value, label, toast)}
-      className={cn(
-        'grid shrink-0 place-items-center rounded-[6px] text-ink-mute transition-colors hover:bg-gold-tint hover:text-gold-deep',
-        size === 'sm' ? 'size-6' : 'size-8',
-        className,
-      )}
-    >
-      <CopyIcon size={size === 'sm' ? 15 : 17} />
-    </button>
+    <>
+      <button
+        type="button"
+        aria-label={`复制${label}`}
+        title={`复制${label}`}
+        onClick={() => { void copyText(value, label, toast).then(copied => { if (!copied) setManualText(value) }) }}
+        className={cn(
+          'grid shrink-0 place-items-center rounded-[6px] text-ink-mute transition-colors hover:bg-gold-tint hover:text-gold-deep',
+          size === 'sm' ? 'size-6' : 'size-8',
+          className,
+        )}
+      >
+        <CopyIcon size={size === 'sm' ? 15 : 17} />
+      </button>
+      <ManualCopyModal text={manualText} label={label} onClose={() => setManualText(null)} />
+    </>
   )
 }

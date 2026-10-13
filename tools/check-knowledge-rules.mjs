@@ -1,6 +1,7 @@
 /** 隔离内存数据直接运行服务器复用的银行规则，不连接生产、不写客户数据库。 */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { summarizeRiskAssessment } from '../framework/bridge/wealth-risk.mjs'
 class Storage {
   data = new Map()
   getItem(k) { return this.data.get(k) ?? null }
@@ -19,16 +20,19 @@ resetDb()
 const account = (await api.listAccounts())[0]
 const quote = patch => api.quoteTransfer({ fromAccountId: account.id, amount: 100000, scope: 'domestic', channel: 'bank', bankCode: 'LCB', bankRegion: 'CN', ...patch })
 const domestic = await quote({})
-assert.equal(domestic.fee, 0); assert.equal(domestic.singleLimit, 5000000); assert.equal(domestic.etaText, '实时到账')
+assert.match(text('kb-accounts#deposit'), /暂不展示或分享 FPS 手机号、ID/)
+assert.equal(domestic.fee, 0); assert.equal(domestic.singleLimit, 100000000); assert.equal(domestic.etaText, '实时到账')
 assert.equal((await quote({ bankCode: '102' })).etaText, '预计 2 小时内到账')
 const fps = await quote({ channel: 'fps' })
-assert.equal(fps.fee, 0); assert.equal(fps.singleLimit, 1000000); assert.equal(fps.etaText, '预计 5 秒内到账')
+assert.equal(fps.fee, 0); assert.equal(fps.singleLimit, 60000000); assert.equal(fps.etaText, '预计 5 秒内到账')
 const overseas = await quote({ scope: 'overseas' })
 assert.equal(overseas.fee, 5000); assert.equal(overseas.etaText, '预计 1 个工作日到账')
-// 报价函数单独核对数学规则；此金额超过转账通道限额，不能因此声称可提交。
+// 报价函数单独核对数学规则；报价不代表提交或到账成功。
 assert.equal((await quote({ scope: 'overseas', amount: 10000000 })).fee, 10000)
 assert.match(text('kb-transfers#fees'), /最低费用为付款币种的 50 单位/)
 assert.match(text('kb-transfers#fees'), /不是费用上限/)
+assert.match(text('kb-transfers#limits'), /一百万单位/)
+assert.match(text('kb-transfers#limits'), /六十万单位/)
 loadDb().accounts[0].balance = 1200; loadDb().accounts[0].available = 1200; persist()
 assert.equal((await quote({})).maxAmount, 1200)
 console.log('PASS 境内/FPS 免费、跨境千分之一且最低50、通道限额/余额约束、四类预计到账')
@@ -55,6 +59,11 @@ assert.match(text('kb-cards#lost'), /不等于冻结整个资金账户/)
 console.log('PASS 锁卡不冻结资金账户、开关与换卡状态、新卡日限额、寄送中/旧卡敏感信息限制')
 resetDb()
 loadDb().wealthAccount.opened = false; loadDb().riskAssessment.done = false; persist()
+const unassessed = (await api.getWealthOverview()).risk
+assert.equal(unassessed.done, false)
+assert.equal(unassessed.expired, true)
+assert.equal(summarizeRiskAssessment(unassessed).status, 'unassessed')
+assert.equal(summarizeRiskAssessment(unassessed).level, null)
 const wp = (await api.listWealthProducts())[0]
 await assert.rejects(api.subscribeWealth({ productCode: wp.code, amount: wp.minAmount, paymentPassword: '888888', riskAcknowledgement: RISK_ACKNOWLEDGEMENT }), e => e.code === 'WEALTH_ACCOUNT_REQUIRED')
 const phone = (await api.profile()).phone
@@ -63,11 +72,15 @@ const opening = { smsCode: sms.demoCode, faceTicket: face.ticket, agreement: WEA
 await assert.rejects(api.openWealthAccount(opening), e => e.code === 'RISK_ASSESSMENT_REQUIRED')
 const questions = await api.listRiskQuestions()
 const risk = await api.submitRiskAssessment(questions.map(q => q.options.reduce((best, o, i, all) => o.score > all[best].score ? i : best, 0)))
+assert.equal(summarizeRiskAssessment(risk).status, 'valid')
 assert.equal(new Date(risk.expiresAt).getFullYear() - new Date(risk.assessedAt).getFullYear(), 1)
 const opened = await api.openWealthAccount(opening)
 assert(opened.opened, '不提交重复姓名/身份证即可开理财账户')
 loadDb().riskAssessment.expiresAt = '2000-01-01T00:00:00Z'; persist()
+assert.equal(summarizeRiskAssessment((await api.getWealthOverview()).risk).status, 'expired')
 await assert.rejects(api.subscribeWealth({ productCode: wp.code, amount: wp.minAmount, paymentPassword: '888888', riskAcknowledgement: RISK_ACKNOWLEDGEMENT }), e => e.code === 'RISK_ASSESSMENT_REQUIRED')
 assert.match(text('kb-wealth#opening'), /不用重新填写/)
 assert.match(text('kb-wealth#subscribe'), /完整抄录/)
+assert.match(text('kb-wealth#risk'), /未完成测评不等于测评过期/)
+assert.match(text('kb-wealth#risk'), /个人状态必须以工具查询为准/)
 console.log('PASS 理财开户复用实名、测评前置/一年有效、过期禁止申购、风险确认抄录说明')

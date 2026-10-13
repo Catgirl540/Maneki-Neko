@@ -143,6 +143,10 @@ node tools/check-http-frontend.mjs
 
 上述浏览器脚本需要可用的 Chromium，可通过 `CHROME_PATH` 指定；HTTP 脚本自行启动临时后端和数据库。
 涉及 Agent HTTP 链路的修改，再运行 `node tools/check-agent-http.mjs`（使用 fixture，不调用付费模型）。
+`node tools/check-agent-risk.mjs` 使用本地 HTTP 夹具验证余额工具的测评状态及确认流程：`unassessed` 为未完成、`expired` 为已完成但过期、`valid` 为有效、`unknown` 为无法确认；未完成时不返回默认等级、分数或日期作为个人测评历史。
+新增网页流程可独立验证：`node --import ./tools/ts-resolve-hook.mjs tools/check-web-ui-inputs.mjs` 检查金额与证件号展示；设置 `CHROME_PATH` 后运行 `node tools/check-web-ui-corrections.mjs`，只启动前端并模拟 API 响应，覆盖报价变化/过期、表单校验、核验入口及手机布局。
+客户端测试报告回归运行 `node tools/check-web-report-regressions.mjs`：使用非安全 HTTP 本地域名，所有银行与 Agent 请求均拦截为夹具，覆盖复制降级及手动复制、非法转账金额、登录深链、账单分页与失败重试、风险测评状态、空设备/日志和语音禁用原因。
+转入页当前仅展示和复制银行账户资料；接口未提供 FPS 登记归属与状态，确认前不分享 FPS 手机号或 ID。HTTP 下录音不可用时显示原因；复制先尝试兼容方式，失败后可手动选择文本。
 事件流连接释放与失败重试运行 `node tools/check-agent-connections.mjs`；连续新建对话必须关闭上一段空闲连接，握手失败必须停止重连。
 事件流首帧被缓冲或中途断开时，自动切换到 `/sessions/:id/events` 短请求，按游标续取事件；运行 `node tools/check-agent-polling.mjs` 验证兼容接收、账户隔离和单次卡密展示。
 助手正文按累计快照更新同一气泡，完成后替换为最终文本；生成期间不自动朗读。运行 `node tools/check-agent-streaming.mjs` 验证流式显示、断线恢复与消息合并。
