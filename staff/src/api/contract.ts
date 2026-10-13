@@ -1,6 +1,7 @@
 /* ==========================================================================
    StaffApi —— 工作人员端前端唯一依赖的接口面
-   版本：v1.1（2026-10-09 Phase 1 工单前端；v1 冻结后仅新增可选字段 Ticket.customerName）
+   版本：v1.2（2026-10-13 补 CustomerActionRequest 目标字段 + CustomerProfile.autoDebits，
+        响应乙交付记录 §4.1/§4.2 的契约缺口；v1.1 仅新增可选字段 Ticket.customerName）
    变更规则：改签名/字段/错误码 → 单独 commit 带 [contract] 前缀 + 版本号 +1 + 群里广播
    两套实现：createHttpApi / createMockApi，组件只 import { api }
    功能规格：design/staff-console/工作人员端清单.md
@@ -95,6 +96,19 @@ export interface CustomerActionRequest {
   verificationMethod: 'phone' | 'sms' | 'face' | 'simulated'
   verificationResult: 'passed' | 'failed'
   reason: string
+  /**
+   * 目标字段（v1.2 补，乙交付记录 §4.1）：按动作二选一带入，服务端逐动作校验必填。
+   * - lockCard / unlockCard / updateCardSettings → cardId（updateCardSettings 另需 dailyLimit）
+   * - patchAutodebit → autoDebitId + enabled
+   */
+  /** 目标卡 id（卡类动作必填） */
+  cardId?: string
+  /** 新单日限额，整数分（updateCardSettings 必填；服务端只收限额档位枚举） */
+  dailyLimit?: Cents
+  /** 目标代扣协议 id（patchAutodebit 必填） */
+  autoDebitId?: string
+  /** 代扣开关（patchAutodebit 必填） */
+  enabled?: boolean
 }
 
 /**

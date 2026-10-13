@@ -119,12 +119,26 @@ export interface CustomerSummary {
   riskTags: string[]
 }
 
+/** 代扣协议（客户 360 展示 + 代客 patchAutodebit 选目标用） */
+export interface AutoDebit {
+  id: string
+  merchant: string
+  amount: Cents
+  cycle: string
+  enabled: boolean
+}
+
 export interface CustomerProfile {
   customerId: string
   name: string
   phoneMasked: string
   accounts: Array<{ id: string; label: string; balance: Cents }>
   cards: Array<{ id: string; last4: string; status: string }>
+  /**
+   * 代扣协议列表（v1.2 补，乙交付记录 §4.2）。
+   * 可选：银行侧钩子未返回时前端按空列表渲染，不挡客户 360 主链。
+   */
+  autoDebits?: AutoDebit[]
   recentTransactions: Array<{
     id: string
     amount: Cents
