@@ -11,7 +11,7 @@
    ========================================================================== */
 
 import type { ReactNode } from 'react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '@/api'
 import type {
@@ -45,6 +45,7 @@ import {
 } from '@/lib/format'
 import { CHANNEL_LABEL, statusText } from '@/lib/tx'
 import { useAsync } from '@/lib/useAsync'
+import { usePendingTransaction } from '@/lib/usePendingTransaction'
 
 const STATUS_TONE: Record<TransactionStatus, 'blue' | 'gold' | 'coral'> = {
   success: 'blue',
@@ -62,8 +63,16 @@ export function TransactionDetailPage() {
   const detail = tx?.detail
   const [receiptBusy, setReceiptBusy] = useState(false)
   const [recallBusy, setRecallBusy] = useState(false)
+  const [nowMs, setNowMs] = useState(() => Date.now())
   /** 在途（大额延迟到账）且仍在窗口内才可撤销（§9.3） */
-  const inflight = tx?.status === 'pending' && tx.pendingReason === 'inflight'
+  const inflight = tx?.id === id && record.error === null && tx.status === 'pending' &&
+    tx.pendingReason === 'inflight' && !!tx.holdUntil && Date.parse(tx.holdUntil) > nowMs
+  usePendingTransaction(id, tx?.id === id && tx.status === 'pending', record.setData)
+  useEffect(() => {
+    if (tx?.status !== 'pending' || !tx.holdUntil) return
+    const timer = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [tx?.status, tx?.holdUntil])
 
   /** 直接粘贴链接进来时没有可回退的历史，退回流水列表而不是留一个空白页 */
   const goBack = useCallback(() => {

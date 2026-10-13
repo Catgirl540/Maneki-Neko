@@ -16,6 +16,7 @@ import type {
   TransferQuote,
   TransferRecipientResult,
   TransferResult,
+  TransactionRecord,
   TransferScope,
   User,
 } from '@/api/types'
@@ -50,6 +51,7 @@ import { RevealToggle } from '@/components/ui/Reveal'
 import { useToast } from '@/components/ui/toast-context'
 import { useReveal } from '@/lib/useReveal'
 import { useAsync } from '@/lib/useAsync'
+import { usePendingTransaction } from '@/lib/usePendingTransaction'
 
 type Step = 1 | 2 | 3 | 4
 
@@ -110,6 +112,9 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   const [submitting, setSubmitting] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [result, setResult] = useState<TransferResult | null>(null)
+  const [resultRecord, setResultRecord] = useState<TransactionRecord | null>(null)
+  const resultStatus = resultRecord?.status ?? result?.settlementStatus ?? 'success'
+  const resultPendingReason = resultRecord ? resultRecord.pendingReason : result?.pendingReason
   /** 在途倒计时用的本地时钟；只有 result 在途时才跳（§9） */
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [recalling, setRecalling] = useState(false)
@@ -544,6 +549,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
           : { payeeAccountNo: digitsOnly(accountNo) }),
       })
       setResult(res)
+      setResultRecord(null)
       setConfirmOpen(false)
       setStep(4)
       onUpdate()
@@ -567,6 +573,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     setMemo('')
     setResolved(null)
     setResult(null)
+    setResultRecord(null)
     setError(null)
     setRecalling(false)
   }
@@ -595,12 +602,21 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     }
   }
 
-  // 在途结果才跳秒；到点后交给后端自动到账，这里只是展示。
+  usePendingTransaction(result?.transactionId, resultStatus === 'pending', (record) => {
+    setResultRecord(record)
+    if (record.status !== 'pending') {
+      onUpdate()
+      accounts.reload()
+      payees.reload()
+    }
+  })
+
+  // 倒计时只作展示，最终状态必须由银行查询确认。
   useEffect(() => {
-    if (!result?.holdUntil) return
+    if (!result?.holdUntil || resultStatus !== 'pending') return
     const timer = setInterval(() => setNowMs(Date.now()), 1000)
     return () => clearInterval(timer)
-  }, [result?.holdUntil])
+  }, [result?.holdUntil, resultStatus])
 
   const requests = [accounts, cards, profile, banks, payees]
   const failed = requests.filter(state => state.error !== null && state.data === null)
@@ -1182,7 +1198,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
 
       {step === 4 && result && (
         <Card className="float-up mx-auto w-full max-w-[520px] text-center">
-          {result.pendingReason === 'inflight' ? (
+          {resultStatus !== 'success' ? (
             <span className="mx-auto grid size-16 place-items-center rounded-chip bg-gold-wash text-gold-deep">
               <AlertIcon size={30} />
             </span>
@@ -1192,24 +1208,28 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
             </span>
           )}
           <h2 className="mt-5 text-[22px] font-bold tracking-[-0.01em] text-ink">
-            {result.pendingReason === 'inflight'
-              ? '转账处理中'
-              : result.settlementStatus === 'pending'
-                ? '已提交模拟清算'
-                : '转账成功'}
+            {resultStatus === 'failed'
+              ? '转账未完成'
+              : resultPendingReason === 'inflight'
+                ? '转账处理中'
+                : resultStatus === 'pending'
+                  ? '已提交模拟清算'
+                  : '转账成功'}
           </h2>
           <p className="num mt-3 text-[34px] leading-none font-bold text-ink">
             ¥{formatAmount(result.amount)}
           </p>
           <p className="mt-3 text-[14px] text-ink-soft">
-            {result.pendingReason === 'inflight'
-              ? `大额转账延迟到账 · 转往 ${finalPayeeName}`
-              : result.settlementStatus === 'pending'
-                ? `转往 ${finalPayeeName} · 外行收款账户不在本演示数据库内`
-                : `已转给 ${finalPayeeName} · ${etaText}`}
+            {resultStatus === 'failed'
+              ? resultRecord?.memo
+              : resultPendingReason === 'inflight'
+                ? `大额转账延迟到账 · 转往 ${finalPayeeName}`
+                : resultStatus === 'pending'
+                  ? `转往 ${finalPayeeName} · 外行收款账户不在本演示数据库内`
+                  : `已转给 ${finalPayeeName} · ${etaText}`}
           </p>
 
-          {result.pendingReason === 'inflight' && result.holdUntil && (
+          {resultStatus === 'pending' && resultPendingReason === 'inflight' && result.holdUntil && (
             <div className="mt-5 rounded-tile border border-gold-deep/30 px-4 py-3">
               <p className="text-[13px] text-ink-mute">窗口到点自动到账，此前可撤销</p>
               <p className="num mt-1 text-[22px] font-bold text-gold-deep">
@@ -1223,7 +1243,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 })()}
               </p>
               <p className="mt-2 text-[12px] text-ink-mute">
-                本金已冻结（可用余额已扣减），撤销后立即退回；手续费在真正到账时才计。
+                本金与手续费已预留，撤销后解除冻结；到账时实际扣款。
               </p>
             </div>
           )}
@@ -1250,7 +1270,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
           </dl>
 
           <div className="mt-8 flex flex-col gap-3">
-            {result.pendingReason === 'inflight' && (
+            {resultStatus === 'pending' && resultPendingReason === 'inflight' && result.holdUntil && Date.parse(result.holdUntil) > nowMs && (
               <Button
                 block
                 variant="secondary"

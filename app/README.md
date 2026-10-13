@@ -139,6 +139,8 @@ node tools/check-http-frontend.mjs
 
 导航与响应式检查使用 mock 前端：启动后运行 `node tools/check-responsive.mjs`；
 单弹窗转入、转出与撤销检查运行 `node tools/check-account-flows.mjs`；
+转账挂起与清算：`node --import ./tools/ts-resolve-hook.mjs tools/check-transfer-holds.mjs`；HTTP 全链路使用 `node tools/transfer-hold-smoke.mjs`，仅写临时数据库。
+结果与详情自动刷新检查运行 `node tools/check-transfer-status-ui.mjs`，覆盖到账、拦截、清算及查询失败恢复。
 收款字段与剪贴板检查运行 `node tools/check-receiving.mjs`。
 
 上述浏览器脚本需要可用的 Chromium，可通过 `CHROME_PATH` 指定；HTTP 脚本自行启动临时后端和数据库。
