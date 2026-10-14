@@ -11,7 +11,7 @@
 ```
 
 - `phone`：11 位；`smsCode` 需先调 `POST /api/auth/sms-code`（演示回传 `demoCode`）。
-- 失败：`UNAUTHORIZED`（账号或密码错误 / 验证码错误）。
+- 登录失败按实际返回区分 `BAD_CREDENTIALS`、`SMS_NOT_SENT`、`SMS_EXPIRED`、`BAD_SMS_CODE`；会话无效才是 `UNAUTHORIZED`。
 
 `POST /api/auth/sms-code` → `{ sent: true, demoCode: "000000" }`（演示环境才回传 `demoCode`）。
 
@@ -22,10 +22,10 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 账户 ID |
-| `accountNo` | string | 卡号（前端只展示尾号） |
+| `accountNo` | string | 资金账户号，与银行卡号不同 |
 | `label` | string | 账户名 |
 | `currency` | `'CNY'\|'USD'\|'HKD'` | 币种 |
-| `type` | string | 账户类型 |
+| `kind` | string | 账户类型 |
 | `balance` | Cents | 余额（分） |
 
 > 多币种对账：`Account.currency` 即权威币种；`formatCurrency(balance, currency)` 渲染。
@@ -51,17 +51,17 @@
 
 ## 转入
 
-`POST /api/accounts/:id/deposit` → `Account`（金额为整数分）
+`POST /api/accounts/:id/deposit` → `Account`（金额为整数分）。这是模拟入账，不接外部银行扣款；网页 HTTP 模式不提供模拟转入按钮。
 
 ```json
 { "amount": 100000, "channel": "demo" }
 ```
 
-## 账户内换汇
+## 账户内换汇（模拟资金操作）
 
-两步：先报价锁价，再凭支付密码执行。
+当前有报价、支付密码校验、演示账户扣入账和流水；目标币种账户不存在时会创建。尚未实现服务端锁价、过期拒绝与确认条件绑定，金额/币种的运行时校验也待补齐，不能将前端三十秒倒计时当成锁价保证。
 
-### 报价
+### 参考报价（未锁价）
 
 `POST /api/exchange/quote` → `ExchangeQuote`
 
@@ -71,7 +71,7 @@
 
 | 响应字段 | 说明 |
 | --- | --- |
-| `fx` | `FxQuote`：汇率、点差、锁价有效期等（口径同转账报价） |
+| `fx` | `FxQuote`：参考汇率、点差及供前端倒计时的有效期字段；当前未绑定银行端锁价 |
 | `toAccountNo` | 目标币种账户；**不存在时后端返回「将自动开立」并自动开立同币种子账户** |
 | `toAvailableAfter` | 换汇后目标账户可用余额（预估） |
 
