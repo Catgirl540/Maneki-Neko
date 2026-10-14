@@ -110,6 +110,12 @@ export function ensureStaffSchema(db) {
   if (!ticketCols.some((c) => c.name === 'created_by')) {
     db.exec('ALTER TABLE tickets ADD COLUMN created_by TEXT')
   }
+  // 老库迁移：ticket_messages.visible_to_customer 是员工→客户留言（契约 v1.3）加的。
+  // 默认 0 = 只是工单内部记录；置 1 的那条会同时投递到客户手机端收件箱。
+  const msgCols = db.prepare('PRAGMA table_info(ticket_messages)').all()
+  if (!msgCols.some((c) => c.name === 'visible_to_customer')) {
+    db.exec('ALTER TABLE ticket_messages ADD COLUMN visible_to_customer INTEGER NOT NULL DEFAULT 0')
+  }
   // 演示账号：王小明（csr）/ 李主管（supervisor）。密码明文只在 demo 校验，
   // 哈希落库是防止「表里躺明文」的最低要求（清单 §3）。
   const seed = db.prepare('SELECT COUNT(*) AS n FROM staff_users').get()
@@ -536,11 +542,36 @@ export function createStaffApi({ db, bankHooks = {} }) {
           const body = await readBody(req)
           requireFields(body, ['text'])
           const sender = who.actorType === 'agent' ? 'system' : 'staff'
+          // 契约 v1.3：勾了「发给客户」才投递；agent 走 system 一律不外发，
+          // 客户看到的必须是真人客服写的，不能让 AI 代发（不变量 10）。
+          const visibleToCustomer = Boolean(body.visibleToCustomer) && sender === 'staff'
           const mid = newId('msg')
-          db.prepare('INSERT INTO ticket_messages (id, ticket_id, sender, text, created_at) VALUES (?, ?, ?, ?, ?)')
-            .run(mid, id, sender, body.text, now())
-          writeAudit({ actorType: who.actorType, actorId: who.actorId, action: 'ticket.message', targetType: 'ticket', targetId: id })
-          json(res, 201, { messageId: mid })
+          db.prepare('INSERT INTO ticket_messages (id, ticket_id, sender, text, created_at, visible_to_customer) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(mid, id, sender, body.text, now(), visibleToCustomer ? 1 : 0)
+          writeAudit({
+            actorType: who.actorType,
+            actorId: who.actorId,
+            action: visibleToCustomer ? 'ticket.message.customer' : 'ticket.message',
+            targetType: 'ticket',
+            targetId: id,
+            reason: visibleToCustomer ? body.text : null,
+          })
+          // 投递到客户手机端收件箱。写失败不影响工单留言本身——那是员工侧记录，
+          // 不能因为客户端投递挂了就把员工写的话弄丢。
+          if (visibleToCustomer) {
+            try {
+              await bankHooks.publishSupportNotice?.({
+                customerId: ticket.customer_id,
+                ticketId: id,
+                staffName: who.name ?? who.actorId,
+                text: body.text,
+                createdAt: now(),
+              })
+            } catch (error) {
+              console.warn('[staff-api] 客户端留言投递失败：', error?.message ?? error)
+            }
+          }
+          json(res, 201, { messageId: mid, visibleToCustomer })
           return true
         }
       }

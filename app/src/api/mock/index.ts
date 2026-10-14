@@ -60,6 +60,7 @@ import type {
   SpendingCategory,
   SpendingTrendPoint,
   SmsCodeResult,
+  StaffNotice,
   SupportMessage,
   SupportReply,
   Transaction,
@@ -458,6 +459,29 @@ function cannedReply(text: string): SupportReply {
     actions: rule?.actions,
   }
   return { message, canned: true }
+}
+
+/* ------------------------------------------------------ 员工→客户留言收件箱 */
+
+/**
+ * 取某客户收到的员工留言。后端那份 localStorage 垫片是**所有用户共用**的，
+ * 所以一定要按 customerId 过滤，否则客户的收件箱会漏进别人的话。
+ */
+export function listStaffNotices(customerId: string): StaffNotice[] {
+  const all = storage.get<StaffNotice[]>(STORAGE_KEYS.supportStaffNotices, [])
+  return all.filter((n) => n.customerId === customerId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+}
+
+/**
+ * 员工端投递一条留言到客户收件箱（staff-api 经 demo-bank 的 publishSupportNotice 调进来）。
+ * 这里只管落盘；筛选、展示都在读的那一侧。
+ */
+export function appendStaffNotice(notice: Omit<StaffNotice, 'id'>): StaffNotice {
+  const stored: StaffNotice[] = storage.get<StaffNotice[]>(STORAGE_KEYS.supportStaffNotices, [])
+  const row: StaffNotice = { id: nextId('notice'), ...notice }
+  stored.push(row)
+  storage.set(STORAGE_KEYS.supportStaffNotices, stored)
+  return row
 }
 
 /* --------------------------------------------------------- 支付密码 / 收费 */
@@ -2021,15 +2045,28 @@ export function createMockApi(options?: {
     async listSupportMessages(): Promise<SupportMessage[]> {
       await delay(120)
       const history = storage.get<SupportMessage[] | null>(STORAGE_KEYS.supportHistory, null)
-      if (history?.length) return history
-      return [
-        {
-          id: nextId('msg'),
-          role: 'agent',
-          createdAt: new Date().toISOString(),
-          text: '你好，我是招财猫银行的智能客服。转账、锁卡、密码重置、消费分析都可以问我。',
-        },
-      ]
+      // 员工端发来的留言（契约 v1.3）。条目自带 customerId，按当前登录人过滤——
+      // 后端的 storage 是所有用户共用的一份，不过滤会把别人的话念给这个客户听。
+      const mine = listStaffNotices(loadDb().user.id).map((n): SupportMessage => ({
+        id: n.id,
+        role: 'staff',
+        text: n.text,
+        staffName: n.staffName,
+        createdAt: n.createdAt,
+      }))
+      const base: SupportMessage[] =
+        history?.length
+          ? history
+          : [
+              {
+                id: nextId('msg'),
+                role: 'agent',
+                createdAt: new Date().toISOString(),
+                text: '你好，我是招财猫银行的智能客服。转账、锁卡、密码重置、消费分析都可以问我。',
+              },
+            ]
+      // 按时间归并，别让员工留言和智能客服对话各堆一堆、读不出先后
+      return [...mine, ...base].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     },
 
     async sendSupportMessage(text) {

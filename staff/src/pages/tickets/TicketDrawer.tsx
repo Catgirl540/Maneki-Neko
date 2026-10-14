@@ -65,6 +65,9 @@ export function TicketDrawer({
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  // 是否把这条留言同时投递到客户手机端（契约 v1.3）。默认不外发：
+  // 内部处理记录和对客户说的话是两回事，别让随手写的备注漏到客户那去。
+  const [visibleToCustomer, setVisibleToCustomer] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -110,7 +113,7 @@ export function TicketDrawer({
     const text = draft.trim()
     if (!text) return
     setDraft('')
-    return run(() => api.postTicketMessage(ticketId, text))
+    return run(() => api.postTicketMessage(ticketId, text, { visibleToCustomer }))
   }
 
   return (
@@ -202,6 +205,12 @@ export function TicketDrawer({
                     <div className="text-xs text-[var(--color-ink-mute)]">
                       {m.sender === 'staff' ? '员工' : m.sender === 'customer' ? '客户' : '系统'}
                       <span className="ml-2">{formatTime(m.created_at)}</span>
+                      {/* 投递到客户手机端的那几条要看得出来，否则员工不知道客户到底收到了哪句 */}
+                      {m.visible_to_customer === 1 && (
+                        <span className="ml-2 rounded-full bg-[var(--color-blue-wash)] px-2 py-0.5 text-xs text-[var(--color-blue-deep)]">
+                          已发给客户
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 text-[var(--color-ink)]">{m.text}</div>
                   </div>
@@ -224,7 +233,7 @@ export function TicketDrawer({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') send()
                 }}
-                placeholder="给客户留言…（演示可直接发）"
+                placeholder="写处理记录或给客户留言…"
                 className="flex-1 rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
               />
               <button
@@ -235,6 +244,16 @@ export function TicketDrawer({
                 发送
               </button>
             </div>
+            {/* 外发开关：勾了客户才收得到，不勾就只是工单内部记录 */}
+            <label className="flex items-center gap-2 text-xs text-[var(--color-ink-soft)]">
+              <input
+                type="checkbox"
+                checked={visibleToCustomer}
+                onChange={(e) => setVisibleToCustomer(e.target.checked)}
+                className="size-3.5 accent-[var(--color-gold)]"
+              />
+              同时发给客户（客户手机端「客服」页可见）
+            </label>
             <div className="flex flex-wrap gap-2">
               {actionsFor(ticket.status).map((action) => (
                 <button

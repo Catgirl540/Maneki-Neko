@@ -87,6 +87,8 @@ staffApi = createStaffApi({
     searchCustomers: (keyword) => bank.searchCustomers(keyword),
     getCustomerProfile: (customerId) => bank.getCustomerProfile(customerId),
     performCustomerAction: (args) => bank.performCustomerAction(args),
+    // 员工→客户留言（契约 v1.3）：投递到客户手机端收件箱
+    publishSupportNotice: (args) => bank.publishSupportNotice(args),
   },
 })
 

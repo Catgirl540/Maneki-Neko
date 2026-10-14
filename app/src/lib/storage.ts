@@ -95,6 +95,8 @@ export const STORAGE_KEYS = {
   // 改 key 只能防住改 key 那一次，防不住同一个 key 下字段又变了
   mockDb: 'mock.db',
   supportHistory: 'support.history.v1',
+  /** 员工从工作人员端发来的留言（条目自带 customerId，按人分发）。 */
+  supportStaffNotices: 'support.staffNotices.v1',
   sidebarCollapsed: 'ui.sidebarCollapsed',
   /** 客服页的历史对话抽屉是不是开着。 */
   agentHistoryOpen: 'ui.agentHistoryOpen',

@@ -53,6 +53,8 @@ export interface TicketMessage {
   sender: 'staff' | 'customer' | 'system'
   text: string
   created_at: string
+  /** 1 = 这条同时投递到了客户手机端收件箱（契约 v1.3）；0/undefined = 只是工单内部记录 */
+  visible_to_customer?: number
 }
 
 export interface TicketDetail extends Ticket {

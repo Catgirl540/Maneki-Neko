@@ -80,6 +80,11 @@ export function SupportPage() {
   const items = agent.active?.items
   const activeBusy = agent.activeId !== undefined && agent.busyIds.includes(agent.activeId)
 
+  // 员工从工作人员端发来的留言。不管走不走智能客服都要显示——
+  // 人说的话比模型说的话更要紧，不能被 agent 面板顶掉。
+  const staffNotices = messages.filter((m) => m.role === 'staff')
+  const botMessages = messages.filter((m) => m.role !== 'staff')
+
   // 语音模式下，agent 一开口说话就退出"等回答"状态（转圈该停了）。
   useEffect(() => {
     if (voice.state === 'thinking' && !activeBusy) voice.thinking()
@@ -383,6 +388,20 @@ export function SupportPage() {
 
           {supportError && !usingAgent && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
           <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+            {/* 员工留言置顶：人说的话优先于模型说的话。
+                智能客服开着的时候下面那条分支不渲染 messages，
+                所以这里必须单列出来，否则客户永远看不到员工发的那几句。 */}
+            {staffNotices.length > 0 && (
+              <section className="rounded-card border border-gold-deep/30 bg-gold-wash/40 p-3">
+                <p className="mb-2 text-[12px] font-medium text-gold-deep">人工客服留言</p>
+                <div className="space-y-3">
+                  {staffNotices.map((msg) => (
+                    <MessageBubble key={msg.id} message={msg} />
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* 只给**单条**气泡做入场，不给整块列表做。
                 滑进来的消息是"又来了一句话"，一次 220ms 的轻微上浮就够了；
                 整块再淡一次的话两层叠在一起，看着就是糊的。
@@ -390,7 +409,7 @@ export function SupportPage() {
                 管两种情况，不用再分一套。 */}
             {usingAgent
               ? (items ?? []).map((item) => <AgentBubble key={item.id} item={item} actions={bubbleActions} />)
-              : messages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
+              : botMessages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
 
             {/* 待确认的敏感操作：工具此刻**还没有执行** */}
             {agent.pending !== undefined && (
@@ -930,15 +949,22 @@ function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions
 
 function MessageBubble({ message }: { message: SupportMessage }) {
   const isUser = message.role === 'user'
+  const isStaff = message.role === 'staff'
   return (
     <div className={cn('pop-in flex items-start gap-3', isUser && 'flex-row-reverse')}>
       <span
         className={cn(
           'grid size-8 shrink-0 place-items-center rounded-chip',
-          isUser ? 'bg-ink text-ink-invert' : 'bg-gold-wash',
+          isUser
+            ? 'bg-ink text-ink-invert'
+            : isStaff
+              ? 'bg-gold text-white'
+              : 'bg-gold-wash',
         )}
       >
         {isUser ? (
+          <UserIcon size={17} />
+        ) : isStaff ? (
           <UserIcon size={17} />
         ) : (
           <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
@@ -946,6 +972,12 @@ function MessageBubble({ message }: { message: SupportMessage }) {
       </span>
 
       <div className={cn('max-w-[80%]', isUser && 'flex flex-col items-end')}>
+        {/* 人工客服要标出是谁发的，客户才知道这是真人而不是智能客服 */}
+        {isStaff && (
+          <p className="mb-1 text-[12px] text-gold-deep">
+            人工客服{message.staffName ? ` · ${message.staffName}` : ''}
+          </p>
+        )}
         <div
           className={cn(
             'rounded-card px-4 py-3 text-[14px] leading-relaxed',

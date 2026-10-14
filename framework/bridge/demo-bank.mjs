@@ -402,6 +402,7 @@ export async function createDemoBank({
     settleHeldTransfer: mockSettleHeldTransfer,
     settleExpiredHolds: mockSettleExpiredHolds,
     settleClearingTransactions: mockSettleClearing,
+    appendStaffNotice,
   } = mockModule
   const { routes, ApiError } = contractModule
   const { resetDb, findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb } = dbModule
@@ -595,6 +596,23 @@ export async function createDemoBank({
     }),
     reset,
     stats: () => ({ routes: ROUTES.length, staticRoutes: patterns.staticOnes.length, stateFile }),
+
+    /**
+     * 员工端给客户投递留言（契约 v1.3 的 visibleToCustomer）。
+     * 存的是**全局**的 support.staffNotices，条目自带 customerId，
+     * 读的那一侧（listSupportMessages）按当前登录人过滤。
+     * 走 exclusive 与切档操作串行，避免和档案读写抢 storage。
+     */
+    publishSupportNotice({ customerId, ticketId, staffName, text, createdAt }) {
+      return exclusive(async () => {
+        // 先确认客户存在：给不存在的人留言只会落一条永远没人看的垃圾
+        const profile = findProfileByUserId(customerId)
+        if (profile === null) {
+          throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
+        }
+        return appendStaffNotice({ customerId, ticketId, staffName, text, createdAt })
+      })
+    },
 
     /** 查在途中的转账指令（员工端/agent 提审用）。走同一队列，避免切档串号。 */
     getHeldTransfer({ customerId, transactionId }) {

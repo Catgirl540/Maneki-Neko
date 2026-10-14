@@ -724,11 +724,24 @@ export interface SecurityOverview {
 
 export interface SupportMessage {
   id: string
-  role: 'user' | 'agent'
+  /** staff = 工作人员端发来的真人留言（不是智能客服，也不是你自己） */
+  role: 'user' | 'agent' | 'staff'
   text: string
   createdAt: string
+  /** staff 消息带发送人姓名，客户端显示「人工客服 · 王小明」 */
+  staffName?: string
   /** 客服给出的可点操作，例如跳转到转账 */
   actions?: { label: string; to: string }[]
+}
+
+/** 员工端投递过来的留言在存储层的形态（比 SupportMessage 多一路 customerId 用来分发） */
+export interface StaffNotice {
+  id: string
+  customerId: string
+  ticketId: string
+  staffName: string
+  text: string
+  createdAt: string
 }
 
 export interface SupportReply {
