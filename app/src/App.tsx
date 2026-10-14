@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import type { ReactNode } from 'react'
 import { AppShell } from '@/components/layout/AppShell'
 import { AccountLayout } from '@/components/layout/AccountLayout'
 import { DemoWatermark } from '@/components/layout/DemoWatermark'
@@ -11,6 +12,7 @@ import { AutoDebitsPage } from '@/pages/AutoDebitsPage'
 import { CardsPage } from '@/pages/CardsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LandingPage } from '@/pages/LandingPage'
+import { DownloadPage } from '@/pages/DownloadPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { OpenAccountStandalone } from '@/pages/OpenAccountPage'
 import { SecurityPage } from '@/pages/SecurityPage'
@@ -29,6 +31,22 @@ import { TransactionDetailPage } from '@/pages/TransactionDetailPage'
 import { WealthPage } from '@/pages/WealthPage'
 import { SessionProvider, RequireAuth } from '@/store/session'
 import { useSession } from '@/store/session-context'
+import { clientDevice } from '@/lib/device'
+
+/** 手机在登录态和业务页面挂载之前统一进入下载页，深链接同样适用。 */
+function ClientEntry({ children }: { children: ReactNode }) {
+  const device = clientDevice()
+  const location = useLocation()
+  if (device !== 'desktop' || /^\/download\/?$/.test(location.pathname)) {
+    return (
+      <Routes>
+        <Route path="/download" element={<DownloadPage device={device} />} />
+        <Route path="*" element={<Navigate to="/download" replace />} />
+      </Routes>
+    )
+  }
+  return <SessionProvider>{children}</SessionProvider>
+}
 
 /**
  * 登录页的入口。
@@ -56,10 +74,10 @@ export default function App() {
       {/* 路由切换要回到顶部，否则新页面会继承上一页的滚动位置 */}
       <ScrollToTop />
       <ToastProvider>
-        <SessionProvider>
-          <DemoWatermark />
-          {/* 兜在最外层：任何页面渲染崩了都给一张能读的错误页，而不是白屏 */}
-          <ErrorBoundary>
+        <DemoWatermark />
+        {/* 兜在最外层：任何页面渲染崩了都给一张能读的错误页，而不是白屏 */}
+        <ErrorBoundary>
+          <ClientEntry>
             <Routes>
               {/* 官网是公开的：它要回答「这是什么」，所以不能先拦一道登录 */}
               <Route path="/" element={<LandingPage />} />
@@ -100,8 +118,8 @@ export default function App() {
               {/* 认不出的路径回官网，而不是回总览：没登录的人落到总览只会被再弹去登录页 */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
-          </ErrorBoundary>
-        </SessionProvider>
+          </ClientEntry>
+        </ErrorBoundary>
       </ToastProvider>
     </BrowserRouter>
   )

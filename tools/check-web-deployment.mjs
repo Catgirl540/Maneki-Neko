@@ -21,12 +21,41 @@ try {
     assert.match(resource.type, ref.endsWith('.js') ? /(?:javascript|ecmascript)/ : /text\/css/, `资源类型错误（可能返回了 HTML）：${ref}`)
   }
   console.log(`PASS 官网及 ${refs.length} 个入口资源路径、响应类型`)
-  for (const path of ['login', 'dashboard', 'transfer', 'support']) {
+  for (const path of ['login', 'dashboard', 'transfer', 'support', 'download']) {
     const page = await get(path)
     assert.equal(page.response.status, 200, `深链接不可达：${path}`)
     assert.equal(page.text, home.text, `深链接未返回同一网页入口：${path}`)
   }
-  console.log('PASS 登录、账户、转账兼容路径与助手深链接回落')
+  console.log('PASS 登录、账户、转账兼容路径、助手与下载页深链接回落')
+  const manifest = await get('downloads/android.json')
+  assert.equal(manifest.response.status, 200, '安装包元数据不可达')
+  assert.match(manifest.type, /application\/json/, '安装包元数据返回了网页')
+  const android = JSON.parse(manifest.text)
+  assert.equal(android.packageName, 'cn.waveflow.luckycat')
+  assert.match(android.sha256, /^[a-f0-9]{64}$/)
+  assert.equal(android.fileName, `luckycat-android-${android.sha256.slice(0, 12)}.apk`)
+  const apk = await fetch(new URL(`downloads/${android.fileName}`, base), {
+    headers: { Range: 'bytes=0-3' }, signal: AbortSignal.timeout(15_000),
+  })
+  try {
+    assert([200, 206].includes(apk.status), '安装包下载失败')
+    assert.match(apk.headers.get('content-type') ?? '', /application\/(?:vnd\.android\.package-archive|octet-stream|zip)/, '下载入口返回了网页')
+    if (apk.status === 206) assert.equal(apk.headers.get('content-range'), `bytes 0-3/${android.bytes}`)
+    else assert.equal(Number(apk.headers.get('content-length')), android.bytes)
+    const reader = apk.body.getReader()
+    const chunks = []
+    let length = 0
+    try {
+      while (length < 4) {
+        const part = await reader.read()
+        if (part.done) break
+        chunks.push(part.value)
+        length += part.value.length
+      }
+    } finally { await reader.cancel() }
+    assert(Buffer.concat(chunks).subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])), '安装包不是 APK/ZIP')
+  } finally { await apk.body?.cancel().catch(() => {}) }
+  console.log('PASS 安卓下载元数据、文件大小、响应类型与 APK 文件头')
   for (const path of ['api/accounts', 'agent-api/health']) {
     const result = await get(path)
     assert.equal(result.response.status, 401, `未登录接口应拒绝访问：${path}`)

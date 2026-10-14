@@ -15,7 +15,8 @@
 | 远程仓库 | `https://github.com/Catgirl540/Maneki-Neko.git` |
 | 当前主分支 | `main` |
 | 部署目录（**服务实际从这里跑**，无 `.git`） | `/srv/maneki-neko` |
-| 前端静态产物 | `/var/www/maneki-neko/{bank,staff,docs}` |
+| 客户端静态产物 | `/var/www/maneki-neko/current-bank/bank`（指向 `releases/` 下的版本目录） |
+| 员工端与文档 | `/var/www/maneki-neko/{staff,docs}` |
 | 数据库 | `/var/lib/luckycat/bank.sqlite`（SQLite / WAL） |
 | 密钥 | `/etc/luckycat/luckycat.env`（`600 root`）——**绝不入库、绝不写进任何提交** |
 | Node | `/opt/maneki-node24/bin/node`（v24.21.0，自带原生 `node:sqlite`） |
@@ -23,6 +24,8 @@
 线上入口（裸 IP，域名备案中，见 §10）：
 
 - 客户端 `http://120.48.123.112/bank/`
+- 安卓下载 `http://120.48.123.112/bank/download`（手机访问客户端任意页面都会进入这里）
+- 安卓更新信息 `http://120.48.123.112/bank/downloads/android.json`
 - 员工端 `http://120.48.123.112/staff/`
 - Logo 评审站 `http://120.48.123.112/logo-review/`
 - 文档下载 `http://120.48.123.112/downloads/<file>`
@@ -76,7 +79,9 @@ git log --oneline -8
 
 | 路径 | 处理方式 | 目标 |
 | --- | --- | --- |
-| `/bank/` + `/bank/assets/` | 静态 `root /var/www/maneki-neko` | 客户端（构建 `base=/bank/`） |
+| `/bank/` + `/bank/assets/` | 静态 `root /var/www/maneki-neko/current-bank` | 客户端（构建 `base=/bank/`） |
+| `/bank/downloads/android.json` | 静态 JSON，不缓存 | 安卓版本、摘要及更新说明 |
+| `/bank/downloads/*.apk` | 静态 APK，带内容哈希名 | 允许下载和 Range，缺失返回 404 |
 | `/bank/api/` | 反向代理 | `127.0.0.1:8080/api/`（银行后端） |
 | `/bank/agent-api/` | 反向代理（SSE，关缓冲） | `127.0.0.1:8898/agent-api/`（Agent 桥） |
 | `/staff/` + `/staff/assets/` | 静态 `root /var/www/maneki-neko` | 员工端（构建 `base=/staff/`） |
@@ -129,12 +134,24 @@ rsync -a --chown=ubuntu:ubuntu \
 
 ### 5.2 构建并发布客户端（`/bank/`）
 
+官网与安卓包在本机构建。先按 `mobile/README.md` 构建 APK，再在仓库根目录执行：
+
 ```bash
-cd /srv/maneki-neko/app
-VITE_BASE_PATH=/bank/ VITE_API_BASE_URL=/bank VITE_AGENT_URL=/bank/agent-api npm run build
-rsync -a --delete /srv/maneki-neko/app/dist/ /var/www/maneki-neko/bank/
-chown -R www-data:www-data /var/www/maneki-neko/bank
+npm --prefix app run prepare:android
+npm --prefix app run build:server
 ```
+
+把完整 `app/dist/` 上传到新版本目录 `/var/www/maneki-neko/releases/<发布编号>/bank/`，必须包含 `downloads/`。上传后核对 APK 的 SHA-256、字节数与 `android.json`；使用新版本前，把旧站点的哈希 `assets/` 复制到新目录，保留已经打开的网页所引用的资源。
+
+客户端 nginx 的 `root` 为 `/var/www/maneki-neko/current-bank`；该路径是指向某个发布目录的软链接，发布目录内还包含一级 `bank/`。先备份旧软链接目标和 `/etc/nginx/snippets/maneki-neko-ip.conf`，再使用临时软链接和 `mv -Tf` 原子替换 `current-bank`，执行 `nginx -t` 后重载 nginx。银行、Agent 服务继续运行。旧物理目录 `/var/www/maneki-neko/bank/` 保留作为首次迁移前的版本，后续不能再向它 rsync 发布。
+
+2026-10-14 发布官网手机下载页与安卓 **1.0.1（build 2，调试版）**，来源为本机当前工作区构建。当前发布目录：`/var/www/maneki-neko/releases/web-20261014T060337Z-79366ed9`。首次迁移的备份和回滚脚本在 `/var/backups/maneki-neko/web-20261014T060337Z-79366ed9/`，回滚命令：
+
+```bash
+sudo bash /var/backups/maneki-neko/web-20261014T060337Z-79366ed9/rollback.sh
+```
+
+发布后运行 `node tools/check-web-deployment.mjs`，并用浏览器验证电脑官网与手机深链接。安卓应用从同源 `/bank/downloads/android.json` 检查更新；正式版更新源需 HTTPS，后续版本须递增 build 数字并使用相同签名。
 
 ### 5.3 构建并发布员工端（`/staff/`）
 
