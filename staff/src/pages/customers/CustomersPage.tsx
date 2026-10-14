@@ -133,7 +133,8 @@ export function CustomersPage() {
             查看「{pendingView.name}」完整资料
           </div>
           <p className="mt-1 text-xs text-[var(--color-ink-mute)]">
-            完整资料含账户余额与流水，查看会记入审计（谁在何时看过谁）。请填写事由。
+            完整资料含账户余额与流水，本次查看会记入审计（谁在何时看过谁）。审计日志仅主管可查，客服侧看不到菜单。
+            请填写事由。
           </p>
           <div className="mt-3 flex items-center gap-3">
             <input
