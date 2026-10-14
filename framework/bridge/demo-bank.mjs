@@ -641,7 +641,11 @@ export async function createDemoBank({
         const out = []
         for (const profile of listAllProfiles()) {
           const { id, name, phone } = profile.user
-          if (kw && !`${name} ${phone} ${id}`.toLowerCase().includes(kw)) continue
+          // 界面展示的是脱敏号（138****8000），员工照着抄回来搜也必须命中；
+          // 去掉星号的紧缩形态一并进靶子，容忍「1388000」这类手输片段
+          const masked = maskPhone(phone)
+          const haystack = `${name} ${phone} ${id} ${masked} ${masked.replace(/\*/g, '')}`.toLowerCase()
+          if (kw && !haystack.includes(kw)) continue
           out.push({
             customerId: id,
             name,
@@ -669,6 +673,13 @@ export async function createDemoBank({
           phoneMasked: maskPhone(profile.user.phone),
           accounts: profile.accounts.map((a) => ({ id: a.id, label: a.label, balance: a.balance })),
           cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status })),
+          autoDebits: (profile.autoDebits ?? []).map((a) => ({
+            id: a.id,
+            merchant: a.merchant,
+            amount: a.amount,
+            cycle: a.cycle,
+            enabled: a.enabled,
+          })),
           recentTransactions: txs.map((t) => ({
             id: t.id,
             amount: t.signedAmount,

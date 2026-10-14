@@ -7,6 +7,7 @@ import {
   type ApprovalStatus,
   type InterceptReason,
 } from '@/api'
+import { useSession } from '@/store/session-context'
 import { formatTime } from '../tickets/labels'
 import { ThresholdPanel } from './ThresholdPanel'
 import {
@@ -36,6 +37,22 @@ function holdUntilOf(a: Approval): string | null {
 }
 
 function ExecutionCell({ a }: { a: Approval }) {
+  // 拦截 / 用户撤销后 executionStatus='failed' 的语义是「指令从未执行」（§9.4），
+  // 不是执行出了错。标红「执行失败」会被误读成拦截本身失败了，这里改中性文案。
+  if (a.status === 'intercepted') {
+    return (
+      <span className="rounded-full bg-[var(--color-sunk)] px-2 py-0.5 text-xs text-[var(--color-ink-mute)]">
+        未执行（已拦截）
+      </span>
+    )
+  }
+  if (a.status === 'recalled') {
+    return (
+      <span className="rounded-full bg-[var(--color-sunk)] px-2 py-0.5 text-xs text-[var(--color-ink-mute)]">
+        未执行（用户已撤销）
+      </span>
+    )
+  }
   // 已到账但执行失败：单独一句话，别埋在 tooltip 里（验收必测）
   if (a.status === 'settled' && a.executionStatus === 'failed') {
     return (
@@ -84,6 +101,10 @@ function PayloadView({ a }: { a: Approval }) {
 }
 
 export function ApprovalsPage() {
+  const { user } = useSession()
+  // 处置（settle / intercept / approved / rejected）只允许主管（清单 §5）；
+  // 客服点按钮只会吃 403，界面上先说清楚，别让人以为是功能坏了
+  const isSupervisor = user?.role === 'supervisor'
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [error, setError] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -253,13 +274,11 @@ export function ApprovalsPage() {
         </tbody>
       </table>
 
-      {/* 详情抽屉：参数快照 + 倒计时 + 拦截/立即到账 */}
+      {/* 详情抽屉：参数快照 + 倒计时 + 拦截/立即到账（结构对齐 TicketDrawer） */}
       {selected && (
-        <div className="fixed inset-0 z-30 flex justify-end bg-black/20" onClick={() => setSelectedId(null)}>
-          <div
-            className="flex h-full w-full max-w-md flex-col overflow-y-auto bg-[var(--color-paper-deep)] p-5 shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-30 flex justify-end">
+          <div className="flex-1 bg-black/20" onClick={() => setSelectedId(null)} />
+          <div className="flex h-full w-[480px] flex-col overflow-y-auto border-l border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-xl">
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-[var(--color-ink)]">
@@ -325,160 +344,168 @@ export function ApprovalsPage() {
                     {actionError}
                   </div>
                 )}
-                {confirming === 'intercept' ? (
-                  <div>
-                    <label className="text-sm text-[var(--color-ink-soft)]">
-                      拦截理由（必选枚举）
-                      <select
-                        value={interceptReason}
-                        onChange={(e) => setInterceptReason(e.target.value as InterceptReason)}
-                        className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
-                      >
-                        {INTERCEPT_REASONS.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="mt-2 block text-sm text-[var(--color-ink-soft)]">
-                      补充说明（可选）
-                      <textarea
-                        value={interceptDetail}
-                        onChange={(e) => setInterceptDetail(e.target.value)}
-                        rows={2}
-                        placeholder="例如：客户称本人未发起该笔转账"
-                        className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
-                      />
-                    </label>
-                    <p className="mt-2 text-xs text-[var(--color-coral)]">
-                      拦截后本金退回客户可用余额，指令不再执行。不可恢复。
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        disabled={busy}
-                        onClick={() => decide('intercept')}
-                        className="rounded-[var(--radius-tile)] bg-[var(--color-coral)] px-4 py-2 text-sm text-white disabled:opacity-50"
-                      >
-                        确认拦截
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={resetActionState}
-                        className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                ) : confirming === 'settle' ? (
-                  <div>
-                    <p className="text-sm text-[var(--color-ink)]">
-                      确认立即到账？将跳过剩余窗口时间，马上执行扣款并入账收款方。
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        disabled={busy}
-                        onClick={() => decide('settle')}
-                        className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
-                      >
-                        确认立即到账
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={resetActionState}
-                        className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                ) : confirming === 'rejected' ? (
-                  <div>
-                    <label className="text-sm text-[var(--color-ink-soft)]">
-                      驳回理由（必填）
-                      <textarea
-                        value={rejectReason}
-                        onChange={(e) => setRejectReason(e.target.value)}
-                        rows={3}
-                        placeholder="例如：收款方信息与客户描述不一致"
-                        className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
-                      />
-                    </label>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        disabled={busy || !rejectReason.trim()}
-                        onClick={() => decide('rejected')}
-                        className="rounded-[var(--radius-tile)] bg-[var(--color-coral)] px-4 py-2 text-sm text-white disabled:opacity-50"
-                      >
-                        确认驳回
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={resetActionState}
-                        className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                ) : confirming === 'approved' ? (
-                  <div>
-                    <p className="text-sm text-[var(--color-ink)]">
-                      确认通过？将通过共用业务入口执行，不可撤销。
-                    </p>
-                    <div className="mt-2 flex gap-2">
-                      <button
-                        disabled={busy}
-                        onClick={() => decide('approved')}
-                        className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
-                      >
-                        确认通过
-                      </button>
-                      <button
-                        disabled={busy}
-                        onClick={resetActionState}
-                        className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
-                      >
-                        取消
-                      </button>
-                    </div>
-                  </div>
-                ) : selected.bizType === 'transfer' ? (
-                  <div className="flex gap-2">
-                    <button
-                      disabled={busy}
-                      onClick={() => setConfirming('settle')}
-                      className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
-                    >
-                      立即到账
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => setConfirming('intercept')}
-                      className="rounded-[var(--radius-tile)] border border-[var(--color-coral)] px-4 py-2 text-sm text-[var(--color-coral)] disabled:opacity-50"
-                    >
-                      拦截
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <button
-                      disabled={busy}
-                      onClick={() => setConfirming('approved')}
-                      className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
-                    >
-                      通过
-                    </button>
-                    <button
-                      disabled={busy}
-                      onClick={() => setConfirming('rejected')}
-                      className="rounded-[var(--radius-tile)] border border-[var(--color-coral)] px-4 py-2 text-sm text-[var(--color-coral)] disabled:opacity-50"
-                    >
-                      驳回
-                    </button>
+                {!isSupervisor && (
+                  <div className="rounded-[var(--radius-tile)] border border-[var(--color-line)] bg-[var(--color-sunk)] px-3 py-2 text-sm text-[var(--color-ink-soft)]">
+                    处置（{selected.bizType === 'transfer' ? '立即到账 / 拦截' : '通过 / 驳回'}）仅主管可执行。
+                    当前登录：{user?.name ?? '—'}（{user?.role === 'supervisor' ? '主管' : '客服'}）。
+                    请用主管账号登录后操作。
                   </div>
                 )}
+                {isSupervisor &&
+                  (confirming === 'intercept' ? (
+                    <div>
+                      <label className="text-sm text-[var(--color-ink-soft)]">
+                        拦截理由（必选枚举）
+                        <select
+                          value={interceptReason}
+                          onChange={(e) => setInterceptReason(e.target.value as InterceptReason)}
+                          className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
+                        >
+                          {INTERCEPT_REASONS.map((r) => (
+                            <option key={r} value={r}>
+                              {r}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="mt-2 block text-sm text-[var(--color-ink-soft)]">
+                        补充说明（可选）
+                        <textarea
+                          value={interceptDetail}
+                          onChange={(e) => setInterceptDetail(e.target.value)}
+                          rows={2}
+                          placeholder="例如：客户称本人未发起该笔转账"
+                          className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
+                        />
+                      </label>
+                      <p className="mt-2 text-xs text-[var(--color-coral)]">
+                        拦截后本金退回客户可用余额，指令不再执行。不可恢复。
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          disabled={busy}
+                          onClick={() => decide('intercept')}
+                          className="rounded-[var(--radius-tile)] bg-[var(--color-coral)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                        >
+                          确认拦截
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={resetActionState}
+                          className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : confirming === 'settle' ? (
+                    <div>
+                      <p className="text-sm text-[var(--color-ink)]">
+                        确认立即到账？将跳过剩余窗口时间，马上执行扣款并入账收款方。
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          disabled={busy}
+                          onClick={() => decide('settle')}
+                          className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                        >
+                          确认立即到账
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={resetActionState}
+                          className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : confirming === 'rejected' ? (
+                    <div>
+                      <label className="text-sm text-[var(--color-ink-soft)]">
+                        驳回理由（必填）
+                        <textarea
+                          value={rejectReason}
+                          onChange={(e) => setRejectReason(e.target.value)}
+                          rows={3}
+                          placeholder="例如：收款方信息与客户描述不一致"
+                          className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2 text-sm"
+                        />
+                      </label>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          disabled={busy || !rejectReason.trim()}
+                          onClick={() => decide('rejected')}
+                          className="rounded-[var(--radius-tile)] bg-[var(--color-coral)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                        >
+                          确认驳回
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={resetActionState}
+                          className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : confirming === 'approved' ? (
+                    <div>
+                      <p className="text-sm text-[var(--color-ink)]">
+                        确认通过？将通过共用业务入口执行，不可撤销。
+                      </p>
+                      <div className="mt-2 flex gap-2">
+                        <button
+                          disabled={busy}
+                          onClick={() => decide('approved')}
+                          className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                        >
+                          确认通过
+                        </button>
+                        <button
+                          disabled={busy}
+                          onClick={resetActionState}
+                          className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-4 py-2 text-sm"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
+                  ) : selected.bizType === 'transfer' ? (
+                    <div className="flex gap-2">
+                      <button
+                        disabled={busy}
+                        onClick={() => setConfirming('settle')}
+                        className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                      >
+                        立即到账
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => setConfirming('intercept')}
+                        className="rounded-[var(--radius-tile)] border border-[var(--color-coral)] px-4 py-2 text-sm text-[var(--color-coral)] disabled:opacity-50"
+                      >
+                        拦截
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        disabled={busy}
+                        onClick={() => setConfirming('approved')}
+                        className="rounded-[var(--radius-tile)] bg-[var(--color-ink)] px-4 py-2 text-sm text-white disabled:opacity-50"
+                      >
+                        通过
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => setConfirming('rejected')}
+                        className="rounded-[var(--radius-tile)] border border-[var(--color-coral)] px-4 py-2 text-sm text-[var(--color-coral)] disabled:opacity-50"
+                      >
+                        驳回
+                      </button>
+                    </div>
+                  ))}
               </div>
             )}
           </div>

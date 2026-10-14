@@ -109,6 +109,7 @@ const demoProfile: CustomerProfile = {
   phoneMasked: '138****8000',
   accounts: [{ id: 'acc_1', label: '储蓄账户', balance: 1250000 }],
   cards: [{ id: 'card_1', last4: '6688', status: 'active' }],
+  autoDebits: [{ id: 'ad_1', merchant: '网易云音乐', amount: 2500, cycle: '每月 8 日', enabled: true }],
   recentTransactions: [
     // 挂起中的审核单：靠 pendingReason 区分「审核中」与「处理中」（§9.2）
     {
@@ -276,8 +277,17 @@ export function createMockApi(): StaffApi {
       return ok<Approval>({ ...demoApproval, approvalId: id })
     },
 
+    // 与真后端 searchCustomers 对齐：姓名 / 脱敏手机号 / 客户号都能命中
     searchCustomers: (keyword) =>
-      ok<CustomerSummary[]>([demoCustomer].filter((c) => c.name.includes(keyword) || keyword === '')),
+      ok<CustomerSummary[]>(
+        [demoCustomer].filter(
+          (c) =>
+            keyword === '' ||
+            `${c.name} ${c.phoneMasked} ${c.customerId} ${c.phoneMasked.replace(/\*/g, '')}`.includes(
+              keyword,
+            ),
+        ),
+      ),
     getCustomerProfile: () => ok<CustomerProfile>(demoProfile),
 
     performCustomerAction: (_id: string, _action: string, _req: CustomerActionRequest) => ok({ ok: true as const }),
