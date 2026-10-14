@@ -16,7 +16,8 @@
 | 当前主分支 | `main` |
 | 部署目录（**服务实际从这里跑**，无 `.git`） | `/srv/maneki-neko` |
 | 客户端静态产物 | `/var/www/maneki-neko/current-bank/bank`（指向 `releases/` 下的版本目录） |
-| 员工端与文档 | `/var/www/maneki-neko/{staff,docs}` |
+| 员工端 | `/var/www/maneki-neko/current-bank/bank/staff`（与客户端同次发布） |
+| 文档下载 | `/var/www/maneki-neko/docs` |
 | 数据库 | `/var/lib/luckycat/bank.sqlite`（SQLite / WAL） |
 | 密钥 | `/etc/luckycat/luckycat.env`（`600 root`）——**绝不入库、绝不写进任何提交** |
 | Node | `/opt/maneki-node24/bin/node`（v24.21.0，自带原生 `node:sqlite`） |
@@ -26,7 +27,7 @@
 - 客户端 `http://120.48.123.112/bank/`
 - 安卓下载 `http://120.48.123.112/bank/download`（手机访问客户端任意页面都会进入这里）
 - 安卓更新信息 `http://120.48.123.112/bank/downloads/android.json`
-- 员工端 `http://120.48.123.112/staff/`
+- 员工端 `http://120.48.123.112/bank/staff/`（旧 `/staff/` 自动重定向）
 - Logo 评审站 `http://120.48.123.112/logo-review/`
 - 文档下载 `http://120.48.123.112/downloads/<file>`
 - `http://120.48.123.112/` 根路径是 **OpenCode Web，别动**（见 §10）
@@ -84,7 +85,9 @@ git log --oneline -8
 | `/bank/downloads/*.apk` | 静态 APK，带内容哈希名 | 允许下载和 Range，缺失返回 404 |
 | `/bank/api/` | 反向代理 | `127.0.0.1:8080/api/`（银行后端） |
 | `/bank/agent-api/` | 反向代理（SSE，关缓冲） | `127.0.0.1:8898/agent-api/`（Agent 桥） |
-| `/staff/` + `/staff/assets/` | 静态 `root /var/www/maneki-neko` | 员工端（构建 `base=/staff/`） |
+| `/bank/staff/` + `/bank/staff/assets/` | 静态 `root /var/www/maneki-neko/current-bank` | 同站员工端（构建 `base=/bank/staff/`） |
+| `/bank/staff-api/` | 反向代理 | `127.0.0.1:8080/staff-api/` |
+| `/bank/staff-agent-api/` / `/bank/staff-ops-agent-api/` | SSE 反向代理 | `127.0.0.1:8789` / `127.0.0.1:8790` 的 `/agent-api/` |
 | `/staff-api/` | 反向代理（**保持根前缀**，契约冻结） | `127.0.0.1:8080/staff-api/` |
 | `/logo-review/` | 反向代理 | `127.0.0.1:8091/` |
 | `/downloads/<file>` | `alias` | `/var/www/maneki-neko/docs/<file>` |
@@ -153,22 +156,16 @@ sudo bash /var/backups/maneki-neko/web-20261014T060337Z-79366ed9/rollback.sh
 
 发布后运行 `node tools/check-web-deployment.mjs`，并用浏览器验证电脑官网与手机深链接。安卓应用从同源 `/bank/downloads/android.json` 检查更新；正式版更新源需 HTTPS，后续版本须递增 build 数字并使用相同签名。
 
-### 5.3 构建并发布员工端（`/staff/`）
+### 5.3 工作人员端随统一站点发布
 
-```bash
-cd /srv/maneki-neko/staff
-VITE_BASE_PATH=/staff/ VITE_USE_MOCK=false npm run build
-rsync -a --delete /srv/maneki-neko/staff/dist/ /var/www/maneki-neko/staff/
-chown -R www-data:www-data /var/www/maneki-neko/staff
-```
+`npm --prefix app run build:server` 同时生成 `app/dist/staff/`，与客户端及安卓下载一起上传。员工路径为 `/bank/staff/`，API 通过 `/bank/staff-api/`、`/bank/staff-agent-api/` 和 `/bank/staff-ops-agent-api/` 代理；后端自身仍保持 `/staff-api/` 和 `/agent-api/` 契约。
 
-> 员工端 `base` 由 `staff/vite.config.ts` 的 `VITE_BASE_PATH` 决定，路由 basename 用 `import.meta.env.BASE_URL`。
-> 员工 API 是**根路径** `/staff-api`（契约冻结，别改 `/staff/api`）。
+nginx snippets 和新增员工 Agent units 以 [公网部署模板](../deploy/README.md) 为准。旧 `/staff/` 保留重定向，根 `/staff-api/` 保留兼容代理。
 
 ### 5.4 重启服务 / 重载 nginx
 
 ```bash
-systemctl restart luckycat-bank.service luckycat-bridge.service   # 后端/桥接有代码改动时
+systemctl restart luckycat-bank.service luckycat-bridge.service luckycat-staff-agent.service luckycat-ops-agent.service # 后端/桥接有代码改动时
 nginx -t && systemctl reload nginx                                # 只改了 nginx 时
 ```
 

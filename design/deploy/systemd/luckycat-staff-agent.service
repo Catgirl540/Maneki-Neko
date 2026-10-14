@@ -1,0 +1,21 @@
+[Unit]
+Description=LuckyCat Staff and supervisor Agent
+After=network.target luckycat-bank.service
+Requires=luckycat-bank.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/maneki-neko/framework
+Environment=PATH=/opt/maneki-node24/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/luckycat/luckycat.env
+EnvironmentFile=-/etc/luckycat/model-routing.env
+EnvironmentFile=/etc/luckycat/staff-agent.env
+ExecStart=/opt/maneki-node24/bin/node bridge/staff-server.mjs
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -181,6 +181,8 @@ npm --prefix app run build:server
 产物在 `app/dist/`。发布、服务管理和 nginx 配置按[服务器开发交接文档](../design/handoff/AGENT-HANDOFF.md)执行。
 发布后运行 `node tools/check-web-deployment.mjs`，检查 `/bank/`、资源路径与类型、银行和 Agent 代理、深层链接，以及下载元数据和 APK 文件头。nginx 的 `/bank/downloads/` 应直接提供静态文件，缺失时返回 404；`android.json` 不缓存，带哈希名的 APK 可以长期缓存。仅首页返回 200 不能说明网页正常，资源请求可能实际返回其他应用的 HTML。最后在浏览器确认电脑官网和手机下载安装页。
 
+公网客户与工作人员入口、三个 Agent 代理和回滚约定见 [裸 IP 部署说明](../design/deploy/README.md)。
+
 ## 8. 常见问题
 
 | 现象 | 优先检查 |
