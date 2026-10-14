@@ -202,6 +202,12 @@ class BankApi(
     suspend fun listCardProducts(): List<CardProduct> =
         json.decodeFromString(call("GET", "cards/products"))
 
+    suspend fun openCard(request: CardApplication): BankCard =
+        json.decodeFromString(call("POST", "cards/open", json.encodeToString(CardApplication.serializer(), request)))
+
+    suspend fun replaceCard(id: String, request: CardReplaceRequest): BankCard =
+        json.decodeFromString(call("POST", "cards/$id/replace", json.encodeToString(CardReplaceRequest.serializer(), request)))
+
     /** 锁卡 / 解锁。锁了之后所有交易都会被拒。 */
     suspend fun setCardLock(id: String, locked: Boolean): BankCard {
         val payload = buildJsonObject { put("locked", locked) }.toString()
@@ -222,7 +228,7 @@ class BankApi(
     /**
      * 查卡密。**必须带支付密码**，而且密码只到这里为止。
      *
-     * 演示环境返回占位值；真后端会返回真卡号——所以这个响应**绝不能进日志**。
+     * 按服务端给出的展示时长临时显示；此响应不能进入日志或持久化存储。
      */
     suspend fun revealCardSecrets(id: String, paymentPassword: String): CardSecrets {
         val payload = buildJsonObject { put("paymentPassword", paymentPassword) }.toString()

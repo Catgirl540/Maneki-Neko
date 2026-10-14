@@ -13,7 +13,7 @@ import kotlin.math.abs
 import org.junit.Test
 
 /**
- * 九个图标资源**真的画得出来**，而且**吃得上品牌色**。
+ * 业务图标资源**真的画得出来**，而且**吃得上品牌色**。
  *
  * ## 为什么值得单独钉一条
  *
@@ -72,7 +72,7 @@ class IconVectorTest {
     }
 
     @Test
-    fun 九个图标都画得出内容且覆盖率合理() {
+    fun 业务图标都画得出内容且覆盖率合理() {
         NavIcon.entries.forEach { icon ->
             val ratio = render(icon).first
             assertTrue("$icon 什么都没画出来（pathData 大概写错了）：非透明占比 $ratio", ratio > 0.02)

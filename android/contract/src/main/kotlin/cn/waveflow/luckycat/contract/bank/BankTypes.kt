@@ -229,6 +229,8 @@ data class BankCard(
     val onlinePayment: Boolean = false,
     val overseasPayment: Boolean = false,
     val dailyLimit: Cents = 0,
+    val shippingAddress: MailingAddress? = null,
+    val issuingFee: Cents? = null,
 )
 
 @Serializable
@@ -245,14 +247,35 @@ data class CardProduct(
     val deliveryDays: Int = 0,
 )
 
-/** 卡密的返回。**演示环境返回的是占位值**（`0000 0000 0000 0000` 那种）。 */
+@Serializable
+data class MailingAddress(
+    val recipient: String = "",
+    val phone: String = "",
+    val region: String = "",
+    val city: String = "",
+    val detail: String = "",
+    val postalCode: String = "",
+)
+
+@Serializable
+data class CardApplication(val productCode: String, val address: MailingAddress, val paymentPassword: String)
+
+@Serializable
+data class CardReplaceRequest(val address: MailingAddress, val paymentPassword: String)
+
+/** Only held in memory for the server-provided reveal period. */
 @Serializable
 data class CardSecrets(
+    val pan: String = "",
+    /** Compatibility with old demo fixtures. */
     val cardNo: String = "",
     val cvv: String = "",
     val expiry: String = "",
     val demo: Boolean = false,
-)
+    val revealSeconds: Int = 30,
+) {
+    val number: String get() = pan.ifBlank { cardNo }
+}
 
 // ── 理财 ────────────────────────────────────────────────────────────────
 

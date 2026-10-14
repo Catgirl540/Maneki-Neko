@@ -149,8 +149,9 @@ fun AppShell(graph: AppGraph, session: Session) {
 
                 is Dest.Cards -> {
                     DetailScaffold(title = "银行卡", onBack = { stack = stack.dropLast(1) }) {
-                        val vm: CardsViewModel = viewModel { CardsViewModel(graph.bank) }
+                        val vm: CardsViewModel = viewModel(key = "cards-${session.user.id}") { CardsViewModel(graph.bank) }
                         val state by vm.state.collectAsState()
+                        androidx.compose.runtime.LaunchedEffect(vm) { vm.load() }
                         CardsScreen(
                             state = state,
                             onToggleLock = vm::setLock,
@@ -159,6 +160,10 @@ fun AppShell(graph: AppGraph, session: Session) {
                             onRevealSecrets = vm::revealSecrets,
                             onDismissSecrets = vm::dismissSecrets,
                             onDismissError = vm::dismissError,
+                            onRetry = vm::load,
+                            onLoadProducts = vm::loadProducts,
+                            onApply = vm::applyCard,
+                            onSetLimit = vm::setDailyLimit,
                         )
                     }
                 }
@@ -419,7 +424,7 @@ private fun ProfileTab(
                 .background(Palette.surface)
                 .padding(vertical = 4.dp),
         ) {
-            HubRow("银行卡", "锁卡、开关、查看卡密", NavIcon.Card, "profile-cards", onOpenCards)
+            HubRow("银行卡", "申卡、换卡与支付管理", NavIcon.Card, "profile-cards", onOpenCards)
             HubDivider()
             HubRow("安全中心", "风控规则、登录设备、安全日志", NavIcon.Profile, "profile-security", onOpenSecurity)
             HubDivider()

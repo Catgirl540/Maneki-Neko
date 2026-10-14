@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import cn.waveflow.luckycat.contract.bank.BankApi
@@ -110,9 +111,8 @@ class CardsFlowTest {
         waitCards()
         rule.onNodeWithText("VISA · 尾号 8888 · 08/29").assertIsDisplayed()
         // 完整卡号不该出现在这一页（它要走"查看卡密"+支付密码）
-        rule.onAllNodesWithTag("card-card_1").fetchSemanticsNodes().let {
-            assertTrue("列表里不该有完整卡号", true)
-        }
+        assertTrue(rule.onAllNodesWithText("4111111111111111").fetchSemanticsNodes().isEmpty())
+        assertTrue(requests.none { it.first.endsWith("/secrets") })
     }
 
     @Test
@@ -133,7 +133,7 @@ class CardsFlowTest {
         rule.onAllNodesWithTag("card-password").fetchSemanticsNodes().let {
             assertTrue("不该一上来就要密码", it.isEmpty())
         }
-        rule.onNodeWithTag("card-reveal-card_1").performClick()
+        rule.onNodeWithTag("card-reveal-card_1").performScrollTo().performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTag("card-password").fetchSemanticsNodes().isNotEmpty() }
         // 空密码不能提交
         rule.onNodeWithTag("card-password-submit").assertIsNotEnabled()
@@ -143,7 +143,7 @@ class CardsFlowTest {
     fun 密码输对才拿得到卡密() {
         start()
         waitCards()
-        rule.onNodeWithTag("card-reveal-card_1").performClick()
+        rule.onNodeWithTag("card-reveal-card_1").performScrollTo().performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTag("card-password").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("card-password").performTextInput("123456")
         rule.onNodeWithTag("card-password-submit").performClick()
@@ -159,7 +159,7 @@ class CardsFlowTest {
         // 关掉弹窗的话用户得重新点一次"查看卡密"，还会以为功能坏了
         start()
         waitCards()
-        rule.onNodeWithTag("card-reveal-card_1").performClick()
+        rule.onNodeWithTag("card-reveal-card_1").performScrollTo().performClick()
         rule.waitUntil(5_000) { rule.onAllNodesWithTag("card-password").fetchSemanticsNodes().isNotEmpty() }
         rule.onNodeWithTag("card-password").performTextInput("000000")
         rule.onNodeWithTag("card-password-submit").performClick()
