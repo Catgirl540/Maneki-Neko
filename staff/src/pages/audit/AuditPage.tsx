@@ -103,6 +103,7 @@ export function AuditPage() {
             <th>操作者</th>
             <th>动作</th>
             <th>对象</th>
+            <th>事由</th>
             <th>结果</th>
           </tr>
         </thead>
@@ -119,6 +120,9 @@ export function AuditPage() {
                 {log.target_type ?? '—'}
                 {log.target_id ? ` ${log.target_id}` : ''}
               </td>
+              {/* 事由列：客户查询填的「为什么要看」就落在这里（audit_logs.reason），
+                  此前只有写入没有展示，员工填完找不到自己填了什么 */}
+              <td className="text-xs text-[var(--color-ink-soft)]">{log.reason ?? '—'}</td>
               <td>
                 <span
                   className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -134,7 +138,7 @@ export function AuditPage() {
           ))}
           {filtered.length === 0 && !error && (
             <tr>
-              <td colSpan={5} className="py-8 text-center text-sm text-[var(--color-ink-mute)]">
+              <td colSpan={6} className="py-8 text-center text-sm text-[var(--color-ink-mute)]">
                 没有匹配的审计记录
               </td>
             </tr>
