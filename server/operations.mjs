@@ -7,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 /** Operational telemetry contains categories and status codes, never request data. */
 export function createOperations({ db, root, databaseFile, backupDir = join(root, 'server/data/backups'), probes = [
   { id: 'client', name: '客户端网页', url: process.env.BANK_CLIENT_HEALTH_URL ?? 'http://127.0.0.1:5180/' },
-  { id: 'staff', name: '工作人员端网页', url: process.env.BANK_STAFF_HEALTH_URL ?? 'http://127.0.0.1:5181/' },
+  { id: 'staff', name: '工作人员端网页', url: process.env.BANK_STAFF_HEALTH_URL ?? 'http://127.0.0.1:5180/staff/' },
   { id: 'agent', name: 'AI 服务', url: process.env.BANK_AGENT_HEALTH_URL ?? 'http://127.0.0.1:8788/agent-api/health', json: true },
 ] }) {
   const startedAt = new Date().toISOString()

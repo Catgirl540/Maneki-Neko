@@ -33,7 +33,7 @@
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `BANK_CLIENT_HEALTH_URL` | `http://127.0.0.1:5180/` | 客户端网页可访问性检查 |
-| `BANK_STAFF_HEALTH_URL` | `http://127.0.0.1:5181/` | 工作人员端网页可访问性检查 |
+| `BANK_STAFF_HEALTH_URL` | `http://127.0.0.1:5180/staff/` | 工作人员端网页可访问性检查 |
 | `BANK_AGENT_HEALTH_URL` | `http://127.0.0.1:8788/agent-api/health` | AI服务响应必须包含 `ok: true` |
 | `BANK_BACKUP_DIR` | `server/data/backups` | 只读取 `.sqlite` / `.db` 普通文件，最多10个 |
 

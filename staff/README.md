@@ -4,12 +4,17 @@
 
 需要 Node.js 24。在仓库根目录执行：
 
-```bash
+```powershell
+npm --prefix app ci
 npm --prefix staff ci
-VITE_USE_MOCK=false npm --prefix staff run dev
+$env:VITE_USE_MOCK='false'
+$env:VITE_PROXY_TARGET='http://127.0.0.1:8080'
+npm --prefix app run dev
 ```
 
-默认地址 `http://127.0.0.1:5181/assistant`。银行后端监听 8080，员工 Agent 8789，运维 Agent 8790；运行时和密钥配置见 [工作人员 Agent](../docs/api/staff-agent.md)。网页 mock 模式不连接 Agent。
+默认只启动一个前端服务：客户端登录页 `http://127.0.0.1:5180/login`，工作人员登录页 `http://127.0.0.1:5180/staff/login`，工作人员助手页 `http://127.0.0.1:5180/staff/assistant`。客户端登录页可切换到工作人员入口。
+
+需要单独开发工作人员页面时，也可运行 `npm --prefix staff run dev`，使用 `http://127.0.0.1:5181/login`。银行后端监听 8080，员工 Agent 8789，运维 Agent 8790；运行时和密钥配置见 [工作人员 Agent](../docs/api/staff-agent.md)。网页 mock 模式不连接 Agent。
 
 ## 共享聊天
 

@@ -8,9 +8,8 @@
 安装依赖，首次或依赖更新后执行：
 
 ```powershell
-cd app
-npm ci
-cd ..
+npm --prefix app ci
+npm --prefix staff ci
 ```
 
 首次克隆后，要复现共享的虚拟卡、余额和流水，再执行：
@@ -38,19 +37,20 @@ node server/index.mjs
 新开终端，进入同一个仓库根目录后运行：
 
 ```powershell
-cd app
 $env:VITE_USE_MOCK='false'
 $env:VITE_PROXY_TARGET='http://127.0.0.1:8080'
-npm run dev
+npm --prefix app run dev
 ```
 
-浏览器打开终端显示的地址，默认 <http://localhost:5180>。两个终端都需要保持运行。
+客户端登录页为 <http://127.0.0.1:5180/login>，工作人员登录页为 <http://127.0.0.1:5180/staff/login>；客户端登录页也有工作人员入口。两端共用这个前端服务，两个终端都需要保持运行。
+
+`npm --prefix app run build` 会同时生成两端，统一产物位于 `app/dist/`，工作人员页面位于 `app/dist/staff/`。回归检查可运行 `node tools/check-unified-site.mjs`，使用临时数据库验证两端登录、同源代理和权限隔离。
 
 ## 4. 演示登录
 
-工作人员端运行：在 `staff/` 设置 `$env:VITE_USE_MOCK='false'` 后 `npm run dev`，打开 <http://127.0.0.1:5181>。
+工作人员端默认使用同一网站的 <http://127.0.0.1:5180/staff/login>，无需额外启动。需要单独开发工作人员页面时，也可运行 `npm --prefix staff run dev`，使用 5181 端口。
 运维账号 `运维人员 / 123456` 可查看服务、事件、备份与版本；接口说明见 [运维监控](docs/api/operations.md)，日常维护、备份和恢复步骤见 [运维端维护手册](docs/operations-maintenance.md)。
-工作人员助手入口 `/assistant`，客服/主管使用 `framework` 中 `npm run start:staff`（8789），运维使用 `npm run start:ops`（8790）。运维原生 DSH 工具和 Clef Flash 风险确认的配置见 [工作人员 Agent](docs/api/staff-agent.md#运维原生-dsh-与-clef-flash)。
+工作人员助手入口 `/staff/assistant`，客服/主管使用 `framework` 中 `npm run start:staff`（8789），运维使用 `npm run start:ops`（8790）。运维原生 DSH 工具和 Clef Flash 风险确认的配置见 [工作人员 Agent](docs/api/staff-agent.md#运维原生-dsh-与-clef-flash)。
 
 - 主账号：`13800138000`；另一个演示账号：`13600136000`。
 - 登录密码：`123456`；支付密码：`888888`。

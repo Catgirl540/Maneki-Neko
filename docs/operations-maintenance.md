@@ -98,7 +98,7 @@ npm run start:ops
 | `BANK_DB_FILE` | 在线库路径，默认仓库内 `server/data/bank.sqlite` |
 | `BANK_BACKUP_DIR` | 默认仓库内 `server/data/backups`，建议自定义时使用绝对路径 |
 | `BANK_CLIENT_HEALTH_URL` | 默认 `http://127.0.0.1:5180/` |
-| `BANK_STAFF_HEALTH_URL` | 默认 `http://127.0.0.1:5181/` |
+| `BANK_STAFF_HEALTH_URL` | 默认 `http://127.0.0.1:5180/staff/` |
 | `BANK_AGENT_HEALTH_URL` | 默认 `http://127.0.0.1:8788/agent-api/health` |
 | `VITE_PROXY_TARGET` | 工作人员端银行 API 代理目标，默认 8080 |
 | `VITE_OPS_AGENT_TARGET` | 工作人员端运维助手代理目标，默认 `http://127.0.0.1:8790` |
