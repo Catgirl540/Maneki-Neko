@@ -9,7 +9,7 @@
  * @module app/lib/agentSessions
  */
 
-import { STORAGE_KEYS, storage, trySet } from '@/lib/storage'
+import { STORAGE_KEYS, storage, trySet } from './storage'
 const historyKey = (ownerId?: string) => ownerId ? `${STORAGE_KEYS.agentSessions}.${ownerId}` : STORAGE_KEYS.agentSessions
 
 /** 对话里的一条内容。 */

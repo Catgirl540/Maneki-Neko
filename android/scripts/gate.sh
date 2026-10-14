@@ -69,7 +69,7 @@ for f in app/src/main/res/drawable/ic_*.xml; do
   fi
 done
 if [ -z "$fill_bad" ]; then
-  ok "九个矢量图标都是透明填充（tint 不会把它们填实）"
+  ok "业务矢量图标都是透明填充（tint 不会把它们填实）"
 else
   bad "矢量图标里有非透明/缺失的 fillColor：$fill_bad"
 fi

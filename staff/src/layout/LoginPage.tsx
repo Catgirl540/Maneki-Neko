@@ -72,7 +72,7 @@ export function LoginPage() {
         </button>
 
         <div className="text-xs text-[var(--color-ink-mute)] leading-5">
-          演示账号：王小明（客服）/ 李主管（主管），密码均为 123456
+          演示账号：王小明（客服）/ 李主管（主管）/ 运维人员，密码均为 123456
         </div>
       </form>
     </div>

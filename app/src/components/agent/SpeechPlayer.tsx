@@ -23,8 +23,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { cn } from '@/lib/cn'
-import { callerFrame, voiceLog } from '@/lib/voiceLog'
+import { cn } from '../../lib/cn'
+import { callerFrame, voiceLog } from '../../lib/voiceLog'
 
 /** 秒 → `0:07`。超过一小时按 `时:分:秒`，虽然朗读到不了那么长。 */
 function clock(seconds: number): string {

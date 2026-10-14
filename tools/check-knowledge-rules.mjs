@@ -61,7 +61,9 @@ resetDb()
 loadDb().wealthAccount.opened = false; loadDb().riskAssessment.done = false; persist()
 const unassessed = (await api.getWealthOverview()).risk
 assert.equal(unassessed.done, false)
-assert.equal(unassessed.expired, true)
+assert.equal(unassessed.expired, false)
+assert.equal(unassessed.level, null)
+assert.equal(unassessed.score, null)
 assert.equal(summarizeRiskAssessment(unassessed).status, 'unassessed')
 assert.equal(summarizeRiskAssessment(unassessed).level, null)
 const wp = (await api.listWealthProducts())[0]

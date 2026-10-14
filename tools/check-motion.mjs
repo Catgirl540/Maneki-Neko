@@ -25,7 +25,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 const ROOT = path.resolve(import.meta.dirname, '../app/src')
-const STYLES = path.join(ROOT, 'styles/global.css')
+const STYLES = path.join(ROOT, 'styles/chat.css')
 
 let failures = 0
 const report = (ok, title, lines = []) => {
@@ -212,12 +212,14 @@ function blockNestingAt(text, at) {
  */
 const LAYOUT_TRANSITIONS_ALLOWED = new Map([
   ['src/components/layout/Sidebar.tsx|padding,width', '侧栏收起/展开，面板宽度本来就是这件事本身'],
-  ['src/pages/SupportPage.tsx|width', '历史对话抽屉展开，同上'],
+  ['src/components/agent/ChatWorkspace.tsx|width', '历史对话抽屉展开，同上'],
+  ['src/pages/CreditPage.tsx|width', '信用额度使用比例，条宽就是数据'],
+  ['src/pages/SavingsPage.tsx|width', '存钱目标完成比例，条宽就是数据'],
   ['src/pages/SecurityPage.tsx|width', '密码强度条，宽度就是数据'],
   ['src/components/wealth/RiskAssessmentModal.tsx|width', '风险测评进度条，宽度就是数据'],
   ['src/components/charts/TrendBars.tsx|background-color,height', '柱状图高度就是数据'],
   ['src/components/charts/CashFlowChart.tsx|top', '折线图落点位置就是数据'],
-  ['src/styles/global.css|height,opacity,transform',
+  ['src/styles/chat.css|height,opacity,transform',
     '会话列表当前项的滑块：高度与位置都从测量来；absolute 定位，不影响别的行'],
 ])
 

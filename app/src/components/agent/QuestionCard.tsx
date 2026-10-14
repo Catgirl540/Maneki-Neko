@@ -19,11 +19,11 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/Button'
-import { AlertIcon, CheckIcon, SparkleIcon } from '@/components/ui/icons'
-import { cn } from '@/lib/cn'
-import type { PendingAsk } from '@/lib/useAgentChat'
-import type { QuestionAnswerItem } from '@/api/agent'
+import { Button } from '../ui/Button'
+import { AlertIcon, CheckIcon, SparkleIcon } from '../ui/icons'
+import { cn } from '../../lib/cn'
+import type { PendingAsk } from '../../lib/useAgentChat'
+import type { QuestionAnswerItem } from '../../api/agent'
 
 /** 把剩余时间说成「还剩 1 分 20 秒」。 */
 function remainingText(expiresAt: number, now: number): string {

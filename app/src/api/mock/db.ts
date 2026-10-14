@@ -49,7 +49,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  * 模拟库的结构版本。
  *
  * MockDb 里的字段只要有增删，就把这个数字 +1：loadDb() 读取时校验，
- * 对不上就整库重建。
+ * 旧版本增量迁移全部客户档案；无法识别的版本拒绝写入，不重建资金数据。
  *
  * ⚠️ 不要再用「改 localStorage 的 key」来做版本管理 —— key 只能防住改 key 那一次，
  * 防不住同一个 key 下字段又变了。之前正是这么漏的：key 升到 v2 之后才给明细加了
@@ -77,9 +77,10 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
  */
-export const MOCK_SCHEMA = 17
+export const MOCK_SCHEMA = 18
 
 export interface MockDb {
+  fpsRegistrations: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; registeredAt: string }[]
   /** 结构版本，见 MOCK_SCHEMA */
   schema: number
   user: User
@@ -228,7 +229,8 @@ export function withBalances(
   let running = closing
   return rows.map((row) => {
     const balanceAfter = running
-    running -= row.signedAmount
+    // 在途仅冻结可用额度，失败/撤销没有扣款，不能参与余额回推。
+    if (row.status !== 'failed' && row.pendingReason !== 'inflight') running -= row.signedAmount
     return { ...row, detail: { ...row.detail, balanceAfter, balanceBefore: running } }
   })
 }
@@ -1065,6 +1067,7 @@ const CN_BANKS: Bank[] = [
  * 后半段（214 起）是内地银行在港机构的代码 —— 跨境支付通的实际收款方就在其中。
  */
 const HK_BANKS: Bank[] = [
+  { code: 'LCB', region: 'HK', name: '招财猫银行（香港模拟通道）', shortName: '招财猫', color: '#E0A83C', internal: true },
   { code: '003', region: 'HK', name: '渣打银行（香港）', shortName: '渣打银行', color: '#0473BE', domain: 'sc.com', logo: '/banks/hk-003.svg' },
   { code: '004', region: 'HK', name: '香港上海汇丰银行', shortName: '汇丰银行', color: '#DB0011', domain: 'hsbc.com.hk', logo: '/banks/hk-004.svg' },
   { code: '006', region: 'HK', name: '花旗银行', shortName: '花旗银行', color: '#003D7C', domain: 'citi.com', logo: '/banks/hk-006.svg' },
@@ -1147,6 +1150,17 @@ export const FPS_REGISTRY: FpsRegistration[] = [
   { idType: 'fpsid', id: '1002938', name: '黄敏仪', bankCode: '004', bankName: '香港上海汇丰银行', bankCount: 3 },
 ]
 
+/** Persisted customer registrations and external demo fixtures share one resolver. */
+export function lookupFpsRegistration(idType: FpsIdType, id: string): (FpsRegistration & { accountNo?: string }) | undefined {
+  const value = id.replace(/\s/g, '').toLowerCase()
+  for (const profile of listAllProfiles()) {
+    const registration = profile.fpsRegistrations?.find(r => r.idType === idType && r.id === value)
+    const account = registration && profile.accounts.find(a => a.id === registration.accountId && a.currency === 'HKD')
+    if (account) return { idType, id: value, name: profile.user.name, bankCode: 'LCB', bankName: '招财猫银行（香港模拟通道）', bankCount: 1, accountNo: account.accountNo }
+  }
+  return FPS_REGISTRY.find(r => r.idType === idType && r.id.toLowerCase() === value)
+}
+
 /**
  * 拼一个完整卡号：号段 + 自由位 + 该卡的后四位。
  *
@@ -1223,6 +1237,7 @@ function seed(): MockDb {
 
   const db: MockDb = {
     schema: MOCK_SCHEMA,
+    fpsRegistrations: [],
     user: {
       id: 'u_0001',
       name: '林小满',
@@ -1736,6 +1751,7 @@ function ensureDemoRecipient(): void {
     accountNo: '8820000000124471', currency: 'CNY',
     balance: 800_000, available: 800_000, interestRate: 0.0155, monthNetChange: 0,
   }]
+  Object.assign(demo, emptyCustomerDomains(demo.user, demo.accounts[0].id))
   demo.transactions = []
   demo.cards = [{
     id: 'card_demo_chen', accountId: demo.accounts[0].id,
@@ -1840,15 +1856,16 @@ function latestStoredProfile(userId: string): MockDb | null {
  * 旧对象一写回，收款方那几行就被删掉重建成了旧数据。
  * 2026-10-12 issue #3：付款 success、审批 settled、收款方一分没进。
  *
- * 因此：想改字段，必须在 activateDb() **之后**改再 persist()；
+ * 已存在档案的上下文切换不写回台账。想改字段，必须在 activateDb() **之后**改再 persist()；
  * 改在切档前会被最新一份盖掉。
  */
 export function activateDb(next: MockDb): void {
-  cache = latestStoredProfile(next.user.id) ?? next
+  const stored = latestStoredProfile(next.user.id)
+  cache = migrateProfile(stored ?? next)
   ensureCardAccounts(cache)
   syncSeq(cache)
   for (const profile of Object.values(profiles())) syncSeq(profile)
-  persist()
+  if (!stored) persist()
 }
 
 function syncSeq(db: MockDb): void {
@@ -1891,6 +1908,42 @@ function ensureCardAccounts(db: MockDb): void {
   }
 }
 
+/** Only product catalogues are shared. Customer activity always starts empty. */
+export function emptyCustomerDomains(user: User, accountId: string): Pick<MockDb,
+  'savings' | 'virtualCards' | 'invitations' | 'membership' | 'identity' | 'salaryPlan' |
+  'overdraft' | 'credit' | 'cashManagement' | 'investments' | 'insurance' | 'fpsRegistrations'> {
+  const catalog = seed()
+  return {
+    fpsRegistrations: [],
+    savings: { totalSaved: 0, goals: [], roundup: { enabled: false, roundupTo: 1000, dailyCap: 5000, accountId, goalId: null },
+      streak: { days: 0, longestDays: 0, lastSavedAt: '', badges: [] }, rewards: [] },
+    virtualCards: [],
+    invitations: { invite: { code: `LC-${user.id}`, link: `https://luckycat.bank/i/LC-${user.id}`, createdAt: new Date().toISOString() }, friends: [], rewards: [], totalEarned: 0 },
+    membership: { current: catalog.membership.current, plans: catalog.membership.plans, records: [] },
+    identity: { level: 'none', idType: '', maskedIdNumber: '', verifiedAt: '', livenessVerified: false, steps: [], ocr: null },
+    salaryPlan: { salaryDay: 8, amount: 0, employer: '', accountId, nextPayday: '', history: [] },
+    overdraft: { ...catalog.overdraft, active: false, creditLimit: 0, available: 0, used: 0, activatedAt: null },
+    credit: { creditLimit: 0, availableCredit: 0, products: catalog.credit.products, loans: [], installments: [], builder: { score: 0, level: '未评估', streakMonths: 0, nextMilestone: '', tips: [] } },
+    cashManagement: { balance: 0, totalYield: 0, sevenDayYield: 0, accountId, sweepEnabled: false, sweepThreshold: 0, products: catalog.cashManagement.products },
+    investments: { holding: 0, totalReturn: 0, plans: [], products: catalog.investments.products },
+    insurance: { totalCoverage: 0, policies: [], products: catalog.insurance.products },
+  }
+}
+
+export function migrateProfile(profile: MockDb): MockDb {
+  if (!Number.isInteger(profile.schema) || profile.schema > MOCK_SCHEMA || !profile.user || !Array.isArray(profile.accounts)) {
+    throw new Error('无法识别客户档案版本，已保留原数据')
+  }
+  if (profile.schema === MOCK_SCHEMA) return profile
+  const defaults = emptyCustomerDomains(profile.user, profile.accounts[0]?.id ?? '')
+  for (const key of Object.keys(defaults) as (keyof typeof defaults)[]) {
+    if (profile[key] === undefined) Object.assign(profile, { [key]: defaults[key] })
+  }
+  if (!profile.banks.some(b => b.code === 'LCB' && b.region === 'HK')) profile.banks.push(BANKS.find(b => b.code === 'LCB' && b.region === 'HK')!)
+  profile.schema = MOCK_SCHEMA
+  return profile
+}
+
 export function loadDb(): MockDb {
   if (cache) return cache
   // 历史结构版本曾经用 key 区分，清掉以免在 localStorage 里留垃圾
@@ -1898,9 +1951,14 @@ export function loadDb(): MockDb {
   storage.remove('mock.db.v2')
 
   const stored = storage.get<MockDb | null>(STORAGE_KEYS.mockDb, null)
-  // 结构对不上就丢弃重建：localStorage 里的旧载荷不会有新字段，
-  // 继续用只会让页面在某个 undefined 上炸掉
-  cache = stored && stored.schema === MOCK_SCHEMA ? stored : seed()
+  // 使用客户索引中的最新台账，避免重启时旧当前快照覆盖新入账。
+  cache = stored ? migrateProfile(profiles()[stored.user.phone] ?? stored) : seed()
+  const all = profiles()
+  for (const [phone, profile] of Object.entries(all)) all[phone] = migrateProfile(profile)
+  if (!storage.setMany([[PROFILES_KEY, all]])) {
+    cache = null
+    throw new Error('客户档案迁移写入失败')
+  }
   ensureCardAccounts(cache)
   ensureDemoRecipient()
   syncSeq(cache)
@@ -1911,14 +1969,17 @@ export function loadDb(): MockDb {
 
 export function persist(): void {
   if (cache) {
-    storage.set(STORAGE_KEYS.mockDb, cache)
-    storage.set(PROFILES_KEY, { ...profiles(), [cache.user.phone]: cache })
+    if (!storage.setMany([[STORAGE_KEYS.mockDb, cache], [PROFILES_KEY, { ...profiles(), [cache.user.phone]: cache }]])) {
+      cache = null
+      throw new Error('客户档案写入失败，请重试')
+    }
   }
 }
 
 export function resetDb(): MockDb {
   storage.remove(PROFILES_KEY)
   cache = seed()
+  ensureDemoRecipient()
   persist()
   return cache
 }

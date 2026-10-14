@@ -1,0 +1,108 @@
+# Independent employee profile; share the harness, ask, consent and hardening plugins.
+- id: sandbox-policy
+  config:
+    mode: read-only
+    workspaceRoot: !!js process.cwd()
+- insert:
+    - id: approval
+      name: '@deepseek-ai/dsh-user-approval'
+      config:
+        policy: ask
+- id: persistent-bash
+  disabled: true
+- id: persistent-pwsh
+  disabled: true
+- id: terminal-bash
+  disabled: true
+- id: terminal-pwsh
+  disabled: true
+- id: pty
+  disabled: true
+- id: mcp-resources
+  disabled: true
+- id: jobs
+  disabled: true
+- id: session-log-deepseek
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: deepseek-llm-api-extensions
+  disabled: true
+- id: llm-deepseek
+  disabled: true
+- insert:
+    - id: llm-pi-ai
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          openrouter:
+            displayName: OpenRouter
+            apiKeyEnv: OPENROUTER_API_KEY
+            api: openai-completions
+            baseURL: https://openrouter.ai/api/v1
+            retryPolicy:
+              mode: normal
+            models: !!js "[{id: process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash', name: '工作人员助手', contextWindow: 131072}]"
+          local:
+            displayName: Local
+            apiKeyEnv: LOCAL_API_KEY
+            api: openai-completions
+            baseURL: !!js process.env.LUCKYCAT_LOCAL_LLM_URL ?? 'http://127.0.0.1:8081/v1'
+            retryPolicy:
+              mode: normal
+            models: !!js "[{id: process.env.LUCKYCAT_MODEL ?? 'qwen3.8-9b-q4', name: '工作人员助手', contextWindow: 65536}]"
+- id: system-prompt
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    personaPrefix: !!js process.env.LUCKYCAT_SYSTEM_PROMPT
+    personaSuffix: !!js process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX
+- id: luckycat-hardening
+  config:
+    allowedTools:
+      - ask_user_question
+      - staff_search_customers
+      - staff_get_customer
+      - staff_list_tickets
+      - staff_get_ticket
+      - staff_create_ticket
+      - staff_update_ticket_status
+      - staff_post_ticket_message
+      - staff_list_approvals
+      - staff_get_approval
+      - staff_decide_approval
+      - staff_customer_action
+      - staff_get_transfer_threshold
+      - staff_set_transfer_threshold
+      - staff_audit_logs
+      - staff_operations_overview
+    secretEnv: [OPENROUTER_API_KEY, LOCAL_API_KEY, LUCKYCAT_INTERNAL_TOKEN]
+    redactTelemetry: true
+- id: luckycat-ask
+  config:
+    channelUrl: !!js process.env.LUCKYCAT_QUESTION_URL
+    timeoutMs: 180000
+    extraForbiddenPatterns: []
+- id: luckycat-consent
+  config:
+    channel: http-poll
+    channelUrl: !!js process.env.LUCKYCAT_CONSENT_URL
+    timeoutMs: 180000
+- insert:
+    - id: token-meter
+      name: '@deepseek-ai/dsh-token-meter'
+    - id: session-checkpoint-policy
+      name: '@deepseek-ai/dsh-session-checkpoint-policy'
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+# 图片直接进入模型上下文；仅附件存储，不向客服开放文件或系统工具。
+- insert:
+    - id: attachment-local
+      name: '@deepseek-ai/dsh-attachment-local'

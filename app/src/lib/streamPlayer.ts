@@ -29,7 +29,7 @@
  * @module app/lib/streamPlayer
  */
 
-import { pcm16ToFloat32 } from '@/lib/pcm'
+import { pcm16ToFloat32 } from './pcm'
 
 /** 采样率不知道的时候先按这个（与桥接默认一致）。 */
 const DEFAULT_SAMPLE_RATE = 24000

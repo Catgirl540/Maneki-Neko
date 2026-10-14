@@ -39,7 +39,7 @@ export function ensureStaffSchema(db) {
     CREATE TABLE IF NOT EXISTS staff_users (
       id            TEXT PRIMARY KEY,
       name          TEXT NOT NULL,
-      role          TEXT NOT NULL CHECK (role IN ('csr','supervisor')),
+      role          TEXT NOT NULL CHECK (role IN ('csr','supervisor','ops')),
       password_hash TEXT NOT NULL,
       created_at    TEXT NOT NULL
     );
@@ -105,6 +105,17 @@ export function ensureStaffSchema(db) {
       updated_at TEXT NOT NULL
     );
   `)
+  // Preserve existing employees when expanding the role CHECK on an older database.
+  const staffDefinition = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'staff_users'").get().sql
+  if (!staffDefinition.includes("'ops'")) {
+    db.exec(`BEGIN IMMEDIATE;
+      CREATE TABLE staff_users_next (id TEXT PRIMARY KEY, name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('csr','supervisor','ops')), password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+      INSERT INTO staff_users_next SELECT id, name, role, password_hash, created_at FROM staff_users;
+      DROP TABLE staff_users;
+      ALTER TABLE staff_users_next RENAME TO staff_users;
+      COMMIT;`)
+  }
   // 老库迁移：tickets.created_by 是 Phase 1 加的（agent 只能查自己建的单，§5.5 约定 6）
   const ticketCols = db.prepare('PRAGMA table_info(tickets)').all()
   if (!ticketCols.some((c) => c.name === 'created_by')) {
@@ -128,6 +139,8 @@ export function ensureStaffSchema(db) {
     insert.run('staff_li', '李主管', 'supervisor', hashPassword('123456'), now)
   }
   // 运行时配置种子：库空时写一次，之后以库里为准（员工端改了就生效，重启不回退）。
+  db.prepare('INSERT OR IGNORE INTO staff_users (id, name, role, password_hash, created_at) VALUES (?, ?, ?, ?, ?)')
+    .run('staff_ops', '运维人员', 'ops', hashPassword(process.env.BANK_OPS_PASSWORD ?? '123456'), new Date().toISOString())
   const hasThreshold = db.prepare('SELECT 1 AS x FROM staff_settings WHERE key = ?')
     .get(SETTING_TRANSFER_REVIEW_CENTS)
   if (!hasThreshold) {
@@ -300,7 +313,7 @@ function readCustomerNames(db) {
  *   `settleHeldTransfer({customerId, transactionId, outcome, reason})` 放行/驳回，
  *   内部走 submitTransfer 同一条业务路（§9.4 红线：不许直接改流水表）。
  */
-export function createStaffApi({ db, bankHooks = {} }) {
+export function createStaffApi({ db, bankHooks = {}, operations }) {
   ensureStaffSchema(db)
   const auth = createStaffAuth(db)
   const writeAudit = makeWriteAudit(db)
@@ -432,8 +445,16 @@ export function createStaffApi({ db, bankHooks = {} }) {
       }
 
       if (path === '/staff-api/me' && req.method === 'GET') {
-        const who = auth.resolve(req, {})
+        const who = auth.resolve(req, { roles: ['csr', 'supervisor', 'ops'] })
         json(res, 200, { id: who.actorId, name: who.name, role: who.role })
+        return true
+      }
+
+      if (path === '/staff-api/ops/overview') {
+        auth.resolve(req, { roles: ['ops'] })
+        if (req.method !== 'GET') throw staffError(405, '运维模块当前仅支持查询', 'METHOD_NOT_ALLOWED')
+        if (!operations) throw staffError(503, '运维监控未配置', 'OPERATIONS_UNAVAILABLE')
+        json(res, 200, await operations.overview())
         return true
       }
 
@@ -505,7 +526,7 @@ export function createStaffApi({ db, bankHooks = {} }) {
           if (who.role === 'agent' && ticket.created_by !== who.actorId) {
             throw staffError(403, '只能查看自己创建的工单', 'FORBIDDEN')
           }
-          const messages = db.prepare('SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at').all(id)
+          const messages = db.prepare('SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at, rowid').all(id)
           json(res, 200, { ...mapTicket(ticket, readCustomerNames(db)), messages })
           return true
         }
@@ -541,6 +562,7 @@ export function createStaffApi({ db, bankHooks = {} }) {
           }
           const body = await readBody(req)
           requireFields(body, ['text'])
+          if (ticket.status === 'resolved') throw staffError(409, '工单已解决，不能继续回复', 'TICKET_CLOSED')
           const sender = who.actorType === 'agent' ? 'system' : 'staff'
           // 契约 v1.3：勾了「发给客户」才投递；agent 走 system 一律不外发，
           // 客户看到的必须是真人客服写的，不能让 AI 代发（不变量 10）。
@@ -548,6 +570,8 @@ export function createStaffApi({ db, bankHooks = {} }) {
           const mid = newId('msg')
           db.prepare('INSERT INTO ticket_messages (id, ticket_id, sender, text, created_at, visible_to_customer) VALUES (?, ?, ?, ?, ?, ?)')
             .run(mid, id, sender, body.text, now(), visibleToCustomer ? 1 : 0)
+          // 客户侧工单列表按 updated_at 排序，回了话不更新它客户的单会沉底
+          db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?').run(now(), id)
           writeAudit({
             actorType: who.actorType,
             actorId: who.actorId,
@@ -556,8 +580,10 @@ export function createStaffApi({ db, bankHooks = {} }) {
             targetId: id,
             reason: visibleToCustomer ? body.text : null,
           })
-          // 投递到客户手机端收件箱。写失败不影响工单留言本身——那是员工侧记录，
-          // 不能因为客户端投递挂了就把员工写的话弄丢。
+          // 员工主动通知：推一条到客户手机端「客服」页顶部收件箱。
+          // 客户自己开的单另有 support-api 的工单对话流（server/support-api.mjs），
+          // 这条是外带提醒——客户就算停在 AI 对话页也看得见人已经回话了。
+          // 写失败不影响工单留言本身——那是员工侧记录，不能因为投递挂了就弄丢。
           if (visibleToCustomer) {
             try {
               await bankHooks.publishSupportNotice?.({

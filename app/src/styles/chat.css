@@ -1,0 +1,228 @@
+/* 共享聊天、弹窗和提示的动效；两端使用同一套定义。 */
+@layer components {
+  @keyframes float-up {
+    from {
+      opacity: 0;
+      transform: translateY(var(--motion-lift));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* 比 float-up 轻：给一条条冒出来的东西（聊天气泡、列表行、卡片）
+     ——一屏里会连着出现很多次，幅度大了就吵。 */
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.985);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes pop-out {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: translateY(4px) scale(0.99);
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+
+  /* 右上角轻提示从右边滑进来（它本来就在屏幕右侧外面） */
+  @keyframes slide-in-right {
+    from {
+      opacity: 0;
+      transform: translateX(18px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes slide-out-right {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0;
+      transform: translateX(18px);
+    }
+  }
+
+  /* 骨架屏的扫光：一条渐变横着扫过去 */
+  @keyframes shimmer {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  /* 侧栏当前项的指示条。
+     它自己靠 `top-1/2` + `translateY(-50%)` 定中，所以这条关键帧**必须把
+     translateY(-50%) 一起写进去**——关键帧里的 transform 会整体覆盖元素上
+     现有的 transform，漏掉的话指示条会在动画结束时往下跳半个身位。 */
+  @keyframes nav-marker {
+    from {
+      opacity: 0;
+      transform: translateY(-50%) scaleY(0.35);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(-50%) scaleY(1);
+    }
+  }
+
+  /* 确认卡片外面那圈金边：**响两下就停**，不是一直闪。
+     一直闪会变成干扰，而这张卡要的是"看一眼"，不是"一直盯着"。 */
+  @keyframes ring-pulse {
+    0% {
+      opacity: 0.5;
+      transform: scale(1);
+    }
+    70%,
+    100% {
+      opacity: 0;
+      transform: scale(1.03);
+    }
+  }
+
+  .float-up {
+    animation: float-up var(--duration-enter) var(--ease-out-soft) both;
+  }
+
+  .pop-in {
+    animation: pop-in var(--duration-state) var(--ease-out-back) both;
+  }
+
+  .pop-out {
+    animation: pop-out var(--duration-press) var(--ease-out-soft) both;
+  }
+
+  .fade-in {
+    animation: fade-in var(--duration-state) var(--ease-out-soft) both;
+  }
+
+  .fade-out {
+    animation: fade-out var(--duration-press) var(--ease-out-soft) both;
+  }
+
+  .toast-in {
+    animation: slide-in-right var(--duration-state) var(--ease-out-back) both;
+  }
+
+  .toast-out {
+    animation: slide-out-right var(--duration-press) var(--ease-out-soft) both;
+  }
+
+  .nav-marker {
+    animation: nav-marker var(--duration-state) var(--ease-out-back) both;
+  }
+
+  /* 会话列表里跟着当前项走的那块底。
+     做成一条**独立的滑块**而不是给每一行加背景色：切会话时它是平移过去的，
+     而不是"这边没了、那边出现"——后者会让人下意识重新找一次自己在哪。
+
+     高度也一起过渡：行高通常一致，但行里多一个「回答中」/「上下文已失效」标记时
+     会略有差别，不写高度过渡就会露一条缝。
+     （这里是 transition 不是 @keyframes，所以不受"只动 transform/opacity"那条约束；
+     代价是这一小块在 220ms 里逐帧重排，而它是 absolute 定位、不影响别的行。
+     已经逐条登记在 tools/check-motion.mjs 的布局过渡名单里。） */
+  .session-pill {
+    opacity: 0;
+    transition: none;
+  }
+
+  /* 量到位置之前不许有过渡：否则第一次会从 0 滑过去。 */
+  .session-list[data-measured='true'] .session-pill {
+    opacity: 1;
+    transition:
+      transform var(--duration-state) var(--ease-out-soft),
+      height var(--duration-state) var(--ease-out-soft),
+      opacity var(--duration-press) var(--ease-out-soft);
+  }
+
+  /* 骨架屏：底子一条浅色，上面一条扫光。
+     用 transform 扫而不是 background-position —— 后者每帧重绘背景。 */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background-color: color-mix(in srgb, var(--color-line) 60%, transparent);
+  }
+
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, var(--color-surface) 70%, transparent),
+      transparent
+    );
+    animation: shimmer 1.4s var(--ease-out-soft) infinite;
+  }
+
+  /* 一圈会呼吸的金边。放在需要"先看你一眼"的东西上（目前只有确认卡片）。
+     定位靠 ::after + transform: scale，不用 box-shadow —— 后者每帧重绘。 */
+  .ring-pulse {
+    position: relative;
+  }
+
+  .ring-pulse::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border: 2px solid var(--color-gold);
+    border-radius: inherit;
+    pointer-events: none;
+    /* 基准是"看不见"：动画放完（或动效被关掉）之后不会留一圈死金边 */
+    opacity: 0;
+    animation: ring-pulse 1.5s var(--ease-out-soft) 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    /* 延迟也要一起清掉：`.float-up` 用的是 `both` 填充，动画期间停在
+       opacity:0。只清时长不清延迟的话，带 `animationDelay` 的那几块
+       （各页面用 style 写了 60~180ms）会先**空一块**再突然出现——
+       恰恰是开了"减少动态效果"的人最不想要的。 */
+    animation-delay: 0ms !important;
+    transition-delay: 0ms !important;
+  }
+}

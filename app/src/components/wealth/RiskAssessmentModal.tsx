@@ -192,7 +192,7 @@ export function RiskResultModal({
       <div className="text-center">
         <p className="text-[13px] text-ink-mute">你的风险承受能力等级</p>
         <p className="mt-3 text-[26px] leading-none font-bold text-ink">
-          {result.level} · {TOLERANCE_LABEL[result.level]}
+          {result.level} · {result.level ? TOLERANCE_LABEL[result.level] : '未评估'}
         </p>
         <p className="num mt-3 text-[13px] text-ink-mute">
           得分 {result.score} 分 · 有效期至 {result.expiresAt.slice(0, 10)}

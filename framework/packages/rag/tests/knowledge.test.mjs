@@ -14,7 +14,7 @@ const source = h => `${h.chunk.documentId}#${h.chunk.sectionId}`
 test('知识源确定生成，八篇完整问答、稳定章节 ID、路由及版本保留', () => {
   assert.deepEqual(generateKnowledge(), corpus)
   assert.equal(corpus.documents.length, 8)
-  assert.equal(chunks.length, 41)
+  assert.equal(chunks.length, 43)
   assert(chunks.every(c => c.sectionId && c.routes.length && c.version === corpus.version))
   assert(chunks.every(c => Array.from(c.text).length <= 450))
   for (const c of chunks) {

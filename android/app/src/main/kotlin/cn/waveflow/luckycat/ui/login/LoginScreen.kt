@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -16,11 +18,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import cn.waveflow.luckycat.contract.bank.BankUser
+import cn.waveflow.luckycat.R
 import cn.waveflow.luckycat.ui.theme.Palette
 
 /**
@@ -46,7 +50,10 @@ fun LoginScreen(
         modifier = Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("招财猫银行", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("login-title"))
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Image(painterResource(R.drawable.brand_cat), contentDescription = null, modifier = Modifier.size(42.dp))
+            Text("招财猫银行", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.testTag("login-title"))
+        }
         Text(
             "演示环境：任意 11 位手机号，密码 123456。",
             style = MaterialTheme.typography.bodySmall,

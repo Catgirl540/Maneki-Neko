@@ -26,6 +26,8 @@ export interface User {
  * 转数快标识归转数快用，两者不能混。所以这里也由接口下发，而不是前端自己拼。
  */
 export interface ReceivingInfo {
+  fpsRegistered: boolean
+  fpsRegistrations: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; registeredAt: string }[]
   /** 收款户名：银行账户转账时对方填的户名 */
   holder: string
   /** 收款账户号 */
@@ -169,6 +171,8 @@ export interface TransactionRecord extends Transaction {
    * 只有 pendingReason='inflight' 的行才有；到账/拦截/撤销后随行一起消失。
    */
   heldRequest?: TransferRequest
+  /** 冻结的本金与手续费合计；旧在途数据未记录时按本金解冻。 */
+  heldFrozenAmount?: Cents
 }
 
 export interface Paged<T> {
@@ -697,6 +701,7 @@ export interface AutoDebit {
 }
 
 export interface SecurityDevice {
+  active?: boolean
   id: string
   name: string
   location: string
@@ -742,6 +747,25 @@ export interface StaffNotice {
   staffName: string
   text: string
   createdAt: string
+}
+
+/** 客户可见人工工单；不含员工内部处置资料。 */
+export type SupportTicketStatus = 'open' | 'processing' | 'waiting' | 'suspended' | 'resolved'
+export interface SupportTicket {
+  ticketId: string
+  reason: string
+  status: SupportTicketStatus
+  createdAt: string
+  updatedAt: string
+}
+export interface SupportTicketDetail extends SupportTicket {
+  messages: { id: string; sender: 'customer' | 'staff' | 'system'; text: string; createdAt: string }[]
+}
+export type SupportTicketPage = Paged<SupportTicket>
+export interface HumanSupportRequest {
+  requestId: string
+  reason: string
+  transcript?: { role: 'user' | 'assistant'; text: string }[]
 }
 
 export interface SupportReply {
@@ -906,9 +930,11 @@ export interface RiskQuestion {
 }
 
 export interface RiskAssessment {
+  status?: 'unassessed' | 'expired' | 'valid'
+  eligible?: boolean
   done: boolean
-  level: RiskTolerance
-  score: number
+  level: RiskTolerance | null
+  score: number | null
   assessedAt: string
   /** 监管：超过一年未评估须重做 */
   expiresAt: string
@@ -1060,6 +1086,7 @@ export interface ExchangeQuoteRequest {
 
 /** 账户内部换汇。报价锁价口径与转账一致，见 FxQuote。 */
 export interface ExchangeQuote {
+  quoteId: string
   fx: FxQuote
   /** 目标币种账户；不存在时后端会自动开立一个同币种子账户 */
   toAccountNo: string
@@ -1068,6 +1095,7 @@ export interface ExchangeQuote {
 }
 
 export interface ExchangeRequest {
+  quoteId: string
   fromAccountId: string
   toCurrency: Currency
   amount: Cents
@@ -1371,6 +1399,7 @@ export interface Loan {
 
 /** 把某笔消费转成的分期计划 */
 export interface InstallmentPlan {
+  transactionId?: string
   id: string
   title: string
   merchant: string
@@ -1411,7 +1440,7 @@ export interface LoanApplyRequest {
   /** 放款账户 */
   accountId: string
   /** 6 位数字支付密码 */
-  paymentPassword?: string
+  paymentPassword: string
 }
 
 export interface InstallmentConvertRequest {
@@ -1467,6 +1496,7 @@ export interface InvestProduct {
 
 /** 定投计划 */
 export interface InvestPlan {
+  accountId?: string
   id: string
   productCode: string
   productName: string
@@ -1493,7 +1523,7 @@ export interface InvestPlanRequest {
   cycle: string
   accountId: string
   /** 6 位数字支付密码 */
-  paymentPassword?: string
+  paymentPassword: string
 }
 
 export interface InsuranceProduct {
@@ -1532,5 +1562,5 @@ export interface InsuranceEnrollRequest {
   productId: string
   insuredName: string
   /** 6 位数字支付密码 */
-  paymentPassword?: string
+  paymentPassword: string
 }

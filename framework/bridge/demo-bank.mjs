@@ -70,6 +70,7 @@ const ROUTES = [
   // —— 转账 ——
   ['GET', 'banks', 'listBanks', () => []],
   ['GET', 'receiving', 'getReceivingInfo', () => []],
+  ['POST', 'fpsRegistration', 'registerFps', (id, b) => [b]],
   ['POST', 'cardBin', 'resolveCardBin', (id, b) => [b]],
   ['GET', 'payees', 'listPayees', () => []],
   ['POST', 'fpsResolve', 'resolveFps', (id, b) => [b.idType, b.fpsId]],
@@ -113,6 +114,10 @@ const ROUTES = [
   // —— 客服（固定话术那套；真 agent 走 /agent-api，不是这里）——
   ['GET', 'supportHistory', 'listSupportMessages', () => []],
   ['POST', 'supportChat', 'sendSupportMessage', (id, b) => [b.text]],
+  ['POST', 'supportTickets', 'requestHumanSupport', (id, b) => [b]],
+  ['GET', 'supportTickets', 'listSupportTickets', (id, b, q) => [Number(q.get('page') ?? 1)]],
+  ['GET', 'supportTicket', 'getSupportTicket', id => [id]],
+  ['POST', 'supportTicketMessages', 'replySupportTicket', (id, b) => [id, b]],
 
   // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
   ['POST', 'exchangeQuote', 'quoteExchange', (id, b) => [b]],
@@ -531,7 +536,14 @@ export async function createDemoBank({
           if (auth) await auth.logout(req)
           return undefined
         }
-        const value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+        let value
+        try {
+          value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+        } catch (error) {
+          if (auth?.failure && entry.bankMethod === 'login') await auth.failure(typeof body.phone === 'string' && /^\d{11}$/.test(body.phone) ? findProfileByPhone(body.phone)?.user : null)
+          throw error
+        }
+        if (auth?.security && entry.bankMethod === 'getSecurityOverview') return auth.security(req, value)
         // 大额转账进在途窗口：通知 server 侧建记录（清单 §9.4，只在真后端演示开启）
         if (entry.bankMethod === 'submitTransfer' && value?.pendingReason === 'inflight' && onTransferHeld) {
           await onTransferHeld({
@@ -553,7 +565,7 @@ export async function createDemoBank({
           await auth.phoneChanged(phone, value.phone)
         }
         if (auth && (entry.bankMethod === 'login' || entry.bankMethod === 'register')) {
-          return { ...value, token: await auth.issue(value.user) }
+          return { ...value, token: await auth.issue(value.user, req) }
         }
         return value
       })
@@ -728,7 +740,7 @@ export async function createDemoBank({
           name: profile.user.name,
           phoneMasked: maskPhone(profile.user.phone),
           accounts: profile.accounts.map((a) => ({ id: a.id, label: a.label, balance: a.balance })),
-          cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status })),
+          cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status, dailyLimit: c.dailyLimit, onlinePayment: c.onlinePayment, overseasPayment: c.overseasPayment })),
           autoDebits: (profile.autoDebits ?? []).map((a) => ({
             id: a.id,
             merchant: a.merchant,

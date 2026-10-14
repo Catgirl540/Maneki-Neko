@@ -33,6 +33,10 @@ import type {
   SpendingAnalysis,
   SupportMessage,
   SupportReply,
+  SupportTicket,
+  SupportTicketDetail,
+  SupportTicketPage,
+  HumanSupportRequest,
   Transaction,
   TransactionCategory,
   RiskAssessment,
@@ -113,6 +117,7 @@ export const routes = {
   banks: () => '/api/banks',
   /** 本行的收款信息：别人转钱给你时照着填 */
   receiving: () => '/api/receiving',
+  fpsRegistration: () => '/api/receiving/fps',
   /** 卡 BIN 查询：输卡号前缀反查发卡行（银联/网联侧的接口） */
   cardBin: () => '/api/cards/bin',
   payees: () => '/api/payees',
@@ -156,6 +161,9 @@ export const routes = {
 
   supportHistory: () => '/api/support/messages',
   supportChat: () => '/api/support/chat',
+  supportTickets: () => '/api/support/tickets',
+  supportTicket: (id: string) => `/api/support/tickets/${id}`,
+  supportTicketMessages: (id: string) => `/api/support/tickets/${id}/messages`,
 
   // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
   exchangeQuote: () => '/api/exchange/quote',
@@ -237,6 +245,7 @@ export interface BankApi {
   listBanks(): Promise<Bank[]>
   /** 我的收款信息（户名 / 账户 / 转数快标识），由后端按账户与登记拼好 */
   getReceivingInfo(): Promise<ReceivingInfo>
+  registerFps(req: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; paymentPassword: string }): Promise<ReceivingInfo>
   /** 卡 BIN 查询：卡号前缀 → 发卡行。前缀不认识时明确回 unsupported，界面据此提示 */
   resolveCardBin(req: CardBinQuery): Promise<CardBinResolution>
   listPayees(): Promise<Payee[]>
@@ -308,6 +317,10 @@ export interface BankApi {
   // —— 智能客服（MVP 为固定话术，后续换真实模型）——
   listSupportMessages(): Promise<SupportMessage[]>
   sendSupportMessage(text: string): Promise<SupportReply>
+  requestHumanSupport(req: HumanSupportRequest): Promise<SupportTicket>
+  listSupportTickets(page?: number): Promise<SupportTicketPage>
+  getSupportTicket(id: string): Promise<SupportTicketDetail>
+  replySupportTicket(id: string, req: { requestId: string; text: string }): Promise<{ messageId: string }>
 
   // —— 账户域扩展 ——
   /** 账户内部换汇报价（区别于向外部账户转账）。锁价口径同转账。 */

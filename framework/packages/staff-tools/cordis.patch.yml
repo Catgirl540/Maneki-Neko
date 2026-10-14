@@ -1,0 +1,3 @@
+- insert:
+    - id: luckycat-staff-tools
+      name: '@luckycat/dsh-staff-tools'

@@ -117,8 +117,8 @@ const { readFileSync } = await import('node:fs')
 const { fileURLToPath } = await import('node:url')
 const read = (relative) => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8')
 
-const supportPage = read('../app/src/pages/SupportPage.tsx')
-report(/import\('@\/components\/agent\/Markdown'\)/.test(supportPage)
+const supportPage = read('../app/src/components/agent/ChatWorkspace.tsx')
+report(/import\('\.\/Markdown'\)/.test(supportPage)
   && /<Markdown text=\{item\.text\} \/>/.test(supportPage),
   '智能客服的助手气泡确实用了这个组件（不是写好了没接线）')
 report(/const Markdown = lazy\(/.test(supportPage),

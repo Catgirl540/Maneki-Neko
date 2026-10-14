@@ -15,7 +15,7 @@ function formatTime(iso: string): string {
 export function AuditPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [actorType, setActorType] = useState<'all' | 'staff' | 'agent'>('all')
+  const [actorType, setActorType] = useState<'all' | 'staff' | 'agent' | 'customer'>('all')
   const [keyword, setKeyword] = useState('')
   const [window, setWindow] = useState<'all' | '1h' | '24h'>('all')
 
@@ -78,6 +78,7 @@ export function AuditPage() {
           <option value="all">全部操作者</option>
           <option value="staff">员工</option>
           <option value="agent">Agent</option>
+          <option value="customer">客户</option>
         </select>
         <input
           value={keyword}

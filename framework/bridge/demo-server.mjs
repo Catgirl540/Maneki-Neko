@@ -56,29 +56,42 @@ import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
 import { streamVolcTTS } from './volc-stream.mjs'
 import { createDemoBank } from './demo-bank.mjs'
 import { createBankAgent, bankError } from './bank-agent.mjs'
+import { createStaffAgent } from './staff-agent.mjs'
+import { STAFF_PROMPT } from './staff-prompt.mjs'
+import { OPS_PROMPT } from './ops-prompt.mjs'
+import { createOpsGate } from './ops-gate.mjs'
+import { createClefReviewer } from './clef-reviewer.mjs'
+import { OPS_NATIVE_TOOLS } from '../packages/ops-native/src/names.mjs'
 import { createEventPolling } from './event-polling.mjs'
 import { createAssistantStream } from './assistant-stream.mjs'
 import { cancelAgent } from './agent-control.mjs'
-import { checkPolicy } from '../scripts/check-bank-tool-policy.mjs'
 import { openSessionStore, legacyContext } from './session-store.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const STAFF_MODE = process.env.LUCKYCAT_AUDIENCE === 'staff'
+const OPS_MODE = STAFF_MODE && process.env.LUCKYCAT_STAFF_MODE === 'ops'
+const PROFILE = OPS_MODE ? 'staff-ops' : STAFF_MODE ? 'staff' : 'luckycat'
+const OPS_WORKSPACE = resolve(process.env.LUCKYCAT_OPS_WORKSPACE ?? join(ROOT, '..'))
 
 // 硬闸：DSH_HOME 只能是仓库内的 .dsh-home（与 bridge/run.mjs 同一口径）。
 const home = join(ROOT, '.dsh-home')
 if (!home.startsWith(ROOT)) throw new Error(`refusing DSH_HOME outside the repo: ${home}`)
 process.env.DSH_HOME = home
 // 独立于进程生命周期；测试可指向临时目录，生产目录须跨发布保留。
-const SESSION_DIR = resolve(process.env.LUCKYCAT_SESSION_DIR ?? home)
+const SESSION_DIR = resolve(process.env.LUCKYCAT_SESSION_DIR ?? (OPS_MODE ? join(home, 'ops-context') : STAFF_MODE ? join(home, 'staff-context') : home))
 
-const PORT = Number(process.env.LUCKYCAT_DEMO_PORT ?? 8788)
+const PORT = Number(process.env.LUCKYCAT_DEMO_PORT ?? (STAFF_MODE ? 8789 : 8788))
 const PROVIDER = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
 const MODEL = process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash'
 const DEMO_PASSWORD = process.env.LUCKYCAT_DEMO_PASSWORD ?? '123456'
 const ACCESS_TOKEN = process.env.LUCKYCAT_DEMO_TOKEN ?? ''
 // 默认连接独立 SQLite 银行；旧演示工具只能显式启用。
 const HTTP_BANK = process.env.LUCKYCAT_BANK_MODE !== 'demo'
-if (HTTP_BANK) checkPolicy(join(home, 'profiles/luckycat/cordis.patch.yml'))
+if (STAFF_MODE && !HTTP_BANK) throw Error('员工助手必须连接真实员工 HTTP 接口')
+if (HTTP_BANK) {
+  const { checkPolicy } = await import(STAFF_MODE ? '../scripts/check-staff-tool-policy.mjs' : '../scripts/check-bank-tool-policy.mjs')
+  checkPolicy(join(home, `profiles/${PROFILE}/cordis.patch.yml`))
+}
 process.env.LUCKYCAT_BANK_MODE = HTTP_BANK ? 'http' : 'demo'
 const INTERNAL_TOKEN = randomBytes(32).toString('base64url')
 process.env.LUCKYCAT_INTERNAL_TOKEN = INTERNAL_TOKEN
@@ -88,13 +101,17 @@ process.env.LUCKYCAT_CONTROL_SOCKET = controlSocket
 process.env.LUCKYCAT_BANK_TOOL_URL = `http://127.0.0.1:${PORT}/internal/bank-tool`
 process.env.LUCKYCAT_CONSENT_URL = `http://127.0.0.1:${PORT}/consent/challenge`
 process.env.LUCKYCAT_QUESTION_URL = `http://127.0.0.1:${PORT}/agent-api/questions`
-if (HTTP_BANK) {
-  process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX ??= '只用中文办理业务。账户、余额、金额、产品和回执一律以当前客户的银行工具返回为准。需要信息时调用 ask_user_question，不得猜测账户或收款人，不得仅凭尾号转账。银行转账必须提供明确付款账户、完整收款账号、登记姓名和银行地区/代码；FPS 必须提供完整标识和明确收款币种，非账号方式的姓名及银行以登记解析为准，不得补猜掩码姓名。换汇金额按付款币种输入，核对报价有效期与收款金额。风险确认语句必须由客户本人提供。确认和支付密码由独立卡片收集，禁止索要密码或把密码写入工具参数。工具成功返回前不得声称操作成功。失败或受理中的业务要如实说明。卡号和 CVV 只在临时窗口展示，不要在对话中复述。不要透露模型名称或内部实现。'
+if (OPS_MODE) process.env.LUCKYCAT_OPS_GATE_URL = `http://127.0.0.1:${PORT}/internal/ops-tool`
+if (STAFF_MODE) {
+  process.env.LUCKYCAT_SYSTEM_PROMPT = OPS_MODE ? OPS_PROMPT : STAFF_PROMPT
+  process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX = OPS_MODE ? '只执行授权的技术维护；原生工具先经独立运维权限和 Clef 风险检查，高危或不确定时等待员工确认。' : '遵守本轮可信员工身份与权限，业务写入必须通过员工确认卡。客户身份核验由员工完成。'
+} else if (HTTP_BANK) {
+  process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX ??= '只用中文办理业务。账户、余额、金额、产品和回执一律以当前客户的银行工具返回为准。需要信息时调用 ask_user_question，不得猜测账户或收款人，不得仅凭尾号转账。银行转账必须提供明确付款账户、完整收款账号、登记姓名和银行地区/代码；FPS 必须提供完整标识和明确收款币种，非账号方式的姓名及银行以登记解析为准，不得补猜掩码姓名。换汇金额按付款币种输入，核对报价有效期与收款金额。风险确认语句必须由客户本人提供。确认和支付密码由独立卡片收集，禁止索要密码或把密码写入工具参数。工具成功返回前不得声称操作成功。失败或受理中的业务要如实说明。卡号和 CVV 只在临时窗口展示，不要在对话中复述。只有客户提出转人工时才提交问题摘要；问题已明确时直接调用 bank_request_human_support，由专用确认卡收集授权，不要再用 ask_user_question 重复询问是否提交。缺少问题内容时才补问。创建工单需确认。创建成功只是等待受理，不代表已接通人工，不承诺服务时段或响应时间；告知返回的工单编号及助手 → 人工工单入口。不要透露模型名称或内部实现。'
 }
 
 /** 可选的额外 overlay（冒号或逗号分隔绝对路径），端到端自检用。 */
 const PATCHES = (process.env.LUCKYCAT_PATCHES ?? '')
-  .split(/[:,]/)
+  .split(process.platform === 'win32' ? /,/ : /[:,]/)
   .map(entry => entry.trim())
   .filter(entry => entry !== '')
 /** 一次确认最多等多久（毫秒）。超时即拒绝——与插件侧的超时是两道独立的闸。 */
@@ -370,7 +387,10 @@ function settleConsent(challengeId, answer) {
   pendingConsents.delete(challengeId)
   clearTimeout(entry.timer)
   publish(entry.challenge.sessionId, { type: 'consent-resolved', challengeId, decision: answer?.decision ?? 'timeout' })
-  if (HTTP_BANK && answer?.decision !== 'approve') bankAgent.forget(entry.challenge)
+  if (HTTP_BANK && answer?.decision !== 'approve') {
+    if (OPS_MODE && OPS_NATIVE_TOOLS.includes(entry.challenge.toolName)) opsGate.forget(entry.challenge)
+    else bankAgent.forget(entry.challenge)
+  }
   entry.resolve(answer)
   return true
 }
@@ -411,7 +431,8 @@ function settleQuestion(questionId, answer) {
 const sessions = new Map()
 const sessionStore = HTTP_BANK ? openSessionStore(join(SESSION_DIR, 'web-context', 'sessions.sqlite')) : null
 if (sessionStore) for (const entry of sessionStore.interrupted()) sessions.set(entry.id, entry)
-const bankAgent = HTTP_BANK ? createBankAgent({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish }) : null
+const bankAgent = HTTP_BANK ? (STAFF_MODE ? createStaffAgent : createBankAgent)({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish, ...(OPS_MODE ? { opsOnly: true, nativeTools: OPS_NATIVE_TOOLS } : {}) }) : null
+const opsGate = OPS_MODE ? createOpsGate({ bankAgent, sessions, publish, review: createClefReviewer(), workspaceRoot: OPS_WORKSPACE, auditPath: join(SESSION_DIR, 'native-audit.jsonl') }) : null
 for (const entry of sessions.values()) {
   if (entry.interrupted) {
     publish(entry.id, { type: 'session-restored', interrupted: true })
@@ -513,8 +534,9 @@ async function ensureHarness() {
       ? { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${fallbackImport}`.trim() }
       : undefined
     const candidate = new DeepSeekHarness({
-      dshBin: join(ROOT, 'node_modules', '.bin', 'dsh'), profile: 'luckycat',
+      dshBin: join(ROOT, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), profile: PROFILE,
       provider: PROVIDER, model: MODEL, initializeTimeoutMs: 30_000,
+      ...(OPS_MODE ? { processCwd: OPS_WORKSPACE } : {}),
       ...fallbackEnv === undefined ? {} : { env: fallbackEnv },
       patches: [streamPatch, ...PATCHES],
     })
@@ -558,6 +580,7 @@ async function runTurn(sessionId, input) {
   entry.busy = true
   entry.stopping = false
   entry.activity = { cancelled: false }
+  if (OPS_MODE) entry.intent = typeof input === 'string' ? input : input.filter(b => b.type === 'text').map(b => b.text).join('\n')
   const assistantStream = createAssistantStream(sessionId, event => publish(sessionId, event))
   entry.assistantStream = assistantStream
   publish(sessionId, { type: 'status', status: 'running' })
@@ -568,8 +591,9 @@ async function runTurn(sessionId, input) {
     // 递提示词之前打上标记：这一步之后运行时里就有这个会话了。
     entry.started = true
     sessionStore?.save(entry)
-    const prompt = entry.legacyContext
+    let prompt = entry.legacyContext
       ? [{ type: 'text', text: entry.legacyContext }, ...(typeof input === 'string' ? [{ type: 'text', text: input }] : input)] : input
+    if (STAFF_MODE) prompt = [{ type: 'text', text: await bankAgent.context(sessionId) }, ...(typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt)]
     const result = await entry.handle.run(prompt, {
       onNotification: (notification) => {
         if (notification.params.sessionId !== sessionId) return
@@ -646,7 +670,7 @@ async function handle(req, res) {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   const parts = pathParts(url.pathname)
 
-  const internal = url.pathname === '/consent/challenge' || url.pathname === '/agent-api/questions' || url.pathname === '/internal/bank-tool'
+  const internal = url.pathname === '/consent/challenge' || url.pathname === '/agent-api/questions' || url.pathname === '/internal/bank-tool' || url.pathname.startsWith('/internal/ops-tool/')
   if (HTTP_BANK && internal && req.headers['x-luckycat-internal'] !== INTERNAL_TOKEN) {
     throw bankError('内部通道禁止外部访问', 403, 'FORBIDDEN')
   }
@@ -766,6 +790,7 @@ async function handle(req, res) {
     entry.activity.cancelled = true
     entry.assistantStream?.stop()
     bankAgent?.forgetSession(entry.id)
+    opsGate?.forgetSession(entry.id)
     entry.stopTask = (async () => {
       // 正在初始化 / 排入运行时的会话可能还没有 agent，重试直到取消或本轮退出。
       for (let i = 0; i < 100 && entry.busy; i++) {
@@ -947,7 +972,8 @@ async function handle(req, res) {
       return
     }
     if (HTTP_BANK) {
-      await bankAgent.approve(entry.challenge, typeof body.paymentPassword === 'string' ? body.paymentPassword : '', body.riskAcknowledgement)
+      if (OPS_MODE && OPS_NATIVE_TOOLS.includes(entry.challenge.toolName)) await opsGate.approve(entry.challenge)
+      else await bankAgent.approve(entry.challenge, STAFF_MODE ? body.customerVerification : typeof body.paymentPassword === 'string' ? body.paymentPassword : '', body.riskAcknowledgement)
       const verification = entry.challenge.verification ? { method: 'payment-password', verified: true, ticket: `pw-${randomUUID()}` } : undefined
       settleConsent(challengeId, { decision: 'approve', challengeId, ...(verification ? { verification } : {}) })
       sendJson(res, 200, { ok: true, decision })
@@ -1292,9 +1318,16 @@ async function handle(req, res) {
   }
 
   // 确认通道（agent 插件 → 这里，长轮询）
+  if (OPS_MODE && req.method === 'POST' && url.pathname.startsWith('/internal/ops-tool/')) {
+    const operation = parts[2]
+    if (!['prepare', 'consume', 'result'].includes(operation)) throw bankError('未知运维检查接口', 404)
+    sendJson(res, 200, await opsGate[operation](await readJson(req)))
+    return
+  }
   if (req.method === 'POST' && url.pathname === '/consent/challenge') {
     let challenge = await readJson(req)
-    if (HTTP_BANK) challenge = await bankAgent.prepare(challenge)
+    if (OPS_MODE && OPS_NATIVE_TOOLS.includes(challenge.toolName)) challenge = await opsGate.challenge(challenge)
+    else if (HTTP_BANK) challenge = await bankAgent.prepare(challenge)
     if (typeof challenge.challengeId !== 'string' || challenge.challengeId === '') {
       sendJson(res, 400, { error: 'challenge 缺少 challengeId' })
       return
@@ -1303,7 +1336,8 @@ async function handle(req, res) {
       const id = challenge.challengeId
       const timer = setTimeout(() => {
         pendingConsents.delete(id)
-        if (HTTP_BANK) bankAgent.forget(challenge)
+        if (OPS_MODE && OPS_NATIVE_TOOLS.includes(challenge.toolName)) opsGate.forget(challenge)
+        else if (HTTP_BANK) bankAgent.forget(challenge)
         publish(challenge.sessionId, { type: 'consent-resolved', challengeId: id, decision: 'timeout' })
         resolvePromise({ decision: 'reject', challengeId: id })
       }, CONSENT_TIMEOUT_MS)
@@ -1319,7 +1353,8 @@ async function handle(req, res) {
         if (!pendingConsents.has(id)) return
         clearTimeout(timer)
         pendingConsents.delete(id)
-        if (HTTP_BANK) bankAgent.forget(challenge)
+        if (OPS_MODE && OPS_NATIVE_TOOLS.includes(challenge.toolName)) opsGate.forget(challenge)
+        else if (HTTP_BANK) bankAgent.forget(challenge)
         publish(challenge.sessionId, { type: 'consent-resolved', challengeId: id, decision: 'abandoned' })
         resolvePromise({ decision: 'reject', challengeId: id })
       }
@@ -1371,6 +1406,7 @@ async function shutdown() {
   shuttingDown = true
   eventPolling.close()
   bankAgent?.close()
+  opsGate?.close()
   for (const entry of sessions.values()) if (entry.busy) {
     entry.stopping = true
     entry.activity.cancelled = true

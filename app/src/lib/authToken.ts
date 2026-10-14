@@ -29,8 +29,8 @@
  * @module app/lib/authToken
  */
 
-import { STORAGE_KEYS, sessionStore } from '@/lib/storage'
-import type { User } from '@/api/types'
+import { STORAGE_KEYS, sessionStore } from './storage'
+import type { User } from '../api/types'
 
 /** 用户信息在 sessionStorage 里的键（与令牌分开存，但同生共死）。 */
 const USER_KEY = 'session.user'

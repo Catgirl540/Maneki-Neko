@@ -1,4 +1,5 @@
 /** 账户绑定、权威确认信息与一次性执行授权。银行 Bearer / 支付密码永不进入 harness。 */
+import { redactSupportText } from '../../shared/support.mjs'
 import { createHash } from 'node:crypto'
 
 import { bankError } from './bank-error.mjs'
@@ -19,7 +20,7 @@ const stable = value => JSON.stringify(value, (_, v) => v && typeof v === 'objec
 const digest = value => createHash('sha256').update(stable(value)).digest('hex')
 const field = (label, value, emphasis = false) => ({ label, value: String(value), ...(emphasis ? { emphasis: true } : {}) })
 const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'])
-const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer'])
+const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer', 'bank_request_human_support', 'bank_reply_support_ticket'])
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -86,6 +87,37 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       return card
     }
     switch (challenge.toolName) {
+      case 'bank_request_human_support': {
+        const reason = text(a.reason, '问题描述')
+        if (reason.length > 500) throw bankError('问题描述不超过 500 字')
+        path = '/api/support/tickets'
+        body = { reason: redactSupportText(reason), requestId: `agent_${digest([challenge.sessionId, challenge.callId, challenge.toolName])}` }
+        fields = [field('操作', '提交人工服务工单', true), field('问题描述', body.reason), field('对话分享', '仅发送以上摘要，不附带完整对话或图片'), field('提交结果', '等待客服受理；这不会立即接通人工客服')]
+        break
+      }
+      case 'bank_list_support_tickets': {
+        const page = a.page ?? 1
+        if (!Number.isSafeInteger(page) || page < 1 || page > 1_000_000) throw bankError('页码不合法')
+        path = `/api/support/tickets?page=${page}`
+        fields = [field('查询内容', '本人提交的人工工单'), field('页码', page)]
+        break
+      }
+      case 'bank_get_support_ticket':
+      case 'bank_reply_support_ticket': {
+        const id = text(a.ticketId, '工单编号')
+        const ticket = await get(`/api/support/tickets/${enc(id)}`)
+        path = `/api/support/tickets/${enc(id)}`
+        fields = [field('工单编号', id), field('问题描述', ticket.reason)]
+        if (challenge.toolName === 'bank_reply_support_ticket') {
+          const value = text(a.text, '补充留言')
+          if (value.length > 2000) throw bankError('补充留言不超过 2000 字')
+          if (ticket.status === 'resolved') throw bankError('工单已解决，请重新转人工', 409)
+          path += '/messages'
+          body = { text: redactSupportText(value), requestId: `agent_${digest([challenge.sessionId, challenge.callId, challenge.toolName])}` }
+          fields.push(field('发送内容', body.text, true))
+        } else fields.push(field('查询内容', '工单进度与人工回复'))
+        break
+      }
       case 'bank_get_balance': {
         path = a.accountId ? `/api/accounts/${enc(text(a.accountId, '账户编号'))}` : '/api/accounts'
         fields = [field('账户', a.accountId || '当前客户名下全部账户'), field('查询内容', '余额、可用余额、卡片概要和理财持仓')]
@@ -276,7 +308,7 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
     if (!Number.isFinite(challenge.expiresAt) || challenge.expiresAt <= Date.now()) throw bankError('确认已过期')
     if (entry.stopping || activity?.cancelled || entry.activity !== activity) throw bankError('本轮已停止', 409)
     const verification = passwordTools.has(challenge.toolName) ? 'payment-password' : undefined
-    const prepared = { challenge: { ...challenge, arguments: undefined, fields, verification, ...(riskAcknowledgementText ? { riskAcknowledgementText } : {}), consequence: verification ? '确认并验证后提交银行服务；操作结果以银行回执为准。' : writable.has(challenge.toolName) ? '确认后提交银行服务，操作结果以银行回执为准。' : '查询结果会显示在对话中。' }, fingerprint: digest(a), path, body, method, preview, activity, ownerId: entry.ownerId, approved: false }
+    const prepared = { challenge: { ...challenge, arguments: undefined, fields, verification, ...(riskAcknowledgementText ? { riskAcknowledgementText } : {}), consequence: challenge.toolName === 'bank_request_human_support' ? '确认后创建工单，可在助手 → 人工工单查看回复；不保证即时受理。' : challenge.toolName === 'bank_reply_support_ticket' ? '确认后将以上留言发送给人工客服。' : verification ? '确认并验证后提交银行服务；操作结果以银行回执为准。' : writable.has(challenge.toolName) ? '确认后提交银行服务，操作结果以银行回执为准。' : '查询结果会显示在对话中。' }, fingerprint: digest(a), path, body, method, preview, activity, ownerId: entry.ownerId, approved: false }
     const k = key(challenge.sessionId, challenge.callId)
     if (grants.has(k)) throw bankError('工具调用已存在确认', 409)
     const ttl = Math.min(challenge.expiresAt - Date.now(), 180_000)

@@ -1,4 +1,4 @@
-import { isMockMode } from '@/lib/dataMode'
+import { isMockMode } from './dataMode'
 /**
  * agent 对话状态：多段对话并存，并把 SSE 事件整理成界面能直接渲染的东西。
  *
@@ -24,24 +24,18 @@ import { isMockMode } from '@/lib/dataMode'
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { restoreSession } from '@/lib/authToken'
-import type { PreparedImage } from '@/lib/image'
+import { restoreSession } from './authToken'
+import type { PreparedImage } from './image'
 import {
-  agentEnabled,
-  answerConsent,
-  answerQuestion,
-  createAgentSession,
-  openAgentStream,
-  probeAgent,
-  probeAgentSession,
-  sendAgentMessage,
-  stopAgentTurn,
+  defaultAgentClient,
+  type AgentClient,
+  type CustomerVerification,
   type AgentEvent,
   type ConsentChallenge,
   type PendingQuestion,
   type QuestionAnswerItem,
   type VoiceCapability,
-} from '@/api/agent'
+} from '../api/agent'
 import {
   recoveryHistory,
   isEmptyConversation,
@@ -53,9 +47,9 @@ import {
   titleFrom,
   type ChatItem,
   type StoredConversation,
-} from '@/lib/agentSessions'
+} from './agentSessions'
 
-export type { ChatItem, StoredConversation } from '@/lib/agentSessions'
+export type { ChatItem, StoredConversation } from './agentSessions'
 
 /** agent 通道的可用状态。 */
 export type AgentStatus = 'probing' | 'off' | 'ready'
@@ -102,6 +96,28 @@ const nextId = (): string => `i${pageTag}_${++seq}`
 
 /** 工具名的中文标签（只是展示用；没有映射的显示原名）。 */
 const TOOL_LABELS: Record<string, string> = {
+  staff_search_customers: '查询客户',
+  staff_get_customer: '查看客户资料',
+  staff_list_tickets: '查询工单',
+  staff_get_ticket: '查看工单',
+  staff_create_ticket: '创建工单',
+  staff_update_ticket_status: '更新工单状态',
+  staff_post_ticket_message: '回复工单',
+  staff_list_approvals: '查询处置记录',
+  staff_get_approval: '查看处置记录',
+  staff_decide_approval: '处置审批',
+  staff_customer_action: '代客办理',
+  staff_get_transfer_threshold: '查询转账阈值',
+  staff_set_transfer_threshold: '调整转账阈值',
+  staff_audit_logs: '查询审计日志',
+  staff_operations_overview: '查询运维监控',
+  read: '读取文件', read_image: '查看图片', write: '写入文件', edit: '编辑文件',
+  glob: '查找文件', grep: '搜索文件内容', bash: '执行命令', powershell: '执行命令',
+  web_fetch: '读取网页', job_list: '查询任务', job_output: '查看任务输出', job_kill: '停止任务',
+  bank_request_human_support: '转人工',
+  bank_list_support_tickets: '查询人工工单',
+  bank_get_support_ticket: '查看人工回复',
+  bank_reply_support_ticket: '补充人工工单',
   knowledge_lookup: '查询知识库',
   bank_get_balance: '查询余额',
   bank_list_transactions: '查询交易流水',
@@ -180,7 +196,7 @@ export interface AgentChat {
    */
   rewind: (itemId: string, text?: string) => void
   /** 答复当前对话待确认的事项。 */
-  answer: (decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string) => void
+  answer: (decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string, customerVerification?: CustomerVerification) => void
   /**
    * 答复当前对话的问题卡片。
    * @param answers - 每道题的答复（选中的选项 + 可能的自由输入）。
@@ -200,11 +216,22 @@ export interface AgentChat {
  * agent 对话 hook。挂载时只做一次健康探测；服务不在就保持 off，不发任何请求。
  * @returns 对话状态与操作。
  */
-export function useAgentChat(): AgentChat {
+export interface AgentChatOptions {
+  client?: AgentClient
+  ownerId?: string
+  /** 本地存档键与上传身份分开，员工按角色及账号隔离。 */
+  historyOwnerId?: string
+}
+export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
+  const { agentEnabled, answerConsent, answerQuestion, createAgentSession, openAgentStream,
+    probeAgent, probeAgentSession, sendAgentMessage, stopAgentTurn } = options.client ?? defaultAgentClient
+  const ownerId = options.ownerId ?? restoreSession()?.user.id ?? ''
+  const historyOwnerId = options.historyOwnerId ?? (isMockMode ? undefined : ownerId)
+  const historyOwnerRef = useRef(historyOwnerId)
   const [status, setStatus] = useState<AgentStatus>(agentEnabled ? 'probing' : 'off')
   const [voice, setVoice] = useState<VoiceCapability | undefined>(undefined)
   const [conversations, setConversations] = useState<StoredConversation[]>(() => {
-    const loaded = loadConversations(isMockMode ? undefined : restoreSession()?.user.id)
+    const loaded = loadConversations(historyOwnerId)
     // 列表里最少留一段：一段都没有的时候直接给一段空的，
     // 省得用户先点「新对话」才能开口。
     return loaded.length === 0 ? [makeConversation()] : loaded
@@ -248,7 +275,7 @@ export function useAgentChat(): AgentChat {
    * 没有登录态时留空串——服务端会以 400 "缺少 accountId" 拒掉带图的那条，
    * 不会静默地把图存进某个公共目录。
    */
-  const accountIdRef = useRef<string>(restoreSession()?.user.id ?? '')
+  const accountIdRef = useRef<string>(ownerId)
   /** state 的同步镜像：回调里要读最新值，而 setState 是异步的。 */
   const conversationsRef = useRef(conversations)
   const activeIdRef = useRef<string | undefined>(activeId)
@@ -456,7 +483,7 @@ export function useAgentChat(): AgentChat {
         reject(new Error('事件流连接失败'))
       })
     })
-  }, [handleEvent])
+  }, [handleEvent, openAgentStream])
 
   /**
    * 取当前对话的会话；没有就建一个（含事件流握手）。
@@ -507,7 +534,7 @@ export function useAgentChat(): AgentChat {
 
     creating.current.set(convId, task)
     return await task
-  }, [openStream, patch])
+  }, [openStream, patch, createAgentSession])
 
   /**
    * 先弄清"这一段在助手的记忆里还在不在"。
@@ -531,7 +558,7 @@ export function useAgentChat(): AgentChat {
     lost.current.add(convId)
     setLostIds([...lost.current])
     return 'fresh'
-  }, [])
+  }, [probeAgentSession])
 
   /**
    * 把一句话真正发出去（接上会话 → 发过去 → 失败就写成一条通知）。
@@ -578,7 +605,7 @@ export function useAgentChat(): AgentChat {
       }
     })().finally(() => { dispatches.current.delete(convId) })
     dispatches.current.set(convId, task)
-  }, [ensureLive, prepare, pushItem, setBusy])
+  }, [ensureLive, prepare, pushItem, setBusy, sendAgentMessage])
 
   const stop = useCallback(() => {
     const convId = activeIdRef.current
@@ -600,7 +627,7 @@ export function useAgentChat(): AgentChat {
         }
       }
     })()
-  }, [pushItem])
+  }, [pushItem, stopAgentTurn])
 
   const send = useCallback((text: string, image?: PreparedImage) => {
     const value = text.trim()
@@ -670,23 +697,18 @@ export function useAgentChat(): AgentChat {
     dispatch(convId, last.text.trim())
   }, [dispatch, patch, pendings, status])
 
-  const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string) => {
+  const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string, customerVerification?: CustomerVerification) => {
     const convId = activeIdRef.current
     if (convId === undefined) return
     const current = pendings[convId]
     if (current === undefined) return
     const challengeId = current.challenge.challengeId
-    if (decision === 'reject') {
-      setPendings(prev => {
-        const next = { ...prev }
-        delete next[convId]
-        return next
-      })
-      void answerConsent(challengeId, 'reject')
-      return
-    }
     setPendings(prev => ({ ...prev, [convId]: { ...current, submitting: true, error: undefined } }))
-    void answerConsent(challengeId, 'approve', paymentPassword, riskAcknowledgement).then((result) => {
+    void answerConsent(challengeId, decision,
+      decision === 'approve' ? paymentPassword : undefined,
+      decision === 'approve' ? riskAcknowledgement : undefined,
+      decision === 'approve' ? customerVerification : undefined,
+    ).then((result) => {
       if (!mountedRef.current) return
       // 成功时真正的移除交给 consent-resolved 事件；这里只收起"提交中"。
       setPendings(prev => {
@@ -700,7 +722,7 @@ export function useAgentChat(): AgentChat {
         }
       })
     })
-  }, [pendings])
+  }, [pendings, answerConsent])
 
   /**
    * 答复一次问询。
@@ -729,7 +751,7 @@ export function useAgentChat(): AgentChat {
         }
       })
     })
-  }, [asks])
+  }, [asks, answerQuestion])
 
   /**
    * 新建一段对话。
@@ -817,7 +839,7 @@ export function useAgentChat(): AgentChat {
       cancelled = true
       shutdown()
     }
-  }, [])
+  }, [agentEnabled, probeAgent])
 
   // 当前这段打开时确认一下上下文还在不在（一次页面加载只问一次）。
   useEffect(() => {
@@ -834,7 +856,7 @@ export function useAgentChat(): AgentChat {
 
   // 生成期间节流写盘，完成时立即保存；关标签页前补存当前快照。
   useEffect(() => {
-    const save = () => saveConversations(conversationsRef.current, isMockMode ? undefined : accountIdRef.current)
+    const save = () => saveConversations(conversationsRef.current, historyOwnerRef.current)
     const streaming = conversations.some(c => c.items.some(item => item.kind === 'assistant' && item.streaming))
     if (!streaming) { save(); return }
     const timer = window.setTimeout(save, 300)

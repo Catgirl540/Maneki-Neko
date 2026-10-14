@@ -46,11 +46,12 @@ try {
       case '/api/accounts': return accountFailure ? respond({ message: '账户暂不可用' }, 503) : respond(accounts)
       case '/api/security/overview': return respond({ logs: [], devices: [], riskRules: [], score: 80, level: '基础防护' })
       case '/api/exchange/quote': {
-        quotes.push(body)
+        const quoteId = `fixture-fx-${quotes.length + 1}`
+        quotes.push({ ...body, quoteId })
         const fx = { fromCurrency: accounts.find(a => a.id === body.fromAccountId).currency, toCurrency: body.toCurrency,
           fromAmount: body.amount, toAmount: Math.round(body.amount * rate), rate, spread: .002, quoteTtlSeconds: ttl, quotedAt: date }
         if (holdQuote) { holdQuote = false; await new Promise(r => { releaseQuote = r }) }
-        return respond({ fx, toAccountNo: accounts[1].accountNo, toAvailableAfter: fx.toAmount })
+        return respond({ quoteId, fx, toAccountNo: accounts[1].accountNo, toAvailableAfter: fx.toAmount })
       }
       case '/api/exchange': {
         submitted.push(body)
@@ -117,6 +118,7 @@ try {
   await pin(dialog); rate = .15
   await dialog.getByRole('button', { name: '确认换汇', exact: true }).click()
   await dialog.getByRole('alert').filter({ hasText: '参考报价已更新' }).waitFor()
+  const confirmedQuoteId = quotes.at(-1).quoteId
   assert.equal(submitted.length, 0)
   assert.equal(await dialog.getByLabel('支付密码第 1 位', { exact: true }).inputValue(), '')
   await pin(dialog)
@@ -125,8 +127,8 @@ try {
   assert.equal(await dialog.count(), 1)
   await page.getByRole('dialog', { name: '换汇成功', exact: true }).waitFor()
   assert.equal(submitted.length, 1)
-  assert.deepEqual(submitted[0], { fromAccountId: 'a0', toCurrency: 'HKD', amount: 20000, paymentPassword: '888888' })
-  console.log('PASS 换汇旧请求丢弃、报价变化重新确认、请求字段不变、提交期间禁止关闭，账户导航正确')
+  assert.deepEqual(submitted[0], { fromAccountId: 'a0', toCurrency: 'HKD', amount: 20000, quoteId: confirmedQuoteId, paymentPassword: '888888' })
+  console.log('PASS 换汇旧请求丢弃、报价变化重新确认、提交绑定已确认报价 ID、提交期间禁止关闭，账户导航正确')
 
   ttl = 1
   await visit('/exchange', '多币种与划转')

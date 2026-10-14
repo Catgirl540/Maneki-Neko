@@ -141,7 +141,7 @@ function ReceivingPanel({ info }: { info: ReceivingInfo }) {
       <p className="mt-1 text-[12px] leading-relaxed text-ink-mute">
         收款户名需与账户登记一致。
       </p>
-      <p role="status" className="text-[12px] leading-relaxed text-ink-mute">FPS 登记状态待确认，请使用银行账户收款。</p>
+      <p role="status" className="text-[12px] leading-relaxed text-ink-mute">{info.fpsRegistered === true ? 'FPS 已登记，仅支持香港港币模拟通道。' : info.fpsRegistered === false ? '尚未登记 FPS，请使用银行账户收款。' : 'FPS 登记状态待确认，请使用银行账户收款。'}</p>
     </div>
   )
 }

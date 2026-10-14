@@ -240,6 +240,7 @@ export function SecurityPage() {
                 <span className="flex items-center gap-2">
                   <span className="truncate text-[15px] font-medium text-ink">{device.name}</span>
                   {device.current && <Tag tone="blue">当前设备</Tag>}
+                  {device.active === false && <Tag tone="neutral">会话已失效</Tag>}
                 </span>
                 <span className="mt-0.5 block truncate text-[13px] text-ink-mute">
                   {device.location} · {formatDateTime(device.lastActiveAt)}

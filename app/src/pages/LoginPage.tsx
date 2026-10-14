@@ -82,6 +82,18 @@ export function LoginPage() {
             欢迎回来
           </h1>
 
+          <nav aria-label="登录入口" className="mt-6 flex rounded-full border border-line bg-white p-1 text-[13px] font-medium">
+            <span aria-current="page" className="flex-1 rounded-full bg-ink px-4 py-2 text-center text-white">
+              客户端
+            </span>
+            <a
+              href={`${import.meta.env.BASE_URL}staff/login`}
+              className="flex-1 rounded-full px-4 py-2 text-center text-ink-soft transition-colors hover:bg-paper hover:text-ink"
+            >
+              工作人员端
+            </a>
+          </nav>
+
           <form className="mt-9 flex flex-col gap-5" onSubmit={onSubmit}>
             <Field
               label="手机号"

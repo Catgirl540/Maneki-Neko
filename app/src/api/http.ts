@@ -108,6 +108,7 @@ export function createHttpApi(): BankApi {
 
     listBanks: () => request(routes.banks()),
     getReceivingInfo: () => request(routes.receiving()),
+    registerFps: (req) => post(routes.fpsRegistration(), req),
     resolveCardBin: (req) => post(routes.cardBin(), req),
     listPayees: () => request<Payee[]>(routes.payees()),
     resolveFps: (idType, fpsId) => post(routes.fpsResolve(), { idType, fpsId }),
@@ -150,6 +151,11 @@ export function createHttpApi(): BankApi {
 
     listSupportMessages: () => request(routes.supportHistory()),
     sendSupportMessage: (text) => post(routes.supportChat(), { text }),
+
+    requestHumanSupport: (req) => post(routes.supportTickets(), req),
+    listSupportTickets: (page) => request(routes.supportTickets() + `?page=${page ?? 1}`),
+    getSupportTicket: (id) => request(routes.supportTicket(encodeURIComponent(id))),
+    replySupportTicket: (id, req) => post(routes.supportTicketMessages(encodeURIComponent(id)), req),
 
     // —— 账户域扩展 ——
     quoteExchange: (req) => post(routes.exchangeQuote(), req),

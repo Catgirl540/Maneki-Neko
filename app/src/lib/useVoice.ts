@@ -23,21 +23,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { probeVoiceAvailable, transcribeAudio, synthesizeSpeechStream } from '@/api/agent'
-import { pickRecorderMime } from '@/lib/audio'
-import { peaksFromSamples, DEFAULT_BUCKETS } from '@/lib/waveform'
-import { createStreamPlayer, type StreamPlayer } from '@/lib/streamPlayer'
-import { createSpeechCache } from '@/lib/speechCache'
-import { callerFrame, preview, voiceLog } from '@/lib/voiceLog'
-
-/**
- * 朗读缓存：按文本复用整段采样（详见 `lib/speechCache.ts`）。
- *
- * 放在模块级而不是每次 `useVoice` 一个：同一个页面里可能同时挂着几个朗读入口
- * （自动朗读、消息上的播放按钮），缓存必须共享才拦得住重复合成。
- * 流式合成完成时把整段采样 + 波形放进来，同一句话重播直接出声、不再走网络。
- */
-const speechCache = createSpeechCache()
+import { defaultAgentClient, type AgentClient } from '../api/agent'
+import { pickRecorderMime } from './audio'
+import { peaksFromSamples, DEFAULT_BUCKETS } from './waveform'
+import { createStreamPlayer, type StreamPlayer } from './streamPlayer'
+import { createSpeechCache } from './speechCache'
+import { callerFrame, preview, voiceLog } from './voiceLog'
 
 /** 语音通道现在在干什么。 */
 export type VoiceState =
@@ -123,7 +114,11 @@ export function useVoice(
   micEnabled: boolean,
   onTranscript: (text: string) => void,
   serverMaxSeconds?: number,
+  client: AgentClient = defaultAgentClient,
 ): Voice {
+  const { probeVoiceAvailable, transcribeAudio, synthesizeSpeechStream } = client
+  // 缓存随聊天工作区释放，退出员工账号后不复用上一位员工的合成内容。
+  const [speechCache] = useState(createSpeechCache)
   const maxSeconds = serverMaxSeconds ?? DEFAULT_MAX_SECONDS
   const [state, setState] = useState<VoiceState>('idle')
   const [seconds, setSeconds] = useState(0)
@@ -389,7 +384,7 @@ export function useVoice(
         setError(cause instanceof Error ? cause.message : String(cause))
       }
     })()
-  }, [ensurePlayer, stopSpeaking])
+  }, [ensurePlayer, stopSpeaking, speechCache, synthesizeSpeechStream, teardownPlayback])
 
 
   const finishRecording = useCallback(() => {
@@ -490,7 +485,7 @@ export function useVoice(
         )
       }
     })()
-  }, [finishRecording, maxSeconds, releaseMic, state, stopSpeaking])
+  }, [finishRecording, maxSeconds, releaseMic, state, stopSpeaking, transcribeAudio])
 
   const stop = useCallback(() => {
     if (recorder.current === undefined) return
@@ -560,7 +555,7 @@ export function useVoice(
       stopTicker()
       releaseMic()
     }
-  }, [releaseMic, stopSpeaking, stopTicker])
+  }, [releaseMic, stopSpeaking, stopTicker, probeVoiceAvailable])
 
   return {
     available,

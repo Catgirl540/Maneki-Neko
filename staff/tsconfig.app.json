@@ -18,7 +18,16 @@
 
     /* Path alias（TS 4.4+ 无需 baseUrl，按本文件位置解析） */
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+      "react-markdown": ["./node_modules/react-markdown"],
+      "remark-breaks": ["./node_modules/remark-breaks"],
+      "remark-gfm": ["./node_modules/remark-gfm"],
+      "remark-math": ["./node_modules/remark-math"],
+      "rehype-katex": ["./node_modules/rehype-katex"]
     },
 
     /* Linting */

@@ -8,6 +8,14 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
+    "start:staff": "node scripts/bootstrap-staff.mjs && node bridge/staff-server.mjs",
+    "start:ops": "node scripts/bootstrap-staff.mjs && node bridge/ops-server.mjs",
+    "test:ops-agent": "node --test bridge/clef-reviewer.test.mjs bridge/ops-gate.test.mjs",
+    "test:ops-agent:e2e": "node ../tools/check-ops-agent.mjs --browser",
+    "test:ops-agent:live": "node ../tools/check-ops-agent-live.mjs",
+    "test:staff": "node --test bridge/staff-agent.test.mjs",
+    "test:staff:e2e": "node ../tools/check-staff-agent.mjs --browser",
+    "test:staff:live": "node ../tools/check-staff-agent-live.mjs",
     "dump-config": "bash scripts/dsh-profile.sh dump-config",
     "verify": "bash scripts/verify.sh",
     "knowledge": "node scripts/build-knowledge.mjs",

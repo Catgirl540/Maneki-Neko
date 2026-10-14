@@ -22,11 +22,11 @@
  * @module app/components/agent/MessageActions
  */
 
-import { CopyButton } from '@/components/ui/CopyButton'
-import { Button } from '@/components/ui/Button'
-import { PencilIcon, PlayIcon, RefreshIcon, StopIcon } from '@/components/ui/icons'
-import { Modal } from '@/components/ui/Modal'
-import { cn } from '@/lib/cn'
+import { CopyButton } from '../ui/CopyButton'
+import { Button } from '../ui/Button'
+import { PencilIcon, PlayIcon, RefreshIcon, StopIcon } from '../ui/icons'
+import { Modal } from '../ui/Modal'
+import { cn } from '../../lib/cn'
 
 /** 和 `CopyButton` 长一样的图标按钮：一行里几个动作要看起来是同一套。 */
 function ActionButton({

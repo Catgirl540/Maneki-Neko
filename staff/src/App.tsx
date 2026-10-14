@@ -1,4 +1,7 @@
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { ToastProvider } from '../../app/src/components/ui/Toast'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { OperationsPage } from '@/pages/operations/OperationsPage'
+import { AssistantPage } from '@/pages/assistant/AssistantPage'
 import { AppShell } from '@/layout/AppShell'
 import { LoginPage } from '@/layout/LoginPage'
 import { WorkbenchPage } from '@/pages/workbench/WorkbenchPage'
@@ -20,7 +23,7 @@ function LoginRoute() {
   const location = useLocation()
   if (user) {
     const from = (location.state as { from?: string } | null)?.from
-    return <Navigate to={from ?? '/workbench'} replace />
+    return <Navigate to={user.role === 'ops' ? '/operations' : from ?? '/workbench'} replace />
   }
   return <LoginPage />
 }
@@ -34,9 +37,20 @@ function RequireSupervisor({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function RequireBusiness() {
+  const { user } = useSession()
+  return user?.role === 'ops' ? <Navigate to="/operations" replace /> : <Outlet />
+}
+
+function RequireOperations() {
+  const { user } = useSession()
+  return user?.role === 'ops' ? <OperationsPage /> : <Navigate to="/workbench" replace />
+}
+
 export default function App() {
   return (
     <BrowserRouter basename={import.meta.env.BASE_URL}>
+      <ToastProvider>
       <SessionProvider>
         <Routes>
           <Route path="/login" element={<LoginRoute />} />
@@ -47,6 +61,9 @@ export default function App() {
               </RequireAuth>
             }
           >
+            <Route path="/operations" element={<RequireOperations />} />
+            <Route path="/assistant" element={<AssistantPage />} />
+            <Route element={<RequireBusiness />}>
             <Route path="/workbench" element={<WorkbenchPage />} />
             <Route path="/tickets" element={<TicketsPage />} />
             <Route path="/approvals" element={<ApprovalsPage />} />
@@ -60,11 +77,13 @@ export default function App() {
                 </RequireSupervisor>
               }
             />
+            </Route>
           </Route>
           {/* 认不出的路径去工作台；没登录会被 RequireAuth 再送去登录页 */}
           <Route path="*" element={<Navigate to="/workbench" replace />} />
         </Routes>
       </SessionProvider>
+      </ToastProvider>
     </BrowserRouter>
   )
 }

@@ -233,6 +233,36 @@ class BankApiTest {
         assertEquals(null, server.takeRequest().headers["Authorization"])
     }
 
+    @Test
+    fun `申卡换卡请求包含地址与支付密码并带客户身份`() = runBlocking {
+        val bank = BankApi(server.url("/").toString(), tokenProvider = { "test-customer" })
+        val address = MailingAddress("林小满", "13800138000", "上海市", "上海市", "测试路 100 号")
+        server.enqueue(json("""{"id":"new","status":"pending","shippingAddress":{"recipient":"林小满","detail":"测试路 100 号"},"issuingFee":3500}"""))
+        val created = bank.openCard(CardApplication("visa_gold", address, "123456"))
+        val open = server.takeRequest()
+        assertEquals("POST", open.method); assertEquals("/api/cards/open", open.path)
+        assertEquals("Bearer test-customer", open.getHeader("Authorization"))
+        val body = open.body.readUtf8()
+        assertTrue(body.contains("\"productCode\":\"visa_gold\""))
+        assertTrue(body.contains("\"paymentPassword\":\"123456\""))
+        assertTrue(body.contains("测试路 100 号"))
+        assertEquals(3500L, created.issuingFee); assertEquals("林小满", created.shippingAddress?.recipient)
+        server.enqueue(json("""{"id":"replacement","status":"pending"}"""))
+        bank.replaceCard("old", CardReplaceRequest(address, "123456"))
+        val replacement = server.takeRequest()
+        assertEquals("/api/cards/old/replace", replacement.path)
+        assertFalse(replacement.body.readUtf8().contains("productCode"))
+    }
+
+    @Test
+    fun `当前卡密接口使用pan和服务端展示时长`() = runBlocking {
+        server.enqueue(json("""{"pan":"4026880000008888","cvv":"123","expiry":"08/29","revealSeconds":15}"""))
+        val secret = api().revealCardSecrets("c1", "123456")
+        assertEquals("4026880000008888", secret.number)
+        assertEquals(15, secret.revealSeconds)
+        assertFalse(secret.demo)
+    }
+
     // ── 银行卡 ──────────────────────────────────────────────────────────
 
     @Test

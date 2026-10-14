@@ -37,8 +37,8 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
     const payload = text ? (JSON.parse(text) as unknown) : null
 
     if (!res.ok) {
-      const body = payload as { message?: string; code?: string } | null
-      throw new ApiError(body?.message ?? `请求失败（${res.status}）`, res.status, body?.code)
+      const body = payload as { message?: string; error?: string; code?: string } | null
+      throw new ApiError(body?.message ?? body?.error ?? `请求失败（${res.status}）`, res.status, body?.code)
     }
     return payload as T
   } catch (error) {
