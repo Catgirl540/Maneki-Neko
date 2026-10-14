@@ -232,7 +232,7 @@ export function LandingPage() {
     <div className="min-h-svh bg-paper">
       {/* ── 吸顶导航 ─────────────────────────────────────────────────── */}
       <header className="sticky top-7 z-30 border-b border-line bg-paper/95 backdrop-blur-sm">
-        <div className="mx-auto flex min-h-16 max-w-[1120px] flex-wrap items-center gap-2 px-4 py-3 sm:gap-8 sm:px-6">
+        <div className="content-shell content-shell--narrow flex min-h-16 flex-wrap items-center gap-2 py-3 sm:gap-8">
           <Link to="/" aria-label="招财猫银行首页">
             <Logo markClass="h-8 w-8 sm:h-9 sm:w-9" wordClass="text-[19px] sm:text-[21px]" />
           </Link>
@@ -267,7 +267,7 @@ export function LandingPage() {
             <div className="absolute top-40 -left-32 size-[320px] rounded-full bg-gold-wash opacity-70" />
           </div>
 
-          <div className="relative mx-auto max-w-[1120px] px-6 pt-16 pb-14 sm:pt-24 sm:pb-18">
+          <div className="relative content-shell content-shell--narrow pt-16 pb-14 sm:pt-24 sm:pb-18">
             <div className="grid items-center gap-14 lg:grid-cols-[minmax(0,1fr)_380px]">
               <div className="float-up">
                 <h1 className="text-[42px] leading-[1.08] font-bold tracking-[-0.03em] text-ink sm:text-[60px]">
@@ -305,7 +305,7 @@ export function LandingPage() {
 
         {/* ── 三条服务承诺 ───────────────────────────────────────────── */}
         <section className="border-y border-line bg-surface">
-          <div className="mx-auto grid max-w-[1120px] gap-px px-6 sm:grid-cols-3 sm:gap-8 sm:py-10">
+          <div className="content-shell content-shell--narrow grid gap-px sm:grid-cols-3 sm:gap-8 sm:py-10">
             {PROMISES.map(({ Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-4 py-6 sm:py-0">
                 <span className="grid size-10 shrink-0 place-items-center rounded-chip bg-sunk">
@@ -321,7 +321,7 @@ export function LandingPage() {
         </section>
 
         {/* ── 图文交替的功能板块 ─────────────────────────────────────── */}
-        <div className="mx-auto max-w-[1120px] px-6">
+        <div className="content-shell content-shell--narrow">
           {FEATURES.map(({ id, to, linkText, eyebrow, title, lead, points, Preview: Panel, flip }) => (
             <section
               key={id}
@@ -361,7 +361,7 @@ export function LandingPage() {
 
         {/* ── 还有这些 ───────────────────────────────────────────────── */}
         <section className="border-t border-line bg-surface">
-          <div className="mx-auto max-w-[1120px] px-6 py-16 sm:py-20">
+          <div className="content-shell content-shell--narrow py-16 sm:py-20">
             <h2 className="text-[26px] leading-tight font-bold tracking-[-0.02em] text-ink sm:text-[30px]">
               还有这些
             </h2>
@@ -389,7 +389,7 @@ export function LandingPage() {
 
         {/* ── 开户引导 ───────────────────────────────────────────────── */}
         <section className="border-t border-line">
-          <div className="mx-auto max-w-[1120px] px-6 py-16 sm:py-20">
+          <div className="content-shell content-shell--narrow py-16 sm:py-20">
             <h2 className="text-[26px] leading-tight font-bold tracking-[-0.02em] text-ink sm:text-[30px]">
               三步就能用起来
             </h2>
@@ -426,7 +426,7 @@ export function LandingPage() {
 
       {/* ── 页脚 ─────────────────────────────────────────────────────── */}
       <footer className="border-t border-line">
-        <div className="mx-auto max-w-[1120px] px-6 py-10">
+        <div className="content-shell content-shell--narrow py-10">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <Logo markClass="h-8 w-8" wordClass="text-[17px]" />

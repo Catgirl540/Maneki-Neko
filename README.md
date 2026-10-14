@@ -9,6 +9,7 @@
 本仓库包含**网页前端与 Node.js + SQLite HTTP 后端**。开发与生产默认从 `/api` 读取业务数据；浏览器 mock 仅用于显式开启的开发测试。
 银行接口、请求与响应类型以 `app/src/api/contract.ts`、`app/src/api/types.ts` 和
 `app/src/api/http.ts` 为准，业务规则由 `app/src/api/mock/` 与服务端实现共同定义。
+面向调用方的接口文档见 [docs/api/README.md](docs/api/README.md)。
 后端启动与数据说明见 [server/README.md](server/README.md)；
 服务器目录、服务与部署步骤见 [服务器开发交接文档](design/handoff/AGENT-HANDOFF.md)。
 
@@ -206,10 +207,16 @@ node tools/check-agent-http.mjs --browser # 需要 Chromium，可指定 CHROME_P
 | `/analysis` | 账单 | 是 |
 | `/analysis/statistics` / `/analysis/autodebits` | 收支分析 / 自动扣款 | 是 |
 | `/wealth` / `/support` / `/security` | 理财 / 助手 / 我的 | 是 |
+| `/dashboard/savings` | 存钱计划 | 是 |
+| `/exchange` | 多币种换汇 | 是 |
+| `/cashflow` | 工资与备用金 | 是 |
+| `/credit` | 借款与分期 | 是 |
+| `/wealth/cash-management` / `/wealth/investments` / `/wealth/insurance` | 现金管理 / 投资与定投 / 保险保障 | 是 |
+| `/security/identity` / `/security/invitations` / `/security/membership` | 身份认证 / 邀请与奖励 / 会员与订阅 | 是 |
 | `/transactions/:id` | 交易详情（电子回单） | 是 |
 | 其它 | 回落到 `/`（官网） | — |
 
-客户端一级导航统一为账户、理财、助手、我的；账户概览不设置横排子标签，转入与转出各在一个弹窗内完成。入口归属规则见 [前端维护手册](app/README.md#4-常见修改流程)。
+客户端一级导航统一为账户、理财、助手、我的；账户概览首屏是余额主卡 + 五个高频入口（转账 / 账单 / 银行卡 / 存钱计划 / 多币种换汇），其余服务收在「更多服务」分区，不设置横排子标签，转入与转出各在一个弹窗内完成。入口归属规则见 [前端维护手册](app/README.md#4-常见修改流程)。
 
 接口路径是另一回事：`/api/...` 是银行后端，`/agent-api/...` 是 agent 演示服务，
 两者都不是页面。改路径时注意 `tools/check-routes.mjs` 会兜住漏改的链接——
@@ -422,8 +429,42 @@ GET    /api/cards/products          可申请的卡产品（费用与权益由�
 POST   /api/cards/open              申请新卡（扣制卡费 + 邮寄地址 + 支付密码）
 POST   /api/cards/:id/lock          锁卡 / 解锁
 POST   /api/cards/:id/replace       换卡
-PATCH  /api/cards/:id/settings      线上支付 / 境外交易 / 单日限额
+PATCH  /api/cards/:id/settings      消费开关（paymentEnabled）与渠道 / 商户限额
 GET    /api/cards/:id/secrets       查看完整卡号与安全码（需支付密码；见 §12.4）
+POST   /api/cards/:id/virtual       动态一次性卡号（单笔限额 + 有效期；仅创建时返回卡号）
+
+POST   /api/exchange/quote          账户内换汇报价（锁价；目标币种账户不存在则自动开立）
+POST   /api/exchange                执行账户内换汇（需支付密码）
+
+GET    /api/savings/overview        存钱计划总览（目标 / 凑整规则 / 打卡 / 奖励）
+POST   /api/savings/goals           新建储蓄目标
+PATCH  /api/savings/goals/:id       修改储蓄目标
+DELETE /api/savings/goals/:id       删除储蓄目标
+PATCH  /api/savings/roundup         配置消费凑整转存规则
+
+GET    /api/invitations             邀请码 / 好友进度 / 奖励
+GET    /api/membership             会员套餐与当前订阅 / 扣款记录
+POST   /api/membership/subscribe    开通或更换会员套餐
+POST   /api/membership/cancel       取消会员自动续费
+GET    /api/identity/status         身份认证状态与开户验证进度
+POST   /api/identity/ocr            证件 OCR 识别
+POST   /api/identity/liveness       人脸活体核验
+
+GET    /api/cashflow/salary         工资入账计划与到账预测
+PATCH  /api/cashflow/salary         设置发薪日与预计月薪
+GET    /api/cashflow/overdraft      备用金额度与占用
+POST   /api/cashflow/overdraft/activate 开通 / 关闭备用金
+
+GET    /api/credit/overview         授信额度 / 借款产品 / 借款 / 分期 / 信用培养
+POST   /api/credit/loans/apply      申请借款（放款至储蓄账户）
+POST   /api/credit/installments/:transactionId/plan 将某笔消费转分期
+
+GET    /api/wealth/cash-management          活钱余额 / 7 日年化 / 自动转入
+PATCH  /api/wealth/cash-management/sweep    设置活期保留额与自动转入
+GET    /api/wealth/investments              持有市值 / 定投计划 / 可投产品
+POST   /api/wealth/investments/plan         新建定投计划
+GET    /api/wealth/insurance                保单 / 可投保产品
+POST   /api/wealth/insurance/enroll         投保
 
 GET    /api/wealth/products                 理财产品列表
 GET    /api/wealth/products/:code            产品详情（净值/费率/穿透前后资产）
@@ -442,7 +483,11 @@ PATCH  /api/autodebits/:id                    启停自动扣款
 GET    /api/security/overview       安全评分 / 设备 / 日志 / 风控规则
 POST   /api/security/password       重置登录密码
 POST   /api/security/verify
-PATCH  /api/security/rules/:id        开关某条风控规则         身份认证（sms / face）
+PATCH  /api/security/rules/:id        开关某条风控规则
+
+GET    /api/identity/status          身份认证状态
+POST   /api/identity/ocr             OCR 身份核验
+POST   /api/identity/liveness        人脸活体核验
 
 GET    /api/support/messages        客服历史
 POST   /api/support/chat            客服对话
@@ -464,7 +509,7 @@ POST   /api/support/chat            客服对话
 | 账户与转账 → 转数快 / 跨境支付通 | 收款账户 / 手机号 / 电邮 / FPS ID 四种汇款方式，姓名由转数快登记册解析核对 | ✅ |
 | 账户与转账 → 交易详情 / 电子回单 | 任何一笔流水可点进凭证页：商户信息、原币金额与汇率、交易编号与授权码（可复制）、交易前后余额对账，并支持浏览器打印回单 | ✅ |
 | 投资与资产 → 理财 | 风险测评（6 题，有效期一年）、产品超市（现金管理 / 固收 / 混合 / 权益 / 衍生品，R1–R5）、净值走势、费用披露（按日计提 / 一次性分开）、穿透前后前十大资产、申购（适当性硬拦截 + 抄录风险确认 + 支付密码）、赎回 | ✅ |
-| 投资与资产 → 保险 / 贷款 / 股票 / 基金 | — | 未做 |
+| 投资与资产 → 保险 / 贷款 / 股票 / 基金 | 保险保障、现金管理、投资与定投、借款与分期已接入（前端 + mock 后端）；股票未做 | 部分 ✅ |
 | 财务管理 → 消费分析 | 分类占比环形图、近 6 月走势、流水筛选与搜索 | ✅ |
 | 财务管理 → 现金流 | 首页近 7 天 / 30 天双序列面积图（收入金 / 支出蓝） | ✅ |
 | 财务管理 → 自动扣款 | 扣款计划列表 + 启停开关 | ✅ |

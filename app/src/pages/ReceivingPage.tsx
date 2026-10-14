@@ -11,6 +11,8 @@ import { useAsync } from '@/lib/useAsync'
 import { receivingRows, receivingText } from '@/lib/receiving'
 import { copyText } from '@/lib/clipboard'
 import { useToast } from '@/components/ui/toast-context'
+import { ManualCopyModal } from '@/components/ui/ManualCopyModal'
+import { parseAmountInput } from '@/lib/amountInput'
 
 export function ReceivingContent({ onClose, onUpdate, onBusyChange }: {
   onClose: () => void
@@ -21,6 +23,7 @@ export function ReceivingContent({ onClose, onUpdate, onBusyChange }: {
   const info = useAsync(() => api.getReceivingInfo(), [])
   const accounts = useAsync(() => isMockMode ? api.listAccounts() : Promise.resolve([]), [])
   const [demo, setDemo] = useState(false)
+  const [manualText, setManualText] = useState<string | null>(null)
   if (info.error && !info.data) return <DataUnavailable message={info.error} onRetry={info.reload} />
   if (!info.data) return <DataLoading />
   if (demo && isMockMode) return <MoneyInForm accountId={accounts.data?.[0]?.id ?? ''}
@@ -29,9 +32,14 @@ export function ReceivingContent({ onClose, onUpdate, onBusyChange }: {
     <div>
       <ReceivingPanel info={info.data} />
       <div className="mt-6 flex flex-wrap gap-3">
-        <Button variant="primary" onClick={() => { if (info.data) void copyText(receivingText(info.data), '收款信息', toast) }}>复制全部</Button>
+        <Button variant="primary" onClick={() => {
+          if (!info.data) return
+          const text = receivingText(info.data)
+          void copyText(text, '收款信息', toast).then(copied => { if (!copied) setManualText(text) })
+        }}>复制全部</Button>
         {isMockMode && <Button disabled={!accounts.data?.length} onClick={() => setDemo(true)}>模拟一笔转入</Button>}
       </div>
+      <ManualCopyModal text={manualText} label="收款信息" onClose={() => setManualText(null)} />
     </div>
   )
 }
@@ -50,11 +58,15 @@ function MoneyInForm({ accountId, onBack, onDone, onBusyChange }: {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   async function submitDeposit() {
+    if (loading) return
     setError(null)
+    const cents = parseAmountInput(amount)
+    if (cents === null || cents <= 0) { setError('请输入有效转入金额，最多两位小数'); return }
+    if (cents > 5_000_000) { setError('单笔转入金额不能超过 ¥50,000.00'); return }
     setLoading(true)
     onBusyChange(true)
     try {
-      await api.deposit(accountId, Math.round(Number(amount) * 100), channel)
+      await api.deposit(accountId, cents, channel)
       onDone()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '转入失败，请稍后重试')
@@ -69,7 +81,7 @@ function MoneyInForm({ accountId, onBack, onDone, onBusyChange }: {
         autoFocus
         value={amount}
         inputMode="decimal"
-        onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+        onChange={(e) => setAmount(e.target.value)}
         icon={<ArrowDownLeftIcon size={20} />}
         error={error ?? undefined}
         hint="单笔上限 ¥50,000.00"
@@ -129,6 +141,7 @@ function ReceivingPanel({ info }: { info: ReceivingInfo }) {
       <p className="mt-1 text-[12px] leading-relaxed text-ink-mute">
         收款户名需与账户登记一致。
       </p>
+      <p role="status" className="text-[12px] leading-relaxed text-ink-mute">FPS 登记状态待确认，请使用银行账户收款。</p>
     </div>
   )
 }

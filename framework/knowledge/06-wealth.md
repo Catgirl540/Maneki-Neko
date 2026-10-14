@@ -4,7 +4,7 @@ title: "理财测评、开户与申赎"
 navigation: "理财"
 routes: ["/wealth"]
 keywords: ["理财", "风险测评", "申购", "赎回"]
-sources: ["app/src/pages/WealthPage.tsx", "app/src/components/wealth/WealthAccountOpeningModal.tsx", "app/src/lib/wealth.ts", "app/src/api/mock/index.ts", "framework/bridge/bank-agent.mjs"]
+sources: ["app/src/pages/WealthPage.tsx", "app/src/components/wealth/WealthAccountOpeningModal.tsx", "app/src/lib/wealth.ts", "app/src/api/mock/index.ts", "framework/bridge/bank-agent.mjs", "framework/bridge/wealth-risk.mjs", "framework/packages/bank-demo/src/http-tools.ts"]
 ---
 
 ## 理财开户还要重新填姓名和身份证吗？ {#opening}
@@ -13,7 +13,7 @@ sources: ["app/src/pages/WealthPage.tsx", "app/src/components/wealth/WealthAccou
 
 ## 风险测评多久有效？风险等级不够可以买理财吗？ {#risk}
 
-当前风险测评有效期一年，过期需重做。客户 C1 至 C5 分别对应最高 R1 至 R5 的可购买产品等级，不能越级申购。申购前必须已有理财账户和有效测评，助手不能绕过测评或替您选择测评答案。实际有效期和适配结果以页面或查询结果为准。
+当前风险测评有效期一年，过期需重做。未完成测评不等于测评过期：未完成时不能认定已有风险等级或测评历史；只有已完成且失效才称过期。助手查询返回的 unassessed、expired、valid、unknown 分别表示未完成、已过期、有效、状态未知；个人状态必须以工具查询为准。客户 C1 至 C5 分别对应最高 R1 至 R5 的可购买产品等级，不能越级申购。申购前必须已有理财账户和有效测评，助手不能绕过测评或替您选择测评答案。实际有效期和适配结果以页面或查询结果为准。
 
 ## 理财产品收益和净值在哪里看？会保本吗？ {#products}
 

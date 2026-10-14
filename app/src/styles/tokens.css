@@ -16,6 +16,20 @@
      1024px 的断点够不到，桌面模式就还是手机版。960px 能命中 980px。 */
   --breakpoint-lg: 60rem;
 
+  /* —— 布局：容器宽度与间距节奏 ——
+     全站的左右留白、内容最大宽度、区块纵向间距都从这里取。
+     组件层不要再写 max-w-[1280px] / px-4 / gap-6 这类一次性数字，
+     否则同一个产品里会攒出好几套"看起来差不多"的节奏。 */
+  --content-max: 1280px; /* 应用区内的页面 */
+  --content-max-narrow: 1120px; /* 落地页 / 营销页 */
+  --gutter-x: 1rem; /* 移动端左右留白，16 */
+  --gutter-x-sm: 1.5rem; /* ≥640，24 */
+  --gutter-x-lg: 2rem; /* ≥960，32 */
+  --page-y: 1.5rem; /* 应用区上下留白，24 */
+  --page-y-lg: 2rem; /* ≥960，32 */
+  --stack-gap: 1.5rem; /* 区块之间，24 */
+  --stack-gap-lg: 1.75rem; /* ≥640，28 */
+
   /* —— 底色 —— */
   --color-paper: #f7f5f0; /* 页面底色 */
   --color-surface: #ffffff; /* 卡片 */

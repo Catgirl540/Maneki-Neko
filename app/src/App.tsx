@@ -15,6 +15,16 @@ import { LoginPage } from '@/pages/LoginPage'
 import { OpenAccountStandalone } from '@/pages/OpenAccountPage'
 import { SecurityPage } from '@/pages/SecurityPage'
 import { SupportPage } from '@/pages/SupportPage'
+import { SavingsPage } from '@/pages/SavingsPage'
+import { InvitationsPage } from '@/pages/InvitationsPage'
+import { MembershipPage } from '@/pages/MembershipPage'
+import { ExchangePage } from '@/pages/ExchangePage'
+import { IdentityPage } from '@/pages/IdentityPage'
+import { CashflowPage } from '@/pages/CashflowPage'
+import { CreditPage } from '@/pages/CreditPage'
+import { CashManagementPage } from '@/pages/CashManagementPage'
+import { InvestPage } from '@/pages/InvestPage'
+import { InsurancePage } from '@/pages/InsurancePage'
 import { TransactionDetailPage } from '@/pages/TransactionDetailPage'
 import { WealthPage } from '@/pages/WealthPage'
 import { SessionProvider, RequireAuth } from '@/store/session'
@@ -70,11 +80,21 @@ export default function App() {
                   <Route path="/analysis" element={<BillsPage />} />
                   <Route path="/analysis/statistics" element={<AnalysisPage />} />
                   <Route path="/analysis/autodebits" element={<AutoDebitsPage />} />
+                  <Route path="/dashboard/savings" element={<SavingsPage />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
                 </Route>
                 <Route path="/transfer" element={<Navigate to="/dashboard?flow=out" replace />} />
                 <Route path="/wealth" element={<WealthPage />} />
+                <Route path="/wealth/cash-management" element={<CashManagementPage />} />
+                <Route path="/wealth/investments" element={<InvestPage />} />
+                <Route path="/wealth/insurance" element={<InsurancePage />} />
+                <Route path="/exchange" element={<ExchangePage />} />
+                <Route path="/cashflow" element={<CashflowPage />} />
+                <Route path="/credit" element={<CreditPage />} />
                 <Route path="/security" element={<SecurityPage />} />
+                <Route path="/security/identity" element={<IdentityPage />} />
+                <Route path="/security/invitations" element={<InvitationsPage />} />
+                <Route path="/security/membership" element={<MembershipPage />} />
                 <Route path="/support" element={<SupportPage />} />
               </Route>
               {/* 认不出的路径回官网，而不是回总览：没登录的人落到总览只会被再弹去登录页 */}

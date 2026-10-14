@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { bankError } from './bank-error.mjs'
 export { bankError } from './bank-error.mjs'
 import { prepareTransfer, refreshTransfer, fullAccount, fpsIdentifier } from './transfer-agent.mjs'
+import { summarizeRiskAssessment } from './wealth-risk.mjs'
 const enc = encodeURIComponent
 const text = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw bankError(`缺少${label}`)
@@ -358,7 +359,7 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       if (input.toolName === 'bank_get_balance') {
         const cards = await call(entry.bankToken, '/api/cards')
         const overview = await call(entry.bankToken, '/api/wealth/overview')
-        return { dataSource: 'http', accounts: Array.isArray(data) ? data : [data], cards: cards.map(c => ({ id: c.id, last4: c.last4, status: c.status })), holdings: overview.holdings, wealthAccount: overview.account, risk: overview.risk }
+        return { dataSource: 'http', accounts: Array.isArray(data) ? data : [data], cards: cards.map(c => ({ id: c.id, last4: c.last4, status: c.status })), holdings: overview.holdings, wealthAccount: overview.account, risk: summarizeRiskAssessment(overview.risk) }
       }
       if (['bank_list_banks', 'bank_list_payees'].includes(input.toolName)) {
         const query = String(input.arguments.keyword ?? '').trim().toLowerCase()

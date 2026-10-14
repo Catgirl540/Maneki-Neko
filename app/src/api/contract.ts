@@ -54,6 +54,40 @@ import type {
   WealthRedeemResult,
   WealthSubscribeRequest,
   WealthSubscribeResult,
+  Currency,
+  ExchangeQuoteRequest,
+  ExchangeQuote,
+  ExchangeRequest,
+  ExchangeResult,
+  SavingsOverview,
+  SavingsGoal,
+  SavingsGoalRequest,
+  SavingsGoalUpdate,
+  SavingsRuleUpdate,
+  SavingsRoundupRule,
+  VirtualCardRequest,
+  VirtualCard,
+  CardLimitPatch,
+  InvitationsOverview,
+  MembershipOverview,
+  IdentityStatus,
+  IdentityOcrResult,
+  SalaryPlan,
+  SalaryUpdate,
+  OverdraftFacility,
+  CreditOverview,
+  Loan,
+  LoanApplyRequest,
+  InstallmentPlan,
+  InstallmentConvertRequest,
+  CashManagement,
+  CashSweepUpdate,
+  InvestmentsOverview,
+  InvestPlan,
+  InvestPlanRequest,
+  InsuranceOverview,
+  InsurancePolicy,
+  InsuranceEnrollRequest,
 } from './types'
 
 /** 与后端约定的 REST 路径表，mock 与 http 共用，保证两边不跑偏 */
@@ -122,6 +156,42 @@ export const routes = {
 
   supportHistory: () => '/api/support/messages',
   supportChat: () => '/api/support/chat',
+
+  // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
+  exchangeQuote: () => '/api/exchange/quote',
+  exchange: () => '/api/exchange',
+  savingsOverview: () => '/api/savings/overview',
+  savingsGoals: () => '/api/savings/goals',
+  savingsGoal: (id: string) => `/api/savings/goals/${id}`,
+  savingsRoundup: () => '/api/savings/roundup',
+  virtualCard: (id: string) => `/api/cards/${id}/virtual`,
+
+  // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
+  invitations: () => '/api/invitations',
+  membership: () => '/api/membership',
+  membershipSubscribe: () => '/api/membership/subscribe',
+  membershipCancel: () => '/api/membership/cancel',
+  identityStatus: () => '/api/identity/status',
+  identityOcr: () => '/api/identity/ocr',
+  identityLiveness: () => '/api/identity/liveness',
+
+  // —— 工资与备用金 ——
+  salaryPlan: () => '/api/cashflow/salary',
+  overdraft: () => '/api/cashflow/overdraft',
+  overdraftActivate: () => '/api/cashflow/overdraft/activate',
+
+  // —— 借款与分期 ——
+  creditOverview: () => '/api/credit/overview',
+  creditApply: () => '/api/credit/loans/apply',
+  creditInstallment: (transactionId: string) => `/api/credit/installments/${transactionId}/plan`,
+
+  // —— 理财扩展：现金管理 / 投资与定投 / 保险 ——
+  cashManagement: () => '/api/wealth/cash-management',
+  cashManagementSweep: () => '/api/wealth/cash-management/sweep',
+  investments: () => '/api/wealth/investments',
+  investPlan: () => '/api/wealth/investments/plan',
+  insurance: () => '/api/wealth/insurance',
+  insuranceEnroll: () => '/api/wealth/insurance/enroll',
 } as const
 
 export interface TransactionQuery {
@@ -129,6 +199,8 @@ export interface TransactionQuery {
   size?: number
   category?: TransactionCategory | 'all'
   keyword?: string
+  /** 多币种对账：按币种筛选流水 */
+  currency?: Currency | 'all'
 }
 
 export interface BankApi {
@@ -193,7 +265,17 @@ export interface BankApi {
   revealCardSecrets(id: string, paymentPassword: string): Promise<CardSecrets>
   updateCardSettings(
     id: string,
-    patch: Partial<Pick<BankCard, 'onlinePayment' | 'overseasPayment' | 'dailyLimit'>>,
+    patch: Partial<
+      Pick<
+        BankCard,
+        | 'onlinePayment'
+        | 'overseasPayment'
+        | 'dailyLimit'
+        | 'paymentEnabled'
+        | 'channelLimits'
+        | 'merchantLimits'
+      >
+    > & CardLimitPatch,
   ): Promise<BankCard>
 
   // —— 理财（投资与资产）——
@@ -226,6 +308,48 @@ export interface BankApi {
   // —— 智能客服（MVP 为固定话术，后续换真实模型）——
   listSupportMessages(): Promise<SupportMessage[]>
   sendSupportMessage(text: string): Promise<SupportReply>
+
+  // —— 账户域扩展 ——
+  /** 账户内部换汇报价（区别于向外部账户转账）。锁价口径同转账。 */
+  quoteExchange(req: ExchangeQuoteRequest): Promise<ExchangeQuote>
+  /** 执行账户内部换汇；目标币种账户不存在时后端自动开立。 */
+  submitExchange(req: ExchangeRequest): Promise<ExchangeResult>
+  /** 存钱计划总览：目标、凑整规则、打卡、奖励 */
+  getSavingsOverview(): Promise<SavingsOverview>
+  createSavingsGoal(req: SavingsGoalRequest): Promise<SavingsGoal>
+  updateSavingsGoal(id: string, req: SavingsGoalUpdate): Promise<SavingsGoal>
+  deleteSavingsGoal(id: string): Promise<void>
+  updateSavingsRoundup(req: SavingsRuleUpdate): Promise<SavingsRoundupRule>
+  /** 卡详情生成动态一次性卡号 */
+  createVirtualCard(id: string, req: VirtualCardRequest): Promise<VirtualCard>
+
+  // —— 我的域扩展 ——
+  getInvitations(): Promise<InvitationsOverview>
+  getMembership(): Promise<MembershipOverview>
+  subscribeMembership(planId: string): Promise<MembershipOverview>
+  cancelMembership(): Promise<MembershipOverview>
+  getIdentityStatus(): Promise<IdentityStatus>
+  runIdentityOcr(): Promise<IdentityOcrResult>
+  runIdentityLiveness(): Promise<{ verified: boolean; verifiedAt: string }>
+
+  // —— 工资与备用金 ——
+  getSalaryPlan(): Promise<SalaryPlan>
+  updateSalary(req: SalaryUpdate): Promise<SalaryPlan>
+  getOverdraft(): Promise<OverdraftFacility>
+  activateOverdraft(active: boolean): Promise<OverdraftFacility>
+
+  // —— 借款与分期 ——
+  getCreditOverview(): Promise<CreditOverview>
+  applyLoan(req: LoanApplyRequest): Promise<Loan>
+  convertToInstallment(transactionId: string, req: InstallmentConvertRequest): Promise<InstallmentPlan>
+
+  // —— 理财扩展 ——
+  getCashManagement(): Promise<CashManagement>
+  updateCashSweep(req: CashSweepUpdate): Promise<CashManagement>
+  getInvestments(): Promise<InvestmentsOverview>
+  createInvestPlan(req: InvestPlanRequest): Promise<InvestPlan>
+  getInsurance(): Promise<InsuranceOverview>
+  enrollInsurance(req: InsuranceEnrollRequest): Promise<InsurancePolicy>
 }
 
 export class ApiError extends Error {

@@ -44,8 +44,8 @@ import {
   formatAmount,
   formatCurrency,
   formatRate,
-  toCents,
 } from '@/lib/format'
+import { parseAmountInput } from '@/lib/amountInput'
 import { RevealToggle } from '@/components/ui/Reveal'
 import { useToast } from '@/components/ui/toast-context'
 import { useReveal } from '@/lib/useReveal'
@@ -138,7 +138,8 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
 
   // 付款账户：默认用第一个账户（页面不再让用户切换）
   const account = accounts.data?.[0] ?? null
-  const amount: Cents = toCents(amountText || '0')
+  const parsedAmount = parseAmountInput(amountText)
+  const amount: Cents = parsedAmount ?? 0
   const isFps = channel === 'fps'
 
   /** 转数快走香港通道 */
@@ -404,6 +405,10 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
    */
   function goToRecipient() {
     setError(null)
+    if (parsedAmount === null && amountText.trim()) {
+      setError('请输入有效转账金额，最多两位小数')
+      return
+    }
     if (amount <= 0) {
       setError('请输入转账金额')
       return
@@ -429,6 +434,10 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     setError(null)
     setResolved(null)
     setRecipientCheck(null)
+    if (parsedAmount === null && amountText.trim()) {
+      setError('请输入有效转账金额，最多两位小数')
+      return
+    }
     if (amount <= 0) {
       setError('请输入转账金额')
       return
@@ -519,6 +528,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
 
   async function doSubmit() {
     if (!account) return
+    if (parsedAmount === null || amount <= 0) { setError('请输入有效转账金额，最多两位小数'); return }
     setSubmitting(true)
     onBusyChange(true)
     setError(null)
@@ -608,7 +618,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
-    <div ref={content} className="flex flex-col gap-7">
+    <div ref={content} className="page-stack">
       {/* 步骤条 */}
       <ol className="float-up flex items-center gap-1 sm:gap-3">
         {STEPS.map((s, index) => {
@@ -663,7 +673,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 <span className="text-[28px] leading-none font-semibold text-ink-mute">¥</span>
                 <input
                   value={amountText}
-                  onChange={(e) => setAmountText(e.target.value.replace(/[^\d.]/g, ''))}
+                  onChange={(e) => setAmountText(e.target.value)}
                   inputMode="decimal"
                   placeholder="0.00"
                   aria-label="转账金额"

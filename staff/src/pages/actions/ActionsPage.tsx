@@ -10,18 +10,17 @@ import { CARD_STATUS_LABEL, formatCents } from '../customers/labels'
 
 /**
  * 代客办理（清单 §2 P1，乙模块）。
- * 白名单动作（锁卡/解锁/调限额），复用客户端既有业务规则；提交前弹确认。
- * 契约的 CustomerActionRequest 暂缺目标字段，这里本地扩展 cardId/dailyLimit，
- * 后端按额外字段读取（见交付记录 §2 的契约缺口说明）。
+ * 白名单动作（锁卡/解锁/调限额/关闭代扣），复用客户端既有业务规则；提交前弹确认。
+ * 目标字段 cardId/dailyLimit/autoDebitId/enabled 由契约 v1.2 提供（甲 [contract] 补）。
  */
 
-type ActionKey = 'lockCard' | 'unlockCard' | 'updateCardSettings'
-type ActionRequest = CustomerActionRequest & { cardId?: string; dailyLimit?: number }
+type ActionKey = 'lockCard' | 'unlockCard' | 'updateCardSettings' | 'patchAutodebit'
 
 const ACTIONS: Array<{ key: ActionKey; label: string; highImpact: boolean }> = [
   { key: 'lockCard', label: '锁卡', highImpact: false },
   { key: 'unlockCard', label: '解锁卡', highImpact: true },
   { key: 'updateCardSettings', label: '调整单日限额', highImpact: true },
+  { key: 'patchAutodebit', label: '关闭代扣', highImpact: false },
 ]
 
 const DAILY_LIMIT_OPTIONS = [200_000, 500_000, 1_000_000, 5_000_000]
@@ -43,6 +42,7 @@ export function ActionsPage() {
 
   const [action, setAction] = useState<ActionKey>('lockCard')
   const [cardId, setCardId] = useState('')
+  const [autoDebitId, setAutoDebitId] = useState('')
   const [dailyLimit, setDailyLimit] = useState(5_000_000)
   const [ticketId, setTicketId] = useState('')
   const [verificationMethod, setVerificationMethod] = useState<'simulated' | 'sms' | 'face' | 'phone'>('simulated')
@@ -65,28 +65,37 @@ export function ActionsPage() {
     setCustomer(c)
     setProfile(null)
     setCardId('')
+    setAutoDebitId('')
     setDone(null)
     setError(null)
     try {
-      // 选目标卡需要读到卡列表，这一步本身是一次敏感查看，落账走 profile 接口
+      // 选目标卡/代扣需要读到客户档案，这一步本身是一次敏感查看，落账走 profile 接口
       setProfile(await api.getCustomerProfile(c.customerId, '代客办理（选择目标卡）'))
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : '加载客户卡片失败')
+      setError(e instanceof ApiError ? e.message : '加载客户档案失败')
     }
   }
 
   async function submit() {
     if (!customer || !profile) return
-    if (!cardId) return setError('请选择目标卡')
+    if (action === 'patchAutodebit') {
+      if (!autoDebitId) return setError('请选择代扣协议')
+    } else if (!cardId) {
+      return setError('请选择目标卡')
+    }
     if (!ticketId.trim()) return setError('请填写关联工单号')
     if (!reason.trim()) return setError('请填写办理事由')
 
-    const req: ActionRequest = {
+    const req: CustomerActionRequest = {
       ticketId: ticketId.trim(),
       verificationMethod,
       verificationResult,
       reason: reason.trim(),
-      ...(action === 'updateCardSettings' ? { cardId, dailyLimit } : { cardId }),
+      ...(action === 'patchAutodebit'
+        ? { autoDebitId, enabled: false }
+        : action === 'updateCardSettings'
+          ? { cardId, dailyLimit }
+          : { cardId }),
     }
     setSubmitting(true)
     setError(null)
@@ -106,6 +115,7 @@ export function ActionsPage() {
   const selectableCards = (profile?.cards ?? []).filter(
     (c) => c.status === 'active' || c.status === 'locked',
   )
+  const selectableAutoDebits = (profile?.autoDebits ?? []).filter((a) => a.enabled)
   const activeAction = ACTIONS.find((a) => a.key === action)
 
   return (
@@ -230,21 +240,41 @@ export function ActionsPage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="text-sm text-[var(--color-ink-soft)]">
-                目标卡
-                <select
-                  value={cardId}
-                  onChange={(e) => setCardId(e.target.value)}
-                  className="mt-1 block w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm"
-                >
-                  <option value="">请选择</option>
-                  {selectableCards.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      尾号 {c.last4}（{CARD_STATUS_LABEL[c.status] ?? c.status}）
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {action !== 'patchAutodebit' && (
+                <label className="text-sm text-[var(--color-ink-soft)]">
+                  目标卡
+                  <select
+                    value={cardId}
+                    onChange={(e) => setCardId(e.target.value)}
+                    className="mt-1 block w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm"
+                  >
+                    <option value="">请选择</option>
+                    {selectableCards.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        尾号 {c.last4}（{CARD_STATUS_LABEL[c.status] ?? c.status}）
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {action === 'patchAutodebit' && (
+                <label className="text-sm text-[var(--color-ink-soft)]">
+                  代扣协议（关闭后不再自动扣款）
+                  <select
+                    value={autoDebitId}
+                    onChange={(e) => setAutoDebitId(e.target.value)}
+                    className="mt-1 block w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm"
+                  >
+                    <option value="">请选择</option>
+                    {selectableAutoDebits.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.merchant} · {a.cycle} · {formatCents(a.amount)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               {action === 'updateCardSettings' && (
                 <label className="text-sm text-[var(--color-ink-soft)]">
