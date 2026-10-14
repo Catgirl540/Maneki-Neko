@@ -1,0 +1,48 @@
+/* 下载页沿用官网的字体、金色和圆角，只调整这一页的明暗模式。 */
+.android-download {
+  min-height: calc(100dvh - 28px);
+  display: flex;
+  flex-direction: column;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+.download-header {
+  width: 100%;
+  max-width: var(--content-max-narrow);
+  margin: 0 auto;
+  padding: 24px var(--gutter-x);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.download-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 13px; color: var(--color-ink-soft); }
+.download-main { width: 100%; max-width: 520px; margin: auto; padding: 36px 24px 48px; text-align: center; }
+.download-app-icon { width: 92px; height: 92px; margin: 0 auto 28px; }
+.download-main h1 { font-size: clamp(28px, 7.5vw, 36px); font-weight: 700; letter-spacing: -0.025em; line-height: 1.25; }
+.download-lead { margin-top: 14px; font-size: 15px; color: var(--color-ink-soft); line-height: 1.8; }
+.download-features { display: flex; justify-content: center; gap: 28px; margin: 28px 0 36px; color: var(--color-ink-soft); font-size: 14px; }
+.download-features span { display: inline-flex; align-items: center; gap: 7px; }
+.download-action { max-width: 360px; min-height: 180px; margin: 0 auto; }
+.download-button { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 56px; padding: 14px 20px; border-radius: var(--radius-chip); background: var(--color-gold); color: #0e1b26; font-size: 16px; font-weight: 600; transition: filter var(--duration-press); }
+.download-button:hover { filter: brightness(0.94); }
+.download-button:active { filter: brightness(0.88); }
+.download-meta { margin-top: 12px; color: var(--color-ink-soft); font-size: 12px; }
+.download-meta + .download-meta { margin-top: 4px; }
+.download-help { margin-top: 24px; text-align: left; font-size: 13px; color: var(--color-ink-soft); }
+.download-help summary { min-height: 44px; cursor: pointer; padding: 10px 0; color: var(--color-ink); }
+.download-help p { margin-top: 8px; line-height: 1.8; }
+.download-checksum { margin-top: 0; }
+.download-checksum code { display: block; margin-top: 8px; overflow-wrap: anywhere; font-size: 12px; }
+.download-device-note { margin: -8px auto 24px; max-width: 360px; padding: 14px 16px; border: 1px solid var(--color-line); border-radius: var(--radius-field); color: var(--color-ink-soft); font-size: 13px; line-height: 1.8; }
+.download-error { padding: 24px 0; color: var(--color-ink-soft); }
+.download-error button { min-height: 44px; margin-top: 16px; padding: 8px 22px; border: 1px solid var(--color-line-strong); border-radius: var(--radius-chip); color: var(--color-ink); cursor: pointer; }
+.download-footer { padding: 0 24px max(24px, env(safe-area-inset-bottom)); color: var(--color-ink-soft); font-family: var(--font-brand); font-size: 12px; letter-spacing: 0.1em; text-align: center; }
+
+@media (min-width: 640px) { .download-header { padding: 28px var(--gutter-x-sm); } .download-main { padding-top: 48px; padding-bottom: 64px; } }
+@media (prefers-color-scheme: dark) {
+  .android-download { --color-paper: #131c23; --color-surface: #1d2a33; --color-ink: #edf1f3; --color-ink-soft: #b3c0c9; --color-line: #33434d; --color-line-strong: #50616c; }
+}
+@media (prefers-reduced-motion: reduce) { .download-button { transition: none; } }

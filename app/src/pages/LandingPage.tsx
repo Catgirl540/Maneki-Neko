@@ -35,6 +35,7 @@ import {
   ArrowDownLeftIcon,
   BoltIcon,
   CardIcon,
+  DownloadIcon,
   ChartIcon,
   CheckIcon,
   PhoneIcon,
@@ -236,7 +237,7 @@ export function LandingPage() {
           <Link to="/" aria-label="招财猫银行首页">
             <Logo markClass="h-8 w-8 sm:h-9 sm:w-9" wordClass="text-[19px] sm:text-[21px]" />
           </Link>
-          <nav className="hidden items-center gap-6 lg:flex">
+          <nav className="hidden items-center gap-6 xl:flex">
             {NAV.map(({ href, label }) => (
               <a key={href} href={href} className="text-[13px] text-ink-soft transition-colors hover:text-ink">
                 {label}
@@ -244,6 +245,9 @@ export function LandingPage() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
+            <Link to="/download" className="inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-chip px-3 text-[13px] font-medium text-ink hover:bg-sunk">
+              <DownloadIcon size={15} />下载安卓版
+            </Link>
             {/* 已登录时**只留一个**入口：并排放两个都指向同一处的按钮，
                 一主一辅看着像两件不同的事，其实一样 */}
             {!loggedIn && (
@@ -442,6 +446,7 @@ export function LandingPage() {
               ))}
               <Link to="/cards" className="transition-colors hover:text-ink">银行卡</Link>
               <Link to="/security" className="transition-colors hover:text-ink">安全中心</Link>
+              <Link to="/download" className="transition-colors hover:text-ink">下载安卓版</Link>
             </nav>
           </div>
           <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-line pt-6 text-[12px] text-ink-mute">

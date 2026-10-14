@@ -60,3 +60,15 @@ npm --prefix app run dev
 端口被占用时不要重复启动同一个服务；停止服务可在对应终端按 `Ctrl+C`。
 
 上述步骤覆盖网页和 SQLite 银行业务。AI 对话服务已接同一登录账户；还需启动框架桥接服务、编译插件及配置服务端模型密钥，步骤见 [完整 README §2.1](README.md#21-接上-agent-与当前银行账户)。
+
+## 5. 安卓客户端（Flutter）
+
+新版安卓版位于 `mobile/`，按照 Android 设计稿使用「账户、理财、助手、我的」四个入口，直接连接银行 HTTP 与 Agent 服务。旧 `android/` Kotlin 工程保留作迁移参考。
+
+```powershell
+cd mobile
+flutter pub get
+flutter run --dart-define-from-file=config/public-server.json
+```
+
+当前公网接口前缀为 `http://120.48.123.112/bank`；本机模拟器联调用 `config/local-emulator.json`。构建、签名、接口维护与测试见 [Flutter 维护说明](mobile/README.md)。

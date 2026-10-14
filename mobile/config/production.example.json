@@ -1,0 +1,4 @@
+{
+  "BANK_BASE_URL": "https://bank.example.com",
+  "AGENT_BASE_URL": "https://bank.example.com"
+}

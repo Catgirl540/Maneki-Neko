@@ -162,11 +162,24 @@ node tools/check-http-frontend.mjs
 线上客户端部署在 `/bank/`，按以下配置构建：
 
 ```bash
+# 首次发布或更新安卓版时，先构建 APK 并准备官网静态下载文件
+cd mobile
+flutter build apk --debug --dart-define-from-file=config/public-server.json
+cd ..
+npm --prefix app run prepare:android
 npm --prefix app run build:server
 ```
 
+官网导航与页脚提供「下载安卓版」入口，公开地址为 `/bank/download`。Android/iPhone 等手机访问任意客户端路径都会跳到该页，且不挂载账户、登录或助手页面；电脑及平板保留网页功能。设备判断在 `src/lib/device.ts`，使用 UA 与 UA Client Hints，不按窗口宽度拦截。iPhone 显示暂无 iOS 版，不能安装 Android APK。
+
+`tools/package-android-download.mjs` 从 APK 读取版本、包名、最低系统与架构，验证签名，再生成 `app/public/downloads/android.json` 和带哈希名的安装包。可用 `node tools/package-android-download.mjs /绝对路径/app-release.apk` 替换为正式包。APK 与元数据不进 Git；部署时必须上传整个 `app/dist/`，包括 `downloads/`。`build:server` 会核对 APK 是否存在、大小及 SHA-256，缺失时直接失败。新版本使用新的文件名，避免浏览器缓存旧包。
+
+该 `android.json` 也是安卓版应用内更新源。新包必须增加 Flutter 的 build 数字并沿用签名；`mobile/releases/<version>.md` 的可选说明会写入元数据，不能手动伪造版本。更新流程见 [安卓版维护说明](../mobile/README.md#5-应用内更新)。
+
+下载页的加载、错误重试和安装说明在 `src/pages/DownloadPage.tsx`；安装包信息读取失败时不展示下载按钮。运行 `npm --prefix tools ci` 后执行 `node tools/check-android-download.mjs`，验证生产 `/bank/` 构建的桌面入口、手机深链接、完整文件下载校验和故障重试；`CHROME_PATH` 可指定 Chromium。
+
 产物在 `app/dist/`。发布、服务管理和 nginx 配置按[服务器开发交接文档](../design/handoff/AGENT-HANDOFF.md)执行。
-发布后运行 `node tools/check-web-deployment.mjs`，检查 `/bank/`、资源路径与类型、银行和 Agent 代理、深层链接。仅首页返回 200 不能说明网页正常，资源请求可能实际返回其他应用的 HTML。最后在浏览器确认官网与登录页正常显示。
+发布后运行 `node tools/check-web-deployment.mjs`，检查 `/bank/`、资源路径与类型、银行和 Agent 代理、深层链接，以及下载元数据和 APK 文件头。nginx 的 `/bank/downloads/` 应直接提供静态文件，缺失时返回 404；`android.json` 不缓存，带哈希名的 APK 可以长期缓存。仅首页返回 200 不能说明网页正常，资源请求可能实际返回其他应用的 HTML。最后在浏览器确认电脑官网和手机下载安装页。
 
 ## 8. 常见问题
 
