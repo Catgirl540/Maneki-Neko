@@ -42,8 +42,8 @@ export function createHttpApi(): StaffApi {
       post(routes.tickets(), req),
     updateTicketStatus: (id: string, status: TicketStatus, assigneeId?: string) =>
       patch<Ticket>(routes.ticketStatus(id), { status, assigneeId }),
-    postTicketMessage: (id: string, text: string) =>
-      post(routes.ticketMessages(id), { text }),
+    postTicketMessage: (id: string, text: string, opts?: { visibleToCustomer?: boolean }) =>
+      post(routes.ticketMessages(id), { text, visibleToCustomer: opts?.visibleToCustomer ?? false }),
 
     listApprovals: () => get<Approval[]>(routes.approvals()),
     getApproval: (id) => get<Approval>(routes.approval(id)),

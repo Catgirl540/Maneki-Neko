@@ -230,7 +230,7 @@ export function createMockApi(): StaffApi {
       const { messages: _m, ...rest } = t
       return ok<Ticket>(rest)
     },
-    postTicketMessage: (id, text) => {
+    postTicketMessage: (id, text, opts) => {
       const t = tickets.get(id)
       if (!t) return Promise.reject(new ApiError('工单不存在', 404, 'NOT_FOUND'))
       const mid = `msg_${t.messages.length + 1}`
@@ -241,6 +241,8 @@ export function createMockApi(): StaffApi {
         text,
         created_at: new Date().toISOString(),
       })
+      // mock 是最小桩：visibleToCustomer 只保证签名对齐，不做真实投递
+      void opts
       return ok({ messageId: mid })
     },
 

@@ -1,7 +1,8 @@
 /* ==========================================================================
    StaffApi —— 工作人员端前端唯一依赖的接口面
-   版本：v1.2（2026-10-13 补 CustomerActionRequest 目标字段 + CustomerProfile.autoDebits，
-        响应乙交付记录 §4.1/§4.2 的契约缺口；v1.1 仅新增可选字段 Ticket.customerName）
+   版本：v1.3（2026-10-14 postTicketMessage 增加可选 opts.visibleToCustomer，
+        员工留言可投递到客户端收件箱；v1.2 补 CustomerActionRequest 目标字段
+        + CustomerProfile.autoDebits；v1.1 仅新增可选字段 Ticket.customerName）
    变更规则：改签名/字段/错误码 → 单独 commit 带 [contract] 前缀 + 版本号 +1 + 群里广播
    两套实现：createHttpApi / createMockApi，组件只 import { api }
    功能规格：design/staff-console/工作人员端清单.md
@@ -149,7 +150,16 @@ export interface StaffApi {
   createTicket(req: CreateTicketRequest): Promise<{ ticketId: string; status: TicketStatus }>
   /** status 与当前相同 + 传 assigneeId = 纯转派（转给主管），不走状态机 */
   updateTicketStatus(id: string, status: TicketStatus, assigneeId?: string): Promise<Ticket>
-  postTicketMessage(id: string, text: string): Promise<{ messageId: string }>
+  /**
+   * 在工单下留言。
+   * `opts.visibleToCustomer` 为 true 时，这条留言同时投递到该客户的客户端收件箱
+   * （客服页「人工客服」气泡）；默认 false 只是工单内部记录，客户看不到。
+   */
+  postTicketMessage(
+    id: string,
+    text: string,
+    opts?: { visibleToCustomer?: boolean },
+  ): Promise<{ messageId: string }>
 
   listApprovals(): Promise<Approval[]>
   getApproval(id: string): Promise<Approval>
