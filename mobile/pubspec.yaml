@@ -1,0 +1,29 @@
+name: luckycat
+description: 招财猫银行 Flutter 安卓客户端，连接银行 HTTP 与 Agent 服务。
+publish_to: none
+version: 1.0.2+3
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0
+  crypto: ^3.0.7
+  flutter_markdown: ^0.7.7+1
+  image_picker: ^1.2.3
+  record: ^6.2.1
+  audioplayers: ^6.7.1
+  flutter_secure_storage: ^11.2.0
+  lucide_icons: ^0.257.0
+
+dev_dependencies:
+  integration_test:
+    sdk: flutter
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

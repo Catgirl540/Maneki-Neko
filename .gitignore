@@ -48,3 +48,6 @@ android/.gradle/
 android/.kotlin/
 *.apk
 *.aab
+
+# 官网 APK 与元数据由 tools/package-android-download.mjs 生成，随构建产物发布
+/app/public/downloads/
