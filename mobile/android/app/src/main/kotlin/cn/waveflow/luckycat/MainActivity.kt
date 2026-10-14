@@ -20,6 +20,15 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "luckycat/files").setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
+                    "protectCard" -> {
+                        val protect = call.arguments as? Boolean ?: false
+                        if (protect || applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) {
+                            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        } else {
+                            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        }
+                        result.success(null)
+                    }
                     "shareBytes" -> {
                         val data = requireNotNull(call.argument<ByteArray>("data"))
                         require(data.size <= 16 * 1024 * 1024)

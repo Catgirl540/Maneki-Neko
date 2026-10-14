@@ -8,7 +8,8 @@
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
         android:name="${applicationName}"
-        android:icon="@drawable/brand_icon">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round">
         <provider android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.exports"
             android:exported="false" android:grantUriPermissions="true">

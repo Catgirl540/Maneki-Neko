@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../core/api.dart';
+import 'cat_glyph.dart';
 
 abstract final class Palette {
   static const canvas = Color(0xffF7F5F0),
@@ -111,7 +112,10 @@ class CatMark extends StatelessWidget {
       color: Palette.goldSoft,
       borderRadius: BorderRadius.circular(13),
     ),
-    child: Icon(LucideIcons.cat, size: size * .6, color: Palette.goldInk),
+    child: Padding(
+      padding: EdgeInsets.all(size * .1),
+      child: CatGlyph(size: size * .8),
+    ),
   );
 }
 
@@ -299,6 +303,7 @@ class FormFieldSpec {
   final bool secret, optional;
   final TextInputType? keyboard;
   final String? initial;
+  final String? Function(String value)? validator;
   const FormFieldSpec(
     this.key,
     this.label, {
@@ -306,6 +311,7 @@ class FormFieldSpec {
     this.optional = false,
     this.keyboard,
     this.initial,
+    this.validator,
   });
 }
 
@@ -346,7 +352,7 @@ class _ActionFormState extends State<ActionForm> {
   }
 
   Future<void> submit() async {
-    if (!form.currentState!.validate()) return;
+    if (busy || uncertain || !form.currentState!.validate()) return;
     setState(() {
       busy = true;
       error = null;
@@ -368,6 +374,7 @@ class _ActionFormState extends State<ActionForm> {
       );
       Navigator.pop(context, true);
     } catch (e) {
+      if (!mounted) return;
       for (final f in widget.fields.where((f) => f.secret)) {
         controls[f.key]!.clear();
       }
@@ -415,7 +422,7 @@ class _ActionFormState extends State<ActionForm> {
                   decoration: InputDecoration(labelText: f.label),
                   validator: (v) => !f.optional && (v?.trim().isEmpty ?? true)
                       ? '请填写${f.label}'
-                      : null,
+                      : f.validator?.call(v ?? ''),
                 ),
               ),
             if (error != null)

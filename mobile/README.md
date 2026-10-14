@@ -72,6 +72,12 @@ flutter test integration_test/app_test.dart -d emulator-5580 \
 
 官网 `/bank/download` 提供安卓安装包，手机访问网页客户端会统一进入下载页。默认使用 `flutter build apk --debug --dart-define-from-file=config/public-server.json` 生成的通用 APK，兼容 arm64-v8a、armeabi-v7a 与 x86_64。在仓库根目录运行 `npm --prefix app run prepare:android` 后再构建官网，版本和文件大小从 APK 生成。正式包可用 `node tools/package-android-download.mjs /绝对路径/app-release.apk` 替换；后续每次更新安装包都要重新准备并发布整个网页产物，见 [网页维护手册](../app/README.md#7-构建与发布)。
 
+## 图标与银行卡维护
+
+`tools/gen-flutter-brand.mjs` 从网页端 `cat-mark.ts` 生成 Flutter 的 `CatGlyph` 及安卓桌面资源；仓库根目录用 Node 24 运行，可带 `--check` 检查同步。不要修改旧 `android/` 工程来调整 Flutter 客户端。
+
+银行卡管理位于 `lib/pages/cards.dart`。申卡和换卡在支付密码提交前再次显示接口费用；每日限额仅显示后端支持的四档。卡信息只保留在弹窗内，关闭、后台、超时后清除，已失效请求的晚到响应直接丢弃；安卓敏感弹窗在调试版也禁止截图。
+
 ## 5. 应用内更新
 
 1.0.1 起支持启动时检查一次，以及「我的 → 检查更新」。检查失败不打断登录；业务弹窗已经打开时不弹出启动更新提示。点击下载后显示进度，支持取消与失败重试；在应用内返回其他页面时下载继续，进程被系统结束后需重新下载。

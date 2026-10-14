@@ -1,19 +1,34 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import '../core/api.dart';
 import '../core/session.dart';
 import '../ui/common.dart';
+import '../ui/cat_glyph.dart';
 
-class CardsPage extends StatelessWidget {
+class CardsPage extends StatefulWidget {
   final BankSession session;
   const CardsPage({super.key, required this.session});
+  @override
+  State<CardsPage> createState() => _CardsPageState();
+}
+
+class _CardsPageState extends State<CardsPage> {
+  bool opening = false;
+  BankSession get session => widget.session;
   Future<void> apply(
     BuildContext context,
     Future<void> Function() reload,
   ) async {
+    if (opening) return;
+    setState(() => opening = true);
     try {
       final products = objects(await session.bank.call('api/cards/products'));
+      if (products.isEmpty) throw const ApiFailure('暂无可申请的银行卡产品');
+      for (final product in products) {
+        cardFee(product);
+      }
       if (!context.mounted) return;
       await sheet(
         context,
@@ -69,6 +84,7 @@ class CardsPage extends StatelessWidget {
                                 session: session,
                                 title: '申请${p['name']}',
                                 path: 'api/cards/open',
+                                product: p,
                                 extra: {'productCode': p['code']},
                               ),
                             );
@@ -90,6 +106,8 @@ class CardsPage extends StatelessWidget {
       );
     } catch (e) {
       if (context.mounted) notifyError(context, e);
+    } finally {
+      if (mounted) setState(() => opening = false);
     }
   }
 
@@ -104,7 +122,7 @@ class CardsPage extends StatelessWidget {
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton.icon(
-              onPressed: () => apply(context, reload),
+              onPressed: opening ? null : () => apply(context, reload),
               icon: const Icon(LucideIcons.creditCard, size: 18),
               label: const Text('申请新卡'),
             ),
@@ -156,6 +174,39 @@ class _CardControlsState extends State<CardControls> {
     }
   }
 
+  Future<void> replace() async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      final products = objects(
+        await widget.session.bank.call('api/cards/products'),
+      );
+      final product = products
+          .where((p) => p['network'] == widget.card['network'])
+          .firstOrNull;
+      if (product == null) throw const ApiFailure('换卡产品费用暂不可用，请稍后重试');
+      cardFee(product);
+      if (!mounted) return;
+      final done = await sheet(
+        context,
+        AddressForm(
+          session: widget.session,
+          title: '更换银行卡',
+          path: 'api/cards/${widget.card['id']}/replace',
+          product: product,
+        ),
+      );
+      if (done == true) {
+        await widget.reload();
+        await widget.session.refresh();
+      }
+    } catch (e) {
+      if (mounted) notifyError(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = widget.card;
@@ -167,7 +218,9 @@ class _CardControlsState extends State<CardControls> {
           padding: const EdgeInsets.all(22),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            color: c['theme'] == 'gold' ? Palette.gold : Palette.ink,
+            color: ['gold', 'champagne'].contains(c['theme'])
+                ? Palette.gold
+                : Palette.ink,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -183,7 +236,7 @@ class _CardControlsState extends State<CardControls> {
                       ),
                     ),
                   ),
-                  const Icon(LucideIcons.cat, color: Colors.white, size: 24),
+                  const CatGlyph(color: Colors.white, size: 32),
                 ],
               ),
               const SizedBox(height: 30),
@@ -215,7 +268,7 @@ class _CardControlsState extends State<CardControls> {
               ),
               const SizedBox(height: 12),
               Text(
-                statusText(c['status']),
+                c['status'] == 'pending' ? '待激活' : statusText(c['status']),
                 style: const TextStyle(color: Colors.white70, fontSize: 12),
               ),
             ],
@@ -239,12 +292,11 @@ class _CardControlsState extends State<CardControls> {
               for (final (field, label) in [
                 ('onlinePayment', '网上支付'),
                 ('overseasPayment', '境外交易'),
-                ('paymentEnabled', '消费开关'),
               ])
                 SwitchListTile(
                   title: Text(label),
-                  value: c[field] ?? true,
-                  onChanged: busy || terminal
+                  value: c[field] == true,
+                  onChanged: busy || c['status'] != 'active'
                       ? null
                       : (v) =>
                             change('api/cards/${c['id']}/settings', {field: v}),
@@ -253,39 +305,47 @@ class _CardControlsState extends State<CardControls> {
               ListTile(
                 title: const Text('每日限额'),
                 trailing: Text(money(c['dailyLimit'])),
-                onTap: busy || terminal
+                onTap: busy || c['status'] != 'active'
                     ? null
                     : () async {
-                        final done = await sheet(
+                        final selected = await sheet<int>(
                           context,
-                          ActionForm(
-                            title: '每日限额',
-                            fields: [
-                              FormFieldSpec(
-                                'limit',
-                                '金额',
-                                keyboard: const TextInputType.numberWithOptions(
-                                  decimal: true,
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  '每日限额',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                                initial: ((c['dailyLimit'] as num) / 100)
-                                    .toStringAsFixed(2),
-                              ),
-                            ],
-                            submit: (v) => widget.session.bank.call(
-                              'api/cards/${c['id']}/settings',
-                              method: 'PATCH',
-                              body: {'dailyLimit': parseCents(v['limit']!)},
+                                for (final limit in cardDailyLimits)
+                                  ListTile(
+                                    title: Text(money(limit)),
+                                    trailing: limit == c['dailyLimit']
+                                        ? const Icon(LucideIcons.check)
+                                        : null,
+                                    onTap: () => Navigator.pop(context, limit),
+                                  ),
+                              ],
                             ),
                           ),
                         );
-                        if (done == true) await widget.reload();
+                        if (selected != null && mounted) {
+                          await change('api/cards/${c['id']}/settings', {
+                            'dailyLimit': selected,
+                          });
+                        }
                       },
               ),
               const Divider(),
               ListTile(
                 leading: const Icon(LucideIcons.eye, size: 20),
                 title: const Text('查看卡片安全信息'),
-                onTap: terminal
+                onTap: busy || terminal
                     ? null
                     : () => showDialog(
                         context: context,
@@ -297,22 +357,11 @@ class _CardControlsState extends State<CardControls> {
               ListTile(
                 leading: const Icon(LucideIcons.refreshCw, size: 20),
                 title: const Text('更换银行卡'),
-                onTap: terminal
+                onTap:
+                    busy ||
+                        !['active', 'locked', 'pending'].contains(c['status'])
                     ? null
-                    : () async {
-                        final done = await sheet(
-                          context,
-                          AddressForm(
-                            session: widget.session,
-                            title: '更换银行卡',
-                            path: 'api/cards/${c['id']}/replace',
-                          ),
-                        );
-                        if (done == true) {
-                          await widget.reload();
-                          await widget.session.refresh();
-                        }
-                      },
+                    : replace,
               ),
             ],
           ),
@@ -325,17 +374,36 @@ class _CardControlsState extends State<CardControls> {
 class AddressForm extends StatelessWidget {
   final BankSession session;
   final String title, path;
-  final Json extra;
+  final Json extra, product;
   const AddressForm({
     super.key,
     required this.session,
     required this.title,
     required this.path,
+    required this.product,
     this.extra = const {},
   });
   @override
   Widget build(BuildContext context) => ActionForm(
     title: title,
+    submitLabel:
+        '支付 ${money(cardFee(product))} 并${path.endsWith('/replace') ? '换卡' : '申请'}',
+    introduction: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        pair('制卡费', money(product['issuingFee'])),
+        pair('寄送费', money(product['deliveryFee'])),
+        const Text(
+          '费用从储蓄账户扣除，实体卡寄送至下方地址。',
+          style: TextStyle(fontSize: 13, color: Palette.muted),
+        ),
+        if (path.endsWith('/replace'))
+          const Padding(
+            padding: EdgeInsets.only(top: 10),
+            child: Text('换卡后旧卡立即失效、卡号变更；已绑定的自动扣款需重新签约。'),
+          ),
+      ],
+    ),
     fields: [
       FormFieldSpec('recipient', '收件人', initial: session.user?['name']),
       FormFieldSpec(
@@ -343,16 +411,35 @@ class AddressForm extends StatelessWidget {
         '联系电话',
         initial: session.user?['phone'],
         keyboard: TextInputType.phone,
+        validator: (v) =>
+            RegExp(
+              r'^1[3-9][0-9]{9}$',
+            ).hasMatch(v.replaceAll(RegExp(r'\s'), ''))
+            ? null
+            : '请输入 11 位手机号',
       ),
       const FormFieldSpec('region', '省／地区'),
       const FormFieldSpec('city', '城市'),
-      const FormFieldSpec('detail', '详细地址'),
-      const FormFieldSpec('postalCode', '邮政编码', optional: true),
-      const FormFieldSpec(
+      FormFieldSpec(
+        'detail',
+        '详细地址',
+        validator: (v) => v.trim().length >= 5 ? null : '详细地址至少 5 个字',
+      ),
+      FormFieldSpec(
+        'postalCode',
+        '邮政编码',
+        optional: true,
+        validator: (v) =>
+            v.trim().isEmpty || RegExp(r'^[0-9]{6}$').hasMatch(v.trim())
+            ? null
+            : '邮政编码为 6 位数字',
+      ),
+      FormFieldSpec(
         'password',
         '支付密码',
         secret: true,
         keyboard: TextInputType.number,
+        validator: (v) => validCardPassword(v) ? null : '请输入 6 位数字支付密码',
       ),
     ],
     submit: (v) => session.bank.call(
@@ -369,7 +456,7 @@ class AddressForm extends StatelessWidget {
             'detail',
             'postalCode',
           ])
-            k: v[k],
+            k: k == 'phone' ? v[k]!.replaceAll(RegExp(r'\s'), '') : v[k],
         },
         'paymentPassword': v['password'],
       },
@@ -391,16 +478,29 @@ class _SecretDialogState extends State<SecretDialog>
   Json? secret;
   Timer? timer;
   bool busy = false;
+  int generation = 0;
   Object? error;
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    unawaited(protectCard(true));
+  }
+
+  Future<void> protectCard(bool enabled) async {
+    try {
+      await const MethodChannel(
+        'luckycat/files',
+      ).invokeMethod<void>('protectCard', enabled);
+    } on MissingPluginException {
+      /* Widget tests and platforms without the Android host. */
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed && mounted) {
+      generation++;
       timer?.cancel();
       setState(() => secret = null);
       password.clear();
@@ -409,6 +509,8 @@ class _SecretDialogState extends State<SecretDialog>
 
   @override
   void dispose() {
+    generation++;
+    unawaited(protectCard(false));
     WidgetsBinding.instance.removeObserver(this);
     timer?.cancel();
     secret = null;
@@ -418,7 +520,16 @@ class _SecretDialogState extends State<SecretDialog>
   }
 
   Future<void> reveal() async {
-    setState(() => busy = true);
+    if (busy) return;
+    if (!validCardPassword(password.text)) {
+      setState(() => error = '请输入 6 位数字支付密码');
+      return;
+    }
+    final requestGeneration = ++generation;
+    setState(() {
+      busy = true;
+      error = null;
+    });
     try {
       final data = object(
         await widget.session.bank.call(
@@ -427,7 +538,14 @@ class _SecretDialogState extends State<SecretDialog>
           body: {'paymentPassword': password.text},
         ),
       );
-      if (!mounted) return;
+      if (!mounted || requestGeneration != generation) return;
+      final seconds = data['revealSeconds'];
+      if (data['pan'] is! String ||
+          (data['pan'] as String).isEmpty ||
+          seconds is! num ||
+          seconds <= 0) {
+        throw const ApiFailure('卡信息暂不可用，请重试');
+      }
       setState(() {
         secret = data;
         error = null;
@@ -439,33 +557,40 @@ class _SecretDialogState extends State<SecretDialog>
         },
       );
     } catch (e) {
-      if (mounted) setState(() => error = e);
+      if (mounted && requestGeneration == generation) setState(() => error = e);
     } finally {
-      password.clear();
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        password.clear();
+        setState(() => busy = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: const Text('卡片安全信息'),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (secret == null)
-          TextField(
-            controller: password,
-            obscureText: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: '支付密码'),
-          )
-        else ...[
-          pair('卡号', '${secret!['pan']}'),
-          pair('有效期', '${secret!['expiry']}'),
-          pair('安全码', '${secret!['cvv']}'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (secret == null)
+            TextField(
+              controller: password,
+              enabled: !busy,
+              enableSuggestions: false,
+              autocorrect: false,
+              obscureText: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: '支付密码'),
+            )
+          else ...[
+            pair('卡号', '${secret!['pan']}'),
+            pair('有效期', '${secret!['expiry']}'),
+            pair('安全码', '${secret!['cvv']}'),
+          ],
+          if (error != null) Text('$error'),
         ],
-        if (error != null) Text('$error'),
-      ],
+      ),
     ),
     actions: [
       TextButton(
@@ -479,4 +604,14 @@ class _SecretDialogState extends State<SecretDialog>
         ),
     ],
   );
+}
+
+const cardDailyLimits = [200000, 500000, 1000000, 5000000];
+bool validCardPassword(String value) => RegExp(r'^[0-9]{6}$').hasMatch(value);
+int cardFee(Json product) {
+  final issuing = product['issuingFee'], delivery = product['deliveryFee'];
+  if (issuing is! int || delivery is! int || issuing < 0 || delivery < 0) {
+    throw const ApiFailure('卡产品费用暂不可用，请稍后重试');
+  }
+  return issuing + delivery;
 }
