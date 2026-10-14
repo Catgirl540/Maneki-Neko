@@ -28,8 +28,15 @@ import {
 
 const now = '2026-10-09T12:00:00.000Z'
 
-/** 与真实演示客户对齐（db.ts seed：林小满 u_0001），别让 demo 前后名字打架 */
-const CUSTOMER_NAMES: Record<string, string> = { u_0001: '林小满' }
+/** 客户号 → 姓名，建单回显用。与下方 demoCustomers 目录保持一致。 */
+const CUSTOMER_NAMES: Record<string, string> = {
+  u_0001: '林小满',
+  u_demo_chen: '陈嘉禾',
+  u_0002: '苏晚',
+  u_0003: '张伟',
+  u_0004: '王芳',
+  u_0005: '周杰',
+}
 
 interface MockTicket extends Ticket {
   messages: TicketMessage[]
@@ -96,38 +103,104 @@ const demoApproval: Approval = {
   decidedAt: null,
 }
 
-const demoCustomer: CustomerSummary = {
-  customerId: 'u_0001',
-  name: '林小满',
-  phoneMasked: '138****8000',
-  riskTags: ['大额转账关注'],
-}
+/**
+ * 客户目录（脱敏摘要，客户查询列表用）。多放几条，方便测姓名 / 手机号 / 客户号搜索。
+ * u_0001（林小满）与 u_demo_chen（陈嘉禾）对应客户端 db.ts 的真实演示档案，
+ * 其余是 mock 专属测试客户，仅存在于员工端 mock，不会出现在真后端 listAllProfiles()。
+ */
+const demoCustomers: CustomerSummary[] = [
+  { customerId: 'u_0001', name: '林小满', phoneMasked: '138****8000', riskTags: ['大额转账关注'] },
+  { customerId: 'u_demo_chen', name: '陈嘉禾', phoneMasked: '136****6000', riskTags: [] },
+  { customerId: 'u_0002', name: '苏晚', phoneMasked: '139****1234', riskTags: ['频繁转账'] },
+  { customerId: 'u_0003', name: '张伟', phoneMasked: '137****5678', riskTags: ['冻结审查', '大额转账关注'] },
+  { customerId: 'u_0004', name: '王芳', phoneMasked: '135****9012', riskTags: [] },
+  { customerId: 'u_0005', name: '周杰', phoneMasked: '186****3456', riskTags: ['境外交易关注'] },
+]
 
-const demoProfile: CustomerProfile = {
-  customerId: 'u_0001',
-  name: '林小满',
-  phoneMasked: '138****8000',
-  accounts: [{ id: 'acc_1', label: '储蓄账户', balance: 1250000 }],
-  cards: [{ id: 'card_1', last4: '6688', status: 'active' }],
-  autoDebits: [{ id: 'ad_1', merchant: '网易云音乐', amount: 2500, cycle: '每月 8 日', enabled: true }],
-  recentTransactions: [
-    // 挂起中的审核单：靠 pendingReason 区分「审核中」与「处理中」（§9.2）
-    {
-      id: 'txn_demo8000',
-      amount: -800000,
-      counterparty: '转账 · 梁乐怡',
-      status: 'pending',
-      pendingReason: 'inflight',
-      createdAt: now,
-    },
-    {
-      id: 'txn_demo50',
-      amount: -5000,
-      counterparty: '便利店',
-      status: 'success',
-      createdAt: now,
-    },
-  ],
+/** 客户 360：每户一份档案，点开列表里的客户时按 customerId 取（脱敏，不含支付密码/卡安全码）。 */
+const demoProfiles: Record<string, CustomerProfile> = {
+  u_0001: {
+    customerId: 'u_0001',
+    name: '林小满',
+    phoneMasked: '138****8000',
+    accounts: [{ id: 'acc_1', label: '储蓄账户', balance: 1250000 }],
+    cards: [{ id: 'card_1', last4: '6688', status: 'active' }],
+    autoDebits: [{ id: 'ad_1', merchant: '网易云音乐', amount: 2500, cycle: '每月 8 日', enabled: true }],
+    recentTransactions: [
+      // 挂起中的审核单：靠 pendingReason 区分「审核中」与「处理中」（§9.2）
+      {
+        id: 'txn_demo8000',
+        amount: -800000,
+        counterparty: '转账 · 梁乐怡',
+        status: 'pending',
+        pendingReason: 'inflight',
+        createdAt: now,
+      },
+      {
+        id: 'txn_demo50',
+        amount: -5000,
+        counterparty: '便利店',
+        status: 'success',
+        createdAt: now,
+      },
+    ],
+  },
+  u_demo_chen: {
+    customerId: 'u_demo_chen',
+    name: '陈嘉禾',
+    phoneMasked: '136****6000',
+    accounts: [{ id: 'acc_chen', label: '储蓄账户', balance: 800000 }],
+    cards: [{ id: 'card_chen', last4: '4471', status: 'active' }],
+    autoDebits: [],
+    recentTransactions: [
+      { id: 'txn_chen_1', amount: 120000, counterparty: '工资入账', status: 'success', createdAt: now },
+    ],
+  },
+  u_0002: {
+    customerId: 'u_0002',
+    name: '苏晚',
+    phoneMasked: '139****1234',
+    accounts: [{ id: 'acc_su', label: '储蓄账户', balance: 3200000 }],
+    cards: [{ id: 'card_su', last4: '9028', status: 'active' }],
+    autoDebits: [{ id: 'ad_su', merchant: '房租', amount: 450000, cycle: '每月 3 日', enabled: true }],
+    recentTransactions: [
+      { id: 'txn_su_1', amount: 500000, counterparty: '项目款', status: 'success', createdAt: now },
+      { id: 'txn_su_2', amount: -50000, counterparty: '转账 · 陈嘉禾', status: 'success', createdAt: now },
+    ],
+  },
+  u_0003: {
+    customerId: 'u_0003',
+    name: '张伟',
+    phoneMasked: '137****5678',
+    accounts: [{ id: 'acc_zhang', label: '储蓄账户', balance: 450000 }],
+    cards: [{ id: 'card_zhang', last4: '3321', status: 'locked' }],
+    autoDebits: [],
+    recentTransactions: [
+      { id: 'txn_zhang_1', amount: -1500000, counterparty: '转账 · 未知账户', status: 'pending', pendingReason: 'inflight', createdAt: now },
+    ],
+  },
+  u_0004: {
+    customerId: 'u_0004',
+    name: '王芳',
+    phoneMasked: '135****9012',
+    accounts: [{ id: 'acc_wang', label: '储蓄账户', balance: 158000 }],
+    cards: [{ id: 'card_wang', last4: '1123', status: 'active' }],
+    autoDebits: [],
+    recentTransactions: [
+      { id: 'txn_wang_1', amount: -8000, counterparty: '超市', status: 'success', createdAt: now },
+    ],
+  },
+  u_0005: {
+    customerId: 'u_0005',
+    name: '周杰',
+    phoneMasked: '186****3456',
+    accounts: [{ id: 'acc_zhou', label: '储蓄账户', balance: 8900000 }],
+    cards: [{ id: 'card_zhou', last4: '2088', status: 'active' }],
+    autoDebits: [{ id: 'ad_zhou', merchant: 'Netflix', amount: 13900, cycle: '每月 15 日', enabled: true }],
+    recentTransactions: [
+      { id: 'txn_zhou_1', amount: -1200000, counterparty: '境外转账 · Wing Chan', status: 'success', createdAt: now },
+    ],
+  },
 }
 
 const demoLogs: AuditLog[] = [
@@ -277,9 +350,21 @@ export function createMockApi(): StaffApi {
       return ok<Approval>({ ...demoApproval, approvalId: id })
     },
 
-    searchCustomers: (keyword) =>
-      ok<CustomerSummary[]>([demoCustomer].filter((c) => c.name.includes(keyword) || keyword === '')),
-    getCustomerProfile: () => ok<CustomerProfile>(demoProfile),
+    searchCustomers: (keyword) => {
+      // 与真后端（demo-bank searchCustomers）对齐：姓名 / 手机号 / 客户号都能搜，大小写不敏感
+      const kw = String(keyword ?? '').trim().toLowerCase()
+      return ok<CustomerSummary[]>(
+        demoCustomers.filter((c) => {
+          const hay = `${c.name} ${c.phoneMasked} ${c.customerId}`.toLowerCase()
+          return kw === '' || hay.includes(kw)
+        }),
+      )
+    },
+    getCustomerProfile: (id) => {
+      const profile = demoProfiles[id]
+      if (!profile) return Promise.reject(new ApiError('客户不存在', 404, 'NOT_FOUND'))
+      return ok<CustomerProfile>(profile)
+    },
 
     performCustomerAction: (_id: string, _action: string, _req: CustomerActionRequest) => ok({ ok: true as const }),
 
