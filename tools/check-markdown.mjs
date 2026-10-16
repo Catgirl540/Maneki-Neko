@@ -123,7 +123,8 @@ report(/import\('\.\/Markdown'\)/.test(supportPage)
   '智能客服的助手气泡确实用了这个组件（不是写好了没接线）')
 report(/const Markdown = lazy\(/.test(supportPage),
   'Markdown 是懒加载的（约 430KB，不该让全部页面一起背）')
-report(/isUser\s*\?\s*item\.text\s*:\s*\(/.test(supportPage)
+const userBubble = supportPage.slice(supportPage.indexOf('function UserBubble('), supportPage.indexOf('function MessageBubble('))
+report(userBubble.includes('{item.text}') && !userBubble.includes('<Markdown')
   && /Suspense fallback=\{<span className="whitespace-pre-wrap">/.test(supportPage),
   '用户自己说的话仍按纯文本显示（他打的 `#`/`*` 不该变成格式）')
 

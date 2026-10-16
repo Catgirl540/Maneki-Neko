@@ -21,6 +21,7 @@
       "ask_user_question"
     ],
     "sources": [
+      "docs/product/account-model.md",
       "framework/bridge/bank-agent.mjs",
       "framework/packages/bank-demo/src/http-tools.ts",
       "framework/knowledge/03-cards.md",
@@ -32,7 +33,7 @@
 
 ## 适用请求
 
-申请或管理已有银行卡时使用；申请新卡与注册开立储蓄账户是不同业务。
+申请或管理已有银行卡时使用；申请新卡与注册开立储蓄账户是不同业务。每位客户只有一个资金账户，多张银行卡共享该账户；不得为新卡创建账户或描述卡间划转。
 
 ## 必要信息
 

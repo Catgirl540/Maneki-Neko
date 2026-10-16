@@ -9,7 +9,9 @@
     "prepare:android": "node ../tools/package-android-download.mjs",
     "build:server": "node ../tools/package-android-download.mjs --check && VITE_USE_MOCK=false VITE_BASE_PATH=/bank/ VITE_API_BASE_URL=/bank VITE_AGENT_URL=/bank/agent-api npm run build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "check:account-model": "node ../tools/check-account-model-docs.mjs && node --import ../tools/ts-resolve-hook.mjs ../tools/check-single-account.mjs",
+    "prebuild": "node ../tools/check-account-model-docs.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

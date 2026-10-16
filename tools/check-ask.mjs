@@ -499,8 +499,8 @@ try {
     const multiChecks = await multi.locator('input[type="checkbox"]').count()
     const freeOptions = await free.locator('input[type="radio"], input[type="checkbox"]').count()
     const freeCustom = await free.locator('[data-question-custom]').count()
-    report(singleRadios === 2, 'D2 单选题渲染成 2 个 radio', [`实际 ${singleRadios}`])
-    report(multiChecks === 3, 'D3 多选题渲染成 3 个 checkbox', [`实际 ${multiChecks}`])
+    report(singleRadios === 3, 'D2 单选题渲染 2 个选项和自填 radio', [`实际 ${singleRadios}`])
+    report(multiChecks === 4, 'D3 多选题渲染 3 个选项和自填 checkbox', [`实际 ${multiChecks}`])
     report(freeOptions === 0 && freeCustom === 1, 'D4 没给选项的那道题：没有选项，但有自由输入框', [
       `选项 ${freeOptions} 个，输入框 ${freeCustom} 个`,
     ])
@@ -515,6 +515,11 @@ try {
 
   // D6 · 答完三种问法 → 提交可用
   {
+    await page.locator('[data-question-id="single"] label', { hasText: '500 元' }).click()
+    await page.locator('[data-question-id="single"] [data-question-custom]').fill('600 元')
+    report(await page.locator('[data-question-id="single"] input[type="radio"]:checked').count() === 1
+      && await page.locator('[data-question-id="single"]').getByRole('radio', { name: '自己填写', exact: true }).isChecked(),
+      'D6a 自填自动选中，先前单选项取消')
     await page.locator('[data-question-id="single"] label', { hasText: '500 元' }).click()
     await page.locator('[data-question-id="multi"] label', { hasText: '查余额' }).click()
     await page.locator('[data-question-id="multi"] label', { hasText: '看理财' }).click()
@@ -534,7 +539,7 @@ try {
     report(
       JSON.stringify(single?.selected) === JSON.stringify(['500 元'])
       && JSON.stringify([...(multi?.selected ?? [])].sort()) === JSON.stringify(['查余额', '看理财'])
-      && free?.custom === '房租',
+      && single?.custom === undefined && free?.custom === '房租',
       'D7 界面提交的答案（单选 1 个 / 多选 2 个 / 自由输入）原样到达服务端',
       [`收到：${JSON.stringify(answers)}`],
     )

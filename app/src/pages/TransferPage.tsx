@@ -3,7 +3,6 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, ApiError } from '@/api'
 import type {
   Account,
-  BankCard,
   Bank,
   BankRegion,
   CardBinResolution,
@@ -151,7 +150,6 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   } | null>(null)
 
   const accounts = useAsync<Account[]>(() => api.listAccounts(), [])
-  const cards = useAsync<BankCard[]>(() => api.listCards(), [])
   const profile = useAsync<User>(() => api.profile(), [])
   const banks = useAsync<Bank[]>(() => api.listBanks(), [])
   const payees = useAsync<Payee[]>(() => api.listPayees(), [])
@@ -643,7 +641,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     return () => clearInterval(timer)
   }, [result?.holdUntil, resultStatus])
 
-  const requests = [accounts, cards, profile, banks, payees]
+  const requests = [accounts, profile, banks, payees]
   const failed = requests.filter(state => state.error !== null && state.data === null)
   if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
   if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
@@ -748,27 +746,6 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
       {step === 2 && (
         <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
           <Card className="float-up">
-            {!isFps && scope === 'domestic' && (accounts.data?.length ?? 0) > 1 && (
-              <div className="mb-7">
-                <p className="mb-3 text-[13px] font-medium text-ink-soft">转给我的其他银行卡账户</p>
-                <div className="flex flex-wrap gap-2.5">
-                  {accounts.data?.filter((row) => row.id !== account?.id).map((row) => {
-                    const card = cards.data?.find((item) => item.accountId === row.id && item.status !== 'replaced')
-                    return <button key={row.id} type="button"
-                      onClick={() => {
-                        setBankSelection((prev) => ({ ...prev, CN: 'LCB' }))
-                        setAccountNo(formatBankAccount(row.accountNo))
-                        setPayeeName(profile.data?.name ?? '')
-                        setError(null)
-                      }}
-                      className="rounded-chip border border-line px-3.5 py-2.5 text-left text-[13px] text-ink-soft transition-colors hover:border-gold hover:text-gold-deep">
-                      {card?.productName ?? row.label} · 尾号 {card?.last4 ?? row.accountNo.slice(-4)}
-                    </button>
-                  })}
-                </div>
-              </div>
-            )}
-
             {quickPayees.length > 0 && (
               <div className="mb-7">
                 <p className="mb-3 text-[13px] font-medium text-ink-soft">常用收款人</p>

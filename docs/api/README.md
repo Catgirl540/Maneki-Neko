@@ -4,6 +4,8 @@
 客户端只依赖 `app/src/api/contract.ts` 的 `BankApi` 与 `routes` 路径表，
 后端（`server/` + `framework/bridge/`）把同一份契约映射成 `/api/*`。
 
+账户、币种余额与银行卡的关系以 [账户模型约束](../product/account-model.md) 为准；分区 ID 不代表独立开户。
+
 ## 单一事实源
 
 - 路径与接口面：`app/src/api/contract.ts`（`routes` + `BankApi`）

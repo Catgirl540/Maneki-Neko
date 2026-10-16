@@ -19,10 +19,15 @@ const provider=http(async(req,res)=>{
  if(!which){res.writeHead(400);res.end(JSON.stringify({error:{message:'unknown fixture'}}));return}
  const first=(counters[which]=(counters[which]??0)+1)===1
  const tool=fixtures[which]
+ if (tool.failAlways || tool.failAt?.includes(counters[which])) {
+   res.writeHead(tool.status ?? 503, {'content-type':'application/json'})
+   res.end(JSON.stringify({error:{message:'fixture transient failure',type:'server_error'}}));return
+ }
  res.writeHead(200,{'content-type':'text/event-stream'})
  const send=(delta,finish_reason=null)=>res.write(`data: ${JSON.stringify({id:'chatcmpl-test',object:'chat.completion.chunk',created:1,model:'luckycat-test',choices:[{index:0,delta,finish_reason}]})}\n\n`)
- send({role:'assistant',...(first?{tool_calls:[{index:0,id:`call_${which}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]}:{content:'已根据账户服务返回的结果完成处理。'})})
- send({},first?'tool_calls':'stop');res.end('data: [DONE]\n\n')
+ const useTool = first && !!tool.name
+ send({role:'assistant',...(useTool?{tool_calls:[{index:0,id:`call_${which}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]}:{content:'已根据账户服务返回的结果完成处理。'})})
+ send({},useTool?'tool_calls':'stop');res.end('data: [DONE]\n\n')
 }); await new Promise(r=>provider.listen(providerPort,'127.0.0.1',r))
 const start=(file,env)=>{const c=spawn(process.execPath,[file],{cwd:root,env:{...process.env,...env},stdio:['ignore','pipe','pipe']});processes.push(c);c.stdout.on('data',x=>agentLog+=x);c.stderr.on('data',x=>agentLog+=x);return c}
 const bank=`http://127.0.0.1:${bankPort}`, agent=`http://127.0.0.1:${agentPort}`
@@ -34,7 +39,7 @@ try{
  const login=async phone=>{const sms=(await api(bank,'/api/auth/sms-code',null,{phone})).data;return (await api(bank,'/api/auth/login',null,{phone,password:'123456',smsCode:sms.demoCode})).data}
  const a=await login('13800138000'),b=await login('13600136000');const accounts=(await api(bank,'/api/accounts',a.token)).data,other=(await api(bank,'/api/accounts',b.token)).data
  fixtures={fixture_balance:{name:'bank_get_balance',args:{}},fixture_transfer:{name:'bank_transfer',args:{fromAccountId:accounts[0].id,payeeName:b.user.name,payeeAccountNo:other[0].accountNo,payeeBankCode:'LCB',payeeBankRegion:'CN',amountCents:500,memo:'runtime check'}},fixture_question:{name:'ask_user_question',args:{questions:[{id:'purpose',question:'请选择用途',options:[{label:'生活',description:'日常支出'},{label:'其他',description:'其他用途'}]}]}}}
- const patch=join(tmp,'provider.yml');await writeFile(patch,`- id: llm-pi-ai\n  config:\n    providers:\n      test:\n        apiKeyEnv: LUCKYCAT_TEST_KEY\n        api: openai-completions\n        baseURL: http://127.0.0.1:${providerPort}/v1\n        models:\n          - id: luckycat-test\n            name: Test\n            contextWindow: 128000\n- id: luckycat-rag\n  disabled: true\n- id: luckycat-embedding\n  disabled: true\n`)
+ const patch=join(tmp,'provider.yml');await writeFile(patch,`- id: llm-pi-ai\n  config:\n    providers:\n      test:\n        apiKeyEnv: LUCKYCAT_TEST_KEY\n        api: openai-completions\n        baseURL: http://127.0.0.1:${providerPort}/v1\n        retryPolicy:\n          mode: normal\n          maxRetries: 3\n          retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]\n          backoff:\n            initialDelayMs: 250\n            maxDelayMs: 500\n            jitterRatio: 0\n        models:\n          - id: luckycat-test\n            name: Test\n            contextWindow: 128000\n- id: luckycat-rag\n  disabled: true\n- id: luckycat-embedding\n  disabled: true\n`)
  start('framework/bridge/demo-server.mjs',{LUCKYCAT_DEMO_PORT:String(agentPort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_PROVIDER:'test',LUCKYCAT_MODEL:'luckycat-test',LUCKYCAT_TEST_KEY:'test-only',LUCKYCAT_PATCHES:patch,LUCKYCAT_DISABLE_VOICE:'1'})
  await ready(agent,'/agent-api/health',a.token);assert.equal((await api(agent,'/agent-api/health')).status,401);assert.equal((await api(agent,'/consent/challenge',null,{})).status,403)
  const session=(await api(agent,'/agent-api/sessions',a.token,{})).data.sessionId
@@ -70,6 +75,94 @@ try{
  assert.equal((await api(bank,'/api/accounts',b.token)).data[0].balance,other[0].balance+500)
  const modelText=JSON.stringify(modelRequests);assert(!modelText.includes(a.token));assert(!modelText.includes('"888888"'));console.log('PASS Harness 转账只在确认验密后入账，银行令牌和支付密码不进入模型请求')
  tc.abort();await tp
+ // 参数错误与准备失败必须保持为真实工具错误，不能伪装成用户拒绝。
+ const { amountCents: omittedAmount, ...withoutAmount } = fixtures.fixture_transfer.args
+ fixtures.fixture_missing_amount = { name: 'bank_transfer', args: withoutAmount }
+ fixtures.fixture_quote_failure = { name: 'bank_transfer', args: { ...withoutAmount, amountCents: 200000000 } }
+ fixtures.fixture_cancel_transfer = { name: 'bank_transfer', args: { ...withoutAmount, amountCents: 500 } }
+ const unchanged = (await api(bank, '/api/accounts', a.token)).data[0].balance
+ for (const [name, expected] of [['fixture_missing_amount', /amountCents/], ['fixture_quote_failure', /单笔上限/], ['fixture_cancel_transfer', /用户取消了这次操作/]]) {
+   const sid = (await api(agent, '/agent-api/sessions', a.token, {})).data.sessionId
+   let cursor = (await api(agent, `/agent-api/sessions/${sid}/events`, a.token)).data.cursor
+   const received = []
+   let cancelled = false
+   await api(agent, `/agent-api/sessions/${sid}/messages`, a.token, { text: name })
+   for (let i = 0; i < 150; i++) {
+     const batch = (await api(agent, `/agent-api/sessions/${sid}/events?after=${cursor}`, a.token)).data
+     cursor = batch.cursor; received.push(...batch.events)
+     const card = received.find(e => e.type === 'consent')
+     if (name === 'fixture_cancel_transfer' && card && !cancelled) {
+       cancelled = true
+       assert.equal((await api(agent, `/agent-api/consent/${card.challenge.challengeId}`, a.token, { decision: 'reject' })).status, 200)
+     }
+     if (received.some(e => e.type === 'tool-result') && received.some(e => e.type === 'status' && e.status === 'idle')) break
+     await new Promise(r => setTimeout(r, 100))
+   }
+   const failed = received.find(e => e.type === 'tool-result')
+   assert.equal(failed?.isError, true)
+   assert.match(failed.text, expected)
+   assert(!failed.text.includes('the user rejected'))
+   assert.equal(received.some(e => e.type === 'consent'), name === 'fixture_cancel_transfer', '仅有效参数才生成确认卡')
+   assert.equal((await api(bank, '/api/accounts', a.token)).data[0].balance, unchanged)
+   assert(modelRequests.some(req => req.messages.some(message =>
+     typeof message.content === 'string' ? message.content.includes(failed.text)
+       : Array.isArray(message.content) && message.content.some(block => typeof block.text === 'string' && block.text.includes(failed.text)),
+   )), '模型须收到真实失败原因')
+ }
+ console.log('PASS 缺金额与准备失败返回真实原因；用户取消仍拒绝，三类失败均未扣款')
+ fixtures.fixture_auto_recover = { failAt: [1, 2] }
+ fixtures.fixture_auto_exhaust = { failAlways: true }
+ fixtures.fixture_auth_failure = { failAlways: true, status: 401 }
+ fixtures.fixture_auto_payment = { ...fixtures.fixture_transfer, args: { ...withoutAmount, amountCents: 700 }, failAt: [2, 3] }
+ fixtures.fixture_auto_cancel = { failAlways: true }
+ for (const name of ['fixture_auto_recover', 'fixture_auto_exhaust', 'fixture_auth_failure', 'fixture_auto_payment', 'fixture_auto_cancel']) {
+   const sid = (await api(agent, '/agent-api/sessions', a.token, {})).data.sessionId
+   let cursor = (await api(agent, `/agent-api/sessions/${sid}/events`, a.token)).data.cursor
+   const received = []; let answered = false; let stopped = false; let requestsAtStop
+   const before = (await api(bank, '/api/accounts', a.token)).data[0].balance
+   await api(agent, `/agent-api/sessions/${sid}/messages`, a.token, { text: name })
+   for (let i = 0; i < 500; i++) {
+     const batch = (await api(agent, `/agent-api/sessions/${sid}/events?after=${cursor}`, a.token)).data
+     cursor = batch.cursor; received.push(...batch.events)
+     const card = received.find(e => e.type === 'consent')
+     if (card && !answered && name === 'fixture_auto_payment') {
+       answered = true
+       assert.equal((await api(agent, `/agent-api/consent/${card.challenge.challengeId}`, a.token, { decision:'approve', paymentPassword:'888888' })).status, 200)
+     }
+     if (name === 'fixture_auto_cancel' && !stopped && received.some(e => e.type === 'model-retry')) {
+       stopped = true
+       assert.equal((await api(agent, `/agent-api/sessions/${sid}/stop`, a.token, {})).status, 200)
+       requestsAtStop = counters[name]
+     }
+     if (received.some(e => e.type === 'status' && e.status === 'idle')) break
+     await new Promise(r => setTimeout(r, 20))
+   }
+   const progress = received.filter(e => e.type === 'model-retry' && e.phase === 'waiting')
+   assert(progress.every(e => e.maxRetries === 3 && !JSON.stringify(e).includes('fixture transient failure')))
+   assert.equal((await api(bank, '/api/accounts', a.token)).data[0].balance, before - (name === 'fixture_auto_payment' ? 700 : 0))
+   if (name === 'fixture_auto_recover' || name === 'fixture_auto_payment') {
+     assert.equal(progress.length, 2)
+     assert(received.some(e => e.type === 'assistant' && e.text))
+     assert(!received.some(e => e.type === 'error'))
+     assert.equal(counters[name], name === 'fixture_auto_payment' ? 4 : 3)
+     if (name === 'fixture_auto_payment') {
+       assert.equal(received.filter(e => e.type === 'tool-call' && e.name === 'bank_transfer').length, 1)
+       assert.equal(received.filter(e => e.type === 'consent').length, 1)
+     }
+   } else if (name === 'fixture_auto_exhaust') {
+     assert.equal(progress.length, 3); assert.equal(counters[name], 4)
+     assert.match(received.find(e => e.type === 'error')?.message ?? '', /已自动重试 3 次/)
+   } else if (name === 'fixture_auth_failure') {
+     assert.equal(progress.length, 0); assert.equal(counters[name], 1)
+     assert.match(received.find(e => e.type === 'error')?.message ?? '', /认证失败/)
+   } else {
+     assert(stopped && received.some(e => e.type === 'stopped'))
+     assert(!received.some(e => e.type === 'error'))
+     assert.equal(counters[name], requestsAtStop, '停止生效后不继续请求模型')
+     assert(counters[name] < 4, '取消必须先于重试预算耗尽')
+   }
+ }
+ console.log('PASS 自动重试恢复、3次耗尽、认证不重试、停止取消退避；付款后回复重试只扣款一次')
  if (process.argv.includes('--browser')) {
    const { chromium } = await import('playwright-core')
    const { createServer } = await import('../app/node_modules/vite/dist/node/index.js')

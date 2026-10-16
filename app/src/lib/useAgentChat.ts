@@ -26,6 +26,7 @@ import { isMockMode } from './dataMode'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { restoreSession } from './authToken'
 import type { PreparedImage } from './image'
+import { prepareTurnRetry, retryRequestText } from './agentTurns'
 import {
   defaultAgentClient,
   type AgentClient,
@@ -196,6 +197,8 @@ export interface AgentChat {
    * 所以这等于"在同一个上下文里再问一遍"。
    */
   rewind: (itemId: string, text?: string) => void
+  /** 恢复最后一轮失败的请求，保留已执行操作并先核对结果。 */
+  retry: (promptId: string) => void
   /** 答复当前对话待确认的事项。 */
   answer: (decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string, customerVerification?: CustomerVerification) => void
   /**
@@ -229,6 +232,8 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
   const ownerId = options.ownerId ?? restoreSession()?.user.id ?? ''
   const historyOwnerId = options.historyOwnerId ?? (isMockMode ? undefined : ownerId)
   const historyOwnerRef = useRef(historyOwnerId)
+  const retryImage = useRef<{ convId: string; promptId: string; image: PreparedImage } | undefined>(undefined)
+  useEffect(() => { retryImage.current = undefined }, [historyOwnerId])
   const [status, setStatus] = useState<AgentStatus>(agentEnabled ? 'probing' : 'off')
   const [voice, setVoice] = useState<VoiceCapability | undefined>(undefined)
   const [conversations, setConversations] = useState<StoredConversation[]>(() => {
@@ -348,7 +353,22 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
   }, [commit])
 
   const handleEvent = useCallback((convId: string, event: AgentEvent) => {
+    if (['assistant', 'assistant-update', 'tool-call', 'error', 'stopped', 'session-restored'].includes(event.type)
+      || event.type === 'status' && event.status === 'idle') {
+      const current = conversationsRef.current.find(c => c.id === convId)
+      if (current?.items.some(item => item.id === 'model_retry_progress')) {
+        patch(convId, c => ({ ...c, items: c.items.filter(item => item.id !== 'model_retry_progress') }))
+      }
+    }
     switch (event.type) {
+      case 'model-retry': {
+        const count = `${event.attempt}${event.maxRetries ? `/${event.maxRetries}` : ''}`
+        const text = event.phase === 'running' ? `正在自动重试（${count}）`
+          : `${event.reason ?? '模型请求暂时失败'}，${Math.ceil(event.delayMs / 1000)} 秒后自动重试（${count}）`
+        patch(convId, c => ({ ...c, items: [...c.items.filter(item => item.id !== 'model_retry_progress'),
+          { kind: 'notice', id: 'model_retry_progress', tone: 'info', text }] }))
+        return
+      }
       case 'session-restored':
         setPendings(prev => { const next = { ...prev }; delete next[convId]; return next })
         setAsks(prev => { const next = { ...prev }; delete next[convId]; return next })
@@ -409,16 +429,27 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
         const rows = toolRows.current.get(convId)
         const id = rows?.get(event.callId)
         const now = Date.now()
-        patch(convId, conversation => ({
-          ...conversation,
-          updatedAt: now,
-          items: conversation.items.map((item) => {
-            if (item.kind !== 'tool') return item
-            // 有 callId 就精确匹配；没有（上游偶尔不回填）就退回"最后一个还在执行的行"。
-            if (id !== undefined ? item.id !== id : item.state !== 'running') return item
-            return { ...item, state: event.isError ? 'error' : 'done', text: summarize(item.name, event.text, event.isError) }
-          }),
-        }))
+        patch(convId, conversation => {
+          const target = id !== undefined
+            ? conversation.items.find(item => item.id === id && item.kind === 'tool')
+            : conversation.items.findLast(item => item.kind === 'tool' && item.state === 'running')
+          const failureId = target ? `failure_${target.id}` : undefined
+          const failure = event.isError && target?.kind === 'tool' && target.name.startsWith('bank_')
+            && !conversation.items.some(item => item.id === failureId)
+            ? [{ kind: 'notice' as const, id: failureId!, tone: 'error' as const,
+                text: `${toolLabel(target.name)}未完成：${event.text.trim().replace(/^Error:\s*/, '').slice(0, 360)}` }]
+            : []
+          return {
+            ...conversation,
+            updatedAt: now,
+            items: [...conversation.items.map<ChatItem>((item) => {
+              if (item.kind !== 'tool') return item
+              // 有 callId 就精确匹配；没有时只回填最后一个仍在执行的行。
+              if (item.id !== target?.id) return item
+              return { ...item, state: event.isError ? 'error' : 'done', text: summarize(item.name, event.text, event.isError) }
+            }), ...failure],
+          }
+        })
         return
       }
       case 'consent':
@@ -645,15 +676,35 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
 
     // 第一句话定标题；改过名的就不动了。只有图片时用文件名当标题。
     const wasUntitled = conversation.titleEdited !== true && conversation.title === '新对话'
+    const promptId = nextId()
+    if (image) retryImage.current = { convId, promptId, image }
     pushItem(convId, {
       kind: 'user',
-      id: nextId(),
+      id: promptId,
       text: value,
       ...serviceIds === undefined ? {} : { serviceIds: [...serviceIds] },
       ...image === undefined ? {} : { thumb: image.thumb, imageName: image.name },
     })
     if (wasUntitled) patch(convId, c => ({ ...c, title: titleFrom(value === '' ? image?.name ?? '' : value) }))
     dispatch(convId, value, image, serviceIds === undefined ? undefined : [...serviceIds])
+  }, [asks, dispatch, patch, pendings, pushItem, status])
+
+  const retry = useCallback((promptId: string) => {
+    const convId = activeIdRef.current
+    if (status !== 'ready' || !convId || busyRef.current.has(convId) || stoppingRef.current.has(convId)
+      || pendings[convId] || asks[convId]) return
+    const conversation = conversationsRef.current.find(c => c.id === convId)
+    if (!conversation) return
+    const plan = prepareTurnRetry(conversation.items, promptId)
+    if (!plan) return
+    const image = retryImage.current?.convId === convId && retryImage.current.promptId === promptId
+      ? retryImage.current.image : undefined
+    if (plan.prompt.thumb && !image) {
+      pushItem(convId, { kind: 'notice', id: nextId(), tone: 'error', text: '原图已不在当前页面，请重新上传图片后发送；不会只发送文字来代替图片请求。' })
+      return
+    }
+    patch(convId, c => ({ ...c, items: plan.items, updatedAt: Date.now() }))
+    dispatch(convId, retryRequestText(plan.prompt.text), image, plan.prompt.serviceIds)
   }, [asks, dispatch, patch, pendings, pushItem, status])
 
   /**
@@ -669,7 +720,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
   const rewind = useCallback((itemId: string, text?: string) => {
     const convId = activeIdRef.current
     if (status !== 'ready' || convId === undefined) return
-    if (busyRef.current.has(convId) || pendings[convId] !== undefined) return
+    if (busyRef.current.has(convId) || pendings[convId] !== undefined || asks[convId] !== undefined) return
     const conversation = conversationsRef.current.find(c => c.id === convId)
     if (conversation === undefined) return
 
@@ -698,7 +749,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
         : { title: titleFrom(firstUser.text) },
     }))
     dispatch(convId, last.text.trim(), undefined, last.serviceIds)
-  }, [dispatch, patch, pendings, status])
+  }, [asks, dispatch, patch, pendings, status])
 
   const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string, customerVerification?: CustomerVerification) => {
     const convId = activeIdRef.current
@@ -888,6 +939,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
     activeIsEmpty: active !== undefined && isEmptyConversation(active),
     send,
     rewind,
+    retry,
     answer,
     answerAsk,
     create,

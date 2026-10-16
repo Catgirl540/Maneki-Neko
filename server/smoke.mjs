@@ -85,34 +85,10 @@ try {
   assert.ok(!JSON.stringify(beforeCards.data).includes('cvv'))
   const demoCards = ['8888', '3366', '2046'].map((last4) => beforeCards.data.find((card) => card.last4 === last4))
   assert.ok(demoCards.every(Boolean))
-  assert.equal(new Set(demoCards.map((card) => card.accountId)).size, 3)
-  const [first, second, third] = demoCards.map((card) => accounts.data.find((row) => row.id === card.accountId))
-  assert.ok(first && second && third)
-  assert.equal(second.balance, 0)
-  assert.equal(third.balance, 0)
-  const transferOne = await call('/api/transfers', { method: 'POST', token, body: {
-    fromAccountId: first.id, channel: 'bank', scope: 'domestic', payeeName: '林小满',
-    amount: 10_000, memo: '卡间划转测试', payeeBankCode: 'LCB', payeeBankRegion: 'CN',
-    payeeAccountNo: second.accountNo,
-  } })
-  assert.equal(transferOne.status, 200, JSON.stringify(transferOne.data))
-  assert.equal(transferOne.data.fee, 0)
-  const transferTwo = await call('/api/transfers', { method: 'POST', token, body: {
-    fromAccountId: second.id, channel: 'bank', scope: 'domestic', payeeName: '林小满',
-    amount: 4_000, memo: '第二次卡间划转', payeeBankCode: 'LCB', payeeBankRegion: 'CN',
-    payeeAccountNo: third.accountNo,
-  } })
-  assert.equal(transferTwo.status, 200, JSON.stringify(transferTwo.data))
-  const moved = await call('/api/accounts', { token })
-  assert.equal(moved.data.find((row) => row.id === first.id).balance, first.balance - 10_000)
-  assert.equal(moved.data.find((row) => row.id === second.id).balance, 6_000)
-  assert.equal(moved.data.find((row) => row.id === third.id).balance, 4_000)
-  const secondLedger = await call(`/api/accounts/${second.id}/transactions`, { token })
-  const thirdLedger = await call(`/api/accounts/${third.id}/transactions`, { token })
-  assert.equal(secondLedger.data.total, 2)
-  assert.equal(thirdLedger.data.total, 1)
-  assert.equal(secondLedger.data.items[0].direction, 'out')
-  assert.equal(secondLedger.data.items[1].direction, 'in')
+  assert.equal(accounts.data.length, 1)
+  assert.equal(new Set(demoCards.map((card) => card.accountId)).size, 1)
+  const first = accounts.data[0]
+  assert(demoCards.every(card => card.accountId === first.id))
   const selfTransfer = await call('/api/transfers', { method: 'POST', token, body: {
     fromAccountId: first.id, channel: 'bank', scope: 'domestic', payeeName: '林小满',
     amount: 100, memo: '', payeeBankCode: 'LCB', payeeBankRegion: 'CN',
@@ -133,9 +109,9 @@ try {
   assert.equal(afterCards.data.length, beforeCards.data.length + 1)
   const fee = products.data[0].issuingFee + products.data[0].deliveryFee
   const afterAccounts = await call('/api/accounts', { token })
-  assert.equal(afterAccounts.data[0].balance, accounts.data[0].balance - 10_000 - fee)
+  assert.equal(afterAccounts.data[0].balance, accounts.data[0].balance - fee)
   const afterTransactions = await call(`/api/accounts/${accounts.data[0].id}/transactions?size=100`, { token })
-  assert.equal(afterTransactions.data.total, transactions.data.total + 1 + (fee > 0 ? 1 : 0))
+  assert.equal(afterTransactions.data.total, transactions.data.total + (fee > 0 ? 1 : 0))
   const revealPending = await call(`/api/cards/${opened.data.id}/secrets`, {
     method: 'POST', token, body: { paymentPassword: '888888' },
   })
@@ -240,16 +216,14 @@ try {
   assert.equal(toPerson.status, 200, JSON.stringify(toPerson.data))
   assert.equal(toPerson.data.settlementStatus, 'success')
   const byCard = await call('/api/transfers', { method: 'POST', token, body: {
-    fromAccountId: second.id, channel: 'bank', scope: 'domestic', payeeName: '陈嘉禾',
+    fromAccountId: first.id, channel: 'bank', scope: 'domestic', payeeName: '陈嘉禾',
     amount: 1_000, memo: '按卡号转账', payeeBankCode: 'LCB', payeeBankRegion: 'CN',
     payeeAccountNo: pan,
   } })
   assert.equal(byCard.status, 200, JSON.stringify(byCard.data))
   const senderAfter = await call('/api/accounts', { token })
   assert.equal(senderAfter.data.find((row) => row.id === first.id).balance,
-    senderBefore.data.find((row) => row.id === first.id).balance - 2_500)
-  assert.equal(senderAfter.data.find((row) => row.id === second.id).balance,
-    senderBefore.data.find((row) => row.id === second.id).balance - 1_000)
+    senderBefore.data.find((row) => row.id === first.id).balance - 3_500)
   const chenAfter = await call('/api/accounts', { token: chenToken })
   assert.equal(chenAfter.data[0].balance, chenBefore.data[0].balance + 3_500)
   const chenLedger = await call(`/api/accounts/${chenAfter.data[0].id}/transactions`, { token: chenToken })

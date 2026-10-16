@@ -101,6 +101,8 @@ import type {
   InsurancePolicy,
 } from '../types'
 import {
+  ledgerBalances,
+  findBalance,
   CARD_PAYMENT_METHOD,
   DEFAULT_PAY_PASSWORD,
   CARD_PRODUCTS,
@@ -117,6 +119,7 @@ import {
   fxRate,
   loadDb,
   findProfileByPhone,
+  findProfileByUserId,
   findRecipientByNumber,
   persistRelatedProfiles,
   forgetProfilePhone,
@@ -175,7 +178,9 @@ const CHANNEL_NOTE = {
 } as const
 
 function findAccount(id: string): Account {
-  const account = loadDb().accounts.find((a) => a.id === id)
+  const db = loadDb()
+  const resolved = db.accountAliases?.[id] ?? id
+  const account = findBalance(db, resolved)
   if (!account) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
   return withDerived(account)
 }
@@ -201,7 +206,8 @@ function withDerived(account: Account): Account {
   const net = loadDb()
     .transactions.filter((t) => t.accountId === account.id && localMonth(t.createdAt) === month)
     .reduce((sum, t) => sum + t.signedAmount, 0)
-  return { ...account, monthNetChange: net }
+  const primary = loadDb().accounts[0]
+  return { ...account, accountNo: primary?.accountNo ?? account.accountNo, label: account.id === primary?.id ? account.label : `${account.currency} 余额`, monthNetChange: net }
 }
 
 /**
@@ -330,7 +336,7 @@ function nextPaydayFrom(day: number): string {
 
 function settlementAccount(db: MockDb): Account {
   return (
-    db.accounts.find((a) => a.id === db.wealthAccount.settlementAccountId) ?? db.accounts[0]
+    findBalance(db, db.wealthAccount.settlementAccountId) ?? db.accounts[0]
   )
 }
 
@@ -380,7 +386,7 @@ function pushTransaction(
  * 改副本只会让接口响应里余额变了、库里没变，刷新后金额又跳回去。
  */
 function applyBalance(accountId: string, delta: Cents, save = true): void {
-  const row = loadDb().accounts.find((a) => a.id === accountId)
+  const row = findBalance(loadDb(), accountId)
   if (!row) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
   if (!Number.isSafeInteger(delta) || !Number.isSafeInteger(row.balance + delta) || !Number.isSafeInteger(row.available + delta) || row.balance + delta < 0 || row.available + delta < 0) throw new ApiError('余额变动无效', 400, 'INVALID_AMOUNT')
   row.balance += delta
@@ -702,6 +708,8 @@ export function createMockApi(options?: {
       }
       next.passwordDigest = await passwordDigest(req.password)
       next.accounts = [account]
+      next.currencyBalances = []
+      next.accountAliases = {}
       Object.assign(next, emptyCustomerDomains(next.user, account.id))
       next.transactions = []
       // 新用户不能继承当前档案的演示收款人或支付密码状态。
@@ -732,7 +740,8 @@ export function createMockApi(options?: {
 
     async listAccounts() {
       await delay(160)
-      return loadDb().accounts.map(withDerived)
+      const db = loadDb()
+      return db.accounts.map(account => ({ ...withDerived(account), currencyBalances: ledgerBalances(db).map(row => ({ ...withDerived(row), accountNo: account.accountNo, label: row.currency === account.currency ? account.label : `${row.currency} 余额` })) }))
     },
 
     async getAccount(id) {
@@ -743,7 +752,7 @@ export function createMockApi(options?: {
     async listTransactions(accountId, query: TransactionQuery = {}) {
       await delay(180)
       const { page = 1, size = 8, category = 'all', keyword = '' } = query
-      findAccount(accountId)
+      accountId = findAccount(accountId).id
       let rows = loadDb().transactions.filter((t) => t.accountId === accountId)
       if (category !== 'all') rows = rows.filter((t) => t.category === category)
       if (keyword.trim()) {
@@ -755,7 +764,7 @@ export function createMockApi(options?: {
       }
       // 多币种对账：账户是单币种的，币种对不上就没有可对账的流水
       if (query.currency && query.currency !== 'all') {
-        const acc = loadDb().accounts.find((a) => a.id === accountId)
+        const acc = findBalance(loadDb(), accountId)
         if (acc && acc.currency !== query.currency) rows = []
       }
       const start = (page - 1) * size
@@ -775,7 +784,7 @@ export function createMockApi(options?: {
       if (!rec) throw new ApiError('交易不存在或已超出可查询期限', 404, 'TX_NOT_FOUND')
 
       // 余额按账户**当前**余额回推，所以在转账 / 转入之后看到的仍然是对的
-      const account = db.accounts.find((a) => a.id === rec.accountId)
+      const account = findBalance(db, rec.accountId)
       const ordered = withBalances(
         db.transactions
           .filter((t) => t.accountId === rec.accountId)
@@ -789,6 +798,7 @@ export function createMockApi(options?: {
       await delay(320)
       const db = loadDb()
       const account = findAccount(accountId)
+      accountId = account.id
 
       // 交易后余额按当前余额回推：导出的表里余额列必须自洽，否则对不了账
       const ordered = withBalances(
@@ -918,11 +928,11 @@ export function createMockApi(options?: {
     async getReceivingInfo(): Promise<ReceivingInfo> {
       await delay(140)
       const db = loadDb()
-      const account = db.accounts.find(a => db.fpsRegistrations.some(r => r.accountId === a.id)) ?? db.accounts[0]
+      const account = ledgerBalances(db).find(a => db.fpsRegistrations.some(r => r.accountId === a.id)) ?? db.accounts[0]
       return {
         holder: db.user.name,
-        accountNo: account.accountNo,
-        accountLabel: account.label,
+        accountNo: db.accounts[0].accountNo,
+        accountLabel: db.accounts[0].label,
         bankName: db.fpsRegistrations.some(r => r.accountId === account.id) ? '招财猫银行（香港模拟通道）' : '招财猫银行',
         bankRegion: db.fpsRegistrations.some(r => r.accountId === account.id) ? 'HK' : 'CN',
         fpsRegistered: db.fpsRegistrations.some(r => r.accountId === account.id),
@@ -988,7 +998,7 @@ export function createMockApi(options?: {
       const db = loadDb()
       // 询价必须针对具体账户：可用余额与扣账币种都取决于它
       const current =
-        db.accounts.find((a) => a.id === req.fromAccountId) ?? db.accounts[0]
+        findBalance(db, req.fromAccountId) ?? db.accounts[0]
       const isFps = req.channel === 'fps'
       const singleLimit = isFps ? FPS_SINGLE_LIMIT : BANK_SINGLE_LIMIT
 
@@ -1132,7 +1142,7 @@ export function createMockApi(options?: {
       if (reviewThreshold !== undefined && total >= reviewThreshold) {
         const holdUntil = new Date(Date.now() + holdWindowMs).toISOString()
         // 本金与手续费一起预留，避免手续费在窗口内被花掉；到账时才实际扣款。
-        const senderRow = loadDb().accounts.find((row) => row.id === req.fromAccountId)
+        const senderRow = findBalance(loadDb(), req.fromAccountId)
         if (senderRow) {
           senderRow.available -= total
           if (senderRow.available < 0) {
@@ -1187,7 +1197,10 @@ export function createMockApi(options?: {
 
       // 同一客户名下的本行账户划转：两边余额和台账在一次持久化中更新。
       const fpsRecipient = isFps && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod ?? 'mobile', req.fpsId ?? '') : undefined
-      const recipient = fpsRecipient?.accountNo ? findRecipientByNumber(fpsRecipient.accountNo) : !isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN' ? findRecipientByNumber(req.payeeAccountNo ?? '') : null
+      const fpsProfile = fpsRecipient?.customerId ? findProfileByUserId(fpsRecipient.customerId) : null
+      const fpsBalance = fpsProfile && fpsRecipient?.balanceId ? findBalance(fpsProfile, fpsRecipient.balanceId) : null
+      if (fpsRecipient?.customerId && (!fpsProfile || !fpsBalance)) throw new ApiError('收款币种余额不可用', 409, 'RECIPIENT_NOT_FOUND')
+      const recipient = fpsProfile && fpsBalance ? { profile: fpsProfile, account: fpsBalance, card: null } : !isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN' ? findRecipientByNumber(req.payeeAccountNo ?? '') : null
       if (!isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' &&
           req.payeeBankRegion === 'CN' && !recipient) {
         throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND')
@@ -1202,7 +1215,7 @@ export function createMockApi(options?: {
         if (req.payeeName.trim() !== (isFps ? hideMiddle(recipient.profile.user.name) : recipient.profile.user.name)) {
           throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH')
         }
-        const sender = db.accounts.find((row) => row.id === account.id)!
+        const sender = findBalance(db, account.id)!
         sender.balance -= req.amount
         sender.available -= req.amount
         recipient.account.balance += req.amount
@@ -1216,7 +1229,7 @@ export function createMockApi(options?: {
           category: 'transfer', createdAt, status: 'success',
         }, {
           channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: sender.label,
-          accountLabel: sender.label, accountNo: sender.accountNo,
+          accountLabel: sender.label, accountNo: db.accounts[0].accountNo,
           settleCurrency: sender.currency, counterpartyName: req.payeeName.trim(),
           counterpartyAccountNo: maskBankAccount(req.payeeAccountNo ?? ''),
           counterpartyBank: '招财猫银行', location: '招财猫银行 App',
@@ -1232,9 +1245,9 @@ export function createMockApi(options?: {
           detail: {
             referenceNo: makeReferenceNo(incomingId), balanceBefore: 0, balanceAfter: 0,
             channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: recipient.account.label,
-            accountLabel: recipient.account.label, accountNo: recipient.account.accountNo,
+            accountLabel: recipient.account.label, accountNo: recipient.profile.accounts[0].accountNo,
             settleCurrency: recipient.account.currency, counterpartyName: db.user.name,
-            counterpartyAccountNo: maskBankAccount(sender.accountNo),
+            counterpartyAccountNo: maskBankAccount(db.accounts[0].accountNo),
             counterpartyBank: '招财猫银行', location: '招财猫银行 App',
             remark: req.memo.trim() || undefined,
           },
@@ -1655,7 +1668,7 @@ export function createMockApi(options?: {
       }
 
       // —— 绑定资金账户：申赎款项都走它 ——
-      const settlement = db.accounts.find((a) => a.id === req.settlementAccountId)
+      const settlement = findBalance(db, req.settlementAccountId)
       if (!settlement) throw new ApiError('请选择资金账户', 400, 'SETTLEMENT_REQUIRED')
 
       // 兼容旧演示档案：仅在开户成功时清理未开户期间残留的持仓。
@@ -2146,7 +2159,7 @@ export function createMockApi(options?: {
     async quoteExchange(req): Promise<ExchangeQuote> {
       await delay(180)
       const db = loadDb()
-      const from = db.accounts.find((a) => a.id === req.fromAccountId)
+      const from = findBalance(db, req.fromAccountId)
       if (!from) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
       if (req.toCurrency === from.currency) {
         throw new ApiError('目标币种与扣账币种相同', 400, 'SAME_CURRENCY')
@@ -2157,7 +2170,7 @@ export function createMockApi(options?: {
       }
       const rate = fxRate(from.currency, req.toCurrency)
       const toAmount = Math.round(req.amount * rate)
-      const target = db.accounts.find((a) => a.currency === req.toCurrency)
+      const target = ledgerBalances(db).find((a) => a.currency === req.toCurrency)
       for (const [id, quote] of exchangeQuotes) if (quote.expiresAt <= Date.now()) exchangeQuotes.delete(id)
       const quoteId = crypto.randomUUID()
       exchangeQuotes.set(quoteId, { ownerId: db.user.id, accountId: from.id, amount: req.amount, toCurrency: req.toCurrency, rate, expiresAt: Date.now() + FX_QUOTE_TTL * 1000 })
@@ -2173,7 +2186,7 @@ export function createMockApi(options?: {
           quoteTtlSeconds: FX_QUOTE_TTL,
           quotedAt: new Date().toISOString(),
         },
-        toAccountNo: target ? target.accountNo : '将自动开立',
+        toAccountNo: db.accounts[0].accountNo,
         toAvailableAfter: (target?.available ?? 0) + toAmount,
       }
     },
@@ -2181,7 +2194,7 @@ export function createMockApi(options?: {
     async submitExchange(req): Promise<ExchangeResult> {
       await delay(420)
       const db = loadDb()
-      const from = db.accounts.find((a) => a.id === req.fromAccountId)
+      const from = findBalance(db, req.fromAccountId)
       if (!from) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
       verifyPayPassword(req.paymentPassword)
       const confirmed = exchangeQuotes.get(req.quoteId)
@@ -2197,20 +2210,21 @@ export function createMockApi(options?: {
       }
       const rate = fxRate(from.currency, req.toCurrency)
       const toAmount = Math.round(req.amount * rate)
-      let target = db.accounts.find((a) => a.currency === req.toCurrency)
+      let target = ledgerBalances(db).find((a) => a.currency === req.toCurrency)
       if (!target) {
         target = {
-          id: nextId('acc'),
+          id: nextId('balance'),
           kind: 'savings',
-          label: `${req.toCurrency} 储蓄账户`,
-          accountNo: `882000${String(Math.floor(1e12 + Math.random() * 9e12))}`,
+          label: `${req.toCurrency} 余额`,
+          accountNo: `ledger:${db.user.id}:${req.toCurrency}`,
           currency: req.toCurrency,
           balance: 0,
           available: 0,
           interestRate: 0.0155,
           monthNetChange: 0,
         }
-        db.accounts.push(target)
+        db.currencyBalances ??= []
+        db.currencyBalances.push(target)
       }
       applyBalance(from.id, -req.amount, false)
       applyBalance(target.id, toAmount, false)
@@ -2232,7 +2246,7 @@ export function createMockApi(options?: {
           channel: 'account',
           paymentMethod: '账户内换汇',
           accountLabel: from.label,
-          accountNo: from.accountNo,
+          accountNo: db.accounts[0].accountNo,
           settleCurrency: from.currency,
           counterpartyName: '账户内换汇',
           originAmount: req.amount,
@@ -2258,7 +2272,7 @@ export function createMockApi(options?: {
           channel: 'account',
           paymentMethod: '账户内换汇',
           accountLabel: target.label,
-          accountNo: target.accountNo,
+          accountNo: db.accounts[0].accountNo,
           settleCurrency: target.currency,
           counterpartyName: '账户内换汇',
           originAmount: req.amount,
@@ -2763,7 +2777,7 @@ export interface HeldTransferInfo {
 
 /** 解冻本次实际预留金额；兼容只冻结本金的旧指令。 */
 function releaseFreeze(db: ReturnType<typeof loadDb>, rec: TransactionRecord) {
-  const row = db.accounts.find((a) => a.id === rec.accountId)
+  const row = findBalance(db, rec.accountId)
   if (row) {
     row.available += rec.heldFrozenAmount ?? rec.amount
     if (row.available > row.balance + 0) {

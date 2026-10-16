@@ -88,7 +88,7 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 
 - `/dashboard`：智能首页；`/support` 为同一智能首页的兼容地址。
 - `/transfer`：独立转账任务页，复用 `TransferForm` 的报价、收款人核验与支付确认。
-- `/accounts`：账户余额、其他资金账户、近期交易；转入和转出弹窗仍可在此打开。
+- `/accounts`：唯一账户的余额、各币种余额、近期交易；转入和转出弹窗仍可在此打开。
 - `/cards`：卡片列表、锁卡/换卡、交易设置、验证后查看安全信息。
 - `/analysis`、`/analysis/statistics`、`/analysis/autodebits`：流水、消费分析、自动扣款。
 - `/wealth`：理财产品、风险测评与开户；存钱、现金管理、定投另有可见入口。
@@ -144,6 +144,16 @@ node tools/check-http-frontend.mjs
 转入页当前仅展示和复制银行账户资料；接口未提供 FPS 登记归属与状态，确认前不分享 FPS 手机号或 ID。HTTP 下录音不可用时显示原因；复制先尝试兼容方式，失败后可手动选择文本。
 事件流连接释放与失败重试运行 `node tools/check-agent-connections.mjs`；连续新建对话必须关闭上一段空闲连接，握手失败必须停止重连。
 事件流首帧被缓冲或中途断开时，自动切换到 `/sessions/:id/events` 短请求，按游标续取事件；运行 `node tools/check-agent-polling.mjs` 验证兼容接收、账户隔离和单次卡密展示。
+
+助手每轮答复共用一个根节点与头像，处理过程默认折叠，最终正文保留一套复制、朗读和重新生成按钮；确认卡、提问卡及异常提示保持可见。分组逻辑在 `src/lib/agentTurns.ts`，不改原始事件存档。运行 `node --import ./tools/ts-resolve-hook.mjs tools/check-agent-turns.mjs` 验证多步骤、流式更新及旧历史兼容。
+
+提问卡的“自己填写”在输入时自动选中：单选题与预设选项互斥，多选题可组合。切回选项时保留但不提交自填草稿，新问询不继承上一张卡的选择。运行 `node --import ./tools/ts-resolve-hook.mjs tools/check-question-drafts.mjs` 验证提交内容。
+
+银行工具失败会在折叠过程外显示原因。必填参数在审批前校验；确认准备失败保留后端原因，只有用户实际取消才报告取消。运行 `node tools/check-agent-http.mjs` 验证缺金额、准备失败及正常确认验密链路，使用临时数据库和本地模型协议夹具。
+
+最后一轮失败时显示“重试”，保留原问题、功能选择和已完成的工具记录，不重复插入提问；重试指令要求先核对已有交易结果，仍须确认和身份验证。处理或等待卡片时禁止重试；图片仅在当前页面保有原图时重发，刷新后需重新上传。
+
+模型瞬时故障自动重试最多 3 次，默认间隔 1、2、4 秒；根节点显示等待与重试次数。只重试失败的模型请求步骤，不重跑整轮银行操作；认证、凭据和上下文容量错误不自动重试。次数耗尽后保留手动“重试”，停止生成会取消退避。策略在 `framework/profiles/luckycat/cordis.patch.yml`，进度投影在 `framework/bridge/model-retry.mjs`；上述 HTTP 夹具覆盖恢复、耗尽、认证、取消和付款一次性执行。
 助手正文按累计快照更新同一气泡，完成后替换为最终文本；生成期间不自动朗读。运行 `node tools/check-agent-streaming.mjs` 验证流式显示、断线恢复与消息合并。
 
 ## 7. 构建与发布
@@ -186,3 +196,11 @@ npm --prefix app run build:server
 | 配置或代码改了仍显示旧内容 | 确认访问端口与启动目录，重启 Vite；线上重新构建并发布产物 |
 
 修改接口、配置或维护流程时，同步更新本手册；后端数据说明见 [server/README.md](../server/README.md)。
+
+### 资金账户与银行卡
+
+修改前阅读 [账户模型约束](../docs/product/account-model.md)，运行 `npm --prefix app run check:account-model`。
+
+每位客户只有一个资金账户，多张银行卡绑定同一账户。`GET /api/accounts` 的 `currencyBalances` 保存各币种余额；币种分区 ID 用于兼容流水与换汇请求，不作为独立账户或卡账户展示。不同币种不能直接加总。
+
+本地银行档案 v19 将旧卡账户的同币种余额、可用余额及关联流水合并，保留回单原始账号快照；外币移入 `currencyBalances`，换汇不再开户。SQLite 中的 `bank_accounts` 兼容表仍记录记账分区，不能用该表行数作为客户账户数。新增能力应覆盖 `tools/check-single-account.mjs`，迁移不可用重置数据库代替。

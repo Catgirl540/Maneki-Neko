@@ -46,6 +46,7 @@
  */
 
 import { createServer } from 'node:http'
+import { projectModelRetry, modelFailureMessage } from './model-retry.mjs'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile, mkdtemp, rm } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
@@ -461,6 +462,7 @@ let shuttingDown = false
 
 /** 从会话事件里抽出给网页看的东西。 */
 function projectEvent(sessionId, event) {
+  if (event.type === 'llm/retry' || event.type === 'llm/retry-started') return projectModelRetry(event)
   switch (event.type) {
     case 'tool/call':
       return {
@@ -582,7 +584,12 @@ async function runTurn(sessionId, input) {
   entry.stopping = false
   entry.activity = { cancelled: false }
   if (OPS_MODE) entry.intent = typeof input === 'string' ? input : input.filter(b => b.type === 'text').map(b => b.text).join('\n')
-  const assistantStream = createAssistantStream(sessionId, event => publish(sessionId, event))
+  let lastFailure
+  let retries = 0
+  const assistantStream = createAssistantStream(sessionId, event => {
+    if (event.type === 'assistant' || event.type === 'assistant-update') entry.retryProgress = undefined
+    publish(sessionId, event)
+  })
   entry.assistantStream = assistantStream
   publish(sessionId, { type: 'status', status: 'running' })
   try {
@@ -604,15 +611,24 @@ async function runTurn(sessionId, input) {
         }
         if (notification.method !== 'session.event') return
         const event = notification.params.event
+        if (event.type === 'turn/end' && event.data.reason?.kind === 'error') lastFailure = event.data.reason.error
+        if (event.type === 'assistant/message') retries = 0
         const projected = event.type === 'assistant/message' || event.type === 'assistant/attempt'
           ? assistantStream.settle(event) : projectEvent(sessionId, event)
-        if (projected !== undefined) publish(sessionId, projected)
+        if (projected?.type === 'model-retry') {
+          entry.retryProgress = { ...entry.retryProgress, ...projected }
+          retries = projected.attempt
+          publish(sessionId, entry.retryProgress)
+        } else if (projected !== undefined) {
+          if (projected.type === 'tool-call' || projected.type === 'assistant') entry.retryProgress = undefined
+          publish(sessionId, projected)
+        }
       },
     })
     entry.legacyContext = undefined
     sessionStore?.save(entry)
-    if (!entry.stopping && result.finalResponse.trim() === '') {
-      publish(sessionId, { type: 'error', message: '模型没有产出可见文本（可能上游失败），请看服务端日志。' })
+    if (!entry.stopping && (lastFailure || result.finalResponse.trim() === '')) {
+      publish(sessionId, { type: 'error', message: modelFailureMessage(lastFailure, retries) })
     }
   } catch (error) {
     if (!entry.stopping) publish(sessionId, { type: 'error', message: `agent 运行失败：${error instanceof Error ? error.message : String(error)}` })
@@ -620,6 +636,7 @@ async function runTurn(sessionId, input) {
     assistantStream.close()
     if (entry.stopping) publish(sessionId, { type: 'stopped' })
     entry.assistantStream = undefined
+    entry.retryProgress = undefined
     entry.busy = false
     entry.stopping = false
     publish(sessionId, { type: 'status', status: 'idle' })
@@ -900,6 +917,7 @@ async function handle(req, res) {
       if (question.sessionId === sessionId) initial.push({ type: 'question', question })
     }
     initial.push({ type: 'status', status: entry.busy ? 'running' : 'idle' })
+    if (entry.busy && entry.retryProgress) initial.push(entry.retryProgress)
     sendJson(res, 200, eventPolling.read(entry, url.searchParams.get('after'), initial))
     return
   }
@@ -938,6 +956,7 @@ async function handle(req, res) {
         }
       }
       res.write(`data: ${JSON.stringify({ type: 'status', status: entry.busy ? 'running' : 'idle' })}\n\n`)
+      if (entry.busy && entry.retryProgress) res.write(`data: ${JSON.stringify(entry.retryProgress)}\n\n`)
     }
     const subscribers = streams.get(sessionId) ?? new Set()
     subscribers.add(res)

@@ -152,7 +152,8 @@ export class ConsentService extends Service {
     } catch (error) {
       const code = error instanceof ConsentError ? error.code : 'CHANNEL_UNREACHABLE'
       const detail = error instanceof Error ? error.message : String(error)
-      return { allowed: false, reason: `确认通道不可用（${code}）：${detail}` }
+      return { allowed: false, reason: code === 'CHANNEL_HTTP_STATUS'
+        ? detail : `确认通道不可用（${code}）：${detail}` }
     }
   }
 }
@@ -180,6 +181,8 @@ export function apply(ctx: Context, config: ConsentConfig): void {
   // 待确认的挑战按「会话 + 调用」索引。用调用 id 而不是工具名做键：
   // 同一个工具可以在同一轮里被并行调用多次，用工具名会串号。
   const pending = new Map<string, ConsentChallenge>()
+  // 审批内核只返回 rejected；在工具结果阶段补回可信通道的具体原因。
+  const refusals = new Map<string, { reason: string; expiresAt: number }>()
   const keyOf = (sessionId: string, callId: string): string => `${sessionId}\u0000${callId}`
 
   /**
@@ -193,6 +196,7 @@ export function apply(ctx: Context, config: ConsentConfig): void {
     for (const [key, challenge] of pending) {
       if (now > challenge.expiresAt) pending.delete(key)
     }
+    for (const [key, refusal] of refusals) if (now > refusal.expiresAt) refusals.delete(key)
   }
 
   ctx.on('tools/pre-execute', (exec, next): Promise<PreToolDecision> => {
@@ -215,7 +219,7 @@ export function apply(ctx: Context, config: ConsentConfig): void {
       const detail = error instanceof Error ? error.message : String(error)
       return Promise.resolve({
         kind: 'deny',
-        reason: `敏感操作 "${exec.name}" 的展示信息生成失败，已按安全策略拒绝：${detail}`,
+        reason: `操作 "${exec.name}" 未发起：${detail}`,
       })
     }
     pending.set(keyOf(challenge.sessionId, challenge.callId), challenge)
@@ -241,11 +245,18 @@ export function apply(ctx: Context, config: ConsentConfig): void {
     pending.delete(key)
     const outcome = await service.decide(challenge, request.signal)
     if (outcome.allowed) return 'allowed-once'
-    // 拒绝理由通过 `approval/decided` 只进日志；模型看到的是上游固定的
-    // `the user rejected tool "..."`。所以把真实原因写进日志，便于排查
-    // "是用户点了取消，还是验证没过，还是通道连不上"。
+    if (outcome.reason) refusals.set(key, { reason: outcome.reason, expiresAt: challenge.expiresAt })
     logRejection(ctx, challenge, outcome.reason)
     return 'rejected'
+  })
+
+  ctx.on('tools/post-execute', async (exec, result, next) => {
+    const key = keyOf(sessionIdOf(exec), String(exec.callId))
+    const refusal = refusals.get(key)
+    refusals.delete(key)
+    if (!refusal || !result.isError) return next()
+    // 仅替换错误正文，保持拒绝、身份验证及一次性授权结果不变。
+    return { kind: 'accept', content: [{ type: 'text', text: `Error: ${refusal.reason}` }] }
   })
 }
 

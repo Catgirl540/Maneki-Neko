@@ -14,6 +14,7 @@
       "ask_user_question"
     ],
     "sources": [
+      "docs/product/account-model.md",
       "framework/bridge/bank-agent.mjs",
       "framework/packages/bank-demo/src/http-tools.ts",
       "framework/knowledge/02-transfers.md",
@@ -26,6 +27,8 @@
 ## 适用请求
 
 用户想把自己账户中的币种兑换，或询问换汇费用、汇率时使用。给别人转不同币种属于跨币种转账，同时加载 bank-transfer。
+
+同一储蓄资金账户持有多币种余额；换汇仅在币种余额间记账，不另行开户，不能把币种分区 ID 说成多个资金账户。
 
 ## 必要信息
 

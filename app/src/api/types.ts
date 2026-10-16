@@ -42,6 +42,9 @@ export interface ReceivingInfo {
   fpsId: string
 }
 
+/** 同一资金账户下的币种余额；id 是记账分区标识，不是新账户号。 */
+export type CurrencyBalance = Omit<Account, 'currencyBalances'>
+
 export interface Account {
   id: string
   kind: AccountKind
@@ -50,6 +53,7 @@ export interface Account {
   currency: Currency
   balance: Cents
   available: Cents
+  currencyBalances?: CurrencyBalance[]
   /** 年化利率，如 0.0155 表示 1.55% */
   interestRate: number
   /** 本月净变动（收入 - 支出），由后端汇总，用于首页涨跌标签 */

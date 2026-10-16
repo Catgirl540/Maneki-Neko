@@ -77,7 +77,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
  */
-export const MOCK_SCHEMA = 18
+export const MOCK_SCHEMA = 19
 
 export interface MockDb {
   fpsRegistrations: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; registeredAt: string }[]
@@ -85,6 +85,9 @@ export interface MockDb {
   schema: number
   user: User
   accounts: Account[]
+  /** 外币记账分区，不独立开户。持久化的旧号码仅用于历史追溯。 */
+  currencyBalances?: Account[]
+  accountAliases?: Record<string, string>
   /** 台账存的是带明细的完整记录，对外由接口裁剪成列表 DTO 或详情 */
   transactions: TransactionRecord[]
   banks: Bank[]
@@ -1151,12 +1154,12 @@ export const FPS_REGISTRY: FpsRegistration[] = [
 ]
 
 /** Persisted customer registrations and external demo fixtures share one resolver. */
-export function lookupFpsRegistration(idType: FpsIdType, id: string): (FpsRegistration & { accountNo?: string }) | undefined {
+export function lookupFpsRegistration(idType: FpsIdType, id: string): (FpsRegistration & { accountNo?: string; customerId?: string; balanceId?: string }) | undefined {
   const value = id.replace(/\s/g, '').toLowerCase()
   for (const profile of listAllProfiles()) {
     const registration = profile.fpsRegistrations?.find(r => r.idType === idType && r.id === value)
-    const account = registration && profile.accounts.find(a => a.id === registration.accountId && a.currency === 'HKD')
-    if (account) return { idType, id: value, name: profile.user.name, bankCode: 'LCB', bankName: '招财猫银行（香港模拟通道）', bankCount: 1, accountNo: account.accountNo }
+    const account = registration && ledgerBalances(profile).find(a => a.id === registration.accountId && a.currency === 'HKD')
+    if (account) return { idType, id: value, name: profile.user.name, bankCode: 'LCB', bankName: '招财猫银行（香港模拟通道）', bankCount: 1, accountNo: profile.accounts[0].accountNo, customerId: profile.user.id, balanceId: account.id }
   }
   return FPS_REGISTRY.find(r => r.idType === idType && r.id.toLowerCase() === value)
 }
@@ -1730,6 +1733,7 @@ function seed(): MockDb {
     [db.cards[2].id]: { cvv: '305', pan: cardPan('visa', db.cards[2].last4) },
   }
 
+  normalizeFundingAccount(db)
   return db
 }
 
@@ -1862,7 +1866,7 @@ function latestStoredProfile(userId: string): MockDb | null {
 export function activateDb(next: MockDb): void {
   const stored = latestStoredProfile(next.user.id)
   cache = migrateProfile(stored ?? next)
-  ensureCardAccounts(cache)
+  normalizeFundingAccount(cache)
   syncSeq(cache)
   for (const profile of Object.values(profiles())) syncSeq(profile)
   if (!stored) persist()
@@ -1870,7 +1874,7 @@ export function activateDb(next: MockDb): void {
 
 function syncSeq(db: MockDb): void {
   const ids = [
-    ...db.accounts.map((row) => row.id), ...db.cards.map((row) => row.id),
+    ...ledgerBalances(db).map((row) => row.id), ...db.cards.map((row) => row.id),
     ...db.transactions.map((row) => row.id), ...db.payees.map((row) => row.id),
   ]
   for (const id of ids) {
@@ -1879,33 +1883,48 @@ function syncSeq(db: MockDb): void {
   }
 }
 
-/** 给既有演示档案中的三张卡补上独立账户，保留原账户余额及历史流水。 */
-function ensureCardAccounts(db: MockDb): void {
-  const primary = db.cards.find((card) => card.last4 === '8888')
-  if (!primary) return
-  for (const [last4, label, accountNo] of [
-    ['3366', '云闪付联名卡账户', '8820000000112233366'],
-    ['2046', 'Visa 全球借记卡账户', '8820000000112232046'],
-  ] as const) {
-    const card = db.cards.find((row) => row.last4 === last4)
-    if (!card || card.accountId !== primary.accountId) continue
-    let account = db.accounts.find((row) => row.accountNo === accountNo)
-    if (!account) {
-      account = {
-        id: `acc_demo_${last4}`,
-        kind: 'savings',
-        label,
-        accountNo,
-        currency: 'CNY',
-        balance: 0,
-        available: 0,
-        interestRate: 0.0155,
-        monthNetChange: 0,
-      }
-      db.accounts.push(account)
+/** 内部记账分区集合；对客账户列表只返回 accounts 中的唯一账户。 */
+export function ledgerBalances(db: MockDb): Account[] {
+  return [...db.accounts, ...(db.currencyBalances ?? [])]
+}
+
+export function findBalance(db: MockDb, id: string): Account | undefined {
+  return ledgerBalances(db).find(row => row.id === (db.accountAliases?.[id] ?? id))
+}
+
+/** 合并同币种旧账户，保留历史凭证快照；不同币种绝不直接相加。 */
+export function normalizeFundingAccount(db: MockDb): void {
+  const rows = ledgerBalances(db)
+  if (!rows.length) { db.currencyBalances = []; return }
+  const primary = db.accounts.find(row => row.currency === 'CNY') ?? db.accounts[0]
+  const keep = new Map<Currency, Account>([[primary.currency, primary]])
+  const aliases = { ...db.accountAliases }
+  for (const row of rows) {
+    const existing = keep.get(row.currency)
+    if (!existing) { keep.set(row.currency, row); continue }
+    if (existing.id === row.id) continue
+    for (const field of ['balance', 'available'] as const) {
+      const value = existing[field] + row[field]
+      if (!Number.isSafeInteger(value) || value < 0) throw new Error('账户合并金额异常，已保留原数据')
+      existing[field] = value
     }
-    card.accountId = account.id
+    aliases[row.id] = existing.id
   }
+  const resolve = (id: string): string => aliases[id] ? resolve(aliases[id]) : id
+  // 只改账务关联字段，回单上的原账号、余额快照仍保留原始值。
+  const remap = (value: unknown): void => {
+    if (!value || typeof value !== 'object') return
+    for (const [key, child] of Object.entries(value)) {
+      if (['accountId', 'fromAccountId', 'toAccountId', 'settlementAccountId'].includes(key) && typeof child === 'string') {
+        Object.assign(value, { [key]: resolve(child) })
+      } else remap(child)
+    }
+  }
+  remap(db)
+  db.accounts = [primary]
+  db.currencyBalances = [...keep.values()].filter(row => row.id !== primary.id)
+  db.accountAliases = Object.fromEntries(Object.keys(aliases).map(id => [id, resolve(id)]))
+  for (const card of db.cards) card.accountId = primary.id
 }
 
 /** Only product catalogues are shared. Customer activity always starts empty. */
@@ -1935,11 +1954,13 @@ export function migrateProfile(profile: MockDb): MockDb {
     throw new Error('无法识别客户档案版本，已保留原数据')
   }
   if (profile.schema === MOCK_SCHEMA) return profile
+  profile = structuredClone(profile)
   const defaults = emptyCustomerDomains(profile.user, profile.accounts[0]?.id ?? '')
   for (const key of Object.keys(defaults) as (keyof typeof defaults)[]) {
     if (profile[key] === undefined) Object.assign(profile, { [key]: defaults[key] })
   }
   if (!profile.banks.some(b => b.code === 'LCB' && b.region === 'HK')) profile.banks.push(BANKS.find(b => b.code === 'LCB' && b.region === 'HK')!)
+  normalizeFundingAccount(profile)
   profile.schema = MOCK_SCHEMA
   return profile
 }
@@ -1959,7 +1980,7 @@ export function loadDb(): MockDb {
     cache = null
     throw new Error('客户档案迁移写入失败')
   }
-  ensureCardAccounts(cache)
+  normalizeFundingAccount(cache)
   ensureDemoRecipient()
   syncSeq(cache)
   for (const profile of Object.values(profiles())) syncSeq(profile)

@@ -13,6 +13,8 @@ import { CURRENCY_LABEL, formatCurrency, formatFxAmount, formatRate } from '@/li
 import { parseAmountInput } from '@/lib/amountInput'
 import { useAsync } from '@/lib/useAsync'
 
+import { currencyBalances } from '@/lib/currencyBalances'
+
 const CURRENCIES: Currency[] = ['CNY', 'USD', 'HKD']
 
 type QuoteSnapshot = { request: ExchangeQuoteRequest; quote: ExchangeQuote; receivedAt: number }
@@ -45,7 +47,7 @@ export function ExchangePage() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<ExchangeResult | null>(null)
 
-  const list = useMemo(() => accounts.data ?? [], [accounts.data])
+  const list = useMemo(() => currencyBalances(accounts.data ?? []), [accounts.data])
   const selectedFromId = fromId || (list.find((a) => a.currency === 'CNY')?.id ?? list[0]?.id ?? '')
   const fromAccount = list.find((a) => a.id === selectedFromId) ?? null
   const amount = parseAmountInput(amountText)
@@ -95,9 +97,9 @@ export function ExchangePage() {
   }
 
   const handleFetchQuote = useCallback(async () => {
-    if (!fromAccount) return setFormError('请选择扣账账户')
+    if (!fromAccount) return setFormError('请选择卖出币种')
     if (amount === null || amount <= 0) return setFormError('请输入有效金额，最多两位小数')
-    if (amount > fromAccount.available) return setFormError('金额超过该账户可用余额')
+    if (amount > fromAccount.available) return setFormError('金额超过该币种可用余额')
     const request = { fromAccountId: fromAccount.id, toCurrency, amount }
     const version = ++quoteVersion.current
     setSnapshot(null)
@@ -164,14 +166,15 @@ export function ExchangePage() {
   }, [fromAccount, quoteMatches, snapshot, password, invalidateQuote, reloadAccounts])
 
   if (!accounts.data) return accounts.error ? <DataUnavailable message={accounts.error} onRetry={accounts.reload} /> : <DataLoading />
-  const data = accounts.data
+  const data = list
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">多币种与划转</h1>
+      <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">多币种换汇</h1>
 
       <Card className="float-up">
-        <CardHeader title="我的多币种账户" action={<span className="text-[13px] text-ink-mute">{data.length} 个账户</span>} />
+        <CardHeader title="我的币种余额" action={<span className="text-[13px] text-ink-mute">{data.length} 个币种</span>} />
+        <p className="mt-2 text-[13px] text-ink-mute">储蓄账户 · 尾号 {accounts.data[0]?.accountNo.slice(-4)}</p>
         <div className="mt-3 divide-y divide-line">
           {data.map((account) => (
             <div key={account.id} className="flex items-center gap-4 py-4">
@@ -179,8 +182,8 @@ export function ExchangePage() {
                 <GlobalIcon size={18} />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-medium text-ink">{account.label}</span>
-                <span className="num mt-0.5 block text-[13px] text-ink-mute">尾号 {account.accountNo.slice(-4)} · {CURRENCY_LABEL[account.currency]}</span>
+                <span className="block truncate text-[15px] font-medium text-ink">{CURRENCY_LABEL[account.currency]}</span>
+                <span className="num mt-0.5 block text-[13px] text-ink-mute">{account.currency}</span>
               </span>
               <span className="num shrink-0 text-[16px] font-semibold text-ink">{formatCurrency(account.balance, account.currency)}</span>
             </div>
@@ -192,7 +195,7 @@ export function ExchangePage() {
         <CardHeader title="账户内换汇" action={<Tag tone="blue">{liveQuote ? `参考报价 · ${ttlLeft}s` : '参考报价'}</Tag>} />
         <div className="mt-4 flex flex-col gap-4">
           <div>
-            <p className="mb-2 text-[13px] font-medium text-ink-soft">扣账账户</p>
+            <p className="mb-2 text-[13px] font-medium text-ink-soft">卖出币种</p>
             <div className="flex flex-wrap gap-2">
               {data.map((account) => (
                 <button
@@ -202,7 +205,7 @@ export function ExchangePage() {
                   disabled={confirmOpen || submitting}
                   className={`flex min-h-11 items-center gap-2 rounded-chip border px-4 text-[13px] font-medium transition-colors ${selectedFromId === account.id ? 'border-gold-wash bg-gold-wash text-gold-deep' : 'border-line bg-surface text-ink-soft hover:text-ink'}`}
                 >
-                  {account.label}
+                  {CURRENCY_LABEL[account.currency]}
                   <span className="num text-[12px] text-ink-mute">{account.currency}</span>
                 </button>
               ))}
@@ -244,7 +247,7 @@ export function ExchangePage() {
             </dl>
           ) : (
             <p className="rounded-field bg-sunk px-4 py-3.5 text-[13px] text-ink-mute">
-              选择扣账账户、目标币种与金额，获取参考报价。
+              选择卖出币种、目标币种与金额，获取参考报价。
             </p>
           )}
 
@@ -305,7 +308,7 @@ export function ExchangePage() {
               <CheckIcon size={28} />
             </span>
             <p className="num mt-4 text-[26px] leading-none font-bold text-ink">{formatFxAmount(result.fx.toAmount, result.fx.toCurrency)}</p>
-            <p className="mt-2 text-[13px] text-ink-mute">已入账目标币种账户</p>
+            <p className="mt-2 text-[13px] text-ink-mute">已存入账户的目标币种余额</p>
             <dl className="mt-6 flex flex-col gap-3 border-t border-line pt-5 text-left text-[13px]">
               <div className="flex justify-between">
                 <dt className="text-ink-soft">业务参考号</dt>

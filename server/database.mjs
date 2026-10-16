@@ -208,7 +208,7 @@ export function openBankDatabase(path, legacyStateFile) {
     if (!owner || !Array.isArray(profile.accounts) || !Array.isArray(profile.transactions)) return
     deleteTransactions.run(owner)
     deleteAccounts.run(owner)
-    for (const account of profile.accounts) {
+    for (const account of [...profile.accounts, ...(profile.currencyBalances ?? [])]) {
       putAccount.run(owner, account.id, account.accountNo, account.label,
         account.currency, account.balance, account.available)
     }

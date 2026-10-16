@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import './assistant-turn.css'
 import type { SupportMessage } from '../../api/types'
 import type { CustomerVerification } from '../../api/agent'
 import type { AgentChatOptions, PendingConsent } from '../../lib/useAgentChat'
@@ -18,8 +19,8 @@ import { Card } from '../ui/Card'
 import { Modal } from '../ui/Modal'
 import { Tag } from '../ui/Segmented'
 import {
-  AlertIcon,
   CheckIcon,
+  ChevronDownIcon,
   CloseIcon,
   HistoryIcon,
   ImagePlusIcon,
@@ -38,6 +39,7 @@ import { preview, voiceLog } from '../../lib/voiceLog'
 import { ACCEPTED_MIME_TYPES, prepareImage, type PreparedImage } from '../../lib/image'
 import { STORAGE_KEYS, storage } from '../../lib/storage'
 import { lastAssistantId, type MessageItem, type StoredConversation } from '../../lib/agentSessions'
+import { groupChatMessages, turnContent, type AssistantTurn } from '../../lib/agentTurns'
 import { speechText } from '../../lib/speech'
 import { toolLabel, useAgentChat, type ChatItem } from '../../lib/useAgentChat'
 import { useVoice, type VoicePlayback } from '../../lib/useVoice'
@@ -114,6 +116,9 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
   /** 当前对话的内容（没打开任何一段时是空的）。单独取出来当依赖：`?? []` 每次渲染都是新数组。 */
   const items = agent.active?.items
   const activeBusy = agent.activeId !== undefined && agent.busyIds.includes(agent.activeId)
+  const chatMessages = groupChatMessages(items ?? [])
+  const latestTurn = chatMessages.at(-1)
+  const latestReply = latestTurn?.kind === 'turn' ? turnContent(latestTurn).reply : undefined
 
   // 员工主动留言（listSupportMessages 已按登录人过滤后并进 messages）。
   // 拆出来单列渲染：usingAgent 时下面走的是 items 分支，混在 messages 里会被顶掉。
@@ -136,12 +141,9 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
    * 而不是十条消息同时显示"朗读"、只有一条在响。
    */
   const spokenRef = useRef<string | undefined>(undefined)
-  const latestAssistant = lastAssistantId(items ?? [])
-  const latestAssistantItem = items?.find(
-    item => item.id === latestAssistant && item.kind === 'assistant',
-  )
-  const latestAssistantText = latestAssistantItem?.kind === 'assistant' && !latestAssistantItem.streaming
-    ? latestAssistantItem.text : undefined
+  const latestAssistant = latestReply?.id
+  const latestAssistantText = !activeBusy && !agent.pending && !agent.ask && !latestReply?.streaming
+    ? latestReply?.text : undefined
   useEffect(() => {
     if (!voiceUsable || latestAssistant === undefined || latestAssistantText === undefined) return
     if (spokenRef.current === latestAssistant) return
@@ -237,9 +239,11 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
     speakingId: voice.speakingKey,
     playback: voice.playback,
     regeneratableId: lastAssistantId(items ?? []),
+    retryablePromptId: latestTurn?.kind === 'turn' ? latestTurn.promptId : undefined,
     frozen: activeBusy || agent.pending !== undefined || agent.ask !== undefined,
     ...frozenReason === undefined ? {} : { frozenReason },
     onRegenerate: (id) => { agent.rewind(id) },
+    onRetry: (id) => { workbench?.onActivate(); agent.retry(id) },
     onSpeak: (item) => { voice.speak(speechText(item.text), item.id) },
     onStopSpeak: voice.stopSpeaking,
     onSeek: (ratio) => { voice.seek(ratio) },
@@ -452,13 +456,13 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             {workbench && !staffNotices.length && !(usingAgent ? items?.length : messages.length) && !activeBusy && !thinking && !agent.pending && !agent.ask && (
               <div className="workbench-chat-hero"><SupportCat /><h2>今天想处理什么？</h2></div>
             )}
-            {/* 只给**单条**气泡做入场，不给整块列表做。
-                滑进来的消息是"又来了一句话"，一次 220ms 的轻微上浮就够了；
-                整块再淡一次的话两层叠在一起，看着就是糊的。
-                切对话时这些气泡整体重挂，于是也顺便有一次统一的浮现——同一个动作
-                管两种情况，不用再分一套。 */}
+            {/* 同一次提问的流式分段和工具过程共用一个稳定的助手根节点。 */}
             {usingAgent
-              ? (items ?? []).map((item) => <AgentBubble key={item.id} item={item} actions={bubbleActions} />)
+              ? chatMessages.map(message => message.kind === 'user'
+                ? <UserBubble key={message.id} item={message} actions={bubbleActions} />
+                : <AssistantTurnBubble key={`${agent.activeId}-${message.id}`} turn={message} actions={bubbleActions}
+                    busy={message === latestTurn && activeBusy}
+                    waiting={message === latestTurn ? agent.pending ? '确认' : agent.ask ? '补充信息' : undefined : undefined} />)
               : botMessages.map((msg) => <MessageBubble key={msg.id} message={msg} />)}
 
             {/* 待确认的敏感操作：工具此刻**还没有执行** */}
@@ -481,12 +485,13 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
                 比"缺一句信息"更要紧。 */}
             {agent.ask !== undefined && (
               <QuestionCard
+                key={`${agent.activeId}-${agent.ask.question.questionId}`}
                 ask={agent.ask}
                 onSubmit={(answers) => { agent.answerAsk(answers) }}
               />
             )}
 
-            {(usingAgent ? activeBusy && !items?.some(item => item.kind === 'assistant' && item.streaming) : thinking) && agent.pending === undefined && (
+            {!usingAgent && thinking && agent.pending === undefined && (
               <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
                   {workbench ? <SupportCat className="size-8 object-contain" /> : <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />}
@@ -884,6 +889,8 @@ interface BubbleActions {
   playback?: VoicePlayback | undefined
   /** 哪一条助手回复可以"重新生成"（最后一条）。 */
   regeneratableId?: string | undefined
+  retryablePromptId?: string | undefined
+  onRetry: (promptId: string) => void
   /** 现在不能倒回重发。 */
   frozen: boolean
   frozenReason?: string | undefined
@@ -895,130 +902,114 @@ interface BubbleActions {
   onEdit: (item: MessageItem) => void
 }
 
-/** agent 对话里的一条内容。 */
-function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions }) {
-  if (item.kind === 'notice') {
-    return (
-      <div className="pop-in flex items-start gap-3">
-        <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-coral-wash">
-          <AlertIcon size={16} className="text-coral" />
-        </span>
-        <div className="max-w-[80%] rounded-card bg-coral-wash px-4 py-3 text-[13px] leading-relaxed text-ink">
+/** 每轮只有一个助手头像，过程展开后也不再产生独立的消息动作。 */
+function AssistantTurnBubble({ turn, actions, busy, waiting }: {
+  turn: AssistantTurn
+  actions: BubbleActions
+  busy: boolean
+  waiting?: '确认' | '补充信息'
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const detailId = useId()
+  const { reply, activity, notices, lastTool } = turnContent(turn)
+  const runningTool = turn.items.findLast(item => item.kind === 'tool' && item.state === 'running')
+  const unfinished = busy || Boolean(waiting) || Boolean(reply?.streaming)
+  const error = notices.some(item => item.tone === 'error')
+  const retryProgress = busy ? notices.find(item => item.id === 'model_retry_progress') : undefined
+  if (!turn.items.length && !unfinished) return null
+  const status = waiting ? `等待您${waiting}`
+    : retryProgress ? retryProgress.text
+    : busy && runningTool?.kind === 'tool' ? `正在${toolLabel(runningTool.name)}`
+      : unfinished ? reply?.streaming || lastTool?.state === 'done' ? '正在整理回复' : '正在处理'
+        : error ? '处理未完成'
+          : reply ? lastTool ? `${toolLabel(lastTool.name)} · 已完成` : '回复完成'
+            : lastTool?.state === 'error' ? '处理未完成' : '处理已结束'
+  return (
+    <div className="assistant-turn pop-in" data-message-kind="assistant" data-message-id={reply?.id ?? turn.id}
+      data-turn-id={turn.id} data-streaming={reply?.streaming ? 'true' : undefined}>
+      <span className="assistant-turn-avatar grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
+        {actions.mascot ? <SupportCat className="size-8 object-contain" />
+          : <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />}
+      </span>
+      <div className="assistant-turn-content">
+        <div className="assistant-turn-root">
+          <span className={cn('assistant-turn-status', unfinished && 'is-working', error && 'is-error')}>
+            <span className="assistant-turn-dot" aria-hidden="true" />
+            <span role={unfinished ? 'status' : undefined}>{status}</span>
+          </span>
+          {activity.length > 0 && <button type="button" className="assistant-turn-toggle" aria-expanded={expanded}
+            aria-controls={detailId} aria-label={expanded ? '收起处理过程' : '展开处理过程'}
+            onClick={() => setExpanded(value => !value)}>
+            处理过程<ChevronDownIcon size={14} />
+          </button>}
+        </div>
+        {activity.length > 0 && <div id={detailId} className={cn('assistant-turn-collapse', expanded && 'is-expanded')}
+          aria-hidden={!expanded} inert={!expanded}>
+          <div className="assistant-turn-clip">
+          <div className="assistant-turn-details">
+          <ol aria-label="处理过程">
+            {activity.map(item => <li key={item.id} data-activity-kind={item.kind}>
+              {item.kind === 'tool' ? <>
+                <div className="assistant-turn-step">
+                  <span>{toolLabel(item.name)}</span>
+                  <span className={cn('assistant-turn-step-state', item.state === 'error' && 'is-error')}>
+                    {item.state === 'running' ? '执行中…' : item.state === 'done' ? '已完成' : '未完成'}
+                  </span>
+                </div>
+                {item.text && <p>{item.text}</p>}
+              </> : <Suspense fallback={<span className="whitespace-pre-wrap">{item.text}</span>}>
+                <Markdown text={item.text} />
+              </Suspense>}
+            </li>)}
+          </ol>
+          </div>
+          </div>
+        </div>}
+        {reply && <div className="assistant-turn-answer rounded-card bg-sunk px-4 py-3 text-ink">
+          <Suspense fallback={<span className="whitespace-pre-wrap">{reply.text}</span>}>
+            <Markdown text={reply.text} />
+          </Suspense>
+          {reply.streaming && <span aria-label="正在生成回复" className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-gold-deep align-middle" />}
+        </div>}
+        {/* 异常始终可见，不藏进折叠的工具过程。确认卡与提问卡仍在工作区直接显示。 */}
+        {notices.filter(item => item.id !== 'model_retry_progress').map(item => <p key={item.id} role={item.tone === 'error' ? 'alert' : undefined}
+          className={cn('assistant-turn-notice', item.tone === 'error' && 'is-error')}>{item.text}</p>)}
+        {(error || lastTool?.state === 'error') && turn.promptId && actions.retryablePromptId === turn.promptId && (
+          <button type="button" className="assistant-turn-retry" aria-label="重试这轮请求"
+            disabled={actions.frozen || unfinished} title={actions.frozen ? actions.frozenReason : '继续处理上一轮请求'}
+            onClick={() => actions.onRetry(turn.promptId!)}>
+            <RefreshIcon size={14} />重试
+          </button>
+        )}
+        {reply && !unfinished && <>
+          {actions.speakingId === reply.id && actions.playback && <SpeechPlayer className="mt-1.5 w-full"
+            onSeek={actions.onSeek} position={actions.playback.position} duration={actions.playback.duration}
+            ratio={actions.playback.ratio} waveform={actions.playback.waveform} />}
+          <MessageActions text={reply.text} isUser={false} canSpeak={actions.canSpeak}
+            speaking={actions.speakingId === reply.id} regeneratable={actions.regeneratableId === reply.id}
+            frozen={actions.frozen} frozenReason={actions.frozenReason}
+            onRegenerate={() => actions.onRegenerate(reply.id)} onSpeak={() => actions.onSpeak(reply)}
+            onStopSpeak={actions.onStopSpeak} onEdit={() => actions.onEdit(reply)} />
+        </>}
+      </div>
+    </div>
+  )
+}
+
+function UserBubble({ item, actions }: { item: Extract<ChatItem, { kind: 'user' }>; actions: BubbleActions }) {
+  return (
+    <div className="pop-in flex flex-row-reverse items-start gap-3" data-message-kind="user" data-message-id={item.id}>
+      <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-ink text-ink-invert"><UserIcon size={17} /></span>
+      <div className="flex min-w-0 max-w-[85%] flex-col items-end">
+        <div className="rounded-card bg-ink px-4 py-3 text-[14px] leading-relaxed whitespace-pre-wrap text-ink-invert">
+          {item.thumb !== undefined && <img src={item.thumb} alt={item.imageName ? `你发的图片：${item.imageName}` : '你发的图片'}
+            data-sent-image className={cn('max-h-56 w-auto max-w-full rounded-chip object-contain', item.text.trim() !== '' && 'mb-2')} />}
           {item.text}
         </div>
-      </div>
-    )
-  }
-
-  if (item.kind === 'tool') {
-    return (
-      <div className="pop-in flex items-center gap-2 pl-11">
-        <span
-          className={cn(
-            'inline-flex items-center gap-2 rounded-chip border px-3 py-1.5 text-[12px]',
-            item.state === 'running' && 'border-line bg-sunk text-ink-soft',
-            item.state === 'done' && 'border-blue-wash bg-blue-wash text-blue',
-            item.state === 'error' && 'border-coral-wash bg-coral-wash text-coral',
-          )}
-        >
-          {toolLabel(item.name)}
-          <span className="text-ink-mute">
-            {item.state === 'running' ? '执行中…' : item.state === 'done' ? '已完成' : '未执行'}
-          </span>
-        </span>
-        {item.text !== undefined && item.text !== '' && (
-          <span className="truncate text-[12px] text-ink-mute">{item.text}</span>
-        )}
-      </div>
-    )
-  }
-
-  const isUser = item.kind === 'user'
-  return (
-    <div
-      className={cn('pop-in flex items-start gap-3', isUser && 'flex-row-reverse')}
-      /* 给浏览器检查用的锚点。`div.bg-ink` 那类选择器一旦调样式就会静默失配，
-         而失配的表现是"断言还在跑，但什么都没查到"——那是假通过。 */
-      data-message-kind={isUser ? 'user' : 'assistant'}
-      data-message-id={item.id}
-      data-streaming={item.kind === 'assistant' && item.streaming ? 'true' : undefined}
-    >
-      <span
-        className={cn(
-          'grid size-8 shrink-0 place-items-center rounded-chip',
-          isUser ? 'bg-ink text-ink-invert' : 'bg-gold-wash',
-        )}
-      >
-        {isUser ? (
-          <UserIcon size={17} />
-        ) : (
-          actions.mascot ? <SupportCat className="size-8 object-contain" /> : <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
-        )}
-      </span>
-      {/* 气泡和它下面那排小按钮竖着排。`items-start`/`items-end` 让气泡按内容宽度
-          贴合，而不是被拉满整列；`min-w-0` 是给长表格留的收缩余地。 */}
-      <div className={cn('flex min-w-0 max-w-[85%] flex-col', isUser && 'items-end')}>
-        <div
-          className={cn(
-            'rounded-card px-4 py-3',
-            isUser ? 'text-[14px] leading-relaxed whitespace-pre-wrap bg-ink text-ink-invert' : 'bg-sunk text-ink',
-          )}
-        >
-          {/* 图片先显示，再显示文字：用户发图时那句话通常是"这是什么"，
-              先看图更接近他发消息时的样子。
-              这里贴的是**缩略图**（存档里存的就是它，见 `lib/image.ts`）。 */}
-          {isUser && item.kind === 'user' && item.thumb !== undefined && (
-            <img
-              src={item.thumb}
-              alt={item.imageName === undefined ? '你发的图片' : `你发的图片：${item.imageName}`}
-              data-sent-image
-              className={cn(
-                'max-h-56 w-auto max-w-full rounded-chip object-contain',
-                item.text.trim() !== '' && 'mb-2',
-              )}
-            />
-          )}
-          {/* 助手回复可能带 Markdown 表格与公式；用户自己说的话按纯文本显示，
-              免得他打的 `#` 或 `*` 被当成格式。
-              懒加载期间的兜底就是纯文本——和没有这个功能时的显示一致，不会闪空白。 */}
-          {isUser
-            ? item.text
-            : (
-              <Suspense fallback={<span className="whitespace-pre-wrap">{item.text}</span>}>
-                <Markdown text={item.text} />
-              </Suspense>
-            )}
-          {item.kind === 'assistant' && item.streaming && (
-            <span aria-label="正在生成回复" className="ml-1 inline-block h-4 w-0.5 animate-pulse bg-gold-deep align-middle" />
-          )}
-        </div>
-
-        {/* 正在念的这一条挂上播放器：波形 + 进度条 + 时间。
-            只挂在**正在念的那一条**上——十条消息各带一个播放器，既吵又没意义。 */}
-        {actions.speakingId === item.id && actions.playback !== undefined && (
-          <SpeechPlayer
-            className="mt-1.5 w-full"
-            onSeek={actions.onSeek}
-            position={actions.playback.position}
-            duration={actions.playback.duration}
-            ratio={actions.playback.ratio}
-            waveform={actions.playback.waveform}
-          />
-        )}
-
-        {!(item.kind === 'assistant' && item.streaming) && <MessageActions
-          text={item.text}
-          isUser={isUser}
-          canSpeak={actions.canSpeak}
-          speaking={actions.speakingId === item.id}
-          regeneratable={actions.regeneratableId === item.id}
-          frozen={actions.frozen}
-          frozenReason={actions.frozenReason}
-          onRegenerate={() => { actions.onRegenerate(item.id) }}
-          onSpeak={() => { actions.onSpeak(item) }}
-          onStopSpeak={actions.onStopSpeak}
-          onEdit={() => { actions.onEdit(item) }}
-        />}
+        <MessageActions text={item.text} isUser canSpeak={false} speaking={false} regeneratable={false}
+          frozen={actions.frozen} frozenReason={actions.frozenReason}
+          onRegenerate={() => actions.onRegenerate(item.id)} onSpeak={() => actions.onSpeak(item)}
+          onStopSpeak={actions.onStopSpeak} onEdit={() => actions.onEdit(item)} />
       </div>
     </div>
   )

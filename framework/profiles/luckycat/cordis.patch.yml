@@ -83,6 +83,12 @@
             # 必须显式写 normal：always 模式会无限重试且每次都计费。
             retryPolicy:
               mode: normal
+              maxRetries: 3
+              retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]
+              backoff:
+                initialDelayMs: 1000
+                maxDelayMs: 4000
+                jitterRatio: 0
             models:
               - id: nvidia/nemotron-3-ultra-550b-a55b:free
                 name: Nemotron 3 Ultra 550B (free)
@@ -167,6 +173,12 @@
             baseURL: http://127.0.0.1:8080
             retryPolicy:
               mode: normal
+              maxRetries: 3
+              retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]
+              backoff:
+                initialDelayMs: 1000
+                maxDelayMs: 4000
+                jitterRatio: 0
             models:
               - id: qwen3.8-9b-q4
                 name: Qwen3.8-9B-Q4 (RTX5060 CUDA)
