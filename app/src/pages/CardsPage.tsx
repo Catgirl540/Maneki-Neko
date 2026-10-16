@@ -1,9 +1,9 @@
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { Account, BankCard, CardProduct, Cents } from '@/api/types'
 import { BrandMark } from '@/components/brand/BrandMark'
-import { CatMark } from '@/components/brand/Logo'
+import { WorkbenchBrand } from '@/components/brand/WorkbenchBrand'
 import {
   CardApplicationModal,
   type ApplicationMode,
@@ -12,16 +12,15 @@ import { CardSecretsModal } from '@/components/cards/CardSecretsModal'
 import { useReveal } from '@/lib/useReveal'
 import { RevealToggle } from '@/components/ui/Reveal'
 import { Button } from '@/components/ui/Button'
-import { Card, CardHeader } from '@/components/ui/Card'
+import { Modal } from '@/components/ui/Modal'
+import { Card } from '@/components/ui/Card'
 import { EmptyState, Skeleton, Tag } from '@/components/ui/Segmented'
 import { Row, Toggle } from '@/components/ui/Toggle'
 import { formatAddress } from '@/lib/address'
-import { cn } from '@/lib/cn'
-import { formatAmount } from '@/lib/format'
+import { CURRENCY_SYMBOL, formatAmount, formatCurrency } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
 import { useToast } from '@/components/ui/toast-context'
 import {
-  AlertIcon,
   CreditCardPlusIcon,
   GlobalIcon,
   LockIcon,
@@ -42,6 +41,14 @@ const STATUS_META: Record<
 
 const LIMIT_PRESETS: Cents[] = [200_000, 500_000, 1_000_000, 5_000_000]
 
+/** 按卡种统一卡面与卡堆配色，不随选中状态、锁卡状态改变。 */
+function cardColorClass(card: BankCard) {
+  if (card.productName.includes('星享')) return 'card-color-navy'
+  if (card.network === 'unionpay') return 'card-color-jade'
+  if (/全球|global/i.test(card.productName)) return 'card-color-violet'
+  return card.theme === 'ink' ? 'card-color-navy' : 'card-color-violet'
+}
+
 export function CardsPage() {
   const toast = useToast()
   const { shown: balanceShown, toggle: toggleBalanceShown } = useReveal()
@@ -50,8 +57,12 @@ export function CardsPage() {
   // 卡片要显示它绑的是哪个资金账户 —— 卡是支付工具，钱在账户里
   const accounts = useAsync<Account[]>(() => api.listAccounts(), [])
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const walletRef = useRef<HTMLElement>(null)
+  const previousCardRects = useRef(new Map<string, DOMRect>())
+  const cardAnimations = useRef<Animation[]>([])
   /** 正在查看安全码的卡；null 表示弹窗关闭 */
   const [secretsFor, setSecretsFor] = useState<BankCard | null>(null)
+  const [deliveryFor, setDeliveryFor] = useState<BankCard | null>(null)
   /**
    * 已解锁的安全码，按卡记，**带时限**。
    * 放在页面而不是卡片组件里：解锁弹窗挂在页面上，而且切卡回来时这个状态不该丢。
@@ -115,6 +126,42 @@ export function CardsPage() {
 
   const list = cards.data ?? []
   const card = list.find((c) => c.id === selectedId) ?? list[0] ?? null
+  const linkedAccount = accounts.data?.find(account => account.id === card?.accountId)
+
+  // 同一张卡在展示位和卡堆之间平移；不缩放、不弹跳，也不复制卡片安全信息。
+  useLayoutEffect(() => {
+    const previous = previousCardRects.current
+    previousCardRects.current = new Map()
+    if (!previous.size) return
+    walletRef.current?.querySelector<HTMLElement>('.card-stack-front')?.focus({ preventScroll: true })
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    walletRef.current?.querySelectorAll<HTMLElement>('[data-wallet-card]').forEach(element => {
+      const from = previous.get(element.dataset.walletCard!)
+      if (!from) return
+      const to = element.getBoundingClientRect()
+      const x = from.left - to.left
+      const y = from.top - to.top
+      if (!x && !y) return
+      cardAnimations.current.push(element.animate([
+        { transform: `translate(${x}px, ${y}px)` },
+        { transform: 'translate(0, 0)' },
+      ], { duration: 340, easing: 'cubic-bezier(.22, 1, .36, 1)' }))
+    })
+  }, [card?.id])
+
+  useEffect(() => () => cardAnimations.current.forEach(animation => animation.cancel()), [])
+
+  function selectCard(id: string) {
+    if (busy || id === card?.id) return
+    const rects = new Map<string, DOMRect>()
+    walletRef.current?.querySelectorAll<HTMLElement>('[data-wallet-card]').forEach(element => {
+      rects.set(element.dataset.walletCard!, element.getBoundingClientRect())
+    })
+    cardAnimations.current.forEach(animation => animation.cancel())
+    cardAnimations.current = []
+    previousCardRects.current = rects
+    setSelectedId(id)
+  }
 
   /**
    * 乐观更新单张卡片：先改本地状态，接口返回后写回权威值，失败回滚。
@@ -151,7 +198,7 @@ export function CardsPage() {
   if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
 
   return (
-    <div className="flex flex-col gap-7">
+    <div className="cards-page flex flex-col gap-5">
       <header className="float-up flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">
@@ -160,6 +207,7 @@ export function CardsPage() {
         </div>
         <Button
           variant="primary"
+          size="sm"
           icon={<CreditCardPlusIcon size={18} />}
           onClick={() => setApplication({ mode: 'open' })}
           disabled={busy || products.loading || products.data?.length === 0}
@@ -182,177 +230,105 @@ export function CardsPage() {
       )}
 
       {card && (
-        <>
-          {/* 卡片选择 */}
-          <div className="float-up flex flex-wrap gap-2.5">
-            {list.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedId(item.id)}
-                className={cn(
-                  'inline-flex h-10 items-center gap-2 rounded-chip border px-4 text-[13px] transition-colors',
-                  item.id === card.id
-                    ? 'border-gold bg-gold-wash text-gold-deep'
-                    : 'border-line text-ink-soft hover:border-line-strong',
-                )}
-              >
-                尾号 {item.last4}
-                <span className="text-ink-mute">·</span>
-                {STATUS_META[item.status].label}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-            {/* 卡面 */}
-            <div className="flex flex-col gap-5">
-              <BankCardVisual
-                // key 让切换卡片时重挂载：眼睛状态与已解锁的安全码不会串到另一张卡
-                key={card.id}
-                card={card}
-                account={accounts.data?.find((a) => a.id === card.accountId) ?? null}
-                pan={unlockedFor(card.id)?.pan ?? null}
-                cvv={unlockedFor(card.id)?.cvv || null}
-                onUnlockCvv={() => setSecretsFor(card)}
-                onHideCvv={() => hideCardCvv(card.id)}
-              />
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-field border border-line bg-sunk px-4 py-3 text-[13px]">
-                <span className="text-ink-soft">此卡资金账户可用余额</span>
-                <span className="flex items-center gap-2">
-                  <strong className="num text-ink">{balanceShown
-                    ? `¥${formatAmount(accounts.data?.find((a) => a.id === card.accountId)?.available ?? 0)}`
-                    : '¥••••••'}</strong>
-                  <RevealToggle shown={balanceShown} onToggle={toggleBalanceShown} />
-                </span>
-              </div>
-              {error && (
-                <p className="rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">
-                  {error}
-                </p>
-              )}
-              <div className="flex gap-3">
-                <Button
-                  block
-                  variant={card.status === 'locked' ? 'primary' : 'danger'}
-                  loading={busy}
-                  disabled={card.status === 'replaced' || card.status === 'pending'}
-                  icon={card.status === 'locked' ? <UnlockIcon size={18} /> : <LockIcon size={18} />}
-                  onClick={() => {
-                    const locking = card.status !== 'locked'
-                    void applyCardChange(
-                      (c) => ({
-                        ...c,
-                        status: locking ? 'locked' : 'active',
-                        ...(locking ? { onlinePayment: false, overseasPayment: false } : {}),
-                      }),
-                      () => api.setCardLock(card.id, locking),
-                      locking ? '卡片已锁定，所有交易将被拦截' : '卡片已解锁',
-                    )
-                  }}
-                >
-                  {card.status === 'locked' ? '解锁卡片' : '立即锁卡'}
-                </Button>
-                <Button
-                  block
-                  icon={<RefreshIcon size={18} />}
-                  disabled={busy || card.status === 'replaced'}
-                  onClick={() => setApplication({ mode: 'replace', card })}
-                >
-                  换卡
-                </Button>
-              </div>
-              <p className="flex items-start gap-2 text-[13px] text-ink-mute">
-                <AlertIcon size={16} className="mt-0.5 shrink-0" />
-                锁卡后所有线上与线下交易会被即时拦截，找回卡片后可随时解锁，无需换卡。
-              </p>
+        <div className="cards-workspace">
+          <section ref={walletRef} className="card-wallet" aria-label="我的银行卡">
+            <div className="card-wallet-heading"><h2>当前卡片</h2><span>{list.length} 张</span></div>
+            <div key={card.id} data-wallet-card={card.id} className="card-stack-front" tabIndex={-1} aria-label={`当前卡片：${card.productName}`}>
+              <BankCardVisual card={card}
+                pan={unlockedFor(card.id)?.pan ?? null} cvv={unlockedFor(card.id)?.cvv || null}
+                onUnlockCvv={() => setSecretsFor(card)} onHideCvv={() => hideCardCvv(card.id)} />
             </div>
+            {list.length > 1 && <div className="card-wallet-pile">
+              <div className="card-wallet-heading"><h2>其他银行卡</h2><span>{list.length - 1} 张</span></div>
+              <div className="card-stack" style={{ paddingBottom: Math.max(0, list.length - 2) * 64 }}>
+                {list.filter(item => item.id !== card.id).map((item, index) => (
+                  <button key={item.id} data-wallet-card={item.id} type="button"
+                    aria-label={`${item.productName} 尾号 ${item.last4} · ${STATUS_META[item.status].label}`}
+                    disabled={busy} onClick={() => selectCard(item.id)}
+                    style={{ top: index * 64, zIndex: index + 1 }}
+                    className={`card-stack-back ${cardColorClass(item)}`}>
+                    <strong title={item.productName}>{item.productName}</strong>
+                    <small>尾号 {item.last4} · {STATUS_META[item.status].label}</small>
+                    <span className="card-stack-brand"><WorkbenchBrand compact /><BrandMark network={item.network} tone="onDark" /></span>
+                  </button>
+                ))}
+              </div>
+            </div>}
+          </section>
 
-            {/* 设置 */}
-            <Card className="float-up" style={{ animationDelay: '80ms' }}>
-              <CardHeader
-                title="交易设置"
-                action={<Tag tone={STATUS_META[card.status].tone}>{STATUS_META[card.status].label}</Tag>}
-              />
+          <section className="card-management" aria-label="当前卡片管理">
+            <header className="card-management-heading">
+              <h2>{card.productName}</h2>
+              <Tag tone={STATUS_META[card.status].tone}>{STATUS_META[card.status].label}</Tag>
+            </header>
+            <div className="card-overview">
+              <div className="card-account-details">
+                <dl>
+                  <div><dt>关联资金账户</dt><dd>{linkedAccount?.label ?? '—'}<small>{linkedAccount ? `尾号 ${linkedAccount.accountNo.slice(-4)} · ${linkedAccount.currency}` : ''}</small></dd></div>
+                  <div><dt>可用余额</dt><dd className="card-available-balance"><strong className="num">{linkedAccount
+                    ? balanceShown ? formatCurrency(linkedAccount.available, linkedAccount.currency) : `${CURRENCY_SYMBOL[linkedAccount.currency]}••••••`
+                    : '—'}</strong><RevealToggle shown={balanceShown} onToggle={toggleBalanceShown} /></dd></div>
+                </dl>
+                <div className="card-management-actions">
+                  <Button size="sm" variant={card.status === 'locked' ? 'primary' : 'secondary'} loading={busy}
+                    disabled={card.status === 'replaced' || card.status === 'pending'}
+                    icon={card.status === 'locked' ? <UnlockIcon size={16} /> : <LockIcon size={16} />}
+                    onClick={() => {
+                      const locking = card.status !== 'locked'
+                      void applyCardChange(c => ({ ...c, status: locking ? 'locked' : 'active',
+                        ...(locking ? { onlinePayment: false, overseasPayment: false } : {}),
+                      }), () => api.setCardLock(card.id, locking), locking ? '卡片已锁定，所有交易将被拦截' : '卡片已解锁')
+                    }}>{card.status === 'locked' ? '解锁卡片' : '立即锁卡'}</Button>
+                  <Button size="sm" icon={<RefreshIcon size={16} />} disabled={busy || card.status === 'replaced'}
+                    onClick={() => setApplication({ mode: 'replace', card })}>换卡</Button>
+                  {(card.shippingAddress || card.issuingFee) && <Button size="sm" variant="ghost" onClick={() => setDeliveryFor(card)}>寄送信息</Button>}
+                </div>
+              </div>
+            </div>
+            {error && <p role="alert" className="rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">{error}</p>}
 
-              <div className="mt-4 divide-y divide-line">
-                <Row
-                  icon={<SlidersIcon size={20} />}
-                  title="线上支付"
-                  description="网上购物、App 内支付"
-                  right={
-                    <Toggle
-                      label="线上支付"
-                      checked={card.onlinePayment}
-                      disabled={busy || card.status !== 'active'}
-                      onChange={(next) =>
-                        void applyCardChange(
-                          (c) => ({ ...c, onlinePayment: next }),
-                          () => api.updateCardSettings(card.id, { onlinePayment: next }),
-                          next ? '已开启线上支付' : '已关闭线上支付',
-                        )
-                      }
-                    />
-                  }
-                />
-                <Row
-                  icon={<GlobalIcon size={20} />}
-                  title="境外交易"
-                  description="境外商户与外币结算"
-                  right={
-                    <Toggle
-                      label="境外交易"
-                      checked={card.overseasPayment}
-                      disabled={busy || card.status !== 'active'}
-                      onChange={(next) =>
-                        void applyCardChange(
-                          (c) => ({ ...c, overseasPayment: next }),
-                          () => api.updateCardSettings(card.id, { overseasPayment: next }),
-                          next ? '已开启境外交易' : '已关闭境外交易',
-                        )
-                      }
-                    />
-                  }
-                />
-                <div className="py-5">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-[15px] font-medium text-ink">单日限额</span>
-                    <span className="num text-[15px] font-semibold text-ink">
-                      ¥{formatAmount(card.dailyLimit)}
-                    </span>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {LIMIT_PRESETS.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        disabled={busy || card.status !== 'active'}
-                        onClick={() =>
-                          void applyCardChange(
-                            (c) => ({ ...c, dailyLimit: preset }),
-                            () => api.updateCardSettings(card.id, { dailyLimit: preset }),
-                            `单日限额已调整为 ¥${formatAmount(preset)}`,
-                          )
-                        }
-                        className={cn(
-                          'h-9 rounded-chip border px-3.5 text-[13px] transition-colors disabled:opacity-50',
-                          card.dailyLimit === preset
-                            ? 'border-gold bg-gold-wash text-gold-deep'
-                            : 'border-line text-ink-soft hover:border-gold hover:text-gold-deep',
-                        )}
-                      >
-                        ¥{formatAmount(preset)}
-                      </button>
-                    ))}
+            <section className="card-payment-settings" aria-label="交易设置">
+              <h3>交易设置</h3>
+              <div className="card-settings-grid">
+                <div className="card-payment-switches">
+                  <Row icon={<SlidersIcon size={19} />} title="线上支付" description="网上购物、App 内支付"
+                    right={<Toggle label="线上支付" checked={card.onlinePayment} disabled={busy || card.status !== 'active'}
+                      onChange={next => void applyCardChange(c => ({ ...c, onlinePayment: next }),
+                        () => api.updateCardSettings(card.id, { onlinePayment: next }), next ? '已开启线上支付' : '已关闭线上支付')} />} />
+                  <Row icon={<GlobalIcon size={19} />} title="境外交易" description="境外商户与外币结算"
+                    right={<Toggle label="境外交易" checked={card.overseasPayment} disabled={busy || card.status !== 'active'}
+                      onChange={next => void applyCardChange(c => ({ ...c, overseasPayment: next }),
+                        () => api.updateCardSettings(card.id, { overseasPayment: next }), next ? '已开启境外交易' : '已关闭境外交易')} />} />
+                </div>
+                <div className="card-daily-limit">
+                  <span>单日限额</span><strong className="num">¥{formatAmount(card.dailyLimit)}</strong>
+                  <div role="group" aria-label="单日限额">
+                    {LIMIT_PRESETS.map(preset => <button key={preset} type="button" disabled={busy || card.status !== 'active'}
+                      aria-pressed={card.dailyLimit === preset}
+                      onClick={() => void applyCardChange(c => ({ ...c, dailyLimit: preset }),
+                        () => api.updateCardSettings(card.id, { dailyLimit: preset }), `单日限额已调整为 ¥${formatAmount(preset)}`)}>
+                      ¥{formatAmount(preset)}
+                    </button>)}
                   </div>
                 </div>
               </div>
-            </Card>
-          </div>
-        </>
+            </section>
+          </section>
+        </div>
       )}
 
-      {/* key 让每次换一张卡就重新挂载：上一位的密码与已取到的安全码不会留给下一位 */}
+      <Modal open={deliveryFor !== null} onClose={() => setDeliveryFor(null)} title="寄送信息">
+        {deliveryFor && <dl className="space-y-5 text-[14px]">
+          <div><dt className="text-[12px] text-ink-mute">银行卡</dt><dd className="mt-1">{deliveryFor.productName} · 尾号 {deliveryFor.last4}</dd></div>
+          {deliveryFor.shippingAddress && <>
+            <div><dt className="text-[12px] text-ink-mute">收件人</dt><dd className="mt-1">{deliveryFor.shippingAddress.recipient}</dd></div>
+            <div><dt className="text-[12px] text-ink-mute">寄送地址</dt><dd className="mt-1">{formatAddress(deliveryFor.shippingAddress)}</dd></div>
+          </>}
+          {deliveryFor.issuingFee ? <div><dt className="text-[12px] text-ink-mute">已收制卡费用</dt><dd className="num mt-1">¥{formatAmount(deliveryFor.issuingFee)}</dd></div> : null}
+        </dl>}
+      </Modal>
+
+      {/* 切卡时重挂载安全信息弹窗，不沿用上一张卡的验证状态。 */}
       {secretsFor && (
         <CardSecretsModal
           key={secretsFor.id}
@@ -389,14 +365,12 @@ export function CardsPage() {
 /** 卡面：纯色实心（无渐变），左上是品牌标，右下是卡号 */
 function BankCardVisual({
   card,
-  account,
   pan,
   cvv,
   onUnlockCvv,
   onHideCvv,
 }: {
   card: BankCard
-  account: Account | null
   /** 已解锁的完整卡号；null = 未解锁或已过期 */
   pan: string | null
   /** 已解锁的安全码；null = 未解锁或已过期 */
@@ -406,7 +380,6 @@ function BankCardVisual({
   /** 把已显示的安全码遮回去。**不需要认证** —— 验证是「看到」的门槛 */
   onHideCvv: () => void
 }) {
-  const dark = card.theme === 'ink'
   // 这张卡自己的眼睛：只管这张卡的卡号 / 有效期（安全码另需验密码，见下）
   const { shown, toggle } = useReveal()
   /**
@@ -423,26 +396,18 @@ function BankCardVisual({
   return (
     <div className="flex flex-col gap-3">
       <div
-        className={cn(
-          'float-up flex aspect-[1.62/1] w-full max-w-[420px] flex-col justify-between rounded-card p-5 sm:p-7',
-          dark ? 'bg-ink text-ink-invert' : 'bg-gold text-ink',
-          card.status === 'locked' && 'opacity-60',
-        )}
+        className={`bank-card-face flex aspect-[1.62/1] w-full flex-col justify-between rounded-card p-5 ${cardColorClass(card)}`}
       >
-        <div className="flex items-start justify-between">
-          <CatMark className="size-9" cutout={dark ? 'var(--color-ink)' : 'var(--color-gold)'} />
-          <span className="flex items-center gap-2.5">
-            <span className="text-[11px] tracking-[0.18em] uppercase opacity-80">
-              {card.kind === 'debit' ? 'Debit' : 'Credit'}
-            </span>
-            <BrandMark network={card.network} tone={dark ? 'onDark' : 'onLight'} />
-          </span>
+        <div className="card-face-heading">
+          <WorkbenchBrand compact />
+          <span className="card-face-name"><strong title={card.productName}>{card.productName}</strong><small>尾号 {card.last4} · {STATUS_META[card.status].label}</small></span>
+          <BrandMark network={card.network} tone="onDark" />
         </div>
 
         <div>
           {/* 卡号默认连后四位一起遮住；眼睛在旁边，一键查看 / 隐藏 */}
           <div className="flex items-center gap-2">
-            <p className="num text-[19px] tracking-[0.14em]">
+            <p data-card-number className="num text-[18px] tracking-[0.08em]">
               {!shown
                 ? '•••• •••• •••• ••••'
                 : pan
@@ -452,7 +417,7 @@ function BankCardVisual({
             <RevealToggle
               shown={shown}
               onToggle={toggle}
-              tone={dark ? 'onDark' : 'onLight'}
+              tone="onDark"
               className="size-6"
             />
           </div>
@@ -506,25 +471,7 @@ function BankCardVisual({
           </div>
         </div>
       </div>
-      <div>
-        <p className="text-[13px] text-ink-soft">{card.productName}</p>
-        <p className="num mt-1 text-[12px] text-ink-mute">
-          {/* 资金账户号不遮：它是收款项，本来就该能直接读出来转给别人 */}
-          {account
-            ? `资金账户：${account.label} · ${account.accountNo}`
-            : '资金账户：加载中…'}
-        </p>
-      </div>
-      {card.status === 'pending' && card.shippingAddress && (
-        <p className="text-[12px] leading-relaxed text-ink-mute">
-          制卡中 · 将寄往 {card.shippingAddress.recipient} · {formatAddress(card.shippingAddress)}
-        </p>
-      )}
-      {card.issuingFee ? (
-        <p className="num text-[12px] text-ink-mute">
-          已收制卡费用 ¥{formatAmount(card.issuingFee)}
-        </p>
-      ) : null}
+
     </div>
   )
 }

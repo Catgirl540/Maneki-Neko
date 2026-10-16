@@ -2,7 +2,7 @@
 
 ## 1. 位置与范围
 
-`mobile/` 是按 Open Design 稿重写的 Flutter 客户端，Android 包名仍为 `cn.waveflow.luckycat`，最低 Android 8.0。原 `android/` Kotlin 工程保留供迁移核对，不参与 Flutter 构建。
+`mobile/` 是按 Open Design 稿重写的 Flutter 客户端，Android 包名仍为 `cn.waveflow.luckycat`，最低 Android 8.0。原根目录 `android/` Kotlin 工程已移至 `archive/2026-10-15/android-kotlin/`，只供迁移核对，不参与 Flutter 构建。客户端版本入口见 [CLIENTS.md](../CLIENTS.md)。
 
 设计参考：`../design/android/open-design-reference.html`。主导航为「账户、理财、助手、我的」，转入、转出在账户内用底部弹窗办理。使用米白背景、深色余额卡、金色操作和 Lucide 图标；余额与产品数据全部由接口返回。
 
@@ -74,7 +74,7 @@ flutter test integration_test/app_test.dart -d emulator-5580 \
 
 ## 图标与银行卡维护
 
-`tools/gen-flutter-brand.mjs` 从网页端 `cat-mark.ts` 生成 Flutter 的 `CatGlyph` 及安卓桌面资源；仓库根目录用 Node 24 运行，可带 `--check` 检查同步。不要修改旧 `android/` 工程来调整 Flutter 客户端。
+`tools/gen-flutter-brand.mjs` 从网页端 `cat-mark.ts` 生成 Flutter 的 `CatGlyph` 及安卓桌面资源；仓库根目录用 Node 24 运行，可带 `--check` 检查同步。不要修改已归档的旧 Kotlin 工程来调整 Flutter 客户端。
 
 银行卡管理位于 `lib/pages/cards.dart`。申卡和换卡在支付密码提交前再次显示接口费用；每日限额仅显示后端支持的四档。卡信息只保留在弹窗内，关闭、后台、超时后清除，已失效请求的晚到响应直接丢弃；安卓敏感弹窗在调试版也禁止截图。
 

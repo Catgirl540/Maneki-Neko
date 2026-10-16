@@ -1,13 +1,17 @@
-import { CatMark } from '@/components/brand/Logo'
+import { Link } from 'react-router-dom'
+import { WorkbenchBrand } from '@/components/brand/WorkbenchBrand'
+import { useSession } from '@/store/session-context'
+import { NotificationsButton } from './NotificationsButton'
+import { MobileNavigation } from './MobileNavigation'
 
-/**
- * 移动端品牌栏。交易搜索已移到账单页内，通知移到左下角悬浮按钮，
- * 桌面端不再保留空顶栏（原先的 sticky 顶栏随之移除）。
- */
 export function TopBar() {
-  return (
-    <header className="flex h-14 shrink-0 items-center border-b border-line bg-paper/95 px-4 backdrop-blur lg:hidden print:hidden">
-      <span aria-label="招财猫银行"><CatMark className="size-8 text-gold" /></span>
-    </header>
-  )
+  const { user } = useSession()
+  return <header className="workbench-mobile-header print:hidden">
+    <div className="workbench-mobile-brand">
+      <Link to="/dashboard" aria-label="招财猫银行首页"><WorkbenchBrand /></Link>
+      <NotificationsButton collapsed />
+      <Link to="/security" aria-label="个人与安全设置" className="workbench-avatar">{user?.avatarInitial ?? '喵'}</Link>
+    </div>
+    <MobileNavigation />
+  </header>
 }

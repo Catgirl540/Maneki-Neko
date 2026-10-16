@@ -1,0 +1,251 @@
+/* 用户确认的单一智能工作台；不包含模式切换或演示回复。 */
+[hidden] { display: none !important; }
+.workbench-shell {
+  display: flex;
+  height: calc(100dvh - 28px);
+  min-height: 0;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 80% 0, #ecefff, transparent 70%), #f6f8ff;
+}
+.workbench-sidebar {
+  display: flex;
+  width: 220px;
+  flex: 0 0 220px;
+  flex-direction: column;
+  padding: 24px 14px 14px;
+  background: #f7f7ff;
+  border-right: 1px solid var(--color-line);
+  overflow-y: auto;
+}
+.workbench-brand-link { margin: 0 3px 30px; }
+.workbench-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--color-ink); }
+.workbench-brand img { width: 38px; height: 38px; object-fit: contain; border-radius: 8px; }
+.workbench-brand > span { font-size: 18px; font-weight: 500; line-height: 1.25; white-space: nowrap; }
+.workbench-brand small { display: block; margin-top: 3px; font-size: 10px; font-weight: 400; letter-spacing: .07em; color: var(--color-ink-mute); }
+.workbench-nav { display: flex; flex-direction: column; gap: 4px; }
+.workbench-nav a { position: relative; display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 9px 11px; border-radius: 5px; font-size: 13px; color: var(--color-ink-soft); transition: background 150ms, color 150ms, transform 150ms; }
+.workbench-nav a > svg { flex-shrink: 0; color: var(--color-ink-mute); }
+.workbench-nav a:hover { background: #eeefff; color: var(--color-ink); transform: translateX(2px); }
+.workbench-nav a[aria-current='page'] { background: #eeefff; color: var(--color-ink); }
+.workbench-nav a[aria-current='page'] > svg { color: var(--color-gold); }
+.workbench-nav a[aria-current='page']::before { position: absolute; content: ''; left: -13px; width: 2px; height: 24px; background: var(--color-gold); border-radius: 2px; }
+.workbench-nav-secondary { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--color-line); }
+.workbench-profile { display: flex; align-items: center; gap: 4px; margin-top: auto; padding-top: 14px; }
+.workbench-profile > a { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; padding: 8px 4px; border-radius: 6px; }
+.workbench-profile > a:hover { background: #eeefff; }
+.workbench-profile > button { width: 32px; height: 36px; flex: 0 0 32px; }
+.workbench-profile > a > svg { margin-left: auto; color: var(--color-ink-mute); }
+.workbench-avatar { display: grid; width: 30px; height: 30px; place-items: center; flex-shrink: 0; border-radius: 50%; background: #edf0f6; color: var(--color-ink-soft); font-size: 13px; }
+.workbench-profile-copy { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 12px; white-space: nowrap; }
+.workbench-profile-copy small { display: block; color: var(--color-ink-mute); font-size: 11px; }
+.workbench-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; }
+.workbench-main-content { display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1; padding: 22px clamp(20px, 3vw, 42px) 20px; outline: none; }
+.workbench-mobile-header { display: none; }
+.business-scroll { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 0 2px 4px; scrollbar-gutter: stable; }
+.business-content { max-width: 1440px; margin-inline: auto; padding-bottom: 22px; animation: workbench-arrive 180ms ease-out both; }
+.business-content h1 { font-size: 30px; font-weight: 400; letter-spacing: -.02em; }
+.business-content h2 { font-weight: 500; }
+.business-content .page-stack { gap: 20px; }
+.business-content .card { padding: 20px; }
+.business-content .card.border-0 { padding: 0; }
+.workbench-assistant { display: grid; flex: 1; min-width: 0; min-height: 0; grid-template-columns: 96px minmax(0, 1fr); gap: 16px; }
+.smart-services { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: thin; }
+.smart-services h2 { flex-shrink: 0; font-size: 14px; font-weight: 400; text-align: center; padding: 0 0 12px; }
+.smart-services > div { flex: 1; display: grid; grid-template-rows: repeat(10, minmax(58px, 1fr)); gap: 2px; }
+.smart-services button { min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border-radius: 7px; font-size: 12px; color: var(--color-ink-soft); transition: color 150ms, background 150ms; }
+.smart-services button > span { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 8px; background: white; border: 1px solid transparent; transition: color 150ms, background 150ms, transform 150ms; }
+.smart-services button:hover > span { background: var(--color-gold); color: white; transform: translateY(-2px); }
+.smart-services button[aria-pressed='true'] { color: var(--color-gold-deep); background: #eeebff; }
+.smart-services button[aria-pressed='true'] > span { color: var(--color-gold); border-color: #ded8ff; }
+.workbench-chat { border: 1px solid var(--color-line); border-radius: 7px; background: white; overflow: hidden; }
+.workbench-chat .chat-panel { border-radius: 7px; }
+.workbench-chat .chat-toolbar { padding: 10px 16px; gap: 8px; }
+.workbench-chat .chat-toolbar > span:last-child { margin-left: 0; }
+.workbench-chat .chat-toolbar button { font-size: 12px; font-weight: 400; padding-inline: 9px; }
+.workbench-chat .chat-connection { order: 2; margin-left: auto; }
+.workbench-chat .chat-connection > span { font-size: 11px; }
+.workbench-chat .chat-message-scroll { position: relative; padding: 24px clamp(16px, 3vw, 40px); }
+.workbench-chat-hero { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; position: absolute; inset: 0; pointer-events: none; }
+.workbench-chat-hero img { width: 112px; height: 112px; object-fit: contain; }
+.workbench-chat-hero h2 { font-size: clamp(23px, 2.5vw, 32px); font-weight: 300; line-height: 1.35; }
+.workbench-chat .chat-composer { border-top: 0; padding: 12px 18px 18px; }
+.workbench-chat .chat-input-form { display: grid; grid-template-columns: 36px 36px minmax(0, 1fr) 40px 40px; gap: 5px; padding: 12px; border: 1px solid var(--color-line); border-radius: 8px; background: white; transition: border-color 150ms, box-shadow 150ms; }
+.workbench-chat .chat-input-form:focus-within { border-color: #beb5fc; box-shadow: 0 0 0 3px #533afd0a; }
+.workbench-chat .chat-input-form textarea { grid-row: 1; grid-column: 1 / -1; min-height: 48px; height: 56px; padding: 2px 4px; border: 0; border-radius: 0; font-size: 15px; line-height: 1.5; outline: none; box-shadow: none; background: transparent; }
+.workbench-chat .chat-input-form textarea:focus-visible { outline: none; }
+.workbench-chat .chat-input-form button { grid-row: 2; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 5px; }
+.workbench-chat .chat-input-form button[aria-label='发送图片'] { grid-column: 1; background: transparent; }
+.workbench-voice-toggle { grid-column: 2; display: grid; place-items: center; color: var(--color-ink-mute); }
+.workbench-voice-toggle[aria-pressed='true'] { background: var(--color-gold-wash); color: var(--color-gold); }
+.workbench-voice-toggle:disabled { opacity: .4; cursor: not-allowed; }
+.workbench-chat .chat-input-form button[aria-label='按住说话'] { grid-column: 4; }
+.workbench-chat .chat-input-form button:last-child { grid-column: 5; background: var(--color-gold); color: white; }
+.workbench-chat .chat-input-form button:last-child:disabled { background: #bcb4fb; color: white; }
+.workbench-chat .chat-input-form button:hover:not(:disabled) { background-color: var(--color-gold-wash); color: var(--color-gold-deep); }
+.workbench-chat .chat-input-form button:last-child:hover:not(:disabled) { background-color: var(--color-gold-deep); color: white; }
+.workbench-intent { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 8px; padding: 4px 6px 4px 10px; color: var(--color-gold-deep); background: var(--color-gold-tint); border-radius: 999px; font-size: 13px; animation: workbench-arrive 180ms ease-out both; }
+.workbench-intent button { padding: 3px; border-radius: 50%; }
+.workbench-intent button:hover { background: var(--color-gold-wash); }
+.workbench-assistant.is-docked { flex: none; display: block; margin-top: 12px; }
+.workbench-chat-docked { border: 0; background: transparent; }
+.workbench-chat-docked .chat-panel { background: transparent; }
+.workbench-chat-docked .chat-composer { padding: 0; }
+.workbench-chat-docked .chat-input-form textarea { height: 28px; min-height: 28px; }
+.workbench-chat-alert { display: flex; justify-content: space-between; gap: 12px; width: 100%; margin-bottom: 8px; padding: 9px 12px; border-radius: 6px; background: var(--color-gold-tint); color: var(--color-gold-deep); text-align: left; font-size: 13px; }
+.service-link { display: inline-flex; align-items: center; padding: 9px 14px; border: 1px solid var(--color-line); border-radius: 5px; background: white; color: var(--color-ink-soft); font-size: 13px; }
+.service-link:hover { border-color: var(--color-gold); color: var(--color-gold-deep); }
+.service-directory { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.service-directory section { background: white; border: 1px solid var(--color-line); padding: 20px; border-radius: 8px; }
+.service-directory h2 { font-size: 16px; margin-bottom: 12px; }
+.service-directory a { display: flex; align-items: center; gap: 12px; padding: 12px 10px; border-radius: 5px; font-size: 14px; color: var(--color-ink-soft); transition: background 150ms; }
+.service-directory a > span:last-child { margin-left: auto; }
+.service-directory a:hover { background: var(--color-gold-tint); color: var(--color-gold-deep); }
+/* 原有业务组件共用主题，保留全部校验与弹窗；不影响员工端独立样式。 */
+.bg-gold { color: white; }
+button.bg-gold:hover { color: white; }
+button:disabled { cursor: not-allowed; }
+@keyframes workbench-arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@media (max-width: 1150px) and (min-width: 960px) {
+  .workbench-sidebar { width: 204px; flex-basis: 204px; padding-inline: 11px; }
+  .workbench-main-content { padding-inline: 20px; }
+  .workbench-assistant { grid-template-columns: 88px minmax(0, 1fr); gap: 12px; }
+}
+@media (max-width: 959px) {
+  .workbench-sidebar { display: none; }
+  .workbench-main-content { padding: 14px 16px 16px; }
+  .workbench-mobile-header { display: block; flex-shrink: 0; background: #f8f8ff; border-bottom: 1px solid var(--color-line); }
+  .workbench-mobile-brand { display: flex; align-items: center; gap: 10px; padding: 10px 16px 7px; }
+  .workbench-mobile-brand > a:first-child { margin-right: auto; }
+  .workbench-mobile-brand .workbench-brand img { width: 30px; height: 30px; }
+  .workbench-mobile-brand .workbench-brand > span { font-size: 15px; }
+  .workbench-mobile-brand .workbench-brand small { font-size: 8px; }
+  .workbench-mobile-brand > button { width: 32px; height: 34px; flex: 0 0 32px; }
+  .workbench-mobile-nav { display: flex; overflow-x: auto; gap: 3px; padding: 0 10px 7px; scrollbar-width: none; }
+  .workbench-mobile-nav a { display: flex; align-items: center; gap: 5px; flex-shrink: 0; min-height: 32px; padding: 6px 9px; border-radius: 5px; font-size: 11px; color: var(--color-ink-soft); }
+  .workbench-mobile-nav a[aria-current='page'] { background: #ecebff; color: var(--color-gold-deep); }
+  .workbench-assistant { display: flex; flex-direction: column; gap: 12px; }
+  .smart-services { flex-shrink: 0; overflow: visible; }
+  .smart-services h2 { display: none; }
+  .smart-services > div { display: flex; overflow-x: auto; gap: 7px; padding-bottom: 4px; scrollbar-width: thin; }
+  .smart-services button { flex: 0 0 70px; min-height: 65px; gap: 5px; font-size: 11px; }
+  .smart-services button > span { width: 32px; height: 32px; }
+  .workbench-chat .chat-toolbar { padding: 8px 10px; gap: 4px; }
+  .workbench-chat .chat-toolbar > span:last-child { width: auto; padding-top: 0; border-top: 0; }
+  .workbench-chat .chat-connection { width: 100%; order: 3; text-align: right; }
+  .workbench-chat .chat-composer { padding: 10px; }
+  .workbench-chat .chat-input-form { padding: 9px; }
+  .workbench-chat .chat-message-scroll { padding: 18px 14px; }
+  .workbench-chat-hero img { width: 88px; height: 88px; }
+  .workbench-chat-hero h2 { font-size: 23px; }
+  .workbench-chat-docked .chat-composer { padding: 0; }
+  .workbench-assistant.is-docked { margin-top: 8px; }
+  .business-content h1 { font-size: 26px; }
+  .business-content .card { padding: 16px; }
+}
+@media (max-width: 540px) {
+  .workbench-main-content { padding-inline: 12px; }
+  .service-directory { grid-template-columns: 1fr; }
+  .workbench-chat .chat-toolbar button { font-size: 11px; padding-inline: 6px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .business-content, .workbench-intent { animation: none; }
+  .workbench-nav a, .smart-services button, .smart-services button > span { transition: none; }
+}
+@media print {
+  .workbench-shell { display: block; height: auto; overflow: visible; background: white; }
+  .business-scroll { overflow: visible; }
+  .workbench-assistant { display: none; }
+}
+.account-summary-strip { display: grid; grid-template-columns: minmax(230px, 1.4fr) repeat(2, minmax(150px, 1fr)) auto; border: 1px solid var(--color-line); background: white; border-radius: 7px; overflow: hidden; }
+.account-summary-strip > div { display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 18px; border-right: 1px solid var(--color-line); }
+.account-summary-strip > div > span { font-size: 12px; color: var(--color-ink-mute); }
+.account-summary-strip > div > strong { font-size: clamp(18px, 2.4vw, 26px); font-weight: 400; word-break: break-all; }
+.account-summary-strip .account-summary-lead { background: var(--color-ink); color: white; }
+.account-summary-lead > div, .account-summary-strip .account-summary-lead > span { font-size: 12px; color: #ffffffb8; }
+.account-summary-strip .account-summary-actions { border: 0; gap: 8px; padding: 15px; }
+.account-detail-grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
+@media(max-width: 1150px) { .account-summary-strip { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); }.account-summary-strip > div { border-bottom: 1px solid var(--color-line); }.account-summary-strip .account-summary-actions { flex-direction: row; align-items: center; } }
+@media(max-width: 700px) { .account-detail-grid { grid-template-columns: 1fr; }.account-summary-strip { grid-template-columns: 1fr; }.account-summary-strip > div { border-right: 0; } }
+.workbench-chat [data-message-kind='assistant'] > span { width: 36px; height: 36px; background: transparent; }
+.account-balance-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.account-balance-list article { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 16px; background: white; border: 1px solid var(--color-line); border-radius: 6px; }
+.account-balance-list article > span { font-size: 13px; }
+.account-balance-list small { display: block; margin-top: 4px; font-size: 11px; color: var(--color-ink-mute); }
+.account-balance-list strong { font-size: 18px; font-weight: 400; }
+/* 上方展示当前卡，下方卡堆切换；位移动画由页面按卡片位置执行。 */
+.cards-page { width: 100%; max-width: 1120px; margin-inline: auto; }
+.cards-workspace { display: grid; grid-template-columns: 360px minmax(0, 1fr); align-items: start; gap: 32px; }
+.card-wallet { min-width: 0; isolation: isolate; }
+.card-wallet-heading { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 14px; color: var(--color-ink-mute); }
+.card-wallet-heading h2 { font-size: 13px; font-weight: 400; }
+.card-wallet-heading > span { font-size: 12px; }
+.card-wallet-pile { margin-top: 26px; }
+.card-stack { position: relative; }
+.card-stack::before { content: ''; display: block; width: 100%; aspect-ratio: 1.62; }
+.card-color-navy { --card-color: #08233e; }
+.card-color-jade { --card-color: #126b62; }
+.card-color-violet { --card-color: #5840c4; }
+.bank-card-face, .card-stack-back { color: #fff; background: var(--card-color); }
+.card-stack-back { position: absolute; left: 0; width: 100%; aspect-ratio: 1.62; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px 20px; overflow: hidden; border: 0; border-radius: 10px; text-align: left; transition: none; }
+/* 后卡底色延伸到前卡圆角下方，填平两侧露出的缺口；点击区域仍只覆盖露出的卡头。 */
+.card-stack-back:not(:last-child) { height: 64px; aspect-ratio: auto; border-radius: 10px 10px 0 0; box-shadow: 0 12px 0 var(--card-color); }
+.card-stack-back:not(:last-child) .card-stack-brand { display: none; }
+.card-stack-back:hover { filter: brightness(1.08); }
+.card-stack-back:disabled { cursor: wait; }
+.card-stack-back:focus-visible { outline: 3px solid var(--color-gold); outline-offset: 3px; }
+.card-stack-back strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 1.4; font-weight: 500; }
+.card-stack-back small { font-size: 11px; line-height: 1.4; opacity: .75; }
+.card-stack-brand { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: auto; }
+.card-stack-brand .workbench-brand img { width: 28px; height: 28px; }
+.card-stack-front { position: relative; z-index: 10; }
+.card-stack-front:focus-visible { outline: 3px solid var(--color-gold); outline-offset: 4px; border-radius: 10px; }
+.card-stack-front .bank-card-face { width: 100%; max-width: none; border: 1px solid #ffffff40; border-radius: 10px; box-shadow: 0 12px 26px -18px #061b3160; }
+.card-face-heading { display: flex; align-items: center; gap: 10px; }
+.card-face-heading .workbench-brand { flex-shrink: 0; }
+.card-face-name { flex: 1; min-width: 0; }
+.card-face-name strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; line-height: 1.5; font-weight: 500; }
+.card-face-name small { display: block; margin-top: 3px; font-size: 11px; line-height: 1.4; opacity: .75; }
+.card-management { min-width: 0; padding: 24px; border: 1px solid var(--color-line); border-radius: 8px; background: white; }
+.card-management-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-bottom: 18px; }
+.card-management-heading h2 { font-size: 19px; line-height: 1.4; }
+.card-overview { display: block; }
+.bank-card-face { overflow: hidden; }
+.bank-card-face [data-card-number] { min-width: 0; font-size: clamp(13px, 1.1vw, 16px); letter-spacing: .04em; white-space: nowrap; }
+.bank-card-face .workbench-brand img { width: 32px; height: 32px; }
+.card-account-details { min-width: 0; }
+.card-account-details dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.card-account-details dt { margin-bottom: 5px; color: var(--color-ink-mute); font-size: 12px; }
+.card-account-details dd { font-size: 14px; color: var(--color-ink); }
+.card-account-details dd small { display: block; margin-top: 3px; font-size: 12px; color: var(--color-ink-mute); }
+.card-available-balance { display: flex; align-items: center; gap: 8px; }
+.card-available-balance strong { font-size: 22px; font-weight: 400; }
+.card-management-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.card-action-note { margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--color-ink-mute); }
+.card-payment-settings { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--color-line); }
+.card-payment-settings h3 { font-size: 15px; font-weight: 500; }
+.card-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, .9fr); gap: 32px; margin-top: 6px; }
+.card-payment-switches > div { padding-block: 10px; }
+.card-payment-switches > div + div { border-top: 1px solid var(--color-line); }
+.card-daily-limit { padding: 14px 0 14px 28px; border-left: 1px solid var(--color-line); }
+.card-daily-limit > span { display: block; color: var(--color-ink-soft); font-size: 13px; }
+.card-daily-limit > strong { display: block; margin-top: 8px; font-size: 22px; font-weight: 400; }
+.card-daily-limit > div { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+.card-daily-limit button { padding: 6px 9px; border: 1px solid var(--color-line); border-radius: 5px; font-size: 11px; color: var(--color-ink-soft); transition: background 150ms, border-color 150ms; }
+.card-daily-limit button:hover:not(:disabled) { border-color: #c9c0fa; }
+.card-daily-limit button[aria-pressed='true'] { color: var(--color-gold-deep); border-color: #c9c0fa; background: var(--color-gold-tint); }
+.card-daily-limit button:disabled { opacity: .45; }
+@media (min-width: 960px) and (max-width: 1350px) {
+  .cards-workspace { grid-template-columns: 320px minmax(0, 1fr); gap: 24px; }
+  .card-management { padding: 18px; }
+  .card-management-heading { padding-bottom: 16px; }
+  .card-payment-settings { margin-top: 18px; padding-top: 14px; }
+  .card-payment-switches > div { padding-block: 8px; }
+  .card-settings-grid { gap: 20px; }
+  .card-daily-limit { padding-left: 20px; }
+}
+@media (max-width: 1100px) {
+  .cards-workspace { grid-template-columns: 280px minmax(0, 1fr); gap: 20px; }
+  .card-account-details dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .card-settings-grid { grid-template-columns: 1fr; }
+  .card-daily-limit { padding-left: 0; border-left: 0; border-top: 1px solid var(--color-line); }
+}

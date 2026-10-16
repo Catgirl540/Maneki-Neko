@@ -16,7 +16,6 @@ import { DownloadPage } from '@/pages/DownloadPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { OpenAccountStandalone } from '@/pages/OpenAccountPage'
 import { SecurityPage } from '@/pages/SecurityPage'
-import { SupportPage } from '@/pages/SupportPage'
 import { SavingsPage } from '@/pages/SavingsPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
 import { MembershipPage } from '@/pages/MembershipPage'
@@ -29,6 +28,8 @@ import { InvestPage } from '@/pages/InvestPage'
 import { InsurancePage } from '@/pages/InsurancePage'
 import { TransactionDetailPage } from '@/pages/TransactionDetailPage'
 import { WealthPage } from '@/pages/WealthPage'
+import { TransferPage } from '@/pages/TransferPage'
+import { ServicesPage } from '@/pages/ServicesPage'
 import { SessionProvider, RequireAuth } from '@/store/session'
 import { useSession } from '@/store/session-context'
 import { clientDevice } from '@/lib/device'
@@ -92,16 +93,18 @@ export default function App() {
                 }
               >
                 <Route element={<AccountLayout />}>
-                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/dashboard" element={null} />
+                  <Route path="/accounts" element={<DashboardPage />} />
                   <Route path="/cards" element={<CardsPage />} />
-                  <Route path="/receiving" element={<Navigate to="/dashboard?flow=in" replace />} />
+                  <Route path="/receiving" element={<Navigate to="/accounts?flow=in" replace />} />
                   <Route path="/analysis" element={<BillsPage />} />
                   <Route path="/analysis/statistics" element={<AnalysisPage />} />
                   <Route path="/analysis/autodebits" element={<AutoDebitsPage />} />
                   <Route path="/dashboard/savings" element={<SavingsPage />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
                 </Route>
-                <Route path="/transfer" element={<Navigate to="/dashboard?flow=out" replace />} />
+                <Route path="/transfer" element={<TransferPage />} />
+                <Route path="/services" element={<ServicesPage />} />
                 <Route path="/wealth" element={<WealthPage />} />
                 <Route path="/wealth/cash-management" element={<CashManagementPage />} />
                 <Route path="/wealth/investments" element={<InvestPage />} />
@@ -113,7 +116,7 @@ export default function App() {
                 <Route path="/security/identity" element={<IdentityPage />} />
                 <Route path="/security/invitations" element={<InvitationsPage />} />
                 <Route path="/security/membership" element={<MembershipPage />} />
-                <Route path="/support" element={<SupportPage />} />
+                <Route path="/support" element={null} />
               </Route>
               {/* 认不出的路径回官网，而不是回总览：没登录的人落到总览只会被再弹去登录页 */}
               <Route path="*" element={<Navigate to="/" replace />} />

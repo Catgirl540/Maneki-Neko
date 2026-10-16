@@ -1,3 +1,4 @@
+import { WorkbenchBrand } from './WorkbenchBrand'
 import { CAT_MARK, CAT_MARK_VIEW_BOX } from './cat-mark'
 
 /**
@@ -44,14 +45,9 @@ export function CatMark({ className, cutout = 'var(--color-surface)', title }: C
   )
 }
 
-/**
- * 横版品牌锁定：图形标 + luckycat / BANK 字标。
- * 字标用 Poppins（几何 grotesk），与生成稿一致。
- */
+/** 网页客户端新字标；旧尺寸参数保留以兼容已有登录与开户页面。 */
 export function Logo({
   className = '',
-  markClass = 'h-9 w-9',
-  wordClass = 'text-[21px]',
   showBank = true,
 }: {
   className?: string
@@ -59,27 +55,9 @@ export function Logo({
   wordClass?: string
   showBank?: boolean
 }) {
-  return (
-    <span className={`inline-flex items-center gap-2.5 ${className}`}>
-      <CatMark className={`${markClass} shrink-0 text-gold`} title="招财猫银行" />
-      <span className="flex flex-col items-end leading-none">
-        <span
-          className={`font-brand font-semibold tracking-[-0.02em] text-ink ${wordClass}`}
-          style={{ lineHeight: 1 }}
-        >
-          luckycat
-        </span>
-        {showBank && (
-          <span
-            className="font-brand font-medium text-ink-soft"
-            style={{ fontSize: '0.42em', letterSpacing: '0.44em', lineHeight: 1.6 }}
-          >
-            BANK
-          </span>
-        )}
-      </span>
-    </span>
-  )
+  return <span className={className} style={{ fontSize: showBank ? undefined : 'inherit' }}>
+    <WorkbenchBrand />
+  </span>
 }
 
 /** App Icon：金色圆角方 + 负空间猫脸（对应 logo-c-negative-cat.png） */

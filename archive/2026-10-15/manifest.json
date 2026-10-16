@@ -1,0 +1,864 @@
+{
+  "archived_at": "2026-10-15",
+  "source_commit": "444944e5790468980249cb4080a0ece84d471d7f",
+  "native_android": {
+    "original": "android/",
+    "archived": "android-kotlin/",
+    "tracked_source_files": [
+      {
+        "original": "android/README.md",
+        "archived": "android-kotlin/README.original.md",
+        "bytes": 2444,
+        "sha256": "482c9f78a086b1a35dd1832dac2ea670bf041f2242b5f86a6d84abf89c868933"
+      },
+      {
+        "original": "android/app/build.gradle.kts",
+        "archived": "android-kotlin/app/build.gradle.kts",
+        "bytes": 3545,
+        "sha256": "c99fdc9c30017f8c020b139f2d5eee4b2fb88bc2914aea91ad6dc770d0f28b2c"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/AnalysisAndOpenTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/AnalysisAndOpenTest.kt",
+        "bytes": 4399,
+        "sha256": "9142f42b3cbf5a1acb7a4ac6af7be9848c4e7fb2a9237979e55dbbe90410a244"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/CardsFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/CardsFlowTest.kt",
+        "bytes": 7615,
+        "sha256": "0b9c895fd4fb9fb518bb64148f74bb0630c9c723620dfcd0730cc72eba2f0045"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/CardsManagementTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/CardsManagementTest.kt",
+        "bytes": 10667,
+        "sha256": "216776cdc27cb036f220e8d4569641bf657631ce5493aca7ec6896c1723e4759"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/CardsTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/CardsTest.kt",
+        "bytes": 9428,
+        "sha256": "c6481592f300dfd7e2969d91735ea3ae59a9a6625864fe57755519394a4f465e"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/ChatFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/ChatFlowTest.kt",
+        "bytes": 13838,
+        "sha256": "49896409fe3a7cc24ff1fd527d03480bd9ee422e724ff00488a4478dcbb9abbd"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/EdgeToEdgeInsetsTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/EdgeToEdgeInsetsTest.kt",
+        "bytes": 2902,
+        "sha256": "f16d507e0e6f75290370cc74b0b83e827074573c0ebe9dc37b9930c8ca893eff"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/IconVectorTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/IconVectorTest.kt",
+        "bytes": 4381,
+        "sha256": "9f6826bb6a5247ef0003929290d6a893aeb05e0fc69041370026c8dcbb12c5a5"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/ImageFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/ImageFlowTest.kt",
+        "bytes": 9306,
+        "sha256": "542c5b2294d6fa500a4e20ae476ea54de2657307190b8a38ecbf15cedf372d60"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/LauncherIconTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/LauncherIconTest.kt",
+        "bytes": 1695,
+        "sha256": "c03fdb1c84299d98c733e4685d3868892d7444cb00a3cf1e2d98d33b3656aec9"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/MarkdownUiTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/MarkdownUiTest.kt",
+        "bytes": 3277,
+        "sha256": "87f7fb227303fc8ad1174e2116a54f84a0963c2cca29e4c71d03589da36e68d6"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/MessageActionsUiTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/MessageActionsUiTest.kt",
+        "bytes": 8853,
+        "sha256": "7b2213e078eb002837206dcd7380d9eac616fe9633a4ce2b40762a887e81d989"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/OpenAccountFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/OpenAccountFlowTest.kt",
+        "bytes": 4466,
+        "sha256": "56412550ab3b8909f7cb83578619c76abb149230a9305cb248fdc910b60e21ee"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/SecurityFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/SecurityFlowTest.kt",
+        "bytes": 5680,
+        "sha256": "d62921f174d8bcfcc2e81c26433fd201d2195170ae86985634e1113093ecba93"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/TransferFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/TransferFlowTest.kt",
+        "bytes": 7416,
+        "sha256": "685b184135a469538a5b6ae46d3aef1657d4000711a994b8bc8ee49185cd51c9"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/VoiceFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/VoiceFlowTest.kt",
+        "bytes": 7648,
+        "sha256": "52e6af43c09c1c0b1f128b7b6a419d42e0284b2263d55154304f454dbb149d91"
+      },
+      {
+        "original": "android/app/src/androidTest/kotlin/cn/waveflow/luckycat/WealthFlowTest.kt",
+        "archived": "android-kotlin/app/src/androidTest/kotlin/cn/waveflow/luckycat/WealthFlowTest.kt",
+        "bytes": 7180,
+        "sha256": "62bc0c229f734aea921fea6506bd5cf5b1a624c3dbe8f4be29da8e4b24d0bc44"
+      },
+      {
+        "original": "android/app/src/debug/AndroidManifest.xml",
+        "archived": "android-kotlin/app/src/debug/AndroidManifest.xml",
+        "bytes": 498,
+        "sha256": "dd0f72ebea88e37e6dfbbd1846e701423e3280e7d2f9bac00f60ad7ebfd2ac78"
+      },
+      {
+        "original": "android/app/src/main/AndroidManifest.xml",
+        "archived": "android-kotlin/app/src/main/AndroidManifest.xml",
+        "bytes": 901,
+        "sha256": "4b180d25a19545c7b628486e524d2fbb9ffd6e361b495f6bb8e7432d7300b7b2"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/LuckyCatApplication.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/LuckyCatApplication.kt",
+        "bytes": 466,
+        "sha256": "694c1391c24bd285bf423332b54f272a310ca0d4b1aa8602264598ed12904a9e"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/MainActivity.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/MainActivity.kt",
+        "bytes": 6863,
+        "sha256": "fcf72d0e312ed469fe8e8f95d4a7486fd5b00dfeaa6e561976aaec16ed862cc8"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/data/AppGraph.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/data/AppGraph.kt",
+        "bytes": 2014,
+        "sha256": "c7caacfa6822b52457e90c8cce6dabdc1e4c5f09cad21281f6cb2a3e7eebe16a"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/data/ConversationStore.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/data/ConversationStore.kt",
+        "bytes": 2192,
+        "sha256": "9e7dafef0ed1d6db8f2936c5c11e37fc02220891b603abe1507b76816af2b718"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/image/ImagePreparer.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/image/ImagePreparer.kt",
+        "bytes": 5474,
+        "sha256": "28717bbe47d1d189c07f32ac8f25eb783857e6201d5407fe04c6798d4982b295"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/AppShell.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/AppShell.kt",
+        "bytes": 22635,
+        "sha256": "5f141b341004076c46941c950f58d4273144cb49836d36bb3777427a53067bcc"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/account/AccountScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/account/AccountScreen.kt",
+        "bytes": 7316,
+        "sha256": "ad1515df4340c9785365e1755590fd33772e8e0c7727539a41c35fc90b56f8dc"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/account/AccountViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/account/AccountViewModel.kt",
+        "bytes": 3373,
+        "sha256": "50e5d22d1bfe8257f7fb260527f2873c5a9e65a60d60c0919296c0ba2015b7f3"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/analysis/AnalysisScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/analysis/AnalysisScreen.kt",
+        "bytes": 9572,
+        "sha256": "8016b0719c3cdeb0221d237cbadce0c6b09b4c42f11741fea754d7661dedd1ca"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/analysis/AnalysisViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/analysis/AnalysisViewModel.kt",
+        "bytes": 1736,
+        "sha256": "27fe03508b1581cb83d2040f258b03e1ebcd94676a4bf2341c96c6f5d5de0b8c"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/cards/CardApplicationDialog.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/cards/CardApplicationDialog.kt",
+        "bytes": 6940,
+        "sha256": "172de69e2f9f4403959c225e003b9f45989f3c3e0c83ba85eb4f45b945456259"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/cards/CardsScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/cards/CardsScreen.kt",
+        "bytes": 14784,
+        "sha256": "2ff983e34b6f017e2e1cb6e21782ed9d95d48999010fb7e3da78a73ae71f1d7a"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/cards/CardsViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/cards/CardsViewModel.kt",
+        "bytes": 8039,
+        "sha256": "db8a6cab1d15a63e76409220e3dd251342fe9e2c3420abf9f3566be15bded33a"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/ChatScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/ChatScreen.kt",
+        "bytes": 29932,
+        "sha256": "aba94716d6a776a9d251c13f218bc5a9f85675a2e12f35ce43b470e1ab713fa8"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/ChatViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/ChatViewModel.kt",
+        "bytes": 21069,
+        "sha256": "38cffe9d58a1891fea52fb8bbe8030415c6d86b41a4c6fcb09bf32f49532f046"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/ConsentCardView.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/ConsentCardView.kt",
+        "bytes": 7374,
+        "sha256": "ba33a368907ede2ed1efa933090dfb5d6e502fb4307765bb61f8ed7760f0b685"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/HistoryOverlay.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/HistoryOverlay.kt",
+        "bytes": 4998,
+        "sha256": "e267283be488ebe4305479a14cf9115c9a41e65a1bd3c10322cf6bde854e8d63"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/MarkdownText.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/MarkdownText.kt",
+        "bytes": 5476,
+        "sha256": "63dbef55ac7e008c4086855f3b877ce82bd6e336726b440c06a6a8711bb7eaff"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/QuestionCardView.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/chat/QuestionCardView.kt",
+        "bytes": 5050,
+        "sha256": "2489fcbfcef908e4bc04de36cfbf1c3959103fc51ae386bf55b817ecfbf2aebd"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/home/HomeScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/home/HomeScreen.kt",
+        "bytes": 10954,
+        "sha256": "4016b17717f87bbad417f60f2563b0ec079348ac9b015d0307a9d4f58ff85a01"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/home/HomeViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/home/HomeViewModel.kt",
+        "bytes": 1812,
+        "sha256": "921bee19f7e681a19260c974be630e26a478a81e4dbcf964bf1eb3dd4ab00c5c"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/login/LoginScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/login/LoginScreen.kt",
+        "bytes": 5841,
+        "sha256": "32006e4e52b3adbbc06a8e17b40988e6c21a6b68046c413a2730c643fc5c5124"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/login/LoginViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/login/LoginViewModel.kt",
+        "bytes": 4149,
+        "sha256": "59dbe1d191523bb3fcf7d088de6ce1a6eca5181ac52d39385131c64beb25ad10"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/openaccount/OpenAccountScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/openaccount/OpenAccountScreen.kt",
+        "bytes": 7713,
+        "sha256": "5519958279f14098ba9263f31a47d1d7d231984610b90c3cd3c00f5eb827561b"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/openaccount/OpenAccountViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/openaccount/OpenAccountViewModel.kt",
+        "bytes": 4752,
+        "sha256": "6f69274f55f72d601dfedc44c5772ea4fa7ee051a633f287b2d16d4ed4cefe55"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/security/SecurityScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/security/SecurityScreen.kt",
+        "bytes": 8397,
+        "sha256": "e4c2ad8c592971b1e3ee85b9df62a3e2411816d5897e044e2da49986787ed2c1"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/security/SecurityViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/security/SecurityViewModel.kt",
+        "bytes": 2680,
+        "sha256": "7edfc87b728c493eaedfd3709722891efca35701f970df74d684dea30cd3c504"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/theme/NavIcons.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/theme/NavIcons.kt",
+        "bytes": 1701,
+        "sha256": "2847dd52c7e29376b1cd65e0b483861c8fe9ac375f8515e59b6849f80dc13c9f"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/theme/Theme.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/theme/Theme.kt",
+        "bytes": 5366,
+        "sha256": "adea6b12b3eddb696fe6168f8313457d7e7dcc8bde5442bece249518b5cb84eb"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/transfer/TransferScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/transfer/TransferScreen.kt",
+        "bytes": 12797,
+        "sha256": "245e80b4a2a0eed5cddf3cde9d82ae3bbdcc04d10eccde28a5340f067977bbf6"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/transfer/TransferViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/transfer/TransferViewModel.kt",
+        "bytes": 5854,
+        "sha256": "22b4822a716e6bd1acc7818631c6c66f57b9ceaf18c1a6882070c75a32ba16a7"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/tx/TransactionScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/tx/TransactionScreen.kt",
+        "bytes": 6703,
+        "sha256": "2f083d76ffa149e69cac2411c80e2dcea74414d2c91ec5bb2707d30b3ae650f5"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/tx/TransactionViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/tx/TransactionViewModel.kt",
+        "bytes": 1438,
+        "sha256": "fe841d497926987a0a91a0f23016a28541874ce86cdaa18bcb585be4f20644cd"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthOpeningScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthOpeningScreen.kt",
+        "bytes": 13338,
+        "sha256": "caba6128a57712dbadc2e94e8612626f563ac84d3073e33f66d84bc8177167a4"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthOpeningViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthOpeningViewModel.kt",
+        "bytes": 8453,
+        "sha256": "caadb6b51ef4a32ae537d3bc5b5d12a7a4eaf65e8ff22debcfc754a1cbd035d6"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthScreen.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthScreen.kt",
+        "bytes": 12370,
+        "sha256": "e3ac7d01cdebaa3603c4af06d95692fa6c5807e00c2740c8de076b04a9865bb5"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthViewModel.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/ui/wealth/WealthViewModel.kt",
+        "bytes": 2337,
+        "sha256": "6e8f29ca5571f092436fa53bb14b3b99c2abac0e82a0c3d3a7079f3b0fa165e2"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/voice/PcmPlayer.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/voice/PcmPlayer.kt",
+        "bytes": 4068,
+        "sha256": "9eee66cd1322dfd46b6603f91e5cdd6d4164ff58bfbaa577b45572b8e7c3b6f2"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/voice/VoiceController.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/voice/VoiceController.kt",
+        "bytes": 8858,
+        "sha256": "1da4f4cf5a76352be348eb949c7b5fa484163223fca4e4c43c3b60463fbd6aca"
+      },
+      {
+        "original": "android/app/src/main/kotlin/cn/waveflow/luckycat/voice/VoiceRecorder.kt",
+        "archived": "android-kotlin/app/src/main/kotlin/cn/waveflow/luckycat/voice/VoiceRecorder.kt",
+        "bytes": 3584,
+        "sha256": "943c24eac07e6fbb210625a87ee7777db1e6d55d3b60bd2996783b70305a007c"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/brand_cat.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/brand_cat.xml",
+        "bytes": 959,
+        "sha256": "b77f3b1b1fa889a8bb676df1b99d94fb332942e97225eb44d65ff507a7729608"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_add.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_add.xml",
+        "bytes": 416,
+        "sha256": "7f249d83c70512a90ea0a896d22fd44d29706098c8c086c5dda06fec982b1820"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_card.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_card.xml",
+        "bytes": 665,
+        "sha256": "f5015d97aa79814e7b6c9def24f4ff108b3656411accfdbf9d2ad85899e846f1"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_globe.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_globe.xml",
+        "bytes": 489,
+        "sha256": "9178783f2c7fae03a8fbe5155cbcaf47e5dc5374e16462c0d8f1c5e3d703020b"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_home.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_home.xml",
+        "bytes": 970,
+        "sha256": "f443dba304c5063843ec85cb58e6ecbc2507718731644af4c32568a1d6805660"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_image.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_image.xml",
+        "bytes": 858,
+        "sha256": "4ad5096869c141da897a84fe0500f32e76d1523622af798a4d8ea9acbc9bfb64"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_lock.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_lock.xml",
+        "bytes": 444,
+        "sha256": "38bfdf6127f12193e70cc43b54d24725f19e82470350fb9aa75144118288c96e"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_mic.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_mic.xml",
+        "bytes": 857,
+        "sha256": "2b588488f7d29ddcceaa5707294c4c4e6113942e2e79f554be44a4e883a3fc89"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_profile.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_profile.xml",
+        "bytes": 753,
+        "sha256": "69a3a1a1fdc45f474f6ed8dac4bf6ad84a1d183eab2bfac1a8074d85a359e4ad"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_send.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_send.xml",
+        "bytes": 750,
+        "sha256": "a966640114d427cb07afc4aa43319739eb7c6f58b343bd2af44c5b980c032f0a"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_support.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_support.xml",
+        "bytes": 783,
+        "sha256": "f3b0af40001d1c4a547c9e868ce7dbe9f07a004a3d6b541f0f96980c298ff5c5"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_transfer.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_transfer.xml",
+        "bytes": 663,
+        "sha256": "d5b9f1e7ccaaf497a3f6f26d5e20f2b853b05779e8fdf3f205b5fc5e597c7c04"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/ic_wealth.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/ic_wealth.xml",
+        "bytes": 603,
+        "sha256": "e28bda671d31de32646d64f03e6ac0c5d975f3ecad6a50a05a77f7d550f255f7"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/launcher_foreground.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/launcher_foreground.xml",
+        "bytes": 1070,
+        "sha256": "26114fdd92678f56c0c1b04ffa44b6337a09b87ae86eafdc21faee0572754f45"
+      },
+      {
+        "original": "android/app/src/main/res/drawable/launcher_monochrome.xml",
+        "archived": "android-kotlin/app/src/main/res/drawable/launcher_monochrome.xml",
+        "bytes": 1076,
+        "sha256": "3ceebf2d6f03f772ff48c0af1017a647e0320f799923ba58df5dab1e8b4f464e"
+      },
+      {
+        "original": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+        "archived": "android-kotlin/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+        "bytes": 264,
+        "sha256": "76135332bb32115240449103c25f3aec5edab3b1856988f039c6f23efba94af2"
+      },
+      {
+        "original": "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+        "archived": "android-kotlin/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+        "bytes": 264,
+        "sha256": "76135332bb32115240449103c25f3aec5edab3b1856988f039c6f23efba94af2"
+      },
+      {
+        "original": "android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml",
+        "archived": "android-kotlin/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml",
+        "bytes": 332,
+        "sha256": "b50645541e7a63c2dca2ac228a764e75e6f2d7f31abc2095c3a8b3ea8e156f20"
+      },
+      {
+        "original": "android/app/src/main/res/mipmap-anydpi-v33/ic_launcher_round.xml",
+        "archived": "android-kotlin/app/src/main/res/mipmap-anydpi-v33/ic_launcher_round.xml",
+        "bytes": 332,
+        "sha256": "b50645541e7a63c2dca2ac228a764e75e6f2d7f31abc2095c3a8b3ea8e156f20"
+      },
+      {
+        "original": "android/app/src/main/res/values/launcher_colors.xml",
+        "archived": "android-kotlin/app/src/main/res/values/launcher_colors.xml",
+        "bytes": 112,
+        "sha256": "dec5e98c5736b3585ec437379cd017042d29070120fe5b0dee8252c54121de15"
+      },
+      {
+        "original": "android/app/src/main/res/values/strings.xml",
+        "archived": "android-kotlin/app/src/main/res/values/strings.xml",
+        "bytes": 117,
+        "sha256": "ff244ae204298245a9cf4c0be50516ca69a459c03912634ec6a1ffac6a8c86b2"
+      },
+      {
+        "original": "android/app/src/main/res/values/themes.xml",
+        "archived": "android-kotlin/app/src/main/res/values/themes.xml",
+        "bytes": 333,
+        "sha256": "220f713a026ff9173cf634e97982264beebf1abe64b4532a8752f0e112762df4"
+      },
+      {
+        "original": "android/build.gradle.kts",
+        "archived": "android-kotlin/build.gradle.kts",
+        "bytes": 2919,
+        "sha256": "1745acf339ab9cd3d7d007fcba3bcd99779a9ce785358b27e6fdae728866561b"
+      },
+      {
+        "original": "android/contract/build.gradle.kts",
+        "archived": "android-kotlin/contract/build.gradle.kts",
+        "bytes": 1154,
+        "sha256": "d20c42088b5e56d628b38a827395c8d2ad8cf8957bef24460ffd7a3954c2768c"
+      },
+      {
+        "original": "android/contract/src/main/kotlin/cn/waveflow/luckycat/contract/AgentApi.kt",
+        "archived": "android-kotlin/contract/src/main/kotlin/cn/waveflow/luckycat/contract/AgentApi.kt",
+        "bytes": 14942,
+        "sha256": "d902c58d695267133e40d6499a5dbe5556b72aa73a34fce30c79c90d237c9633"
+      },
+      {
+        "original": "android/contract/src/main/kotlin/cn/waveflow/luckycat/contract/AgentEvent.kt",
+        "archived": "android-kotlin/contract/src/main/kotlin/cn/waveflow/luckycat/contract/AgentEvent.kt",
+        "bytes": 7678,
+        "sha256": "91ce46d7690c392dd55f40d1adc3453e7d7b6b4e62dcaa6acbde14fcd392c09b"
+      },
+      {
+        "original": "android/contract/src/main/kotlin/cn/waveflow/luckycat/contract/QuestionCards.kt",
+        "archived": "android-kotlin/contract/src/main/kotlin/cn/waveflow/luckycat/contract/QuestionCards.kt",
+        "bytes": 2197,
+        "sha256": "5afb45dfdf2a0fe761af14b703f7aa75946bb009f14ce2766f44949399697456"
+      },
+      {
+        "original": "android/contract/src/main/kotlin/cn/waveflow/luckycat/contract/Sse.kt",
+        "archived": "android-kotlin/contract/src/main/kotlin/cn/waveflow/luckycat/contract/Sse.kt",
+        "bytes": 2545,
+        "sha256": "107e1572bb18731cd12aa88430449289f69906497c0359480a3da8af2a619f3c"
+      },
+      {
+        "original": "android/contract/src/main/kotlin/cn/waveflow/luckycat/contract/TtsFrame.kt",
+        "archived": "android-kotlin/contract/src/main/kotlin/cn/waveflow/luckycat/contract/TtsFrame.kt",
+        "bytes": 1337,
+        "sha256": "0961213e572698104e28e5d041b757f37dd6b124f45a7a503a7207e74833af39"
+      },
+      {
+        "original": "android/contract/src/main/kotlin/cn/waveflow/luckycat/contract/bank/BankApi.kt",
+        "archived": "android-kotlin/contract/src/main/kotlin/cn/waveflow/luckycat/contract/bank/BankApi.kt",
+        "bytes": 14147,
+        "sha256": "e7c0a15ec376eb1a53ce45f1eaf0ab7bee524327df4a2253c331273104ae7334"
+      },
+      {
+        "original": "android/contract/src/main/kotlin/cn/waveflow/luckycat/contract/bank/BankTypes.kt",
+        "archived": "android-kotlin/contract/src/main/kotlin/cn/waveflow/luckycat/contract/bank/BankTypes.kt",
+        "bytes": 16747,
+        "sha256": "356520cafa3a1de64c41fd91bd93d8fa765dfc1dd9ab50bba66d7d5ec2c4f66a"
+      },
+      {
+        "original": "android/contract/src/test/kotlin/cn/waveflow/luckycat/contract/AgentApiTest.kt",
+        "archived": "android-kotlin/contract/src/test/kotlin/cn/waveflow/luckycat/contract/AgentApiTest.kt",
+        "bytes": 17687,
+        "sha256": "18c8b504e9edb42726247e4b043974f057b818c7540a11ac247d7dc0cee95efe"
+      },
+      {
+        "original": "android/contract/src/test/kotlin/cn/waveflow/luckycat/contract/AgentEventTest.kt",
+        "archived": "android-kotlin/contract/src/test/kotlin/cn/waveflow/luckycat/contract/AgentEventTest.kt",
+        "bytes": 6666,
+        "sha256": "70f40876a1cd6db57797d02792e7b30d54c31c301da548c5e4520fd55a382036"
+      },
+      {
+        "original": "android/contract/src/test/kotlin/cn/waveflow/luckycat/contract/LiveContractTest.kt",
+        "archived": "android-kotlin/contract/src/test/kotlin/cn/waveflow/luckycat/contract/LiveContractTest.kt",
+        "bytes": 3236,
+        "sha256": "457165fb6ab23dfae09ef66a5a89158a74945311884f6aaba15b27204c94647b"
+      },
+      {
+        "original": "android/contract/src/test/kotlin/cn/waveflow/luckycat/contract/SseParserTest.kt",
+        "archived": "android-kotlin/contract/src/test/kotlin/cn/waveflow/luckycat/contract/SseParserTest.kt",
+        "bytes": 4723,
+        "sha256": "b328334c0fa4bde387fdb977b37b2316ea1e72a781cc9cd6e4f090dfcdbf47b9"
+      },
+      {
+        "original": "android/contract/src/test/kotlin/cn/waveflow/luckycat/contract/bank/BankApiTest.kt",
+        "archived": "android-kotlin/contract/src/test/kotlin/cn/waveflow/luckycat/contract/bank/BankApiTest.kt",
+        "bytes": 16082,
+        "sha256": "b7a3226647767f0c2dfdd4e370dd98c1ba70c94f7c3fe27e20ecd89df189e973"
+      },
+      {
+        "original": "android/domain/build.gradle.kts",
+        "archived": "android-kotlin/domain/build.gradle.kts",
+        "bytes": 933,
+        "sha256": "821f82649f04d37cfdfe2983059a107581a7aa2eec9f0e943a95c1d8f675740e"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/account/AccountOpening.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/account/AccountOpening.kt",
+        "bytes": 1981,
+        "sha256": "6c09d0cb6611505c57cf74291d0a117621cda86e22e6bb1100f776d82a936bc3"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/account/WealthOpening.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/account/WealthOpening.kt",
+        "bytes": 1641,
+        "sha256": "33e3e1f535344bc4293c39b121433b69960db7e35d0f767df23345119843e692"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/ask/QuestionAnswers.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/ask/QuestionAnswers.kt",
+        "bytes": 5003,
+        "sha256": "54792a962c3bb9de89b47895a5559024b726c176386ecf9d037d81c3b30d2bb5"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/cards/CardRules.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/cards/CardRules.kt",
+        "bytes": 1472,
+        "sha256": "29198f6acd28d11ff8a7ffbe44f91e0b3237d3769e55d0fe5c5c0f02c3cc876d"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/chat/ToolSummary.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/chat/ToolSummary.kt",
+        "bytes": 2905,
+        "sha256": "61ec448606add82c770102805157184a814b23a9c49d1063f20d3ffb96f2b067"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/consent/ConsentPresentation.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/consent/ConsentPresentation.kt",
+        "bytes": 3184,
+        "sha256": "bf4e187133bbf8daaeb84da6f62b9d7a8a0d32fe067a705c74f29d8b8f2aeece"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/conversation/Conversations.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/conversation/Conversations.kt",
+        "bytes": 10657,
+        "sha256": "90c71dc837a59c18eb16c6142e25e63c0824cb908b864999510d5bdd5afca93c"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/image/ImageRules.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/image/ImageRules.kt",
+        "bytes": 3561,
+        "sha256": "d61ffb519f0a9722c6652922e675123d4f7ef67886d0157059579885ab4eb3fd"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/labels/Labels.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/labels/Labels.kt",
+        "bytes": 4046,
+        "sha256": "b62bd2463d2d6eefa1b5c53285e89741a84f2e231c0ab088295ba767ddd75a18"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/markdown/Markdown.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/markdown/Markdown.kt",
+        "bytes": 9126,
+        "sha256": "4b1e7f53ef26bee1b1e52d43bec3aa32f0180ab96255787ae21cf0630cbadc45"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/markdown/MdBlock.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/markdown/MdBlock.kt",
+        "bytes": 2607,
+        "sha256": "2f33fdee65196d6c06524574d81f5507741386f83c02c4a2b778811d5dae495e"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/money/Money.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/money/Money.kt",
+        "bytes": 4198,
+        "sha256": "825d3a5743dec96dda5a653b969ec93b6b0953ae500a920fd1a9bf0992b4d596"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/phone/PhoneRules.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/phone/PhoneRules.kt",
+        "bytes": 1880,
+        "sha256": "7c6e3186194e74320391f943c1675dbfed0644a7a5495de1efbd65c0fcb159a7"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/time/Dates.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/time/Dates.kt",
+        "bytes": 2194,
+        "sha256": "af3d9687cd5487357969130e156b0768968926de9591899659964ee12ba1a069"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/transfer/TransferDraft.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/transfer/TransferDraft.kt",
+        "bytes": 2923,
+        "sha256": "a4f27ce87b3a667b6010d66b0891677b577241c0846ddc749e89d65aed13a09a"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/tx/TransactionFields.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/tx/TransactionFields.kt",
+        "bytes": 3620,
+        "sha256": "8c64b88a5ae5712959f566adb9245fab5723b8e797e631a4123db343d73203e8"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/voice/Pcm.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/voice/Pcm.kt",
+        "bytes": 1338,
+        "sha256": "aad369fec7e68f63b53fc1f949555d770c966d65a5f79d24498af01f96ce42c6"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/voice/SpeechText.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/voice/SpeechText.kt",
+        "bytes": 5300,
+        "sha256": "a4c0066d5330d9189c911be7633a7f80f08a8b9ce4426746cd0ada48ca917a68"
+      },
+      {
+        "original": "android/domain/src/main/kotlin/cn/waveflow/luckycat/domain/voice/Waveform.kt",
+        "archived": "android-kotlin/domain/src/main/kotlin/cn/waveflow/luckycat/domain/voice/Waveform.kt",
+        "bytes": 3116,
+        "sha256": "3edfd23ed6e69b1c2792598cfb610bbf3a4071a4f06f8524507c65eba5ec2ab3"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/account/AccountOpeningTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/account/AccountOpeningTest.kt",
+        "bytes": 1994,
+        "sha256": "f2a25bd02e476319f40834ba9a926346da911141bcd3e2d9f9c1159cb8e06f88"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/ask/QuestionAnswersTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/ask/QuestionAnswersTest.kt",
+        "bytes": 6371,
+        "sha256": "1c8db8e27a750f0dd989ee02b2026cc411bca5f756fcec79ea79f2fd75b6649d"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/cards/CardRulesTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/cards/CardRulesTest.kt",
+        "bytes": 1832,
+        "sha256": "bf82c0ae7c02f3fc9f0ccacb86972d26f7ac5716d18a27e1d3bb0c73f897e8fc"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/chat/ToolSummaryTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/chat/ToolSummaryTest.kt",
+        "bytes": 3210,
+        "sha256": "264b6c10d34bef0833bb8d20a7d9051c8e71140b8d77bcf7f8dc422441c3c460"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/consent/ConsentPresentationTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/consent/ConsentPresentationTest.kt",
+        "bytes": 4488,
+        "sha256": "c76ae764de0b6fe9e4a4269200ba7ffeabc919383430c223c22085a8bd109f71"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/conversation/ConversationsTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/conversation/ConversationsTest.kt",
+        "bytes": 11524,
+        "sha256": "fe52a800c152343e00291f8d1e9413fa090edfc097d1dfba0fb202bb85dbdbd0"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/image/ImageRulesTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/image/ImageRulesTest.kt",
+        "bytes": 3082,
+        "sha256": "b2b9c58d18cc15c4653ce856d246c17a4ec5cece30ecbd5f644d80c5eb6d78f3"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/labels/LabelsTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/labels/LabelsTest.kt",
+        "bytes": 3296,
+        "sha256": "1aea18bea2652d6915142e23bb19289dcd5e870ddc2118e6d35fa899ab233a86"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/markdown/MarkdownTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/markdown/MarkdownTest.kt",
+        "bytes": 6322,
+        "sha256": "7556735735393e4e91a72a13e1e408547e52c19d56ae0a6989d94c11ff611eb2"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/money/MoneyTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/money/MoneyTest.kt",
+        "bytes": 4625,
+        "sha256": "a0b84e7f0da6a1798178afbcaa07e015e34f5d35f592ede07c066da63b5687c3"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/phone/PhoneRulesTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/phone/PhoneRulesTest.kt",
+        "bytes": 1815,
+        "sha256": "7e2e7a49a21035ffae1e4b86213ec9980f066d3e7ec89d79ca5451aa4f4f30a5"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/time/DatesTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/time/DatesTest.kt",
+        "bytes": 2345,
+        "sha256": "d52072ef042ae633e572cfdac9cfa9e1d9257df05de4671dda0bf112132d12cc"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/transfer/TransferDraftTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/transfer/TransferDraftTest.kt",
+        "bytes": 3226,
+        "sha256": "6924edb295452c15a5945796176654d5a3f774506ecd009a1983845ce2064db4"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/tx/TransactionFieldsTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/tx/TransactionFieldsTest.kt",
+        "bytes": 5716,
+        "sha256": "2f0b41e95cbc71f728cb41f29ff6b579e799a756f46582265d5e78c2f4e6e966"
+      },
+      {
+        "original": "android/domain/src/test/kotlin/cn/waveflow/luckycat/domain/voice/VoiceTest.kt",
+        "archived": "android-kotlin/domain/src/test/kotlin/cn/waveflow/luckycat/domain/voice/VoiceTest.kt",
+        "bytes": 7431,
+        "sha256": "97b95a61adbdf0a2c6510e7cf8b9b79f962dd7133eec213acf40144bf6e49edc"
+      },
+      {
+        "original": "android/gradle.properties",
+        "archived": "android-kotlin/gradle.properties",
+        "bytes": 716,
+        "sha256": "38065f530dc509a21d830bfd8eb997f16312921b6aa73f21fbf6377630761731"
+      },
+      {
+        "original": "android/gradle/libs.versions.toml",
+        "archived": "android-kotlin/gradle/libs.versions.toml",
+        "bytes": 3891,
+        "sha256": "56acf6dafd5a4d298675ec8d0a85ca7dad073ccc302de9d644b9650afbee8536"
+      },
+      {
+        "original": "android/gradle/wrapper/gradle-wrapper.jar",
+        "archived": "android-kotlin/gradle/wrapper/gradle-wrapper.jar",
+        "bytes": 43764,
+        "sha256": "7d3a4ac4de1c32b59bc6a4eb8ecb8e612ccd0cf1ae1e99f66902da64df296172"
+      },
+      {
+        "original": "android/gradle/wrapper/gradle-wrapper.properties",
+        "archived": "android-kotlin/gradle/wrapper/gradle-wrapper.properties",
+        "bytes": 251,
+        "sha256": "4566bdfe046c74dd7aa93fa2494e914d29b7b14c86064c2c35885c3603bf117d"
+      },
+      {
+        "original": "android/gradlew",
+        "archived": "android-kotlin/gradlew",
+        "bytes": 8733,
+        "sha256": "b187b4c52e749f5760afdd6fadc31b2a98ad35fb249bf0dff03b72650f320409"
+      },
+      {
+        "original": "android/gradlew.bat",
+        "archived": "android-kotlin/gradlew.bat",
+        "bytes": 2937,
+        "sha256": "1d297e00bd21de3ace22b4d7f2de1f9dfa858883d66bbf7c1ccbecccec8f4f3b"
+      },
+      {
+        "original": "android/scripts/emu-gate.sh",
+        "archived": "android-kotlin/scripts/emu-gate.sh",
+        "bytes": 2676,
+        "sha256": "bba3d1c9d83c3a09819adf30d2867f4f719878e898aea1f4dd585e2f891a3ad5"
+      },
+      {
+        "original": "android/scripts/gate.sh",
+        "archived": "android-kotlin/scripts/gate.sh",
+        "bytes": 6196,
+        "sha256": "999c95fd5fa624ca8c24ee5850840414afee2fb40534fdbbf9a286ded9912691"
+      },
+      {
+        "original": "android/settings.gradle.kts",
+        "archived": "android-kotlin/settings.gradle.kts",
+        "bytes": 1555,
+        "sha256": "291e2c46cdc1174d2dedfe31c032370ce2935a7815976037b55c98712a3f5cb5"
+      }
+    ]
+  },
+  "web_before_redesign": {
+    "original": "app/ and README.md at source_commit",
+    "snapshot": "web-before-redesign/source.tar.gz",
+    "bytes": 1264207,
+    "sha256": "44fbaa2d6a3d9fb083681797f2ddb55a3ef0b7a7ecb12d0ba3993a89ae420ff2"
+  },
+  "current_web": "app/",
+  "current_web_design": "docs/design/exports/2026-10-15/zhaocai-cat-bank.html",
+  "flutter_reference": {
+    "path": "mobile/",
+    "branch": "codex/public-deploy-20261014",
+    "commit": "855fc678e1568c098b772846c771e1510986bdd9",
+    "present_in_this_checkout": false
+  }
+}

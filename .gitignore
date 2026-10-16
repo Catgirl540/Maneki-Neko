@@ -46,6 +46,11 @@ android/local.properties
 android/**/build/
 android/.gradle/
 android/.kotlin/
+# 旧客户端归档中的本机缓存与 SDK 配置也不能进入提交
+archive/**/local.properties
+archive/**/build/
+archive/**/.gradle/
+archive/**/.kotlin/
 *.apk
 *.aab
 

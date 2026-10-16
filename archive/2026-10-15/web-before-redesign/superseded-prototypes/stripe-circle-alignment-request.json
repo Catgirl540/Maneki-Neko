@@ -1,0 +1,8 @@
+{
+  "project": "stripe-9a78",
+  "pluginWorkflowId": "2ec7ebc6-c3a9-4c22-8a78-78d7df0449cf",
+  "requestId": "c0157c79-7ea5-43bc-a03c-3ec74d7a0118",
+  "agent": "amr",
+  "skill": "frontend-design",
+  "prompt": "只修正现有 zhaocai-cat-bank.html 的圆形模式切换布局跳动，保持刚完成的侧栏、两种背景和所有业务内容。由 OpenDesign 做这次修复，无需访谈或重新设计。\n\n浏览器实测1280×800：真实 #mainContent 的 rect 是 x=224,y=0,width=1056；圆形 .mode-overlay 里的克隆 main 却是 x=256,y=95.5,width=992，导致结束时内容跳位。原因：makeModeSurface 删除所有克隆ID，但布局与路由显示CSS仍依赖 #mainContent、#routeView 等ID。请将影响渲染的规则改为原页与克隆都能使用的稳定class或data属性，保留真实页面用于脚本的ID，克隆避免重复ID。确保遮罩与最终页面有完全一致的尺寸、内边距、排版和滚动位置。\n\n同时检查圆形副本和最终模式提交时，page-arrive等动画不要再次从opacity0/translateY起步造成闪烁或跳动。切换仍从实际按钮中心扩散，完整揭示目标背景与界面，双向、防连点、草稿保留、减少动态效果都保留。不要改动业务代码或新增视觉元素。只做这项修复、相关脚本核对及可用时的rect对齐验证，然后结束；无需反复全文件审查。"
+}

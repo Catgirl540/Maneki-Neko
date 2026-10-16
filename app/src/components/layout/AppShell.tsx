@@ -1,47 +1,43 @@
-import { useCallback, useState } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
-import { MobileNavigation } from './MobileNavigation'
-import { NotificationsButton } from './NotificationsButton'
-import { STORAGE_KEYS, storage } from '@/lib/storage'
-import { cn } from '@/lib/cn'
+import { serviceForPath, smartServices, type SmartServiceId } from './services'
+import { SupportPage } from '@/pages/SupportPage'
 
-/**
- * 应用外壳：固定侧栏（可收起，通知在其底部）+ 移动端品牌栏 + 主内容区。
- * 移动端没有侧栏，通知改用悬浮铃铛兜底。侧栏宽度变化只影响自身，主区用 flex-1 自动重排。
- */
+/** 助手与输入草稿跨业务页面保活；只有业务内容随路由切换。 */
 export function AppShell() {
-  const chat = useLocation().pathname === '/support'
-  const [collapsed, setCollapsed] = useState(() =>
-    storage.get<boolean>(STORAGE_KEYS.sidebarCollapsed, false),
-  )
+  const { pathname, search } = useLocation()
+  const navigate = useNavigate()
+  const home = pathname === '/dashboard' || pathname === '/support'
+  const [serviceId, setServiceId] = useState<SmartServiceId>()
+  const [focusRequest, setFocusRequest] = useState(0)
+  const pageScroller = useRef<HTMLDivElement>(null)
+  const service = home ? smartServices.find(item => item.id === serviceId) : serviceForPath(pathname)
+  const flow = new URLSearchParams(search).get('flow')
+  useEffect(() => {
+    pageScroller.current?.scrollTo({ top: 0 })
+    if (home && (flow === 'in' || flow === 'out')) navigate({ pathname: '/accounts', search }, { replace: true })
+  }, [pathname, home, flow, search, navigate])
 
-  const toggle = useCallback(() => {
-    setCollapsed((prev) => {
-      storage.set(STORAGE_KEYS.sidebarCollapsed, !prev)
-      return !prev
-    })
-  }, [])
+  function activate() {
+    if (!home) {
+      setServiceId(service?.id)
+      navigate('/dashboard')
+    }
+  }
 
-  return (
-    <div className={cn('app-shell flex min-h-[calc(100svh-28px)] bg-paper print:bg-surface', chat && 'chat-workspace')}>
-      <a href="#main-content" className="skip-link">跳到主要内容</a>
-      <Sidebar collapsed={collapsed} onToggle={toggle} />
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {!chat && <TopBar />}
-        <main id="main-content" tabIndex={-1} className={cn('min-w-0 flex-1 outline-none', chat && 'flex min-h-0')}>
-          <div className={cn('app-content content-shell py-6 lg:py-8 print:max-w-none print:px-0 print:py-0', chat && 'app-content-chat')}>
-            <Outlet />
-          </div>
-        </main>
-      </div>
-
-      <MobileNavigation />
-
-      {/* 桌面端通知在左侧栏内；移动端没有侧栏，用悬浮铃铛兜底 */}
-      {!chat && <NotificationsButton variant="floating" />}
+  return <div className={`app-shell workbench-shell ${home ? 'workbench-home' : 'workbench-business'}`}>
+    <a href="#main-content" className="skip-link">跳到主要内容</a>
+    <Sidebar />
+    <div className="workbench-main">
+      <TopBar />
+      <main id="main-content" tabIndex={-1} className="workbench-main-content">
+        <div ref={pageScroller} hidden={home} className="business-scroll">{!home && <div key={pathname} className="business-content"><Outlet /></div>}</div>
+        <SupportPage workbench={{ docked: !home, task: service?.label, focusRequest,
+          onActivate: activate, onClearTask: () => setServiceId(undefined),
+        }} selectedService={serviceId} onSelectService={id => { setServiceId(id); setFocusRequest(value => value + 1) }} />
+      </main>
     </div>
-  )
+  </div>
 }

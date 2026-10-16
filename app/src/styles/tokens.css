@@ -1,14 +1,5 @@
-/* ==========================================================================
-   招财猫银行 · luckycat BANK —— 设计 Token
-   ==========================================================================
-   这里是**唯一的换肤入口**。组件层不写死任何颜色 / 圆角 / 字体。
-
-   配色方案：互补色（Complementary）
-     主色   #C8973C  招财金 —— 品牌、主按钮、当前态、图表主序列
-     互补色 #3C6DC8  信赖蓝 —— 收入/正向、图表次序列、链接与成功态
-     中性   #0E1B26  墨蓝   —— 正文与金额
-     功能   #D65B45  珊瑚   —— 风险警示（极克制）
-   ========================================================================== */
+/* 网页客户端主题，取自 docs/design/exports/2026-10-15 的用户设计稿。
+   gold 命名保留以兼容已有业务组件，实际为品牌紫；员工端使用独立 tokens。 */
 
 @theme {
   /* 桌面断点从默认 64rem(1024px) 降到 60rem(960px)：
@@ -31,40 +22,40 @@
   --stack-gap-lg: 1.75rem; /* ≥640，28 */
 
   /* —— 底色 —— */
-  --color-paper: #f7f5f0; /* 页面底色 */
+  --color-paper: #f5f7ff; /* 页面底色 */
   --color-surface: #ffffff; /* 卡片 */
-  --color-sunk: #fbfaf6; /* 侧栏 / 次级面板 */
-  --color-line: #eae6dc; /* 1px 发丝分隔线 */
-  --color-line-strong: #ddd7c9; /* 需要更明显的描边时 */
+  --color-sunk: #f6f9fc; /* 侧栏 / 次级面板 */
+  --color-line: #e5edf5; /* 1px 发丝分隔线 */
+  --color-line-strong: #cdd8e5; /* 需要更明显的描边时 */
 
   /* —— 文字 —— */
-  --color-ink: #0e1b26; /* 主文字 / 金额 / 标题 */
-  --color-ink-soft: #5c6b77; /* 次级文字 */
-  --color-ink-mute: #75818c; /* 辅助说明 / 占位符 */
+  --color-ink: #061b31; /* 主文字 / 金额 / 标题 */
+  --color-ink-soft: #4e6078; /* 次级文字 */
+  --color-ink-mute: #64748d; /* 辅助说明 / 占位符 */
   --color-ink-invert: #ffffff;
 
-  /* —— 主色：招财金（一屏只允许一个金色主按钮）—— */
-  --color-gold: #c8973c;
-  --color-gold-deep: #9c7226; /* 文字与 hover，保证 AA 对比度 */
-  --color-gold-wash: #f0e4cb; /* 选中底 / 导航 active */
-  --color-gold-tint: #faf5ea; /* 图标底 / 极浅填充 */
+  /* —— 品牌紫：沿用旧语义名以避免影响业务组件 —— */
+  --color-gold: #533afd;
+  --color-gold-deep: #4434d4; /* 文字与 hover，保证 AA 对比度 */
+  --color-gold-wash: #eae7ff; /* 选中底 / 导航 active */
+  --color-gold-tint: #f2f0ff; /* 图标底 / 极浅填充 */
 
   /* —— 互补色：信赖蓝 —— */
-  --color-blue: #3c6dc8;
-  --color-blue-deep: #2c55a3;
-  --color-blue-wash: #e3eaf8;
-  --color-blue-tint: #f1f5fc;
+  --color-blue: #306fdb;
+  --color-blue-deep: #2055b4;
+  --color-blue-wash: #e7effd;
+  --color-blue-tint: #f3f7ff;
 
   /* —— 功能色 —— */
-  --color-coral: #d65b45;
-  --color-coral-wash: #fbe7e2;
-  --color-chart-neutral: #dcd8d0;
+  --color-coral: #d92159;
+  --color-coral-wash: #fff0f4;
+  --color-chart-neutral: #dce4ef;
 
   /* —— 圆角 —— */
-  --radius-card: 24px;
-  --radius-field: 16px;
-  --radius-chip: 999px;
-  --radius-tile: 12px;
+  --radius-card: 8px;
+  --radius-field: 6px;
+  --radius-chip: 6px;
+  --radius-tile: 6px;
 
   /* —— 字体 —— */
   --font-sans:

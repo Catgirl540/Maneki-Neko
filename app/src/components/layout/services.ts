@@ -1,0 +1,20 @@
+import { CardIcon, ChartIcon, ChatIcon, GlobalIcon, LockIcon, PigIcon, ShieldIcon, TransferIcon, WalletIcon } from '@/components/ui/icons'
+
+export const smartServices = [
+  { id: 'transfer', label: '智能转账', Icon: TransferIcon, paths: ['/transfer', '/receiving'] },
+  { id: 'wealth', label: '理财顾问', Icon: ChartIcon, paths: ['/wealth', '/wealth/cash-management', '/wealth/investments'] },
+  { id: 'analysis', label: '账单分析', Icon: ChartIcon, paths: ['/analysis', '/analysis/statistics', '/analysis/autodebits', '/transactions'] },
+  { id: 'cards', label: '银行卡管家', Icon: CardIcon, paths: ['/cards'] },
+  { id: 'exchange', label: '换汇助手', Icon: GlobalIcon, paths: ['/exchange'] },
+  { id: 'savings', label: '储蓄规划', Icon: PigIcon, paths: ['/dashboard/savings'] },
+  { id: 'credit', label: '借款测算', Icon: WalletIcon, paths: ['/credit', '/cashflow'] },
+  { id: 'insurance', label: '保险咨询', Icon: ShieldIcon, paths: ['/wealth/insurance'] },
+  { id: 'security', label: '安全助手', Icon: LockIcon, paths: ['/security'] },
+  { id: 'support', label: '智能客服', Icon: ChatIcon, paths: [] },
+] as const
+
+export type SmartServiceId = typeof smartServices[number]['id']
+export function serviceForPath(pathname: string) {
+  return smartServices.find(service => service.paths.some(path => pathname === path))
+    ?? (pathname.startsWith('/transactions/') ? smartServices.find(service => service.id === 'analysis') : undefined)
+}

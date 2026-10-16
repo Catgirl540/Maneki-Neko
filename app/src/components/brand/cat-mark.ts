@@ -9,7 +9,7 @@
  * 所以坐标抽到这里，组件从它渲染、资产生成器从它出文件 ——
  * 各写一份的话，改了一边另一边会静默过期：界面上是新标，银行列表里还是旧标。
  *
- * 造型对齐 design/brand/generated/logo-e-lockup.png：
+ * 历史兼容图形，造型参考已归档至 archive/2026-10-15/web-before-redesign/brand/generated/logo-e-lockup.png：
  * 实心圆头 + 两个三角耳 + 每侧三根胡须 + 挖空的圆眼与三角鼻。
  */
 export const CAT_MARK_VIEW_BOX = '0 0 64 64'

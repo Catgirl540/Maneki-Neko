@@ -26,7 +26,7 @@ const args = process.argv.slice(2)
 const baseIndex = args.indexOf('--base')
 const BASE = baseIndex >= 0 ? args[baseIndex + 1] : 'http://127.0.0.1:5180'
 const TAKE_SHOTS = args.includes('--shots')
-const SHOT_DIR = path.resolve(import.meta.dirname, '../design/shots')
+const SHOT_DIR = path.resolve(import.meta.dirname, '../docs/design/implementation-screenshots/automated')
 
 /** 演示环境支付密码（与 app 的登录演示密码一致）。 */
 const PAY_PASSWORD = '123456'
