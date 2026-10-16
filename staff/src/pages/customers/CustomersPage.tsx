@@ -203,7 +203,7 @@ export function CustomersPage() {
                 {profile.accounts.map((a) => (
                   <tr key={a.id}>
                     <td>{a.label}</td>
-                    <td className="font-num">{formatCents(a.balance)}</td>
+                    <td className="font-num">{(a.currencyBalances ?? [{ id: a.id, currency: a.currency ?? 'CNY', balance: a.balance }]).map(row => <div key={row.id}>{row.currency} {formatCents(row.balance)}</div>)}</td>
                   </tr>
                 ))}
               </tbody>

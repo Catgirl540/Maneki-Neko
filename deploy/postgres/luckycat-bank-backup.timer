@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Luckycat PostgreSQL logical backup
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=120
+Unit=luckycat-bank-backup.service
+
+[Install]
+WantedBy=timers.target

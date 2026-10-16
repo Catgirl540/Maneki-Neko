@@ -1,0 +1,13 @@
+[Unit]
+Description=Record Luckycat maintenance failure for %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger --priority=daemon.err --tag=luckycat-bank-alert Maintenance job failed: %i. Inspect systemctl status and journalctl; external notification is not configured by this template.
+User=bank
+Group=bank
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

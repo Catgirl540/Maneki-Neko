@@ -169,6 +169,8 @@ export interface TransactionDetail {
 
 /** 交易详情接口的返回：台账行 + 附加明细 */
 export interface TransactionRecord extends Transaction {
+  businessType?: 'exchange'
+  legacyAccountId?: string
   detail: TransactionDetail
   /**
    * 在途转账的指令快照（清单 §9.4：入窗时冻结，到账按它执行）。
@@ -680,6 +682,8 @@ export interface CashFlowPoint {
 }
 
 export interface CashFlow {
+  currency?: Currency
+  byCurrency?: Partial<Record<Currency, Omit<CashFlow, 'byCurrency'>>>
   days: number
   points: CashFlowPoint[]
   totalIncome: Cents
@@ -687,6 +691,8 @@ export interface CashFlow {
 }
 
 export interface SpendingAnalysis {
+  currency?: Currency
+  byCurrency?: Partial<Record<Currency, Omit<SpendingAnalysis, 'byCurrency'>>>
   month: string
   total: Cents
   monthOverMonth: number

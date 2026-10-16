@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Luckycat ledger reconciliation
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+Unit=luckycat-bank-reconcile.service
+
+[Install]
+WantedBy=timers.target

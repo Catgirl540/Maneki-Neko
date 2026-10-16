@@ -1,0 +1,20 @@
+[Unit]
+Description=Read-only Luckycat ledger reconciliation
+After=luckycat-bank.service
+OnFailure=luckycat-bank-alert@%n.service
+
+[Service]
+Type=oneshot
+User=bank
+Group=bank
+WorkingDirectory=/srv/maneki-bank/current
+EnvironmentFile=/etc/luckycat-bank/bank.env
+ExecStart=/opt/maneki-node24/bin/node server/reconcile.mjs /var/lib/luckycat-bank/bank.sqlite
+TimeoutStartSec=15min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# SQLite read-only connections may still need the live WAL shared-memory file.
+ReadWritePaths=/var/lib/luckycat-bank

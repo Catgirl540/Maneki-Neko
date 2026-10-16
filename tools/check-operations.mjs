@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Read-only operations UI/API, role migration and telemetry; isolated SQLite only. */
 import assert from 'node:assert/strict'
 import { DatabaseSync } from 'node:sqlite'

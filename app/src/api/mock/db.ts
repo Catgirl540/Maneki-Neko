@@ -1,3 +1,4 @@
+import { ledgerBalances, findBalance, normalizeFundingAccount } from '../../../../shared/account-model.mjs'
 /* ==========================================================================
    本地模拟数据库
    纯前端 MVP 的数据源：内存对象 + localStorage 持久化。
@@ -77,7 +78,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
  */
-export const MOCK_SCHEMA = 19
+export const MOCK_SCHEMA = 20
 
 export interface MockDb {
   fpsRegistrations: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; registeredAt: string }[]
@@ -87,6 +88,8 @@ export interface MockDb {
   accounts: Account[]
   /** 外币记账分区，不独立开户。持久化的旧号码仅用于历史追溯。 */
   currencyBalances?: Account[]
+  retiredBalances?: Account[]
+  accountNumberAliases?: Record<string, string>
   accountAliases?: Record<string, string>
   /** 台账存的是带明细的完整记录，对外由接口裁剪成列表 DTO 或详情 */
   transactions: TransactionRecord[]
@@ -1755,6 +1758,7 @@ function ensureDemoRecipient(): void {
     accountNo: '8820000000124471', currency: 'CNY',
     balance: 800_000, available: 800_000, interestRate: 0.0155, monthNetChange: 0,
   }]
+  demo.currencyBalances = []; demo.retiredBalances = []; demo.accountAliases = {}; demo.accountNumberAliases = {};
   Object.assign(demo, emptyCustomerDomains(demo.user, demo.accounts[0].id))
   demo.transactions = []
   demo.cards = [{
@@ -1777,7 +1781,7 @@ export function findRecipientByNumber(number: string): { profile: MockDb; accoun
   const normalized = number.replace(/\D/g, '')
   const all = { ...profiles(), [loadDb().user.phone]: loadDb() }
   for (const profile of Object.values(all)) {
-    const account = profile.accounts.find((row) => row.accountNo === normalized)
+    const account = profile.accounts.find((row) => row.accountNo === normalized) ?? findBalance(profile, profile.accountNumberAliases?.[normalized])
     if (account) return { profile, account, card: null }
     const card = profile.cards.find((row) => row.status === 'active' && profile.cardSecrets[row.id]?.pan === normalized)
     if (card) {
@@ -1883,49 +1887,7 @@ function syncSeq(db: MockDb): void {
   }
 }
 
-/** 内部记账分区集合；对客账户列表只返回 accounts 中的唯一账户。 */
-export function ledgerBalances(db: MockDb): Account[] {
-  return [...db.accounts, ...(db.currencyBalances ?? [])]
-}
-
-export function findBalance(db: MockDb, id: string): Account | undefined {
-  return ledgerBalances(db).find(row => row.id === (db.accountAliases?.[id] ?? id))
-}
-
-/** 合并同币种旧账户，保留历史凭证快照；不同币种绝不直接相加。 */
-export function normalizeFundingAccount(db: MockDb): void {
-  const rows = ledgerBalances(db)
-  if (!rows.length) { db.currencyBalances = []; return }
-  const primary = db.accounts.find(row => row.currency === 'CNY') ?? db.accounts[0]
-  const keep = new Map<Currency, Account>([[primary.currency, primary]])
-  const aliases = { ...db.accountAliases }
-  for (const row of rows) {
-    const existing = keep.get(row.currency)
-    if (!existing) { keep.set(row.currency, row); continue }
-    if (existing.id === row.id) continue
-    for (const field of ['balance', 'available'] as const) {
-      const value = existing[field] + row[field]
-      if (!Number.isSafeInteger(value) || value < 0) throw new Error('账户合并金额异常，已保留原数据')
-      existing[field] = value
-    }
-    aliases[row.id] = existing.id
-  }
-  const resolve = (id: string): string => aliases[id] ? resolve(aliases[id]) : id
-  // 只改账务关联字段，回单上的原账号、余额快照仍保留原始值。
-  const remap = (value: unknown): void => {
-    if (!value || typeof value !== 'object') return
-    for (const [key, child] of Object.entries(value)) {
-      if (['accountId', 'fromAccountId', 'toAccountId', 'settlementAccountId'].includes(key) && typeof child === 'string') {
-        Object.assign(value, { [key]: resolve(child) })
-      } else remap(child)
-    }
-  }
-  remap(db)
-  db.accounts = [primary]
-  db.currencyBalances = [...keep.values()].filter(row => row.id !== primary.id)
-  db.accountAliases = Object.fromEntries(Object.keys(aliases).map(id => [id, resolve(id)]))
-  for (const card of db.cards) card.accountId = primary.id
-}
+export { ledgerBalances, findBalance, normalizeFundingAccount } from '../../../../shared/account-model.mjs'
 
 /** Only product catalogues are shared. Customer activity always starts empty. */
 export function emptyCustomerDomains(user: User, accountId: string): Pick<MockDb,

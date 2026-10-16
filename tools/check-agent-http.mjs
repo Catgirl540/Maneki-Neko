@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** 使用本机模型协议 fixture 驱动真实 Harness、银行 HTTP 与可选浏览器；不调用外部模型。 */
 import { createServer as http } from 'node:http'
 import { createServer as net } from 'node:net'

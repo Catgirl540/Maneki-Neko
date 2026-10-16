@@ -1,0 +1,35 @@
+{
+  "date": "2026-10-16",
+  "timezone": "Asia/Shanghai",
+  "host": "120.48.123.112",
+  "release": "pg-20261016-r1",
+  "previousRelease": "pg-20261015-r2",
+  "database": "PostgreSQL 16.15",
+  "databaseName": "maneki_bank",
+  "integrationMode": "live",
+  "commercialReady": false,
+  "partnerBank": "not_selected",
+  "schemaMigratedAgain": false,
+  "productionModeRegression": { "passed": 25, "failed": 0, "skipped": 0 },
+  "servicesActive": ["luckycat-bank", "luckycat-bridge", "luckycat-staff-agent", "luckycat-ops-agent"],
+  "authenticatedAiHealthPassed": true,
+  "customerHistoryReadable": true,
+  "financialBalancesUnchanged": true,
+  "frontendChanged": false,
+  "frontendSha256": "bf23972c586c7c192ac139c60777e3c2fbf66206f1ef6acda0cac24a904e446e",
+  "backup": {
+    "file": "/var/backups/luckycat-bank/postgresql/bank-20261016T010018Z-7e6b72d32483.dump",
+    "snapshotAt": "2026-10-16T01:00:18.140125Z",
+    "sha256": "48106b7d9d3bcfff917b9ccd27cb8620a7faf339f653a6b2f2ae10eed2f3e222"
+  },
+  "restoreDrill": {
+    "target": "bank_restore_maneki_20261016",
+    "inventoryMatched": true,
+    "customerProfilesDecrypted": 10,
+    "aiSessionsVerified": 12,
+    "aiEventsDecrypted": 365,
+    "databaseRestoreSeconds": 2.32,
+    "productionSwitched": false
+  },
+  "rollbackArchive": "/var/backups/luckycat-bank/release-20261016T015008Z"
+}

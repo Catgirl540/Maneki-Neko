@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** 本地模型协议 + 真实 Harness/确认通道 + 临时 SQLite；验证助手能实际申请银行卡。 */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'

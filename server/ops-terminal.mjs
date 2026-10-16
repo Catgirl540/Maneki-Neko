@@ -1,3 +1,4 @@
+import { verifyPassword } from './passwords.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { hostname, userInfo } from 'node:os'
@@ -9,14 +10,13 @@ const MAX_TABS = 8, MAX_SESSIONS = 32, MAX_HISTORY = 512 * 1024
 const PREFIX = '/staff-api/ops/terminal/sessions'
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code })
 const ownerKey = req => createHash('sha256').update(String(req.headers.authorization ?? '')).digest('hex')
-const passwordHash = value => `sha256:${createHash('sha256').update(value).digest('hex')}`
 const json = (res, status, body) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)) }
 
 /** Only human ops identities can create PTYs. Disabled until explicitly configured. */
 export function createOpsTerminal({ auth, writeAudit, db, root, enabled = process.env.BANK_OPS_TERMINAL_ENABLED === 'true', password = process.env.BANK_OPS_PASSWORD, idleMs = 15 * 60_000 }) {
   const sessions = new Map()
   let ptyModule
-  function audit(session, action, reason) { try { writeAudit({ actorId: session.actorId, action, targetType: 'terminal', targetId: session.id, reason }) } catch {} }
+  function audit(session, action, reason) { try { Promise.resolve(writeAudit({ actorId: session.actorId, action, targetType: 'terminal', targetId: session.id, reason })).catch(() => {}) } catch {} }
   function publish(session, frame) {
     const event = { cursor: ++session.cursor, ...frame }
     const size = Buffer.byteLength(JSON.stringify(event))
@@ -35,11 +35,11 @@ export function createOpsTerminal({ auth, writeAudit, db, root, enabled = proces
     session.streams.clear()
     audit(session, 'ops.terminal.close', `${reason}; inputBytes=${session.inputBytes}`)
   }
-  function checkConfig(who) {
+  async function checkConfig(who) {
     if (!enabled) throw fail(503, '终端服务尚未启用', 'TERMINAL_DISABLED')
     if (process.getuid?.() === 0) throw fail(503, '终端服务须以非 root 账号运行', 'TERMINAL_ROOT_DISABLED')
-    const credential = db.prepare('SELECT password_hash FROM staff_users WHERE id = ?').get(who.actorId)
-    if (typeof password !== 'string' || password.length < 12 || !credential || credential.password_hash !== passwordHash(password)) {
+    const credential = await db.prepare('SELECT password_hash FROM staff_users WHERE id = ?').get(who.actorId)
+    if (typeof password !== 'string' || password.length < 12 || !credential || !verifyPassword(password, credential.password_hash)) {
       throw fail(503, '启用终端前须为运维账号配置独立的至少 12 位密码', 'TERMINAL_UNSAFE_CREDENTIAL')
     }
     if (!ptyModule) {
@@ -80,7 +80,7 @@ export function createOpsTerminal({ auth, writeAudit, db, root, enabled = proces
     if (url.pathname === PREFIX) {
       if (req.method === 'GET') { json(res, 200, [...sessions.values()].filter(session => session.owner === owner).map(metadata)); return true }
       if (req.method !== 'POST') throw fail(405, '请求方式不支持', 'METHOD_NOT_ALLOWED')
-      checkConfig(who)
+      await checkConfig(who)
       const geometry = size(await body(req))
       auth.resolve(req, { roles: ['ops'] })
       if (sessions.size >= MAX_SESSIONS || [...sessions.values()].filter(session => session.actorId === who.actorId).length >= MAX_TABS) throw fail(429, '已达到终端会话数量上限，请先关闭标签', 'TERMINAL_LIMIT')

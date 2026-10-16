@@ -410,7 +410,7 @@ export async function createDemoBank({
     appendStaffNotice,
   } = mockModule
   const { routes, ApiError } = contractModule
-  const { resetDb, findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb } = dbModule
+  const { resetDb, findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb, ledgerBalances } = dbModule
   dbModule.loadDb()
 
   const api = createMockApi(
@@ -739,7 +739,7 @@ export async function createDemoBank({
           customerId: profile.user.id,
           name: profile.user.name,
           phoneMasked: maskPhone(profile.user.phone),
-          accounts: profile.accounts.map((a) => ({ id: a.id, label: a.label, balance: a.balance })),
+          accounts: profile.accounts.map((a) => ({ id: a.id, label: a.label, currency: a.currency, balance: a.balance, available: a.available, currencyBalances: ledgerBalances(profile).map(row => ({ id: row.id, currency: row.currency, balance: row.balance, available: row.available })) })),
           cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status, dailyLimit: c.dailyLimit, onlinePayment: c.onlinePayment, overseasPayment: c.overseasPayment })),
           autoDebits: (profile.autoDebits ?? []).map((a) => ({
             id: a.id,

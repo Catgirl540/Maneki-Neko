@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Isolated bank + local model protocol + both browser clients. No remote models/customer data. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'

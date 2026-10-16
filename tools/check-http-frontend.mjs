@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /**
  * 浏览器 + HTTP + SQLite 联调，所有写操作只触及临时数据库。
  * 需要 Node.js 24、app 与 tools 的 npm ci，以及 Playwright Chromium。

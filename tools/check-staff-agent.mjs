@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Local model-protocol fixture → real Harness → employee confirmation → isolated SQLite. No external model calls. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'

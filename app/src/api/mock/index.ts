@@ -1,3 +1,4 @@
+import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../../../shared/account-model.mjs'
 /* ==========================================================================
    Mock BankApi —— 纯前端模拟后端
    特性：人为网络延迟、真实的业务校验（余额不足 / 大额二次确认 / 风控）、
@@ -42,7 +43,6 @@ import type {
   CardSecrets,
   CardProduct,
   CashFlow,
-  CashFlowPoint,
   Cents,
   Currency,
   ExportColumn,
@@ -58,15 +58,12 @@ import type {
   RiskQuestion,
   SecurityOverview,
   SpendingAnalysis,
-  SpendingCategory,
-  SpendingTrendPoint,
   SmsCodeResult,
   StaffNotice,
   SupportMessage,
   SupportReply,
   SupportTicketDetail,
   Transaction,
-  TransactionCategory,
   TransactionDetail,
   TransactionRecord,
   TransferQuote,
@@ -87,7 +84,6 @@ import type {
   ExchangeResult,
   SavingsOverview,
   SavingsGoal,
-  SavingsRoundupRule,
   VirtualCard,
   IdentityOcrResult,
   SalaryPlan,
@@ -334,11 +330,7 @@ function nextPaydayFrom(day: number): string {
   return candidate.toISOString().slice(0, 10)
 }
 
-function settlementAccount(db: MockDb): Account {
-  return (
-    findBalance(db, db.wealthAccount.settlementAccountId) ?? db.accounts[0]
-  )
-}
+function settlementAccount(db: MockDb): Account { return requireCurrencyBalance(db, db.wealthAccount.settlementAccountId) }
 
 function findCard(id: string): BankCard {
   const card = loadDb().cards.find((c) => c.id === id)
@@ -363,7 +355,7 @@ function newCardCvv(): string {
  * 交易前后余额不落库：它们随账户余额变化，由 getTransaction 读取时回推。
  */
 function pushTransaction(
-  tx: Omit<Transaction, 'id'>,
+  tx: Omit<Transaction, 'id'> & Pick<TransactionRecord, 'businessType'>,
   detail: Omit<TransactionDetail, 'referenceNo' | 'balanceBefore' | 'balanceAfter'>,
   save = true,
   identity?: Pick<TransferResult, 'transactionId' | 'referenceNo'>,
@@ -708,6 +700,8 @@ export function createMockApi(options?: {
       }
       next.passwordDigest = await passwordDigest(req.password)
       next.accounts = [account]
+      next.retiredBalances = []
+      next.accountNumberAliases = {}
       next.currencyBalances = []
       next.accountAliases = {}
       Object.assign(next, emptyCustomerDomains(next.user, account.id))
@@ -882,10 +876,11 @@ export function createMockApi(options?: {
 
     async deposit(accountId, amount, channel) {
       await delay(260)
-      if (amount <= 0) throw new ApiError('转入金额必须大于 0', 400, 'INVALID_AMOUNT')
+      if (!Number.isSafeInteger(amount) || amount <= 0) throw new ApiError('转入金额必须大于 0', 400, 'INVALID_AMOUNT')
       if (amount > 5_000_000) throw new ApiError('单笔转入上限 ¥50,000.00', 400, 'LIMIT_EXCEEDED')
       const account = findAccount(accountId)
-      applyBalance(accountId, amount)
+      accountId = account.id
+      applyBalance(accountId, amount, false)
       const salary = channel === 'salary'
       pushTransaction(
         {
@@ -910,7 +905,9 @@ export function createMockApi(options?: {
           location: '招财猫银行 App',
           remark: salary ? '本月薪资' : '从绑定卡转入',
         },
+        false,
       )
+      persist()
       return findAccount(accountId)
     },
 
@@ -998,7 +995,7 @@ export function createMockApi(options?: {
       const db = loadDb()
       // 询价必须针对具体账户：可用余额与扣账币种都取决于它
       const current =
-        findBalance(db, req.fromAccountId) ?? db.accounts[0]
+        findAccount(req.fromAccountId)
       const isFps = req.channel === 'fps'
       const singleLimit = isFps ? FPS_SINGLE_LIMIT : BANK_SINGLE_LIMIT
 
@@ -1065,6 +1062,7 @@ export function createMockApi(options?: {
       await delay(420)
       const db = loadDb()
       const account = findAccount(req.fromAccountId)
+      req = { ...req, fromAccountId: account.id }
       const isFps = req.channel === 'fps'
 
       if (!Number.isSafeInteger(req.amount) || req.amount <= 0) {
@@ -1138,6 +1136,26 @@ export function createMockApi(options?: {
       // 不会出现「到点没钱」这种用户完全控制不了的失败。
       // 窗口内用户可撤销、员工可拦截；都没人动 → 自动到账。
       // 到账走 submitTransfer 同一条业务路（删占位后重提交），不复制业务规则。
+      const fpsRecipient = isFps && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod ?? 'mobile', req.fpsId ?? '') : undefined
+      const fpsProfile = fpsRecipient?.customerId ? findProfileByUserId(fpsRecipient.customerId) : null
+      const fpsBalance = fpsProfile && fpsRecipient?.balanceId ? findBalance(fpsProfile, fpsRecipient.balanceId) : null
+      if (fpsRecipient?.customerId && (!fpsProfile || !fpsBalance)) throw new ApiError('收款币种余额不可用', 409, 'RECIPIENT_NOT_FOUND')
+      const recipient = fpsProfile && fpsBalance ? { profile: fpsProfile, account: fpsBalance, card: null } : !isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN' ? findRecipientByNumber(req.payeeAccountNo ?? '') : null
+      if (!isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' &&
+          req.payeeBankRegion === 'CN' && !recipient) {
+        throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND')
+      }
+      if (recipient) {
+        if (recipient.profile.user.id === db.user.id) {
+          throw new ApiError('付款和收款账户不能相同', 400, 'SAME_ACCOUNT')
+        }
+        if (recipient.account.currency !== (isFps ? req.payeeCurrency : account.currency)) {
+          throw new ApiError('本行账户币种不一致', 400, 'CURRENCY_MISMATCH')
+        }
+        if (req.payeeName.trim() !== (isFps ? hideMiddle(recipient.profile.user.name) : recipient.profile.user.name)) {
+          throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH')
+        }
+      }
       const reviewThreshold = readThreshold()
       if (reviewThreshold !== undefined && total >= reviewThreshold) {
         const holdUntil = new Date(Date.now() + holdWindowMs).toISOString()
@@ -1195,31 +1213,12 @@ export function createMockApi(options?: {
         }
       }
 
-      // 同一客户名下的本行账户划转：两边余额和台账在一次持久化中更新。
-      const fpsRecipient = isFps && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod ?? 'mobile', req.fpsId ?? '') : undefined
-      const fpsProfile = fpsRecipient?.customerId ? findProfileByUserId(fpsRecipient.customerId) : null
-      const fpsBalance = fpsProfile && fpsRecipient?.balanceId ? findBalance(fpsProfile, fpsRecipient.balanceId) : null
-      if (fpsRecipient?.customerId && (!fpsProfile || !fpsBalance)) throw new ApiError('收款币种余额不可用', 409, 'RECIPIENT_NOT_FOUND')
-      const recipient = fpsProfile && fpsBalance ? { profile: fpsProfile, account: fpsBalance, card: null } : !isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN' ? findRecipientByNumber(req.payeeAccountNo ?? '') : null
-      if (!isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' &&
-          req.payeeBankRegion === 'CN' && !recipient) {
-        throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND')
-      }
       if (recipient) {
-        if (recipient.account.id === account.id && recipient.profile.user.id === db.user.id) {
-          throw new ApiError('付款和收款账户不能相同', 400, 'SAME_ACCOUNT')
-        }
-        if (recipient.account.currency !== account.currency) {
-          throw new ApiError('本行账户币种不一致', 400, 'CURRENCY_MISMATCH')
-        }
-        if (req.payeeName.trim() !== (isFps ? hideMiddle(recipient.profile.user.name) : recipient.profile.user.name)) {
-          throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH')
-        }
         const sender = findBalance(db, account.id)!
         sender.balance -= req.amount
         sender.available -= req.amount
-        recipient.account.balance += req.amount
-        recipient.account.available += req.amount
+        recipient.account.balance += quotedFx?.toAmount ?? req.amount
+        recipient.account.available += quotedFx?.toAmount ?? req.amount
         const isOwnAccount = recipient.profile.user.id === db.user.id
         const createdAt = new Date().toISOString()
         const outgoing = pushTransaction({
@@ -1238,8 +1237,8 @@ export function createMockApi(options?: {
         const incomingId = nextId('txn')
         recipient.profile.transactions.unshift({
           id: incomingId,
-          accountId: recipient.account.id, direction: 'in', amount: req.amount,
-          signedAmount: req.amount, counterparty: `本行转入 · ${db.user.name}`,
+          accountId: recipient.account.id, direction: 'in', amount: quotedFx?.toAmount ?? req.amount,
+          signedAmount: quotedFx?.toAmount ?? req.amount, counterparty: `本行转入 · ${db.user.name}`,
           memo: req.memo || `本行转入自尾号 ${sender.accountNo.slice(-4)}`,
           category: 'transfer', createdAt, status: 'success',
           detail: {
@@ -1257,8 +1256,8 @@ export function createMockApi(options?: {
         } catch (error) {
           sender.balance += req.amount
           sender.available += req.amount
-          recipient.account.balance -= req.amount
-          recipient.account.available -= req.amount
+          recipient.account.balance -= quotedFx?.toAmount ?? req.amount
+          recipient.account.available -= quotedFx?.toAmount ?? req.amount
           db.transactions.splice(db.transactions.findIndex((row) => row.id === outgoing.id), 1)
           recipient.profile.transactions.splice(
             recipient.profile.transactions.findIndex((row) => row.id === incomingId), 1,
@@ -1270,14 +1269,14 @@ export function createMockApi(options?: {
           referenceNo: outgoing.detail.referenceNo,
           amount: req.amount, fee: 0, channel: req.channel,
           identifier: maskBankAccount(req.payeeAccountNo ?? ''), createdAt,
-          settlementStatus: 'success',
+          settlementStatus: 'success', ...(quotedFx ? { fx: quotedFx } : {}),
         }
       }
 
       // 使用本次提交计算并通过确认条件校验的价格；带确认条件的指令不静默改价。
       const fx = quotedFx
 
-      applyBalance(req.fromAccountId, -total)
+      applyBalance(req.fromAccountId, -total, false)
       const bank = findBank(db.banks, req.payeeBankCode, req.payeeBankRegion)
       const tx = pushTransaction(
         {
@@ -1323,7 +1322,7 @@ export function createMockApi(options?: {
               }
             : {}),
         },
-        true,
+        false,
         options?.settlementIdentity,
       )
 
@@ -1389,6 +1388,7 @@ export function createMockApi(options?: {
       }
       persist()
 
+      persist()
       return {
         transactionId: tx.id,
         referenceNo: tx.detail.referenceNo,
@@ -1668,7 +1668,7 @@ export function createMockApi(options?: {
       }
 
       // —— 绑定资金账户：申赎款项都走它 ——
-      const settlement = findBalance(db, req.settlementAccountId)
+      const settlement = requireCurrencyBalance(db, req.settlementAccountId)
       if (!settlement) throw new ApiError('请选择资金账户', 400, 'SETTLEMENT_REQUIRED')
 
       // 兼容旧演示档案：仅在开户成功时清理未开户期间残留的持仓。
@@ -1902,98 +1902,13 @@ export function createMockApi(options?: {
       }
     },
 
-    async getSpending(month?: string): Promise<SpendingAnalysis> {
-      await delay(220)
-      const db = loadDb()
-      const target = month ?? monthKey()
-      const prev = monthKey(-1)
-      const out = db.transactions.filter((t) => t.direction === 'out' && t.status === 'success' &&
-        !(t.category === 'transfer' && t.detail.channel === 'account'))
-
-      const inMonth = (iso: string, key: string) => iso.slice(0, 7) === key
-      const monthRows = out.filter((t) => inMonth(t.createdAt, target))
-      const prevRows = out.filter((t) => inMonth(t.createdAt, prev))
-
-      const total = monthRows.reduce((sum, t) => sum + t.amount, 0)
-      const prevTotal = prevRows.reduce((sum, t) => sum + t.amount, 0)
-
-      const byCategory = new Map<TransactionCategory, Cents>()
-      for (const t of monthRows) {
-        byCategory.set(t.category, (byCategory.get(t.category) ?? 0) + t.amount)
-      }
-      // 环形图与「最大支出分类」都按金额从大到小排，避免图表顺序误导
-      const categories: SpendingCategory[] = [...byCategory.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .map(([key, amount]) => ({
-          key,
-          label: CATEGORY_LABEL[key],
-          amount,
-          ratio: total === 0 ? 0 : amount / total,
-        }))
-
-      const trend: SpendingTrendPoint[] = []
-      for (let i = 5; i >= 0; i -= 1) {
-        const key = monthKey(-i)
-        trend.push({
-          month: key,
-          amount: out
-            .filter((t) => inMonth(t.createdAt, key))
-            .reduce((sum, t) => sum + t.amount, 0),
-        })
-      }
-
-      return {
-        month: target,
-        total,
-        monthOverMonth: prevTotal === 0 ? 0 : (total - prevTotal) / prevTotal,
-        categories,
-        trend,
-      }
-    },
-
-    async getCashFlow(days = 7): Promise<CashFlow> {
-      await delay(200)
-      const db = loadDb()
-      const points: CashFlowPoint[] = []
-
-      for (let i = days - 1; i >= 0; i -= 1) {
-        const start = new Date()
-        start.setHours(0, 0, 0, 0)
-        start.setDate(start.getDate() - i)
-        const end = new Date(start)
-        end.setDate(end.getDate() + 1)
-
-        const rows = db.transactions.filter((t) => {
-          const at = new Date(t.createdAt).getTime()
-          return at >= start.getTime() && at < end.getTime() &&
-            !(t.category === 'transfer' && t.detail.channel === 'account')
-        })
-
-        points.push({
-          date: dayKey(start),
-          income: rows
-            .filter((t) => t.direction === 'in')
-            .reduce((sum, t) => sum + t.amount, 0),
-          expense: rows
-            .filter((t) => t.direction === 'out')
-            .reduce((sum, t) => sum + t.amount, 0),
-        })
-      }
-
-      return {
-        days,
-        points,
-        totalIncome: points.reduce((sum, p) => sum + p.income, 0),
-        totalExpense: points.reduce((sum, p) => sum + p.expense, 0),
-      }
-    },
-
+    async getSpending(month?: string): Promise<SpendingAnalysis> { return spendingStatistics(loadDb(), month ?? monthKey(), CATEGORY_LABEL) },
+    async getCashFlow(days = 7): Promise<CashFlow> { return cashFlowStatistics(loadDb(), days) },
     async listAutoDebits(): Promise<AutoDebit[]> {
       await delay(160)
       return loadDb().autoDebits
     },
-
-    async setAutoDebitEnabled(id, enabled) {
+async setAutoDebitEnabled(id, enabled) {
       await delay(220)
       const item = loadDb().autoDebits.find((a) => a.id === id)
       if (!item) throw new ApiError('扣款计划不存在', 404, 'AUTODEBIT_NOT_FOUND')
@@ -2001,8 +1916,7 @@ export function createMockApi(options?: {
       persist()
       return item
     },
-
-    async getSecurityOverview(): Promise<SecurityOverview> {
+async getSecurityOverview(): Promise<SecurityOverview> {
       await delay(200)
       return withDerivedSecurity()
     },
@@ -2170,6 +2084,7 @@ export function createMockApi(options?: {
       }
       const rate = fxRate(from.currency, req.toCurrency)
       const toAmount = Math.round(req.amount * rate)
+      if (!Number.isSafeInteger(toAmount) || toAmount <= 0) throw new ApiError('换汇金额过小或超出范围', 400, 'INVALID_AMOUNT')
       const target = ledgerBalances(db).find((a) => a.currency === req.toCurrency)
       for (const [id, quote] of exchangeQuotes) if (quote.expiresAt <= Date.now()) exchangeQuotes.delete(id)
       const quoteId = crypto.randomUUID()
@@ -2210,6 +2125,7 @@ export function createMockApi(options?: {
       }
       const rate = fxRate(from.currency, req.toCurrency)
       const toAmount = Math.round(req.amount * rate)
+      if (!Number.isSafeInteger(toAmount) || toAmount <= 0) throw new ApiError('换汇金额过小或超出范围', 400, 'INVALID_AMOUNT')
       let target = ledgerBalances(db).find((a) => a.currency === req.toCurrency)
       if (!target) {
         target = {
@@ -2226,12 +2142,14 @@ export function createMockApi(options?: {
         db.currencyBalances ??= []
         db.currencyBalances.push(target)
       }
+      if (!Number.isSafeInteger(target.balance + toAmount) || !Number.isSafeInteger(target.available + toAmount)) throw new ApiError('目标币种余额超出范围', 400, 'INVALID_AMOUNT')
       applyBalance(from.id, -req.amount, false)
       applyBalance(target.id, toAmount, false)
       const now = new Date().toISOString()
       const crossLabel = `币种划转 · ${from.currency}→${req.toCurrency}`
       const outflow = pushTransaction(
         {
+          businessType: 'exchange',
           accountId: from.id,
           direction: 'out',
           amount: req.amount,
@@ -2258,6 +2176,7 @@ export function createMockApi(options?: {
       )
       pushTransaction(
         {
+          businessType: 'exchange',
           accountId: target.id,
           direction: 'in',
           amount: toAmount,
@@ -2355,19 +2274,7 @@ export function createMockApi(options?: {
       persist()
     },
 
-    async updateSavingsRoundup(req): Promise<SavingsRoundupRule> {
-      await delay(200)
-      const db = loadDb()
-      const rule = db.savings.roundup
-      if (req.enabled !== undefined) rule.enabled = req.enabled
-      if (req.roundupTo !== undefined) rule.roundupTo = req.roundupTo
-      if (req.dailyCap !== undefined) rule.dailyCap = req.dailyCap
-      if (req.accountId !== undefined) rule.accountId = req.accountId
-      if (req.goalId !== undefined) rule.goalId = req.goalId
-      persist()
-      return rule
-    },
-
+    async updateSavingsRoundup(req) { const db = loadDb(); db.savings.roundup = validateRoundup(db, req); persist(); return db.savings.roundup },
     async createVirtualCard(id, req): Promise<VirtualCard> {
       await delay(560)
       const db = loadDb()
@@ -2500,7 +2407,7 @@ export function createMockApi(options?: {
         db.salaryPlan.amount = req.amount
       }
       if (req.accountId) {
-        const account = findAccount(req.accountId)
+        const account = requireCurrencyBalance(db, req.accountId)
         db.salaryPlan.accountId = account.id
       }
       if (req.employer !== undefined) db.salaryPlan.employer = req.employer
@@ -2559,7 +2466,7 @@ export function createMockApi(options?: {
       verifyPayPassword(req.paymentPassword)
       const totalInterest = Math.round((req.amount * product.apr * req.termMonths) / 12)
       const monthlyPayment = Math.round((req.amount + totalInterest) / req.termMonths)
-      const account = findAccount(req.accountId)
+      const account = requireCurrencyBalance(db, req.accountId)
       const loan: Loan = {
         id: nextId('ln'),
         productName: product.name,
@@ -2648,7 +2555,7 @@ export function createMockApi(options?: {
       if (req.enabled !== undefined) db.cashManagement.sweepEnabled = req.enabled
       if (req.threshold !== undefined) db.cashManagement.sweepThreshold = req.threshold
       if (req.accountId) {
-        const account = findAccount(req.accountId)
+        const account = requireCurrencyBalance(db, req.accountId)
         db.cashManagement.accountId = account.id
       }
       persist()
@@ -2663,7 +2570,7 @@ export function createMockApi(options?: {
     async createInvestPlan(req): Promise<InvestPlan> {
       await delay(760)
       const db = loadDb()
-      const account = findAccount(req.accountId)
+      const account = requireCurrencyBalance(db, req.accountId)
       const risk = withDerivedRisk(db)
       if (!db.wealthAccount.opened || !risk.done || risk.expired || risk.level === null) throw new ApiError('请先开立理财账户并完成有效风险测评', 400, 'WEALTH_PREREQUISITE')
       if (!['每周', '每两周', '每月'].includes(req.cycle)) throw new ApiError('请选择每月 1–28 日的周期', 400, 'INVALID_CYCLE')

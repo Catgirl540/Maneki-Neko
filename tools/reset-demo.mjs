@@ -18,6 +18,7 @@
  *   node tools/reset-demo.mjs            # 归零（请先停掉 server）
  *   node tools/reset-demo.mjs --dry-run  # 只打印要做什么，不动文件
  */
+import './legacy-sqlite-fixture-disabled.mjs'
 import { DatabaseSync } from 'node:sqlite'
 import { existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'

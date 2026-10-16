@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** #7/#9: isolated SQLite fixtures, no external model or production data. */
 import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
