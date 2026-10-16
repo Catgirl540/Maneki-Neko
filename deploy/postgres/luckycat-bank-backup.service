@@ -1,0 +1,21 @@
+[Unit]
+Description=Verified custom-format PostgreSQL backup of Luckycat
+After=postgresql.service
+OnFailure=luckycat-bank-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/srv/maneki-bank/current
+EnvironmentFile=/etc/luckycat-bank/pg-backup.env
+Environment=BANK_PG_BACKUP_DIR=/var/backups/luckycat-bank/postgresql
+Environment=BANK_PG_STATUS_FILE=/var/lib/luckycat-bank/backup-status.json
+ExecStart=/usr/bin/python3 -B deploy/postgres/backup.py
+TimeoutStartSec=70min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/luckycat-bank/postgresql /var/lib/luckycat-bank

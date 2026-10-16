@@ -1,0 +1,13 @@
+[Unit]
+Description=Record Luckycat PostgreSQL maintenance failure for %i
+
+[Service]
+Type=oneshot
+User=bank
+Group=bank
+ExecStart=/usr/bin/logger --priority=daemon.err --tag=luckycat-bank-alert Maintenance job failed: %i. Inspect protected service logs; external notification is not configured.
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

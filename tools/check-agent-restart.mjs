@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** 本地模型协议 + 临时 SQLite 银行；真实重启验证原生上下文、归属与确认失效。 */
 import assert from 'node:assert/strict'
 import { createServer, request as httpRequest } from 'node:http'

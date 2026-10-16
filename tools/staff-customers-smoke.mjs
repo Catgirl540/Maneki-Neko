@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /**
  * 员工端「客户查询 / 代客办理 / 审计」三块冒烟（清单 §2，乙模块）
  * 用法：node staff-customers-smoke.mjs

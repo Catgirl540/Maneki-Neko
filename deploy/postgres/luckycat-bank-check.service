@@ -1,0 +1,19 @@
+[Unit]
+Description=Read-only Luckycat PostgreSQL health and backup check
+After=postgresql.service
+OnFailure=luckycat-bank-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/srv/maneki-bank/current
+EnvironmentFile=/etc/luckycat-bank/pg-backup.env
+Environment=BANK_PG_BACKUP_DIR=/var/backups/luckycat-bank/postgresql
+ExecStart=/usr/bin/python3 -B deploy/postgres/check.py
+TimeoutStartSec=20min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

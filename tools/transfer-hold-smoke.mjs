@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /**
  * 大额转账「延迟到账 + 拦截窗口」全链冒烟（清单 §9）
  * 用法：node transfer-hold-smoke.mjs

@@ -2,25 +2,32 @@ import { createServer } from 'node:http'
 import { createCustomerSupportApi } from './support-api.mjs'
 import { createCustomerAuth } from './customer-auth.mjs'
 import { createOperations } from './operations.mjs'
-import { mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { createPgClient } from './pg-client.mjs'
+import { createDataCipher } from './database-crypto.mjs'
+import { createBankConnect } from './bank-connect.mjs'
+import { createConnectedHttp } from './connected-http.mjs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createDemoBank } from '../framework/bridge/demo-bank.mjs'
+import { createBankApi } from './bank-api.mjs'
+import { createSecurityGateway } from './security-gateway.mjs'
 import { openBankDatabase } from './database.mjs'
 import { createStaffApi, ensureStaffSchema, getTransferReviewCents } from './staff-api.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const host = process.env.BANK_HOST ?? '127.0.0.1'
 const port = Number(process.env.BANK_PORT ?? 8080)
-const databaseFile = process.env.BANK_DB_FILE ?? join(root, 'server/data/bank.sqlite')
-const legacyStateFile = process.env.BANK_STATE_FILE ?? join(root, 'server/data/demo-bank-state.json')
-mkdirSync(dirname(databaseFile), { recursive: true })
-const database = openBankDatabase(databaseFile, legacyStateFile)
-const auth = createCustomerAuth(database.db)
-// 先建 staff 表：阈值读取走 staff_settings，必须在任何 getTransferReviewCents 之前存在。
-ensureStaffSchema(database.db)
-const customerSupport = createCustomerSupportApi({ db: database.db, auth })
-const operations = createOperations({ db: database.db, root, databaseFile, backupDir: process.env.BANK_BACKUP_DIR })
+const database = await openBankDatabase()
+const auth = await createCustomerAuth(database.db)
+const security = await createSecurityGateway(database.db, auth)
+await ensureStaffSchema(database.db)
+const customerSupport = await createCustomerSupportApi({ db: database.db, auth })
+// Native bank integrations and telemetry never join the legacy projection client.
+const connectionDb = createPgClient(process.env.BANK_DATABASE_URL, { max: 4 })
+const telemetryDb = createPgClient(process.env.BANK_DATABASE_URL, { max: 2 })
+const connectionVersion = (await connectionDb.query('SELECT max(version) AS version FROM banking.schema_migrations')).rows[0]?.version
+if (connectionVersion !== 2026101504) throw new Error('Bank integration/accounting schema requires matching owner bootstrap')
+const connections = createBankConnect({ db: connectionDb, cipher: createDataCipher(':memory:') })
+const operations = await createOperations({ db: telemetryDb, root, backupDir: process.env.BANK_BACKUP_DIR })
 // 大额转账延迟到账阈值（清单 §9.1）：默认 ¥500,000 = 50000000 分。
 // 2026-10-12 起是**运行时配置**：存 staff_settings，员工端随时改，这里每笔现读。
 // 在途窗口时长：业务默认 5 分钟，演示调成 30 秒（BANK_TRANSFER_HOLD_SECONDS=30）。
@@ -28,7 +35,9 @@ const holdWindowMs = Number(process.env.BANK_TRANSFER_HOLD_SECONDS ?? 300) * 100
 // staffApi 依赖 bank 的资金钩子，bank 的回调又要回写 staffApi 的记录，
 // 所以用前向引用解开环：先建 bank，回调触发时 staffApi 已就位。
 let staffApi
-const bank = await createDemoBank({
+const bank = await createBankApi({
+  security,
+  database,
   searchFrom: root,
   auth,
   storage: database.storage,
@@ -38,7 +47,7 @@ const bank = await createDemoBank({
   onHoldClosed: (closed) => staffApi.closeTransferApproval(closed),
 })
 // 工作人员端 /staff-api/*（见 design/staff-console/）。先于 bank.handle 匹配。
-staffApi = createStaffApi({
+staffApi = await createStaffApi({
   db: database.db,
   operations,
   bankHooks: {
@@ -51,26 +60,39 @@ staffApi = createStaffApi({
   },
 })
 
-// 在途窗口到点自动到账（清单 §9.1：没人拦 = 默认放行）。
-// 1 秒一次：demo 窗口只有 30 秒，粒度太粗会让倒计时和实际到账对不上。
+// Compatibility profile operations retain a queue while bank-native repositories
+// use independent PostgreSQL transactions and row locks.
+let pendingWork = Promise.resolve()
+let queued = 0
+function enqueue(work) {
+  queued += 1
+  const next = pendingWork.then(work)
+  pendingWork = next.catch(() => {}).finally(() => { queued -= 1 })
+  return next
+}
+let sweepQueued = false
 const holdTimer = setInterval(() => {
-  bank.tickHolds().catch((error) => {
-    try { operations.record({ service: 'settlement', kind: 'settlement-error', code: 'SETTLEMENT_FAILED' }) } catch {}
-    console.warn(`[bank-server] 自动到账扫账失败：${error?.message ?? error}`)
-  })
+  if (security.mode !== 'sandbox' || sweepQueued) return
+  sweepQueued = true
+  enqueue(() => bank.tickHolds()).catch(() => {
+    operations.record({ service: 'settlement', kind: 'settlement-error', code: 'SETTLEMENT_FAILED' }).catch(() => {})
+    console.warn('[bank-server] Settlement failed; transaction rolled back')
+  }).finally(() => { sweepQueued = false })
 }, 1000)
 holdTimer.unref?.()
 
-const server = createServer(async (req, res) => {
+async function handleRequest(req, res) {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
   res.on('finish', () => {
     if (res.statusCode >= 500) {
-      try { operations.record({ service: url.pathname.startsWith('/staff-api/') ? 'staff' : 'bank', status: res.statusCode, code: 'HTTP_ERROR' }) } catch {}
+      operations.record({ service: url.pathname.startsWith('/staff-api/') ? 'staff' : 'bank', status: res.statusCode, code: 'HTTP_ERROR' }).catch(() => {})
     }
   })
-  if (url.pathname === '/health') {
+  if (url.pathname === '/health' || url.pathname === '/ready') {
+    await database.db.prepare('SELECT 1').get()
+    const readiness = await connections.readiness()
     res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-    res.end(JSON.stringify({ ok: true, kind: 'demo-bank', routes: bank.stats().routes }))
+    res.end(JSON.stringify({ ok: true, kind: 'bank-partner-platform', database: 'postgresql', integrationMode: security.mode, commercialReady: readiness.ready === true, bankConnection: readiness.ready === true ? 'configured' : 'unconfigured', routes: bank.stats().routes }))
     return
   }
   // 演示数据的全局重置接口不能暴露在这个多用户联调入口。
@@ -80,6 +102,7 @@ const server = createServer(async (req, res) => {
     return
   }
   try {
+    if (await connectedHttp.handle(req, res, url)) return
     if (await customerSupport.handle(req, res, url)) return
     if (await staffApi.handle(req, res, url)) return
     if (url.pathname === '/api/agent/transfer/requirements' && req.method === 'GET') {
@@ -114,15 +137,45 @@ const server = createServer(async (req, res) => {
   } catch (error) {
     if (res.writableEnded) return
     res.writeHead(error?.status ?? 500, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
-    res.end(JSON.stringify({ message: error?.message ?? '服务异常', code: error?.code ?? 'INTERNAL_ERROR' }))
+    res.end(JSON.stringify({ message: error?.status && error.status < 500 ? error.message : '服务异常', code: error?.code ?? 'INTERNAL_ERROR' }))
     return
   }
   res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify({ message: '接口不存在', code: 'NOT_FOUND' }))
+}
+
+const server = createServer((req, res) => {
+  if (queued >= 128) { res.writeHead(503, { 'content-type': 'application/json' }); res.end(JSON.stringify({ message: '服务繁忙，请稍后重试', code: 'BUSY' })); return }
+  enqueue(() => handleRequest(req, res)).catch(() => {
+    if (!res.writableEnded) {
+      if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ message: '服务异常', code: 'INTERNAL_ERROR' }))
+    }
+  })
 })
+server.requestTimeout = 30_000
+server.headersTimeout = 15_000
+server.maxConnections = 128
+
+const connectedHttp = createConnectedHttp({ connections, auth, staffAuth: staffApi.auth, mode: security.mode })
 
 server.listen(port, host, () => {
   console.log(`[bank-server] http://${host}:${port}`)
-  console.log(`[bank-server] SQLite: ${databaseFile}`)
-  console.log(`[bank-server] 大额延迟到账：阈值 ¥${(getTransferReviewCents(database.db) / 100).toFixed(2)}（员工端可改），窗口 ${holdWindowMs / 1000}s`)
+  console.log('[bank-server] PostgreSQL; bank custody integration is required for live funds')
+
 })
+
+let closing = false
+async function shutdown() {
+  if (closing) return
+  closing = true
+  clearInterval(holdTimer)
+  server.close(async () => {
+    await pendingWork
+    await Promise.all([database.close(), connectionDb.close(), telemetryDb.close()])
+    process.exit(0)
+  })
+  setTimeout(() => process.exit(1), 15_000).unref()
+}
+process.on('SIGTERM', shutdown)
+process.on('SIGINT', shutdown)

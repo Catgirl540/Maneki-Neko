@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** issue #4：真实 HTTP + 临时 SQLite，验证结果页/详情刷新，不调用外部模型。 */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'

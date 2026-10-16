@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Real DSH native plugins + role authentication + typed Clef fixture + human confirmation. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'

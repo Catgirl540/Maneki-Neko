@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Live-model acceptance tests with an isolated bank. Key comes only from the process environment. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'

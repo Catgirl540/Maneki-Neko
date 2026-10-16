@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** 无外部模型费用：真实 SQLite/HTTP 后端 + 账户绑定/确认/执行通道验证。 */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'

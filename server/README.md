@@ -1,79 +1,41 @@
-# 网页银行后端（演示联调）
+# 银行合作平台后端（PostgreSQL）
 
-这个服务把当前 `BankApi` 的全部银行业务接口开放在 `/api/*`，供网页在 HTTP 模式下联调。
-它复用 `app/src/api/mock/` 的虚拟银行业务规则；`framework/bridge/demo-bank.mjs`
-负责把接口契约映射成路由。本入口另加随机 Bearer 会话令牌，按登录用户切换数据档案。
-数据保存在本地 SQLite 数据库。账户和流水同步到 `bank_accounts`、`bank_transactions`；
-虚拟银行卡有独立的 `virtual_cards` 表，完整卡号与演示安全码在
-`virtual_card_secrets` 表，列表接口不会返回它们。其他演示业务档案保存在 `app_storage` 表。
+后端使用 PostgreSQL 16，Node.js 24 和原生异步 `pg` 连接池。`BANK_DATABASE_URL` 必填，运行入口没有 SQLite 回退。现有前端源码和静态文件保持不变；兼容路由保留，真实资金功能由服务端接入状态控制。
 
-## 启动
+业务模式是中国内地人民币零售、合作持牌银行托管资金并执行支付。合作银行尚未确定，当前真实银行通道关闭：`commercialReady=false`。平台保存支付意图、授权和经验证的回执；创建支付意图不扣余额、不生成成功到账。生产包没有虚构银行适配器、模拟签名或自动放行开关。
 
-需要 Node.js 24 和 `app/` 的依赖（现场转译 TypeScript 使用其中的 `typescript`）。
-Node 24 的内置 SQLite 模块目前会打印一条实验功能提示，不影响演示。
+## 启动和结构部署
 
-```powershell
-cd app
-npm ci
-cd ..
-node server/index.mjs
+```bash
+cd server
+npm ci --omit=dev
+# 通过受保护环境文件注入 BANK_DATABASE_URL、BANK_DATA_KEY 及初始化凭据
+node bootstrap-postgres.mjs   # 仅数据库所有者执行结构部署
+# 改用受限应用连接，设置 BANK_AUTO_MIGRATE=false
+node index.mjs
 ```
 
-服务默认监听 `127.0.0.1:8080`；`GET /health` 可检查状态。数据库文件为
-`server/data/bank.sqlite`，可用 `BANK_DB_FILE` 覆盖。第一次启动时若存在旧版
-`server/data/demo-bank-state.json`，会自动导入 SQLite；之后以 SQLite 为准。
-仓库里的 [`demo-database/`](../demo-database/README.md) 保存一份可供队友复现的
-虚拟银行卡和账户状态快照；请按其中说明复制到本地运行目录。
-`BANK_HOST` 和 `BANK_PORT` 可改监听地址与端口。会话令牌只存于进程内存，
-重启服务后需要重新登录。
+运行时需要 `BANK_DATA_KEY`（32 字节规范 Base64，沿用迁移源的密钥），`BANK_INTEGRATION_MODE=live`，`BANK_AUTO_MIGRATE=false`。`NODE_ENV=production` 时缺省为 `live`，显式配置 `sandbox` 会拒绝启动；模拟业务仅在隔离测试环境运行。所有者、HTTP 应用、未来银行 worker、AI 会话使用独立角色。连接密码和私钥禁止写入仓库。参考 `deploy/postgres/grants.sql` 安装最小权限。
 
-另开终端启动网页，并让 Vite 把 `/api` 代理到此服务：
+`live` 模式拒绝未接入的短信、身份核验和旧模拟资金功能；`sandbox` 仅供隔离测试，生产切换后不提供演示余额冒充银行资金。历史兼容账户标记为 `legacy_demo`，真实账户只来自 `banking.account_links` 的银行确认数据。
 
-```powershell
-cd app
-$env:VITE_USE_MOCK='false'
-$env:VITE_PROXY_TARGET='http://127.0.0.1:8080'
-npm run dev
+## 数据结构
+
+`public` 保留加密客户档案、历史账户及流水、认证、员工工单审批和审计。`banking` 存银行准入证据、账户关联、客户授权、幂等支付意图、不可修改回执、outbox、账单和对账异常。`accounting` 提供版本科目、账簿、明细账户、借贷凭证、营业日及日结；平台财务账与银行客户资金备查账分开。`regulatory` 提供版本报表、血缘和校验记录，尚未连接监管报送接口。
+
+科目模板 `CN-PLATFORM-DRAFT-1` 保持草稿，等待主体会计政策审批；`BANK-MEMO-1` 仅为银行资金备查账。不存在适用于所有机构、可直接宣称完整且获监管认可的通用银行科目表。
+
+## 验证
+
+```bash
+cd server
+npm test
+node reconcile.mjs
+node smoke.mjs
 ```
 
-虚拟卡支持查询、申请、锁定／解锁、换卡、设置线上与境外支付、设置单日限额，
-以及验证演示支付密码后单独查看卡号和安全码。默认登录密码是 `123456`，
-**支付密码是 `888888`**。申请或换卡会扣取演示工本费，并在账户里增加流水。
+完整 PostgreSQL 集成测试需要明确配置专用测试库：`BANK_TEST_DATABASE_URL`、`BANK_CONNECT_TEST_DATABASE_URL`（库名 `maneki_connector_test`）、`BANK_HTTP_TEST_DATABASE_URL`（库名 `maneki_http_test`）。HTTP 测试会清空专用测试库的业务 schema，禁止设置生产连接。未提供 URL 的数据库测试会跳过，不能把跳过当作验收通过。
 
-演示档案中尾号 8888、3366、2046 的三张卡分别对应三个独立的人民币资金账户。
-升级已有数据库时会保留原账户的余额和历史流水，为另外两个账户创建零余额账户。
-网页的「转账」页可选择付款卡，再点「转给我的其他银行卡账户」选收款卡；
-本行账户划转会实时扣减、增加两边余额，各写入一笔流水。可在「消费分析」页切换账户查看或导出流水。
-卡片锁定或待激活限制的是卡支付功能，不影响它所关联资金账户的本行划转。
+`smoke.mjs` 只查询已有服务，默认 `BANK_SMOKE_BASE_URL=http://127.0.0.1:8080`，不发送短信、不开户、不转账。`/health` 和 `/ready` 表示后端技术可达性，另有 `commercialReady` 和 `bankConnection` 表明银行接入状态；员工可查询 `/staff-api/bank-connection/readiness`。
 
-另有演示用户「陈嘉禾」：手机号 `13600136000`、登录密码 `123456`，账户号
-`8820000000124471`，可用网页显示的演示短信码登录。她有一张已激活的银联借记卡，
-可在其「银行卡」页面验证支付密码 `888888` 后查看卡号。主账号在转账页点常用收款人
-「陈嘉禾」，或手输她的账户号／银行卡号并选招财猫银行，即可转账。
-转账前会核对本行收款账户和户名；付款人扣款、收款人入账及两边流水在同一 SQLite
-事务中提交。不存在的本行账号、错误户名、给同一账户转账和余额不足均会拒绝。
-其他银行的汇款仍是演示清算：扣款流水标记为待处理，不会伪造外行用户的入账。
-
-不要把这个入口当真实银行系统部署。它仍使用演示短信验证码、人脸票据、虚拟余额与
-mock 业务规则；银行卡数据是虚构演示数据，完整卡号与安全码在本地库中以明文保存，
-仅用于模拟界面流程，**不得写入真实卡数据**，
-数据库仍不具备正式银行所需的清算、对账及完整审计能力。当前 Agent 的
-`/agent-api/*` 仍由 `framework/bridge/demo-server.mjs` 单独提供。
-
-独立的 HTTP 冒烟测试使用临时数据文件，不会改动上述演示状态：
-
-```powershell
-node server/smoke.mjs
-```
-
-## 查看数据库
-
-`.sqlite` 是二进制文件，不能当文本直接打开。可运行：
-
-```powershell
-node server/inspect.mjs
-node server/inspect.mjs server/data/bank-preview.md
-```
-
-第二条会生成可在编辑器中打开的 Markdown 清单。清单只显示卡尾号和业务状态；
-数据库更新后需重新运行命令刷新。
+[运维手册](../docs/bank-postgresql-operations.md) · [数据库设计](../docs/bank-database-design.md)

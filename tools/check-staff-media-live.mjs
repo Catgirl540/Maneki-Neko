@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Opt-in, billable image/ASR/TTS smoke test. Only generated media and temporary bank data. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'

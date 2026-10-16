@@ -13,7 +13,7 @@
  * 它只需要知道"这个人验证通过了"，不需要也不应该拿到密码。
  * 所以浏览器把密码交给本服务校验，agent 侧只收到一张"已验证"的答复。
  *
- * 默认通过 bank-agent.mjs 绑定登录客户并访问独立 SQLite HTTP 银行。
+ * 默认通过 bank-agent.mjs 绑定登录客户并访问独立 PostgreSQL HTTP 银行。
  * 旧演示工具仅由 LUCKYCAT_BANK_MODE=demo 显式启用。
  * 网页请求与 SSE 使用银行 Bearer，内部插件通道使用进程间随机口令。
  *
@@ -28,6 +28,9 @@
  *   LUCKYCAT_FALLBACK_MODELS OpenRouter 备用模型，逗号分隔，按顺序尝试
  *   LUCKYCAT_BANK_URL  银行 HTTP 地址，默认 http://127.0.0.1:8080
  *   LUCKYCAT_BANK_MODE demo 才启用独立占位工具；默认 http
+ *   LUCKYCAT_SESSION_DATABASE_URL AI 会话专用 PostgreSQL 角色连接
+ *   LUCKYCAT_SESSION_DATA_KEY AI 会话独立持久密钥（Base64 编码的 32 字节）
+ *   LUCKYCAT_PG_MODULE_PATH 可选，已安装 pg 包的绝对路径
  *   LUCKYCAT_DEMO_PASSWORD 仅旧 demo 模式支付密码，默认 123456
  *   LUCKYCAT_DEMO_TOKEN    可选的访问口令；设了以后所有请求都要带
  *                          `x-luckycat-token` 头（演示服务默认只监听本机）
@@ -85,7 +88,7 @@ const PROVIDER = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
 const MODEL = process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash'
 const DEMO_PASSWORD = process.env.LUCKYCAT_DEMO_PASSWORD ?? '123456'
 const ACCESS_TOKEN = process.env.LUCKYCAT_DEMO_TOKEN ?? ''
-// 默认连接独立 SQLite 银行；旧演示工具只能显式启用。
+// 默认连接独立 PostgreSQL 银行；旧演示工具只能显式启用。
 const HTTP_BANK = process.env.LUCKYCAT_BANK_MODE !== 'demo'
 if (STAFF_MODE && !HTTP_BANK) throw Error('员工助手必须连接真实员工 HTTP 接口')
 if (HTTP_BANK) {
@@ -324,7 +327,10 @@ async function readJson(req, maxBytes = MAX_BODY_BYTES) {
 }
 
 /** 回一个 JSON 响应。 */
-function sendJson(res, status, payload) {
+async function sendJson(res, status, payload) {
+  if (persistenceFailureLogged) throw Object.assign(new Error('会话持久化服务不可用，请稍后重试'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' })
+  await sessionStore?.flush()
+  if (persistenceFailureLogged) throw Object.assign(new Error('会话持久化服务不可用，请稍后重试'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' })
   const body = JSON.stringify(payload)
   res.writeHead(status, {
     'content-type': 'application/json; charset=utf-8',
@@ -354,6 +360,7 @@ const streams = new Map()
 const eventPolling = createEventPolling()
 
 /** 把一条 SSE 事件推给某个会话的所有订阅者。 */
+let persistenceFailureLogged = false
 function publish(sessionId, event) {
   const entry = sessions.get(sessionId)
   if (HTTP_BANK && entry) eventPolling.remember(entry, event)
@@ -365,14 +372,29 @@ function publish(sessionId, event) {
     entry.events ??= []
     entry.events.push({ id, event })
     if (entry.events.length > 256) entry.events.shift()
-    sessionStore.record(entry, event)
   }
-  const subscribers = streams.get(sessionId)
-  if (subscribers === undefined) return
-  const frame = `${id ? `id: ${id}\n` : ''}data: ${JSON.stringify(event)}\n\n`
-  for (const res of subscribers) {
-    try { res.write(frame) } catch { subscribers.delete(res) }
+  const subscribers = [...(streams.get(sessionId) ?? [])]
+  let frame, durable
+  try {
+    frame = `${id ? `id: ${id}\n` : ''}data: ${JSON.stringify(event)}\n\n`
+    durable = HTTP_BANK && entry ? replayable ? sessionStore.record(entry, event) : sessionStore.flush() : Promise.resolve()
+  } catch {
+    durable = Promise.reject(Object.assign(new Error('会话事件持久化失败'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' }))
   }
+  const delivered = Promise.resolve(durable).then(() => {
+    if (persistenceFailureLogged) throw Object.assign(new Error('会话持久化服务不可用'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' })
+    for (const res of subscribers) if (!res.writableEnded && !res.destroyed) {
+      try { res.write(frame) } catch { streams.get(sessionId)?.delete(res) }
+    }
+  })
+  // SDK event callbacks are synchronous. Never let an ignored publication Promise
+  // become unhandled, and never send an event before PostgreSQL commits it.
+  void delivered.catch(() => {
+    if (!persistenceFailureLogged) { persistenceFailureLogged = true; console.warn('[demo-server] Session persistence unavailable; event streams closed') }
+    for (const set of streams.values()) for (const response of set) { try { response.end() } catch {} }
+    streams.clear()
+  })
+  return delivered
 }
 
 /** 广播给全部订阅者（用于 health/模型变更这类全局消息）。 */
@@ -386,12 +408,18 @@ function settleConsent(challengeId, answer) {
   if (entry === undefined) return false
   pendingConsents.delete(challengeId)
   clearTimeout(entry.timer)
-  publish(entry.challenge.sessionId, { type: 'consent-resolved', challengeId, decision: answer?.decision ?? 'timeout' })
+  const durable = publish(entry.challenge.sessionId, { type: 'consent-resolved', challengeId, decision: answer?.decision ?? 'timeout' })
   if (HTTP_BANK && answer?.decision !== 'approve') {
     if (OPS_MODE && OPS_NATIVE_TOOLS.includes(entry.challenge.toolName)) opsGate.forget(entry.challenge)
     else bankAgent.forget(entry.challenge)
   }
-  entry.resolve(answer)
+  void durable.then(() => entry.resolve(answer), () => {
+    try { if (HTTP_BANK) {
+      if (OPS_MODE && OPS_NATIVE_TOOLS.includes(entry.challenge.toolName)) opsGate.forget(entry.challenge)
+      else bankAgent.forget(entry.challenge)
+    } } catch {}
+    entry.resolve({ decision: 'reject', challengeId })
+  })
   return true
 }
 
@@ -416,12 +444,12 @@ function settleQuestion(questionId, answer) {
   if (entry === undefined) return false
   pendingQuestions.delete(questionId)
   clearTimeout(entry.timer)
-  publish(entry.sessionId, {
+  const durable = publish(entry.sessionId, {
     type: 'question-resolved',
     questionId,
     answered: answer !== undefined,
   })
-  entry.resolve(answer)
+  void durable.then(() => entry.resolve(answer), () => entry.resolve(undefined))
   return true
 }
 
@@ -429,16 +457,21 @@ function settleQuestion(questionId, answer) {
 
 /** 会话表：我们的 sessionId → { harness 会话句柄, 忙碌标志, 工具调用轨迹 }。 */
 const sessions = new Map()
-const sessionStore = HTTP_BANK ? openSessionStore(join(SESSION_DIR, 'web-context', 'sessions.sqlite')) : null
-if (sessionStore) for (const entry of sessionStore.interrupted()) sessions.set(entry.id, entry)
+const sessionNamespace = OPS_MODE ? 'ops' : STAFF_MODE ? 'staff' : 'customer'
+if (process.env.LUCKYCAT_SESSION_NAMESPACE && process.env.LUCKYCAT_SESSION_NAMESPACE !== sessionNamespace) throw new Error('Session namespace must match this bridge audience')
+const sessionStore = HTTP_BANK ? await openSessionStore(process.env.LUCKYCAT_SESSION_DATABASE_URL, { namespace: sessionNamespace }) : null
+if (sessionStore) for (const entry of await sessionStore.interrupted()) sessions.set(entry.id, entry)
 const bankAgent = HTTP_BANK ? (STAFF_MODE ? createStaffAgent : createBankAgent)({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish, ...(OPS_MODE ? { opsOnly: true, nativeTools: OPS_NATIVE_TOOLS } : {}) }) : null
 const opsGate = OPS_MODE ? createOpsGate({ bankAgent, sessions, publish, review: createClefReviewer(), workspaceRoot: OPS_WORKSPACE, auditPath: join(SESSION_DIR, 'native-audit.jsonl') }) : null
 for (const entry of sessions.values()) {
   if (entry.interrupted) {
     publish(entry.id, { type: 'session-restored', interrupted: true })
     publish(entry.id, { type: 'status', status: 'idle' })
-  } else sessionStore.save(entry)
+    entry.interrupted = false
+  }
+  await sessionStore?.save(entry)
 }
+await sessionStore?.flush()
 
 // 限制活动索引缓存，历史仍保存在磁盘；避免持久化后 50 段成为永久额度。
 function makeSessionRoom(ownerId) {
@@ -583,14 +616,14 @@ async function runTurn(sessionId, input) {
   if (OPS_MODE) entry.intent = typeof input === 'string' ? input : input.filter(b => b.type === 'text').map(b => b.text).join('\n')
   const assistantStream = createAssistantStream(sessionId, event => publish(sessionId, event))
   entry.assistantStream = assistantStream
-  publish(sessionId, { type: 'status', status: 'running' })
   try {
+    await publish(sessionId, { type: 'status', status: 'running' })
     const active = await ensureHarness()
     if (entry.stopping) return
     entry.handle ??= active.session(sessionId)
     // 递提示词之前打上标记：这一步之后运行时里就有这个会话了。
     entry.started = true
-    sessionStore?.save(entry)
+    await sessionStore?.save(entry)
     let prompt = entry.legacyContext
       ? [{ type: 'text', text: entry.legacyContext }, ...(typeof input === 'string' ? [{ type: 'text', text: input }] : input)] : input
     if (STAFF_MODE) prompt = [{ type: 'text', text: await bankAgent.context(sessionId) }, ...(typeof prompt === 'string' ? [{ type: 'text', text: prompt }] : prompt)]
@@ -609,7 +642,7 @@ async function runTurn(sessionId, input) {
       },
     })
     entry.legacyContext = undefined
-    sessionStore?.save(entry)
+    await sessionStore?.save(entry)
     if (!entry.stopping && result.finalResponse.trim() === '') {
       publish(sessionId, { type: 'error', message: '模型没有产出可见文本（可能上游失败），请看服务端日志。' })
     }
@@ -621,7 +654,7 @@ async function runTurn(sessionId, input) {
     entry.assistantStream = undefined
     entry.busy = false
     entry.stopping = false
-    publish(sessionId, { type: 'status', status: 'idle' })
+    await publish(sessionId, { type: 'status', status: 'idle' })
   }
 }
 
@@ -659,14 +692,19 @@ function demoBank() {
 }
 
 const server = createServer((req, res) => {
-  void handle(req, res).catch((error) => {
-    if (!res.headersSent) sendJson(res, error?.status ?? 500, { error: error instanceof Error ? error.message : String(error), code: error?.code })
+  void handle(req, res).catch(async (error) => {
+    if (!res.headersSent) {
+      try { await sendJson(res, error?.status ?? 500, { error: error instanceof Error ? error.message : String(error), code: error?.code }) }
+      catch { res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify({ error: '会话持久化服务不可用，请稍后重试', code: 'SESSION_STORE_UNAVAILABLE' })) }
+    }
     else res.end()
-  }).finally(() => { if (req.sessionEntry) req.sessionEntry.requestRefs -= 1 })
+  }).finally(() => { if (req.sessionEntry) req.sessionEntry.requestRefs -= 1 }).catch(() => { try { res.destroy() } catch {} })
 })
 
 async function handle(req, res) {
-  if (shuttingDown) { sendJson(res, 503, { error: '服务正在重启，请稍后重试' }); return }
+  if (shuttingDown) { await sendJson(res, 503, { error: '服务正在重启，请稍后重试' }); return }
+  if (persistenceFailureLogged) throw Object.assign(new Error('会话持久化服务不可用，请稍后重试'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' })
+  await sessionStore?.flush()
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   const parts = pathParts(url.pathname)
 
@@ -676,7 +714,7 @@ async function handle(req, res) {
   }
   // 访问口令（可选）：设了就一律要带对，否则拒绝。
   if (!HTTP_BANK && !internal && ACCESS_TOKEN !== '' && req.headers['x-luckycat-token'] !== ACCESS_TOKEN) {
-    sendJson(res, 401, { error: '缺少或错误的 x-luckycat-token' })
+    await sendJson(res, 401, { error: '缺少或错误的 x-luckycat-token' })
     return
   }
 
@@ -696,7 +734,7 @@ async function handle(req, res) {
     if (parts[1] === 'sessions' && parts[2]) {
       let entry = sessions.get(parts[2])
       if (!entry) {
-        const stored = sessionStore.get(parts[2])
+        const stored = await sessionStore.get(parts[2])
         if (stored) {
           if (stored.ownerId !== identity.user.id) throw bankError('会话不存在或不属于当前账户', 404, 'NOT_FOUND')
           makeSessionRoom(identity.user.id)
@@ -706,7 +744,7 @@ async function handle(req, res) {
       }
       // 旧版本未保存归属的会话不能凭 id 认领，网页可迁入自己的本地文字记录。
       if (!entry && req.method === 'GET' && parts.length === 3) {
-        sendJson(res, 200, { sessionId: parts[2], known: false, started: false, busy: false })
+        await sendJson(res, 200, { sessionId: parts[2], known: false, started: false, busy: false })
         return
       }
       if (entry) {
@@ -725,7 +763,7 @@ async function handle(req, res) {
   }
   if (HTTP_BANK && url.pathname === '/internal/bank-tool' && req.method === 'POST') {
     const result = await bankAgent.execute(await readJson(req))
-    sendJson(res, 200, result)
+    await sendJson(res, 200, result)
     return
   }
   // 健康探测：网页据此决定走真 agent 还是回落固定话术。
@@ -741,7 +779,7 @@ async function handle(req, res) {
      * 加了字段要一起改；`tools/check-persona.mjs` 断言这个响应里
      * **不存在** `model` / `provider` 这类键。
      */
-    sendJson(res, 200, {
+    await sendJson(res, 200, {
       ok: PROVIDER !== 'openrouter' || Boolean(process.env.OPENROUTER_API_KEY),
       bankDataSource: HTTP_BANK ? 'http' : 'demo',
       // 语音能力一并报出去：页面据此决定要不要显示「语音模式」，
@@ -761,8 +799,8 @@ async function handle(req, res) {
     const entry = sessionOf(sessionId)
     if (identity) { entry.ownerId = identity.user.id; entry.bankToken = identity.token }
     entry.legacyContext = context
-    sessionStore?.save(entry)
-    sendJson(res, 200, { sessionId })
+    await sessionStore?.save(entry)
+    await sendJson(res, 200, { sessionId })
     return
   }
 
@@ -771,7 +809,7 @@ async function handle(req, res) {
   if (req.method === 'GET' && parts.length === 3 && parts[0] === 'agent-api' && parts[1] === 'sessions') {
     const sessionId = parts[2]
     const entry = sessions.get(sessionId)
-    sendJson(res, 200, {
+    await sendJson(res, 200, {
       sessionId,
       known: entry !== undefined,
       started: entry?.started === true,
@@ -784,8 +822,8 @@ async function handle(req, res) {
   if (req.method === 'POST' && parts.length === 4 && parts[0] === 'agent-api' && parts[1] === 'sessions' && parts[3] === 'stop') {
     const entry = sessions.get(parts[2])
     if (!entry) throw bankError('会话不存在', 404)
-    if (!entry.busy) { sendJson(res, 200, { stopped: false }); return }
-    if (entry.stopTask) { await entry.stopTask; sendJson(res, 200, { stopped: true }); return }
+    if (!entry.busy) { await sendJson(res, 200, { stopped: false }); return }
+    if (entry.stopTask) { await entry.stopTask; await sendJson(res, 200, { stopped: true }); return }
     entry.stopping = true
     entry.activity.cancelled = true
     entry.assistantStream?.stop()
@@ -801,7 +839,7 @@ async function handle(req, res) {
       for (const [id, pending] of pendingQuestions) if (pending.sessionId === entry.id) settleQuestion(id, undefined)
     })().finally(() => { entry.stopTask = undefined })
     await entry.stopTask
-    sendJson(res, 200, { stopped: true })
+    await sendJson(res, 200, { stopped: true })
     return
   }
 
@@ -814,7 +852,7 @@ async function handle(req, res) {
     const image = body.image
     // 图片是选填的，但"文字和图片都空"没有意义
     if (text === '' && image === undefined) {
-      sendJson(res, 400, { error: 'text 不能为空' })
+      await sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
     let blocks
@@ -822,15 +860,15 @@ async function handle(req, res) {
       const data = typeof image?.data === 'string' ? image.data : ''
       const mimeType = typeof image?.mimeType === 'string' ? image.mimeType : ''
       if (data === '') {
-        sendJson(res, 400, { error: '图片内容为空' })
+        await sendJson(res, 400, { error: '图片内容为空' })
         return
       }
       if (data.length > MAX_IMAGE_BYTES) {
-        sendJson(res, 413, { error: `图片太大（上限 ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB）` })
+        await sendJson(res, 413, { error: `图片太大（上限 ${Math.round(MAX_IMAGE_BYTES / 1024 / 1024)}MB）` })
         return
       }
       if (!IMAGE_MIME_TYPES.has(mimeType)) {
-        sendJson(res, 415, { error: `不认识的图片格式：${mimeType}`, accepted: [...IMAGE_MIME_TYPES] })
+        await sendJson(res, 415, { error: `不认识的图片格式：${mimeType}`, accepted: [...IMAGE_MIME_TYPES] })
         return
       }
       /*
@@ -850,14 +888,14 @@ async function handle(req, res) {
        */
       const accountId = HTTP_BANK ? identity.user.id : typeof body.accountId === 'string' ? body.accountId : ''
       if (accountId === '') {
-        sendJson(res, 400, { error: '缺少 accountId（图片要按账户隔离存放）' })
+        await sendJson(res, 400, { error: '缺少 accountId（图片要按账户隔离存放）' })
         return
       }
       let dir
       try {
         dir = accountUploadDir(accountId)
       } catch {
-        sendJson(res, 400, { error: 'accountId 不合法' })
+        await sendJson(res, 400, { error: 'accountId 不合法' })
         return
       }
       await mkdir(dir, { recursive: true, mode: 0o700 })
@@ -880,8 +918,8 @@ async function handle(req, res) {
     // 只有文字时仍然按字符串递——那是走熟了的路，没必要为图片把它改掉
     const turn = runTurn(sessionId, blocks ?? text)
     activeTurns.add(turn)
-    void turn.finally(() => activeTurns.delete(turn))
-    sendJson(res, 202, { accepted: true })
+    void turn.finally(() => activeTurns.delete(turn)).catch(() => { console.warn('[demo-server] Conversation stopped because session persistence is unavailable') })
+    await sendJson(res, 202, { accepted: true })
     return
   }
 
@@ -897,13 +935,15 @@ async function handle(req, res) {
       if (question.sessionId === sessionId) initial.push({ type: 'question', question })
     }
     initial.push({ type: 'status', status: entry.busy ? 'running' : 'idle' })
-    sendJson(res, 200, eventPolling.read(entry, url.searchParams.get('after'), initial))
+    await sendJson(res, 200, eventPolling.read(entry, url.searchParams.get('after'), initial))
     return
   }
 
   // SSE 事件流
   if (req.method === 'GET' && parts.length === 4 && parts[0] === 'agent-api' && parts[1] === 'sessions' && parts[3] === 'stream') {
     const sessionId = parts[2]
+    await sessionStore?.flush()
+    if (persistenceFailureLogged) throw Object.assign(new Error('会话持久化服务不可用，请稍后重试'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' })
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-store, no-transform',
@@ -961,14 +1001,14 @@ async function handle(req, res) {
     const challengeId = parts[2]
     const entry = pendingConsents.get(challengeId)
     if (entry === undefined) {
-      sendJson(res, 404, { error: '这个待确认事项不存在或已过期' })
+      await sendJson(res, 404, { error: '这个待确认事项不存在或已过期' })
       return
     }
     const body = await readJson(req)
     const decision = body.decision === 'approve' ? 'approve' : 'reject'
     if (decision === 'reject') {
       settleConsent(challengeId, { decision: 'reject', challengeId })
-      sendJson(res, 200, { ok: true, decision })
+      await sendJson(res, 200, { ok: true, decision })
       return
     }
     if (HTTP_BANK) {
@@ -976,7 +1016,7 @@ async function handle(req, res) {
       else await bankAgent.approve(entry.challenge, STAFF_MODE ? body.customerVerification : typeof body.paymentPassword === 'string' ? body.paymentPassword : '', body.riskAcknowledgement)
       const verification = entry.challenge.verification ? { method: 'payment-password', verified: true, ticket: `pw-${randomUUID()}` } : undefined
       settleConsent(challengeId, { decision: 'approve', challengeId, ...(verification ? { verification } : {}) })
-      sendJson(res, 200, { ok: true, decision })
+      await sendJson(res, 200, { ok: true, decision })
       return
     }
     // 同意 → 校验支付密码。**需要验证的才要密码**；不需要的（只读查询）直接放行。
@@ -985,13 +1025,13 @@ async function handle(req, res) {
       if (required !== 'payment-password') {
         // 演示服务只实现支付密码；别的验证方式需要真实后端（短信网关/人脸核身）。
         settleConsent(challengeId, { decision: 'reject', challengeId })
-        sendJson(res, 501, { error: `演示服务不支持 ${required} 验证方式` })
+        await sendJson(res, 501, { error: `演示服务不支持 ${required} 验证方式` })
         return
       }
       const password = typeof body.paymentPassword === 'string' ? body.paymentPassword : ''
       if (password !== DEMO_PASSWORD) {
         // 密码错**不**结算挑战：让用户可以再输一次（挑战本身仍有超时兜底）。
-        sendJson(res, 401, { error: '支付密码不正确' })
+        await sendJson(res, 401, { error: '支付密码不正确' })
         return
       }
       settleConsent(challengeId, {
@@ -1004,11 +1044,11 @@ async function handle(req, res) {
           ticket: `pw-${randomUUID()}`,
         },
       })
-      sendJson(res, 200, { ok: true, decision, verified: true })
+      await sendJson(res, 200, { ok: true, decision, verified: true })
       return
     }
     settleConsent(challengeId, { decision: 'approve', challengeId })
-    sendJson(res, 200, { ok: true, decision })
+    await sendJson(res, 200, { ok: true, decision })
     return
   }
 
@@ -1028,18 +1068,18 @@ async function handle(req, res) {
     const body = await readJson(req, MAX_BODY_BYTES)
     const questions = body.questions
     if (!Array.isArray(questions) || questions.length === 0) {
-      sendJson(res, 400, { error: 'questions 必须是非空数组' })
+      await sendJson(res, 400, { error: 'questions 必须是非空数组' })
       return
     }
     if (questions.length > MAX_QUESTIONS) {
-      sendJson(res, 400, { error: `一次最多问 ${MAX_QUESTIONS} 道题` })
+      await sendJson(res, 400, { error: `一次最多问 ${MAX_QUESTIONS} 道题` })
       return
     }
     // sessionId 决定这张卡片推给谁。插件从 agent 会话里取，缺了就没人能收到卡片——
     // 明确拒绝，而不是"挂住直到超时"（那样用户和模型都只会看到一个没头没尾的等待）。
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId : ''
     if (sessionId === '') {
-      sendJson(res, 400, { error: '缺少 sessionId（不知道该把卡片推给哪个会话）' })
+      await sendJson(res, 400, { error: '缺少 sessionId（不知道该把卡片推给哪个会话）' })
       return
     }
     if (HTTP_BANK) await bankAgent.current(sessionId)
@@ -1079,7 +1119,7 @@ async function handle(req, res) {
     if (!res.writableEnded && !res.destroyed) {
       // 超时/放弃时回 `{ answers: [] }`：插件会把它判成"没答"（见 parseAnswer 的
       // "每道题都必须有答复"），于是模型拿到一条明确的"用户没有回答"。
-      sendJson(res, 200, answers === null ? { answers: [] } : answers)
+      await sendJson(res, 200, answers === null ? { answers: [] } : answers)
     }
     return
   }
@@ -1091,12 +1131,12 @@ async function handle(req, res) {
     const entry = pendingQuestions.get(questionId)
     if (entry === undefined) {
       // 已经超时、已经被答复过、或者插件已经不等了。
-      sendJson(res, 404, { error: '这个问题不存在或已过期' })
+      await sendJson(res, 404, { error: '这个问题不存在或已过期' })
       return
     }
     const body = await readJson(req, MAX_BODY_BYTES)
     if (!Array.isArray(body.answers)) {
-      sendJson(res, 400, { error: 'answers 必须是数组' })
+      await sendJson(res, 400, { error: 'answers 必须是数组' })
       return
     }
     // 只做**形状**校验（内容合法性由插件侧 `parseAnswer` 把关，那里才知道
@@ -1105,22 +1145,22 @@ async function handle(req, res) {
     const answered = new Set()
     for (const item of body.answers) {
       if (item === null || typeof item !== 'object') {
-        sendJson(res, 400, { error: 'answers 里有一项不是对象' })
+        await sendJson(res, 400, { error: 'answers 里有一项不是对象' })
         return
       }
       const id = typeof item.id === 'string' ? item.id : ''
       const asked = entry.questions.find(q => q.id === id)
       if (id === '' || asked === undefined) {
-        sendJson(res, 400, { error: `答复里有没问过的问题 id：${JSON.stringify(item.id)}` })
+        await sendJson(res, 400, { error: `答复里有没问过的问题 id：${JSON.stringify(item.id)}` })
         return
       }
       const selected = item.selected
       if (!Array.isArray(selected) || selected.some(label => typeof label !== 'string')) {
-        sendJson(res, 400, { error: `答复「${id}」的 selected 不是字符串数组` })
+        await sendJson(res, 400, { error: `答复「${id}」的 selected 不是字符串数组` })
         return
       }
       if ((asked.multiSelect ?? false) === false && selected.length > 1) {
-        sendJson(res, 400, { error: `「${id}」是单选，却收到了 ${selected.length} 个选项` })
+        await sendJson(res, 400, { error: `「${id}」是单选，却收到了 ${selected.length} 个选项` })
         return
       }
       /*
@@ -1134,18 +1174,18 @@ async function handle(req, res) {
        */
       const custom = typeof item.custom === 'string' ? item.custom : ''
       if (selected.length === 0 && custom.trim() === '') {
-        sendJson(res, 400, { error: `「${id}」这道题既没选也没填` })
+        await sendJson(res, 400, { error: `「${id}」这道题既没选也没填` })
         return
       }
       answered.add(id)
     }
     const missing = entry.questions.filter(q => !answered.has(q.id)).map(q => q.id)
     if (missing.length > 0) {
-      sendJson(res, 400, { error: `还有题目没答：${missing.join(', ')}` })
+      await sendJson(res, 400, { error: `还有题目没答：${missing.join(', ')}` })
       return
     }
     settleQuestion(questionId, { answers: body.answers })
-    sendJson(res, 200, { ok: true })
+    await sendJson(res, 200, { ok: true })
     return
   }
 
@@ -1157,19 +1197,19 @@ async function handle(req, res) {
   // 而演示服务没有任何理由留着它。
   if (req.method === 'POST' && parts.join('/') === 'agent-api/asr') {
     if (!VOICE_ENABLED) {
-      sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
+      await sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
       return
     }
     const body = await readJson(req, MAX_AUDIO_BYTES)
     const base64 = typeof body.audio === 'string' ? body.audio : ''
     if (base64 === '') {
-      sendJson(res, 400, { error: 'audio 不能为空（base64）' })
+      await sendJson(res, 400, { error: 'audio 不能为空（base64）' })
       return
     }
     const format = audioFormatOf(body.mimeType)
     if (format === undefined) {
       // 不猜格式：猜错的话上游会拿错误的解码方式解，可能返回一段"成功但乱码"的转录。
-      sendJson(res, 415, {
+      await sendJson(res, 415, {
         error: `不认识的录音格式：${String(body.mimeType)}`,
         accepted: [...new Set(AUDIO_FORMATS.values())],
       })
@@ -1183,17 +1223,17 @@ async function handle(req, res) {
     })
     const text = await upstream.text()
     if (!upstream.ok) {
-      sendJson(res, 502, { error: `转录失败（上游 ${upstream.status}）：${text.slice(0, 200)}` })
+      await sendJson(res, 502, { error: `转录失败（上游 ${upstream.status}）：${text.slice(0, 200)}` })
       return
     }
     let parsed
     try {
       parsed = JSON.parse(text)
     } catch {
-      sendJson(res, 502, { error: '转录服务返回了非 JSON 内容' })
+      await sendJson(res, 502, { error: '转录服务返回了非 JSON 内容' })
       return
     }
-    sendJson(res, 200, {
+    await sendJson(res, 200, {
       text: typeof parsed.text === 'string' ? parsed.text : '',
       seconds: parsed.usage?.seconds ?? null,
       cost: parsed.usage?.cost ?? null,
@@ -1205,13 +1245,13 @@ async function handle(req, res) {
   // 不用等整段合成完。事件形状见 design/P8-VOICE.md。
   if (req.method === 'POST' && parts.join('/') === 'agent-api/tts/stream') {
     if (!VOICE_ENABLED) {
-      sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
+      await sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
       return
     }
     const body = await readJson(req)
     const text = typeof body.text === 'string' ? body.text.trim() : ''
     if (text === '') {
-      sendJson(res, 400, { error: 'text 不能为空' })
+      await sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
     // 与整段合成同一条截断规则：按字数计费，长回复也念不完。
@@ -1282,13 +1322,13 @@ async function handle(req, res) {
   // 文字转语音：直接回**原始音频字节**（不是 JSON），与上游一致。
   if (req.method === 'POST' && parts.join('/') === 'agent-api/tts') {
     if (!VOICE_ENABLED) {
-      sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
+      await sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
       return
     }
     const body = await readJson(req)
     const text = typeof body.text === 'string' ? body.text.trim() : ''
     if (text === '') {
-      sendJson(res, 400, { error: 'text 不能为空' })
+      await sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
     // 按字数计费，长回复也念不完：截断而不是拒绝——用户要的是"听到要点"。
@@ -1301,7 +1341,7 @@ async function handle(req, res) {
     })
     if (!upstream.ok) {
       const detail = await upstream.text()
-      sendJson(res, 502, { error: `合成失败（上游 ${upstream.status}）：${detail.slice(0, 200)}` })
+      await sendJson(res, 502, { error: `合成失败（上游 ${upstream.status}）：${detail.slice(0, 200)}` })
       return
     }
     const audio = Buffer.from(await upstream.arrayBuffer())
@@ -1321,7 +1361,7 @@ async function handle(req, res) {
   if (OPS_MODE && req.method === 'POST' && url.pathname.startsWith('/internal/ops-tool/')) {
     const operation = parts[2]
     if (!['prepare', 'consume', 'result'].includes(operation)) throw bankError('未知运维检查接口', 404)
-    sendJson(res, 200, await opsGate[operation](await readJson(req)))
+    await sendJson(res, 200, await opsGate[operation](await readJson(req)))
     return
   }
   if (req.method === 'POST' && url.pathname === '/consent/challenge') {
@@ -1329,7 +1369,7 @@ async function handle(req, res) {
     if (OPS_MODE && OPS_NATIVE_TOOLS.includes(challenge.toolName)) challenge = await opsGate.challenge(challenge)
     else if (HTTP_BANK) challenge = await bankAgent.prepare(challenge)
     if (typeof challenge.challengeId !== 'string' || challenge.challengeId === '') {
-      sendJson(res, 400, { error: 'challenge 缺少 challengeId' })
+      await sendJson(res, 400, { error: 'challenge 缺少 challengeId' })
       return
     }
     const answer = await new Promise((resolvePromise) => {
@@ -1364,7 +1404,7 @@ async function handle(req, res) {
       publish(challenge.sessionId, { type: 'consent', challenge })
     })
     // 客户端已经断开时不能再写响应（会抛写入已结束）。
-    if (!res.writableEnded && !res.destroyed) sendJson(res, 200, answer)
+    if (!res.writableEnded && !res.destroyed) await sendJson(res, 200, answer)
     return
   }
 
@@ -1377,10 +1417,10 @@ async function handle(req, res) {
   // 这个服务的主业，**绝不能因为银行数据起不来就一起挂掉**，所以这里
   // 捕获失败、`/api/*` 回 503，其余接口照常。
   if (url.pathname.startsWith('/api/')) {
-    if (HTTP_BANK) { sendJson(res, 404, { error: '银行接口请使用独立银行服务' }); return }
+    if (HTTP_BANK) { await sendJson(res, 404, { error: '银行接口请使用独立银行服务' }); return }
     const bank = await demoBank()
     if (bank === null) {
-      sendJson(res, 503, {
+      await sendJson(res, 503, {
         message: `占位银行后端不可用：${demoBankFailure?.message ?? '未知原因'}`,
         code: 'DEMO_BANK_UNAVAILABLE',
       })
@@ -1390,7 +1430,7 @@ async function handle(req, res) {
     return
   }
 
-  sendJson(res, 404, { error: `未知路径：${req.method} ${url.pathname}` })
+  await sendJson(res, 404, { error: `未知路径：${req.method} ${url.pathname}` })
 }
 
 server.listen(PORT, '127.0.0.1', () => {
@@ -1420,11 +1460,15 @@ async function shutdown() {
   }
   streams.clear()
   server.close()
-  if (harness !== undefined) await harness.close()
-  await Promise.allSettled(activeTurns)
-  sessionStore?.close()
-  await rm(controlDir, { recursive: true, force: true })
+  try {
+    if (harness !== undefined) await harness.close()
+    await Promise.allSettled(activeTurns)
+  } finally {
+    try { await sessionStore?.close() }
+    finally { await rm(controlDir, { recursive: true, force: true }) }
+  }
 }
 
-process.on('SIGINT', () => { void shutdown().then(() => process.exit(0)) })
-process.on('SIGTERM', () => { void shutdown().then(() => process.exit(0)) })
+const stopProcess = () => { void shutdown().then(() => process.exit(0), () => { console.error('[demo-server] Shutdown did not complete cleanly'); process.exit(1) }) }
+process.on('SIGINT', stopProcess)
+process.on('SIGTERM', stopProcess)

@@ -1,0 +1,42 @@
+[Unit]
+Description=Luckycat bank API (single SQLite instance)
+After=network.target
+Wants=luckycat-staff-agent.service luckycat-ops-agent.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=bank
+Group=bank
+WorkingDirectory=/srv/maneki-bank/current
+Environment=NODE_ENV=production
+Environment=BANK_HOST=127.0.0.1
+Environment=BANK_PORT=8080
+EnvironmentFile=/etc/luckycat-bank/bank.env
+# Shared lock lasts for the whole service; restore.py takes the exclusive lock.
+ExecStart=/usr/bin/flock --shared --nonblock --no-fork /var/lib/luckycat-bank/.restore.lock /opt/maneki-node24/bin/node server/index.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/luckycat-bank /var/backups/luckycat-bank
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=luckycat-bank
+
+[Install]
+WantedBy=multi-user.target
