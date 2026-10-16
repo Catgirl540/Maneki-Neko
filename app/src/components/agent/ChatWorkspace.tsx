@@ -12,6 +12,7 @@ import { SpeechPlayer } from './SpeechPlayer'
 const Markdown = lazy(() => import('./Markdown').then(m => ({ default: m.Markdown })))
 import { SessionList } from './SessionList'
 import { CatMark } from '../brand/Logo'
+import { SupportCat } from '../brand/WorkbenchBrand'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Modal } from '../ui/Modal'
@@ -41,10 +42,22 @@ import { speechText } from '../../lib/speech'
 import { toolLabel, useAgentChat, type ChatItem } from '../../lib/useAgentChat'
 import { useVoice, type VoicePlayback } from '../../lib/useVoice'
 
+export interface WorkbenchOptions {
+  docked: boolean
+  task?: string
+  focusRequest: number
+  onActivate: () => void
+  onClearTask: () => void
+}
+
 export interface ChatWorkspaceProps extends AgentChatOptions {
+  /** 仅网页客户端启用，员工端继续使用原来的共享工作区。 */
+  workbench?: WorkbenchOptions
   audience?: 'customer' | 'staff'
   humanSupport?: { request: (items: ChatItem[]) => void; view: () => void }
   placeholder?: string
+  /** 单独读取银行人工留言，不启用固定话术发送兜底。 */
+  listMessages?: () => Promise<SupportMessage[]>
   fallback?: {
     list: () => Promise<SupportMessage[]>
     send: (text: string) => Promise<{ message: SupportMessage }>
@@ -54,13 +67,19 @@ export interface ChatWorkspaceProps extends AgentChatOptions {
 
 /** 两端共用消息、图片、录音、朗读、历史及流式输出；业务确认由入口提供。 */
 export function ChatWorkspace(props: ChatWorkspaceProps) {
-  const { audience = 'customer', fallback, renderConsent } = props
+  const { audience = 'customer', fallback, renderConsent, workbench } = props
+  const docked = workbench?.docked ?? false
+  const loadMessages = props.listMessages ?? fallback?.list
   const historyOpenKey = props.historyOwnerId ? `${STORAGE_KEYS.agentHistoryOpen}.${props.historyOwnerId}` : STORAGE_KEYS.agentHistoryOpen
   const compact = useMediaQuery('(max-width: 959px)')
   const agent = useAgentChat(props)
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [supportError, setSupportError] = useState<string | null>(null)
   const [input, setInput] = useState('')
+  const inputRef = useRef<HTMLTextAreaElement | null>(null)
+  useEffect(() => {
+    if (workbench?.focusRequest) inputRef.current?.focus()
+  }, [workbench?.focusRequest])
   const [thinking, setThinking] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(() =>
     storage.get<boolean>(historyOpenKey, false),
@@ -86,7 +105,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
    * 比"抢话"更合适。
    */
   const [voiceMode, setVoiceMode] = useState(false)
-  const voice = useVoice(voiceMode, (text) => { agent.send(text) }, agent.voice?.maxSeconds, props.client)
+  const voice = useVoice(voiceMode, (text) => { send(text) }, agent.voice?.maxSeconds, props.client)
   const voiceUsable = voiceMode && voice.available
 
   const usingAgent = agent.status === 'ready'
@@ -163,9 +182,9 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
 
   // 客服记录从当前用户的银行服务读取，不沿用浏览器中的旧占位记录。
   useEffect(() => {
-    if (!fallback) return
+    if (!loadMessages) return
     let cancelled = false
-    void fallback.list().then((history) => {
+    void loadMessages().then((history) => {
       if (!cancelled) setMessages(history)
     }).catch((error: unknown) => {
       if (!cancelled) setSupportError(error instanceof Error ? error.message : '客服记录暂时无法加载')
@@ -173,12 +192,12 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
     return () => {
       cancelled = true
     }
-  }, [fallback])
+  }, [loadMessages])
 
   // 有 agent 时，滚动跟随 agent 的内容；没有时跟随固定话术。
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: activeBusy ? 'auto' : 'smooth' })
-  }, [messages, thinking, items, agent.pending, agent.activeId, activeBusy])
+  }, [messages, thinking, items, agent.pending, agent.activeId, activeBusy, docked])
 
   // 确认卡片出现时把它滚进视野：卡片是"必须看一眼才能决定"的东西，
   // 半截露在滚动区外面等于没展示交易信息。
@@ -212,6 +231,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
     : agent.ask !== undefined ? '先回答上面的问题'
       : activeBusy ? '这一轮还在回答中' : undefined
   const bubbleActions: BubbleActions = {
+    mascot: Boolean(workbench),
     canSpeak: voice.available,
     speakingId: voice.speakingKey,
     playback: voice.playback,
@@ -245,21 +265,25 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
     }
   }
 
-  function send(text: string, image?: PreparedImage) {
-    const value = text.trim()
+  function send(text: string, image?: PreparedImage): boolean {
+    const draft = text.trim()
     // 只发图不打字是允许的；两个都空才是真的没内容。
-    if (value === '' && image === undefined) return
+    if (draft === '' && image === undefined) return false
+    if (activeBusy || thinking || probing) return false
+    const value = workbench?.task ? `关于${workbench.task}：${draft || '请帮我查看这张图片'}` : draft
+    workbench?.onActivate()
     if (usingAgent) {
       agent.send(value, image)
       setInput('')
-      return
+      return true
     }
     // 固定话术那条路只认文字：它连的不是 agent，图片无处可去。
     if (image !== undefined) {
       setImageError('智能客服未接通，图片发不出去。')
-      return
+      return false
     }
     void sendCanned(value)
+    return Boolean(fallback)
   }
 
   /**
@@ -294,9 +318,9 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', workbench && 'workbench-chat', docked && 'workbench-chat-docked')}>
       {audience === 'customer' && <AgentCardSecret />}
-      <h1 className="sr-only">{audience === 'staff' ? '工作人员助手' : '助手'}</h1>
+      <h1 hidden={docked} className="sr-only">{audience === 'staff' ? '工作人员助手' : workbench ? '智能金融工作台' : '助手'}</h1>
 
       {/* 对话铺满工作区，消息区独立滚动，输入栏始终可见。 */}
       <Card padded={false} className="chat-panel relative flex min-h-0 flex-1 overflow-hidden rounded-none border-0">
@@ -309,7 +333,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             只写 `inert` 的话，里面的按钮在**某些无障碍实现**里仍然读得到——
             Playwright 的 role 选择器就还能查到抽屉里的「新对话」，
             于是"新对话"变成两个同名按钮，实测踩到。 */}
-        {usingAgent && (
+        {usingAgent && !docked && (
           <aside
             aria-label="历史对话"
             inert={!historyOpen}
@@ -336,8 +360,8 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
         )}
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-4 sm:px-6">
-            <span className="grid size-10 place-items-center rounded-chip bg-gold-wash">
+          <div hidden={docked} className="chat-toolbar flex shrink-0 flex-wrap items-center gap-3 border-b border-line px-4 py-4 sm:px-6">
+            {!workbench && <><span className="grid size-10 place-items-center rounded-chip bg-gold-wash">
               <CatMark className="size-6 text-gold-deep" cutout="var(--color-gold-wash)" />
             </span>
             <span className="min-w-0 flex-1">
@@ -348,11 +372,12 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
                 {usingAgent ? '在线 · 敏感操作需你确认' : fallback ? '账户客服 · 消息服务' : '工作人员助手未连接'}
               </span>
             </span>
-            <span className="ml-auto shrink-0"><ModeTag status={agent.status} /></span>
+            </>}
+            <span className="chat-connection shrink-0"><ModeTag status={agent.status} /></span>
             {(usingAgent || props.humanSupport) && (
               <span className="flex w-full flex-wrap items-center gap-0.5 border-t [&_button]:px-2 sm:gap-1 sm:[&_button]:px-3.5 border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
                 {usingAgent && <>
-                <Button
+                {!workbench && <Button
                   size="sm"
                   variant="ghost"
                   className={cn(voiceMode && 'bg-gold-wash text-gold-deep')}
@@ -368,8 +393,8 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
                   }}
                 >
                   语音
-                </Button>
-                {!voice.available && voice.unavailableReason && (
+                </Button>}
+                {!workbench && !voice.available && voice.unavailableReason && (
                   <span role="status" className="w-full text-[12px] text-ink-mute sm:order-last">{voice.unavailableReason}</span>
                 )}
                 <Button
@@ -408,12 +433,9 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             )}
           </div>
 
-          {!usingAgent && !probing && !fallback && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-sm text-coral">工作人员助手暂时不可用，请检查服务后刷新重试。</p>}
+          {!usingAgent && !probing && !fallback && !workbench && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-sm text-coral">{audience === 'staff' ? '工作人员助手' : '智能助手'}暂时不可用，请检查服务后刷新重试。</p>}
           {supportError && !usingAgent && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
-          <div ref={scroller} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
-            {/* 员工主动留言置顶：人说的话优先于模型说的话。
-                usingAgent 时下面那条分支渲染的是 items 不是 messages，
-                所以这里必须单列，否则客户永远看不到员工发的那几句。 */}
+          <div ref={scroller} hidden={docked} className="chat-message-scroll min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
             {staffNotices.length > 0 && (
               <section className="rounded-card border border-gold-deep/30 bg-gold-wash/40 p-3">
                 <p className="mb-2 text-[12px] font-medium text-gold-deep">人工客服留言</p>
@@ -424,7 +446,9 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
                 </div>
               </section>
             )}
-
+            {workbench && !staffNotices.length && !(usingAgent ? items?.length : messages.length) && !activeBusy && !thinking && !agent.pending && !agent.ask && (
+              <div className="workbench-chat-hero"><SupportCat /><h2>今天想处理什么？</h2></div>
+            )}
             {/* 只给**单条**气泡做入场，不给整块列表做。
                 滑进来的消息是"又来了一句话"，一次 220ms 的轻微上浮就够了；
                 整块再淡一次的话两层叠在一起，看着就是糊的。
@@ -462,7 +486,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             {(usingAgent ? activeBusy && !items?.some(item => item.kind === 'assistant' && item.streaming) : thinking) && agent.pending === undefined && (
               <div className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <span className="grid size-8 shrink-0 place-items-center rounded-chip bg-gold-wash">
-                  <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
+                  {workbench ? <SupportCat className="size-8 object-contain" /> : <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />}
                 </span>
                 <span className="flex gap-1.5 rounded-card bg-sunk px-4 py-3">
                   {[0, 1, 2].map((i) => (
@@ -477,7 +501,13 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             )}
           </div>
 
-          <div className="shrink-0 border-t border-line px-3 py-3 sm:px-6 sm:py-4">
+          <div className="chat-composer shrink-0 border-t border-line px-3 py-3 sm:px-6 sm:py-4">
+            {docked && (activeBusy || agent.pending || agent.ask) && <button type="button" className="workbench-chat-alert" onClick={workbench?.onActivate}>
+              {agent.pending ? '有一项操作需要确认' : agent.ask ? '助手需要补充信息' : '助手正在回复'}<span>返回对话 →</span>
+            </button>}
+            {workbench?.task && <div className="workbench-intent"><span>{workbench.task}</span>
+              {!docked && <button type="button" aria-label={`撤销「${workbench.task}」`} onClick={workbench.onClearTask}><CloseIcon size={14} /></button>}
+            </div>}
             {/* 语音状态条：只在语音模式下出现。麦克风开着这件事必须**一直看得见**，
                 不能只在按钮上变个颜色——用户切到别的标签页回来就不知道还在不在录。 */}
             {voiceUsable && (
@@ -600,15 +630,14 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             )}
 
             <form
-              className="flex min-w-0 items-center gap-2 sm:gap-3"
+              className="chat-input-form flex min-w-0 items-center gap-2 sm:gap-3"
               onSubmit={(e) => {
                 e.preventDefault()
                 // 发完立刻清掉预览：拖到下一轮再清的话，回答期间用户会以为还能改。
-                const image = pendingImage
-                setPendingImage(undefined)
-                setImageError(undefined)
-                setInput('')
-                send(input, image)
+                if (send(input, pendingImage)) {
+                  setPendingImage(undefined)
+                  setImageError(undefined)
+                }
               }}
             >
               {/* 选图的入口。`accept` 和服务端认的类型对齐（见 lib/image.ts）。 */}
@@ -635,18 +664,31 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
               >
                 <ImagePlusIcon size={20} />
               </button>
-              <input
+              <textarea
+                ref={inputRef}
+                rows={workbench ? 2 : 1}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 placeholder={
                   probing
                     ? '正在连接…'
-                    : voiceUsable ? '也可以直接打字，或按住右边的麦克风说话' : props.placeholder ?? '描述你的需求，例如：帮我转 800 元给梁乐怡'
+                    : !usingAgent && !fallback ? '智能助手暂未连接，请稍后重试'
+                      : voiceUsable ? '也可以直接打字，或按住右边的麦克风说话' : props.placeholder ?? '描述你的需求，例如：帮我转 800 元给梁乐怡'
                 }
                 disabled={probing || (!usingAgent && !fallback)}
                 aria-label="聊天消息"
-                className="h-12 min-w-0 flex-1 rounded-chip border border-line bg-surface px-3 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
+                onKeyDown={e => {
+                  if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return
+                  e.preventDefault()
+                  e.currentTarget.form?.requestSubmit()
+                }}
+                className="h-12 min-w-0 flex-1 resize-none rounded-chip border border-line bg-surface px-3 py-3 text-[14px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
               />
+              {workbench && <button type="button" aria-label="语音输入" aria-pressed={voiceMode}
+                disabled={!usingAgent || !voice.available} title={voice.unavailableReason ?? '开启后按住麦克风说话'}
+                onClick={() => setVoiceMode(on => !on)} className="workbench-voice-toggle">
+                <MicIcon size={19} />
+              </button>}
               {voiceUsable && (
                 /* 按住说话。用 pointer 事件而不是 mouse/touch 两套：
                    pointer 一次性覆盖鼠标、触摸和触控笔，而且松手/移出/取消都能收到。
@@ -825,6 +867,7 @@ function ModeTag({ status }: { status: 'probing' | 'off' | 'ready' }) {
  * 只有 `speaking` / `regeneratable` 是按 id 比对出来的。
  */
 interface BubbleActions {
+  mascot: boolean
   /** 服务端报了语音能力才显示朗读按钮。 */
   canSpeak: boolean
   /** 正在念的是哪一条。 */
@@ -901,7 +944,7 @@ function AgentBubble({ item, actions }: { item: ChatItem; actions: BubbleActions
         {isUser ? (
           <UserIcon size={17} />
         ) : (
-          <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
+          actions.mascot ? <SupportCat className="size-8 object-contain" /> : <CatMark className="size-5 text-gold-deep" cutout="var(--color-gold-wash)" />
         )}
       </span>
       {/* 气泡和它下面那排小按钮竖着排。`items-start`/`items-end` 让气泡按内容宽度

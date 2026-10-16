@@ -52,6 +52,21 @@ import { useToast } from '@/components/ui/toast-context'
 import { useReveal } from '@/lib/useReveal'
 import { useAsync } from '@/lib/useAsync'
 import { usePendingTransaction } from '@/lib/usePendingTransaction'
+import { Link, useNavigate } from 'react-router-dom'
+import { PageHeader } from '@/components/layout/PageHeader'
+
+/** 独立任务页复用已有转账引擎，报价、核验与支付确认保持一致。 */
+export function TransferPage() {
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState(false)
+  return <div className="page-stack transfer-task-page">
+    <PageHeader title="转账与支付" actions={<Link to="/accounts?flow=in" className="service-link">收款与转入</Link>} />
+    <Card className="transfer-task-panel">
+      <TransferForm onClose={() => navigate('/accounts')} onUpdate={() => window.dispatchEvent(new Event('luckycat:bank-updated'))} onBusyChange={setBusy} />
+    </Card>
+    {busy && <p role="status" className="text-[13px] text-ink-soft">正在处理，请稍候…</p>}
+  </div>
+}
 
 type Step = 1 | 2 | 3 | 4
 

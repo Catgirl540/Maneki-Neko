@@ -1,5 +1,7 @@
 # Maneki-Neko（招财猫）
 
+> **先核对客户端版本**：[CLIENTS.md](CLIENTS.md)。网页用户端维护 `app/`；安卓新版为 Flutter `mobile/`。旧 Kotlin 工程与旧网页视觉资料已移入 [archive/](archive/README.md)。本文部分业务与历史演进记录保留原文，当前视觉与导航以 [网页维护手册](app/README.md) 为准。
+
 > 本地启动前端、SQLite 后端与演示登录，请先看 [简洁启动说明](README-START.md)。
 
 > 客户端日常开发、配置、验证与排错，见 [前端维护手册](app/README.md)。
@@ -20,9 +22,8 @@
 虚拟（模拟）银行的网页版。前后端分离架构，业务数据由 SQLite 后端通过 HTTP 提供，
 后端就绪后只需切一个环境变量，业务代码零改动。
 
-- 品牌：招财猫银行 / luckycat BANK
-- 美术风格：**互补色方案 —— 招财金 `#C8973C` + 信赖蓝 `#3C6DC8`**；
-  暖白纸感底、无阴影发丝边卡片、一屏一个金色主按钮（对标 ZA Bank 的克制感）
+- 当前网页品牌：招财猫银行 / MONEY MEOW BANK
+- 当前网页设计：桌面侧栏、单一智能工作台、紫色操作与冷浅色背景；依据为 `docs/design/exports/2026-10-15/zhaocai-cat-bank.html`。旧金蓝设计已归档。
 - 技术栈：React 19 · TypeScript 6 · Vite 8 · Tailwind CSS 4 · React Router 7
 
 ---
@@ -31,7 +32,7 @@
 
 ```
 招财猫Bank/
-├── app/                        前端应用（唯一需要 npm 的目录）
+├── app/                        当前网页用户端（React 工作台）
 │   ├── src/
 │   │   ├── api/                ★ 前后端分离的契约层
 │   │   │   ├── types.ts        领域模型（金额统一用「分」的整数）
@@ -42,7 +43,7 @@
 │   │   │   │   └── index.ts    业务校验、风控、延迟模拟
 │   │   │   └── index.ts        切换点：VITE_USE_MOCK
 │   │   ├── components/
-│   │   │   ├── brand/Logo.tsx  手写 SVG 图形标 / 字标 / App Icon
+│   │   │   ├── brand/          WorkbenchBrand / 客服头像 / 兼容图形标
 │   │   │   ├── layout/         侧栏 + 应用外壳
 │   │   │   ├── ui/             按钮、卡片、输入、开关、弹层、图标集
 │   │   │   └── charts/         环形图、走势柱图
@@ -50,18 +51,18 @@
 │   │   ├── store/session.tsx   登录态 + 路由守卫
 │   │   ├── lib/                金额/日期格式化、渠道文案、useAsync、storage
 │   │   ── styles/
-│   │       ├── tokens.css      ★ 唯一换肤入口（颜色/圆角/字体/动效）
+│   │       ├── tokens.css      颜色、圆角、字体与通用动效
+│   │       ├── workbench.css   当前桌面工作台与业务页布局
 │   │       └── global.css      Tailwind 入口 + 字体 + 基础样式
 │   ├── public/fonts/           拉丁子集字体（约 70KB）；中文走系统字体栈
 │   ── .env.development        环境开关
-├── design/
-│   ├── brand/
-│   │   ├── art-direction.md    ★ 美术风格规范（设计 token 提取）
-│   │   ├── image-spec.json     生图提示词（可重跑）
-│   │   └── generated/          mai-image-2.6 生成的品牌参考图
-│   └── shots/                  各页面视觉走查截图
+├── docs/design/                当前设计依据、客服资源与验证截图
+├── design/                     运维交接、审查及工作人员端资料
+├── archive/2026-10-15/          旧 Kotlin 工程与旧网页设计（不维护、不发布）
+├── android/README.md            旧工程迁移提示（没有可构建工程）
+├── CLIENTS.md                  客户端版本核对入口
 ├── scripts/
-│   ├── gen_images.py           OpenRouter 批量生图脚本
+│   ├── gen_images.py           已停用的旧品牌生成入口（提示归档位置）
 │   └── fetch_bank_logos.py     抓取收款银行行标（可重跑，幂等）
 └── tools/
     ├── shoot.mjs               Playwright 逐页截图脚本
@@ -96,7 +97,7 @@ npm run lint         # oxlint
 视觉走查（需要 dev server 正在运行）：
 
 ```bash
-node tools/shoot.mjs            # 截图输出到 design/shots/
+node tools/shoot.mjs            # 截图输出到 docs/design/implementation-screenshots/automated/
 ```
 
 > ⚠️ **改完代码如果现象诡异，先重启 dev server。**
@@ -112,12 +113,7 @@ node tools/shoot.mjs            # 截图输出到 design/shots/
 > 判断方法：`curl -s http://localhost:5180/src/App.tsx | grep -c ErrorBoundary`
 > 与文件里实际出现的次数对不上，就是发旧了。
 
-重新生成品牌参考图：
-
-```bash
-source ~/.zshrc                # 提供 OPENROUTER_API_KEY
-python3 scripts/gen_images.py design/brand/image-spec.json
-```
+旧品牌参考图与生图脚本已归档，原生成入口已停用。当前资源位置见 [设计入口](docs/design/README.md)。
 
 ## 2.1 接上 Agent 与当前银行账户
 
@@ -371,7 +367,7 @@ Agent 重启后，新版会话会按登录客户恢复原生文字、图片和�
 | 发图：校验/隔离/413/415、界面选图→预览→发送、以及**助手真的看见了图**（需两个服务 + 联网 + 密钥） | `node tools/check-image.mjs` |
 | 问用户：单选/多选/自由输入、防钓鱼守卫、模型真的弹卡片（需两个服务 + 联网 + 密钥） | `node tools/check-ask.mjs` |
 | 人设与隐藏模型名：人设四条硬规矩、health 不夹带模型、**追问也不自报**（需两个服务 + 联网 + 密钥） | `node --import ./tools/ts-resolve-hook.mjs tools/check-persona.mjs` |
-| 安卓客户端：桥接契约（SSE 解析、事件类型、确认通道 401 语义；离线 + 真桥接两层，不需要模拟器） | `bash android/scripts/gate.sh` |
+| 安卓客户端 | Flutter 工程 `mobile/` 的验证步骤见目标分支 `mobile/README.md`；旧 Kotlin 门禁已归档，不再作为当前验收 |
 | 公网部署自检：站点活着、**网页真的连上 agent（不是回落固定话术）**、语音流真的出帧（会真调一次模型） | `node tools/check-deployed.mjs` |
 | 占位银行后端：把网页版指向它，用现有那批数据门禁去跑（需桥接 + dev server，见 `framework/design/P15-DEMO-BANK.md`） | `cd app && VITE_USE_MOCK=false VITE_PROXY_TARGET=http://127.0.0.1:8788 npm run dev` 另开终端跑各 `check-*.mjs` |
 
@@ -500,9 +496,7 @@ POST   /api/support/tickets/:id/messages  客户补充留言
 
 ## 4. 换美术风格怎么改
 
-**只改 `app/src/styles/tokens.css`**。组件层没有写死任何颜色、圆角或字体。
-拿到新的参考稿后，把颜色 / 圆角 / 字体 / 动效曲线替换掉即可整体换肤，
-必要时再调整 `components/` 里的结构。
+当前主题在 `app/src/styles/tokens.css`，桌面工作台布局与卡片样式在 `app/src/styles/workbench.css`；品牌资源由 `WorkbenchBrand.tsx` 统一使用。依据、范围与入口见 [网页维护手册](app/README.md) 和 [设计入口](docs/design/README.md)。旧金蓝规范与双模式稿已归档，不用于当前页面。
 
 ## 5. MVP 范围（对齐原始架构图的「传统银行服务」分支）
 

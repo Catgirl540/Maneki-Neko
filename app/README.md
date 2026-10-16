@@ -1,5 +1,7 @@
 # 客户端前端维护手册
 
+当前维护版本为此目录的桌面网页工作台。旧版源码、视觉规范和安卓工程已归档；修改其他客户端前先读 [CLIENTS.md](../CLIENTS.md)。
+
 适用范围：`app/` 网页银行客户端。技术栈为 React、TypeScript、Vite、Tailwind CSS。
 下文命令均从**仓库根目录**执行，需要 Node.js 24 和 npm。
 
@@ -42,10 +44,10 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 | 维护内容 | 主要位置 |
 | --- | --- |
 | 页面与路由 | `src/pages/`、`src/App.tsx` |
-| 桌面侧栏、手机导航与账户返回入口 | `src/components/layout/`，统一定义在 `navigation.ts`，账户分组使用 `AccountLayout.tsx` |
+| 桌面侧栏、首页服务入口与业务返回入口 | `src/components/layout/`，主导航在 `navigation.ts`，智能服务在 `services.ts` |
 | 按钮、表单、弹窗等通用控件 | `src/components/ui/` |
 | 图表、品牌图形 | `src/components/charts/`、`src/components/brand/` |
-| 颜色、字体、圆角、断点 | `src/styles/tokens.css`；全局样式在 `global.css` |
+| 颜色、字体、圆角与工作台布局 | `src/styles/tokens.css`、`src/styles/workbench.css`；基础样式在 `global.css` |
 | 银行接口、类型与 HTTP 请求 | `src/api/contract.ts`、`types.ts`、`http.ts` |
 | 登录态与业务辅助逻辑 | `src/store/`、`src/lib/` |
 | Agent 卡片、消息与语音 | `src/components/agent/`、`src/api/agent.ts`、`src/lib/useAgentChat.ts`、`src/lib/useVoice.ts` |
@@ -73,41 +75,27 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 **新增页面**：在 `src/pages/` 编写页面 → 在 `src/App.tsx` 注册路由 → 按需更新 `navigation.ts`。
 需要登录的页面放在 `RequireAuth` 包裹的路由组内；登录后的跳转统一由 `LoginRoute` 处理。
 
-一级导航固定为 **账户、理财、助手、我的**，桌面与手机顺序一致。
-助手使用全屏工作区：`AppShell.tsx` 隐藏通用顶栏，`global.css` 的 `chat-workspace` 与 `app-content-chat` 控制视口高度和手机导航留位；`SupportPage.tsx` 是客户端入口，实际聊天界面在 `components/agent/ChatWorkspace.tsx`，只滚动消息，输入栏固定在底部。
-“助手”顶部提供“转人工”和“人工工单”。入口组件位于 `src/components/support/HumanSupport.tsx`，手动提交可选择附上当前文字对话；Agent 提交只分享确认卡中的摘要。人工工单是异步处理，打开时定时查看回复。改动后运行 `node tools/check-human-support.mjs --browser`，验证客户、员工两端与隔离权限。
+本轮以 `docs/design/exports/2026-10-15/zhaocai-cat-bank.html` 为视觉依据，**仅验收桌面网页**。首页是单一智能工作台，没有传统/智能模式开关。
 
-账户概览首屏是「余额主卡 + 常用功能入口卡」：五个高频入口（转账 / 账单 / 银行卡 / 存钱计划 / 多币种换汇）在桌面 ≥1024 宽的一屏内即可点开；近 30 天收支、最近交易与资金账户下移到首屏之下，末尾是「更多服务」分区。不设置横排子标签。
-**转入、转出只在概览提供入口，各自打开一个弹窗**；大额二次确认也在转出弹窗内完成。
+侧栏主导航为「账户总览、转账与支付、银行卡、账单与交易、理财与储蓄」。账户总览 `/dashboard` 展示助手与十个智能服务；资金信息在侧栏「账户资产」`/accounts`，其余业务集中在 `/services`，个人资料从左下角进入。
 
-| 功能 | 路径 / 组件 |
-| --- | --- |
-| 账户概览 / 银行卡管理 | `/dashboard` / `/cards` |
-| 转入 / 转出弹窗 | `src/components/account/MoneyDialogs.tsx`，内容为 `ReceivingContent` / `TransferForm` |
-| 账单 | `/analysis`，从概览的“查看账单”进入 |
-| 收支分析 / 自动扣款 | `/analysis/statistics` / `/analysis/autodebits`，从账单进入 |
-| 存钱计划 / 多币种换汇 | `/dashboard/savings` / `/exchange`，入口在概览的常用功能 |
-| 工资与备用金 / 借款与分期 | `/cashflow` / `/credit`，入口在概览的「更多服务」 |
-| 现金管理 / 投资与定投 / 保险保障 | `/wealth/cash-management` / `/wealth/investments` / `/wealth/insurance`，入口在概览的「更多服务」 |
-| 身份认证 / 邀请与奖励 / 会员与订阅 | `/security/identity` / `/security/invitations` / `/security/membership`，入口在「我的」 |
+`AppShell.tsx` 始终挂载同一个 `SupportPage`，业务页只替换 `Outlet`，不得把助手放回各路由分别挂载，否则切页会丢失输入草稿、待发图片和正在接收的事件。`ChatWorkspace` 的可选 `workbench` 配置控制首页/底部输入栏展示；员工端未传此配置，继续沿用原界面。选择智能服务不会自动发送消息；真正发送时才附上任务类别并回到首页。工具与支付确认沿用已有实现。
 
-旧地址 `/receiving`、`/transfer` 分别跳转到 `/dashboard?flow=in`、`/dashboard?flow=out`。
-弹窗开关保存在 `flow` 查询参数中；关闭后清除参数，重新打开重置表单，提交期间禁止关闭。
+首页保留「历史对话、新对话、转人工、人工工单」。人工工单是异步处理，组件位于 `src/components/support/HumanSupport.tsx`。独立 Agent 未接通时明确显示未连接，禁用助手发送，不以固定话术冒充智能回复；传统业务与手动转人工仍可使用。
 
-理财开户复用储蓄开户的实名资料，身份核验只要求短信码与人脸；保留风险测评和协议签署。
+主要路径：
 
-交易搜索在 账单页 `/analysis` 内（跟在分类筛选旁，不置顶），用 URL 的 `q`、`account`、`category` 保存筛选。
-桌面端通知入口在左侧栏底部（用户信息上方），移动端没有侧栏，改用悬浮铃铛；两者共用 `NotificationsButton.tsx`。
-登录默认进入账户概览；`/security` 对应“我的”，保留原有安全功能与退出登录。
+- `/dashboard`：智能首页；`/support` 为同一智能首页的兼容地址。
+- `/transfer`：独立转账任务页，复用 `TransferForm` 的报价、收款人核验与支付确认。
+- `/accounts`：账户余额、其他资金账户、近期交易；转入和转出弹窗仍可在此打开。
+- `/cards`：卡片列表、锁卡/换卡、交易设置、验证后查看安全信息。
+- `/analysis`、`/analysis/statistics`、`/analysis/autodebits`：流水、消费分析、自动扣款。
+- `/wealth`：理财产品、风险测评与开户；存钱、现金管理、定投另有可见入口。
+- `/services`：完整功能目录，包括换汇、工资、借款、保险、身份、邀请、会员。
 
-**调整样式**：先修改设计 token，再调整组件布局。通用交互优先复用现有控件。
-页面骨架用统一类：`.content-shell`（内容宽度与左右留白，随断点收放）、`.page-stack`（页面区块纵向节奏），标题用 `PageHeader` 组件；布局 token（`--content-max` / `--gutter-x*` / `--page-y*` / `--stack-gap*`）都在 `tokens.css`。
-聊天组件、消息状态、图片处理和语音逻辑同时供员工端使用。修改共用代码后，除客户端回归外，还需执行 `node tools/check-staff-agent.mjs --browser` 与 `node tools/check-ops-agent.mjs --browser`；员工接入说明见 [工作人员端维护说明](../staff/README.md)。
+旧的 `/dashboard?flow=in|out` 兼容到 `/accounts?flow=in|out`；`/receiving` 兼容到 `/accounts?flow=in`。关闭弹窗会清除 `flow` 参数。原有银行接口、鉴权与金额单位不变。
 
-客户端 `lg` 断点为 **960px**，检查手机布局和浏览器“桌面版网站”，不要按默认 1024px 推断。
-
-**新增银行接口**：同步修改 `contract.ts`、`types.ts`、`http.ts`、mock 实现和后端路由映射，
-并更新根 README 的接口清单。页面通过 `@/api` 调用银行业务；Agent 使用独立的 `src/api/agent.ts` 通道。
+品牌资源在 `src/assets/design/`，网页字标由 `WorkbenchBrand.tsx` 统一渲染。`support-cat.png` 使用新生成的耳麦招手猫，在首页欢迎区、回复头像和思考状态中共用。主题中的 `gold` 变量名为兼容旧业务组件而保留，实际颜色已为品牌紫；员工端使用独立主题文件。
 
 ## 5. 数据与登录态
 

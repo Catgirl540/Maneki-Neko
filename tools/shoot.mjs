@@ -1,6 +1,6 @@
 /**
  * 视觉走查脚本：用本机已有的 Chromium 打开 dev server，
- * 注入登录态后逐页截图，输出到 design/shots/。
+ * 注入登录态后逐页截图，输出到 docs/design/implementation-screenshots/automated/。
  *
  *   node tools/shoot.mjs [baseUrl]
  */
@@ -11,7 +11,7 @@ import path from 'node:path'
 import os from 'node:os'
 
 const BASE = process.argv[2] ?? 'http://127.0.0.1:5180'
-const OUT = path.resolve(import.meta.dirname, '../design/shots')
+const OUT = path.resolve(import.meta.dirname, '../docs/design/implementation-screenshots/automated')
 
 const PAGES = [
   // 官网首页是公开的：截图脚本里它也不需要登录态

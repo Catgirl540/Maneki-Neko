@@ -1,5 +1,7 @@
 # 本地前后端启动（Windows / PowerShell）
 
+客户端版本入口见 [CLIENTS.md](CLIENTS.md)：当前网页在 `app/`，安卓新版为 Flutter `mobile/`；旧 Kotlin 与旧网页设计已归档。
+
 需要 **Node.js 24**（自带 npm）。所有命令从包含 `app/`、`server/` 的仓库根目录开始。
 你当前运行的目录是 `C:\AI banking\Maneki-Neko`；队友使用自己克隆的目录。
 
