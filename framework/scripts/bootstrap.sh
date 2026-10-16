@@ -13,6 +13,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/_home.sh"
 
 node "$LUCKYCAT_ROOT/scripts/build-knowledge.mjs"
+node "$LUCKYCAT_ROOT/scripts/check-skills.mjs"
 
 SRC="$LUCKYCAT_ROOT/profiles/luckycat"
 DEST="$DSH_HOME/profiles/luckycat"
@@ -24,6 +25,7 @@ cp "$SRC/cordis.yml" "$DEST/cordis.yml"
 
 # profile 的补丁层：模板是唯一事实来源，占位符在这里替换。
 sed \
+  -e "s|@LUCKYCAT_SKILLS@|$LUCKYCAT_ROOT/skills|g" \
   -e "s|@LUCKYCAT_CORPUS@|$LUCKYCAT_ROOT/.generated/knowledge/corpus.json|g" \
   -e "s|@LUCKYCAT_DEMO_DATA@|$LUCKYCAT_ROOT/packages/bank-demo/demo-data.json|g" \
   "$SRC/cordis.patch.yml" > "$DEST/cordis.patch.yml"
@@ -71,7 +73,7 @@ manifest="$DEST/package.json"
 # （看图不能用、提问卡片弹不出来），而且 `scripts/verify.sh` 里
 # "文件系统四个工具在树中" 那条会红。做服务器部署时踩到的，补上。
 # 两者都声明了 `dsh.bundle.patch`，走同一条安装路径。
-for pkg in hello embedding rag hardening consent bank-demo tool-fs ask; do
+for pkg in hello embedding rag hardening consent bank-demo tool-fs ask skills; do
   name="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['name'])" "$LUCKYCAT_ROOT/packages/$pkg/package.json")"
   if grep -q "\"$name\"" "$manifest"; then
     echo "bootstrap: 已装 $name"

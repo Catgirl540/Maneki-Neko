@@ -1,0 +1,52 @@
+---
+{
+  "name": "bank-cards",
+  "description": "查询银行卡和卡产品、申请新卡、换卡、锁卡解锁、支付开关和限额，以及安全展示卡号或 CVV。",
+  "metadata": {
+    "serviceId": "cards",
+    "label": "银行卡管家",
+    "routes": [
+      "/cards"
+    ],
+    "tools": [
+      "bank_get_balance",
+      "bank_list_cards",
+      "bank_card_products",
+      "bank_apply_card",
+      "bank_replace_card",
+      "bank_set_card_lock",
+      "bank_update_card_settings",
+      "bank_reveal_card_secret",
+      "knowledge_lookup",
+      "ask_user_question"
+    ],
+    "sources": [
+      "framework/bridge/bank-agent.mjs",
+      "framework/packages/bank-demo/src/http-tools.ts",
+      "framework/knowledge/03-cards.md",
+      "app/src/pages/CardsPage.tsx"
+    ]
+  }
+}
+---
+
+## 适用请求
+
+申请或管理已有银行卡时使用；申请新卡与注册开立储蓄账户是不同业务。
+
+## 必要信息
+
+用本人卡片列表确认目标卡，尾号重名时提问消歧；产品代码从产品查询取得。新卡或换卡需用户提供收件人、手机号、省份、城市、详细地址和可选邮编，不从历史或截图猜寄送地址。
+
+## 办理步骤
+
+用 bank_list_cards 查询状态、卡编号及设置，bank_card_products 查询可申请产品和实际费用。新卡调用 bank_apply_card，换卡调用 bank_replace_card，并明确旧卡失效。
+锁定/解锁用 bank_set_card_lock；只修改用户明确要求的字段，调用 bank_update_card_settings。查看卡号或安全码调用 bank_reveal_card_secret，内容由安全弹窗展示，不要求用户回传。
+
+## 结果说明
+
+新卡和换卡结果可能是寄送中，不能称已激活。锁卡关闭线上与境外支付，但不冻结资金账户；解锁不自动恢复开关。设置和费用按返回说明。
+
+## 能力限制
+
+寄送中或已换卡的旧卡不能借解锁激活，锁定卡不能开支付。不能提高到账户转账额度。不得在正文展示、保存或索取完整卡安全信息。丢卡联动 bank-security。

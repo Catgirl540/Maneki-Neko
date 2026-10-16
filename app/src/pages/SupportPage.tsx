@@ -8,10 +8,11 @@ import { smartServices, type SmartServiceId } from '@/components/layout/services
 const fallback = { list: api.listSupportMessages, send: api.sendSupportMessage }
 const listStaffNotices = () => api.listSupportMessages().then(history => history.filter(message => message.role === 'staff'))
 
-export function SupportPage({ workbench, selectedService, onSelectService }: {
+export function SupportPage({ workbench, selectedServices = [], onSelectService, onClearServices }: {
   workbench?: WorkbenchOptions
-  selectedService?: SmartServiceId
+  selectedServices?: SmartServiceId[]
   onSelectService?: (id: SmartServiceId) => void
+  onClearServices?: () => void
 }) {
   const [requestOpen, setRequestOpen] = useState(false)
   const [ticketsOpen, setTicketsOpen] = useState(false)
@@ -21,9 +22,11 @@ export function SupportPage({ workbench, selectedService, onSelectService }: {
   return <div className={workbench ? `workbench-assistant ${workbench.docked ? 'is-docked' : ''}` : 'contents'}>
     {workbench && !workbench.docked && <aside className="smart-services" aria-label="智能服务">
       <h2>智能服务</h2>
+      <button type="button" className="smart-services-clear" aria-label="清除所有选择"
+        disabled={selectedServices.length === 0} onClick={onClearServices}>清除全部</button>
       <div>{smartServices.map(({ id, label, Icon }) => <button key={id} type="button"
-        aria-pressed={selectedService === id} onClick={() => onSelectService?.(id)}>
-        <span><Icon size={19} /></span>{label}
+        aria-pressed={selectedServices.includes(id)} onClick={() => onSelectService?.(id)}>
+        <span><Icon size={24} strokeWidth={2} /></span>{label}
       </button>)}</div>
     </aside>}
     <ChatWorkspace key="workspace" workbench={workbench} listMessages={workbench ? listStaffNotices : undefined} fallback={workbench ? undefined : fallback} humanSupport={{

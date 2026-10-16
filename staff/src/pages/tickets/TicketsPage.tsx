@@ -1,4 +1,7 @@
+import { PageHeader } from '@/components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useSession } from '@/store/session-context'
 import { ApiError, api, type Ticket, type TicketChannel, type TicketStatus } from '@/api'
 import { CHANNEL_LABEL, STATUS_CLASS, TICKET_STATUS_LABEL, formatTime } from './labels'
 import { TicketDrawer } from './TicketDrawer'
@@ -10,12 +13,22 @@ import { TicketDrawer } from './TicketDrawer'
  */
 
 export function TicketsPage() {
+  const [params, setParams] = useSearchParams()
+  const { user } = useSession()
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState<'all' | TicketStatus>('all')
+  const selectedId = params.get('ticket')
+  const statusParam = params.get('status')
+  const statusFilter: 'all' | TicketStatus = statusParam && Object.hasOwn(TICKET_STATUS_LABEL, statusParam) ? statusParam as TicketStatus : 'all'
   const [channelFilter, setChannelFilter] = useState<'all' | TicketChannel>('all')
   const [keyword, setKeyword] = useState('')
+  const mineOnly = params.get('assignee') === 'me'
+  function setSelectedId(id: string | null) {
+    setParams(current => { const next = new URLSearchParams(current); if (id) next.set('ticket', id); else next.delete('ticket'); return next })
+  }
+  function setStatusFilter(status: 'all' | TicketStatus) {
+    setParams(current => { const next = new URLSearchParams(current); if (status === 'all') next.delete('status'); else next.set('status', status); return next })
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -37,6 +50,7 @@ export function TicketsPage() {
   }, [refresh])
 
   const filtered = tickets.filter((t) => {
+    if (mineOnly && (t.assigneeId !== user?.id || !['processing', 'waiting'].includes(t.status))) return false
     if (statusFilter !== 'all' && t.status !== statusFilter) return false
     if (channelFilter !== 'all' && t.channel !== channelFilter) return false
     if (keyword.trim()) {
@@ -48,16 +62,13 @@ export function TicketsPage() {
   })
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-[var(--color-ink)]">工单中心</h1>
-        <button
+    <div className="staff-page">
+      <PageHeader title="工单中心" description="跟进客户请求与人工服务记录。" actions={<button
           onClick={refresh}
           className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-paper)]"
         >
           刷新
-        </button>
-      </div>
+        </button>} />
 
       {error && (
         <div className="mt-4 rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-4 py-3 text-sm text-[var(--color-coral)]">
@@ -66,8 +77,10 @@ export function TicketsPage() {
       )}
 
       {/* 筛选：状态 / 渠道 / 关键词（清单 §2 工单中心） */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="staff-toolbar">
+        {mineOnly && <button type="button" className="staff-button" onClick={() => setParams(current => { const next = new URLSearchParams(current); next.delete('assignee'); return next })}>我的待办 ×</button>}
         <select
+          aria-label="工单状态"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
           className="rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm"
@@ -80,6 +93,7 @@ export function TicketsPage() {
           ))}
         </select>
         <select
+          aria-label="工单渠道"
           value={channelFilter}
           onChange={(e) => setChannelFilter(e.target.value as typeof channelFilter)}
           className="rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm"
@@ -99,7 +113,7 @@ export function TicketsPage() {
         />
       </div>
 
-      <table className="staff-table mt-4">
+      <div className="staff-table-wrap mt-4"><table className="staff-table">
         <thead>
           <tr>
             <th>状态</th>
@@ -116,6 +130,8 @@ export function TicketsPage() {
           {filtered.map((t) => (
             <tr
               key={t.ticketId}
+              tabIndex={0}
+              onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(t.ticketId) } }}
               onClick={() => setSelectedId(t.ticketId)}
               className="cursor-pointer hover:bg-[var(--color-gold-tint)]"
             >
@@ -146,7 +162,7 @@ export function TicketsPage() {
             </tr>
           )}
         </tbody>
-      </table>
+      </table></div>
 
       {selectedId && (
         <TicketDrawer

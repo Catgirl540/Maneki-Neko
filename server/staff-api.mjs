@@ -217,6 +217,7 @@ export function makeWriteAudit(db) {
 // —— 员工鉴权 ————————————————————————————————————————————
 export function createStaffAuth(db) {
   const sessions = new Map()
+  const logoutListeners = new Set()
 
   function resolve(req, { roles = ['csr', 'supervisor'], allowAgent = false } = {}) {
     const header = req.headers.authorization ?? ''
@@ -257,9 +258,10 @@ export function createStaffAuth(db) {
   function logout(req) {
     const match = /^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization ?? '')
     if (match) sessions.delete(match[1])
+    for (const listener of logoutListeners) listener(req.headers.authorization ?? '')
   }
 
-  return { resolve, login, logout }
+  return { resolve, login, logout, onLogout: listener => { logoutListeners.add(listener); return () => logoutListeners.delete(listener) } }
 }
 
 // —— 工单状态机（清单 §4.1，非法流转 400） ——————————————————

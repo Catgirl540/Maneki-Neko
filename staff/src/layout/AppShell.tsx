@@ -1,77 +1,52 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import type { StaffRole } from '@/api'
 import { useSession } from '@/store/session-context'
+import { staffNavigation, staffRoleLabel } from './navigation'
+import { useStaffClock } from './useStaffClock'
+import { WorkbenchBrand } from '../../../app/src/components/brand/WorkbenchBrand'
+import { AlertIcon, ChevronRightIcon, LogoutIcon } from '../../../app/src/components/ui/icons'
 
-/**
- * 员工端外壳：左侧菜单 + 顶栏。
- * 菜单按角色显隐——但记住这只是 UX，**后端每个接口都独立校验角色**（清单 §1）。
- */
-const NAV: Array<{ to: string; label: string; roles: StaffRole[] }> = [
-  { to: '/assistant', label: '工作人员助手', roles: ['csr', 'supervisor', 'ops'] },
-  { to: '/operations', label: '运维监控', roles: ['ops'] },
-  { to: '/workbench', label: '工作台', roles: ['csr', 'supervisor'] },
-  { to: '/tickets', label: '工单中心', roles: ['csr', 'supervisor'] },
-  { to: '/approvals', label: '处置中心', roles: ['csr', 'supervisor'] },
-  { to: '/customers', label: '客户查询', roles: ['csr', 'supervisor'] },
-  { to: '/actions', label: '代客办理', roles: ['csr', 'supervisor'] },
-  { to: '/audit', label: '审计日志', roles: ['supervisor'] },
-]
-
+/** 菜单保持角色隔离；每个业务接口仍由服务端独立鉴权。 */
 export function AppShell() {
   const { user, logout } = useSession()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const isChat = pathname === '/assistant'
+  const visible = staffNavigation.filter(item => user && item.roles.includes(user.role))
+  const current = visible.find(item => item.to === pathname)
+  const now = useStaffClock()
+  const date = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' }).format(now)
 
-  return (
-    <div className={`staff-shell flex min-w-0 flex-col lg:flex-row ${isChat ? 'staff-shell-chat' : 'min-h-screen'}`}>
-      <aside className="staff-sidebar w-full shrink-0 lg:w-56 bg-[var(--color-sunk)] border-b lg:border-b-0 lg:border-r border-[var(--color-line)] p-4">
-        <div className="mb-3 lg:mb-6">
-          <div className="text-lg font-semibold text-[var(--color-ink)]">招财猫银行</div>
-          <div className="hidden text-xs text-[var(--color-ink-mute)] lg:block">工作人员端</div>
-        </div>
-        <nav aria-label="工作人员导航" className="flex gap-1 overflow-x-auto lg:block lg:space-y-1">
-          {NAV.filter((item) => user && item.roles.includes(user.role)).map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) =>
-                `block shrink-0 whitespace-nowrap rounded-[var(--radius-tile)] px-3 py-2 text-sm ${
-                  isActive
-                    ? 'bg-[var(--color-gold-wash)] text-[var(--color-gold-deep)] font-medium'
-                    : 'text-[var(--color-ink-soft)] hover:bg-[var(--color-gold-tint)]'
-                }`
-              }
-            >
-              {item.label}
-            </NavLink>
-          ))}
+  return <div className="staff-app">
+    <div className="staff-demo"><AlertIcon size={12} />比赛演示作品 · 非真实银行</div>
+    <div className={`staff-shell ${isChat ? 'staff-shell-chat' : ''}`}>
+      <a href="#staff-main" className="staff-skip-link">跳到主要内容</a>
+      <aside className="staff-sidebar">
+        <NavLink className="staff-brand" to={user?.role === 'ops' ? '/operations' : '/workbench'} aria-label="招财猫银行工作人员首页"><WorkbenchBrand /></NavLink>
+        <span className="staff-workspace-label">工作人员工作空间</span>
+        <nav aria-label="工作人员导航">
+          {['工作空间', '业务处理', '管理与运维'].map(group => {
+            const items = visible.filter(item => item.group === group)
+            return items.length ? <div className="staff-nav-group" key={group}>
+              <p>{group}</p>
+              {items.map(({ to, label, Icon }) => <NavLink key={to} to={to} className="staff-nav-link"><Icon size={18} /><span>{label}</span></NavLink>)}
+            </div> : null
+          })}
         </nav>
+        <div className="staff-profile">
+          <span className="staff-avatar" aria-hidden="true">{user?.name.slice(0, 1)}</span>
+          <span className="staff-profile-copy"><strong>{user?.name}</strong><small>{user && staffRoleLabel[user.role]}</small></span>
+          <button type="button" aria-label="退出" title="退出登录" onClick={async () => { await logout(); navigate('/login') }}><LogoutIcon size={18} /></button>
+        </div>
       </aside>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center justify-between border-b border-[var(--color-line)] bg-[var(--color-surface)] px-6 py-3">
-          <div className="text-sm text-[var(--color-ink-soft)]">
-            {user?.name}
-            <span className="ml-2 rounded-full bg-[var(--color-blue-wash)] px-2 py-0.5 text-xs text-[var(--color-blue-deep)]">
-              {user?.role === 'ops' ? '运维人员' : user?.role === 'supervisor' ? '主管' : '客服专员'}
-            </span>
-          </div>
-          <button
-            onClick={async () => {
-              await logout()
-              navigate('/login')
-            }}
-            className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-paper)]"
-          >
-            退出
-          </button>
+      <div className="staff-body">
+        <header className="staff-topbar">
+          <div className="staff-breadcrumb"><span>{current?.group ?? '工作空间'}</span><ChevronRightIcon size={13} /><strong>{current?.label ?? '工作台'}</strong></div>
+          <div className="staff-topbar-meta"><time>{date}</time><span className="staff-role-badge">{user && staffRoleLabel[user.role]}</span></div>
         </header>
-
-        <main className={isChat ? 'flex min-h-0 min-w-0 flex-1 overflow-hidden' : 'min-w-0 flex-1 p-4 sm:p-6'}>
-          <Outlet />
+        <main id="staff-main" tabIndex={-1} className={isChat ? 'staff-main staff-main-chat' : 'staff-main'}>
+          <div className={isChat ? 'staff-assistant-container' : 'staff-page-container'}><Outlet /></div>
         </main>
       </div>
     </div>
-  )
+  </div>
 }

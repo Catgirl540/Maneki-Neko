@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/PageHeader'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ApiError, api, type AuditLog } from '@/api'
 
@@ -50,17 +51,13 @@ export function AuditPage() {
   }, [logs, actorType, keyword, window])
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-[var(--color-ink)]">审计日志</h1>
-        <button
+    <div className="staff-page">
+      <PageHeader title="审计日志" description="追溯操作记录与查看事由。" actions={<button
           onClick={refresh}
           className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-paper)]"
         >
           刷新
-        </button>
-      </div>
-      <p className="mt-1 text-sm text-[var(--color-ink-mute)]">仅主管可见（后端强制 403，不只是藏菜单）。</p>
+        </button>} />
 
       {error && (
         <div className="mt-4 rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-4 py-3 text-sm text-[var(--color-coral)]">
@@ -69,7 +66,7 @@ export function AuditPage() {
       )}
 
       {/* 筛选：操作者 / 动作关键词 / 时间窗（清单 §2 审计） */}
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="staff-toolbar">
         <select
           value={actorType}
           onChange={(e) => setActorType(e.target.value as typeof actorType)}
@@ -97,7 +94,7 @@ export function AuditPage() {
         </select>
       </div>
 
-      <table className="staff-table mt-4">
+      <div className="staff-table-wrap mt-4"><table className="staff-table">
         <thead>
           <tr>
             <th>时间</th>
@@ -145,7 +142,7 @@ export function AuditPage() {
             </tr>
           )}
         </tbody>
-      </table>
+      </table></div>
     </div>
   )
 }

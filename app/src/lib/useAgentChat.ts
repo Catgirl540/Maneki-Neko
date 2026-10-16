@@ -119,6 +119,7 @@ const TOOL_LABELS: Record<string, string> = {
   bank_get_support_ticket: '查看人工回复',
   bank_reply_support_ticket: '补充人工工单',
   knowledge_lookup: '查询知识库',
+  skill: '准备办理',
   bank_get_balance: '查询余额',
   bank_list_transactions: '查询交易流水',
   bank_get_transaction_detail: '查看交易详情',
@@ -187,7 +188,7 @@ export interface AgentChat {
    * @param text - 用户输入；只发图片时可以是空串。
    * @param image - 一起发的图片（已经 `prepareImage` 压过的那份）。
    */
-  send: (text: string, image?: PreparedImage) => void
+  send: (text: string, image?: PreparedImage, serviceIds?: readonly string[]) => void
   /**
    * 倒回某条用户消息并重发：编辑重发（传 `text`）和重新生成（不传）共用。
    *
@@ -415,7 +416,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
             if (item.kind !== 'tool') return item
             // 有 callId 就精确匹配；没有（上游偶尔不回填）就退回"最后一个还在执行的行"。
             if (id !== undefined ? item.id !== id : item.state !== 'running') return item
-            return { ...item, state: event.isError ? 'error' : 'done', text: summarize(item.name, event.text) }
+            return { ...item, state: event.isError ? 'error' : 'done', text: summarize(item.name, event.text, event.isError) }
           }),
         }))
         return
@@ -574,7 +575,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
    * @param value - 已经 trim 过、并且已经写进列表的那句话。
    * @param image - 一起发出去的图片（已压缩的那份）。
    */
-  const dispatch = useCallback((convId: string, value: string, image?: PreparedImage) => {
+  const dispatch = useCallback((convId: string, value: string, image?: PreparedImage, serviceIds?: readonly string[]) => {
     setBusy(convId, true)
     const task = (async () => {
       try {
@@ -592,6 +593,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
           value,
           image === undefined ? undefined : { data: image.data, mimeType: image.mimeType },
           accountIdRef.current,
+          serviceIds,
         )
       } catch (error) {
         if (!mountedRef.current) return
@@ -629,7 +631,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
     })()
   }, [pushItem, stopAgentTurn])
 
-  const send = useCallback((text: string, image?: PreparedImage) => {
+  const send = useCallback((text: string, image?: PreparedImage, serviceIds?: readonly string[]) => {
     const value = text.trim()
     const convId = activeIdRef.current
     // 只发图不打字是允许的；两个都空才是真的没内容。
@@ -647,10 +649,11 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
       kind: 'user',
       id: nextId(),
       text: value,
+      ...serviceIds === undefined ? {} : { serviceIds: [...serviceIds] },
       ...image === undefined ? {} : { thumb: image.thumb, imageName: image.name },
     })
     if (wasUntitled) patch(convId, c => ({ ...c, title: titleFrom(value === '' ? image?.name ?? '' : value) }))
-    dispatch(convId, value, image)
+    dispatch(convId, value, image, serviceIds === undefined ? undefined : [...serviceIds])
   }, [asks, dispatch, patch, pendings, pushItem, status])
 
   /**
@@ -694,7 +697,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
         ? {}
         : { title: titleFrom(firstUser.text) },
     }))
-    dispatch(convId, last.text.trim())
+    dispatch(convId, last.text.trim(), undefined, last.serviceIds)
   }, [dispatch, patch, pendings, status])
 
   const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string, customerVerification?: CustomerVerification) => {
@@ -907,7 +910,9 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
  * @param text - 工具返回的渲染文本（JSON 字符串）。
  * @returns 一行摘要。
  */
-function summarize(name: string, text: string): string {
+function summarize(name: string, text: string, isError = false): string {
+  // 原生技能结果包含指令和资源路径，只保留办理状态；完整内容留在日志。
+  if (name === 'skill') return isError ? '办理流程暂时无法准备，请稍后重试' : '办理流程已就绪'
   const trimmed = text.trim()
   if (trimmed === '') return ''
   let parsed: Record<string, unknown>

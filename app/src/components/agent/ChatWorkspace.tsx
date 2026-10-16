@@ -44,10 +44,11 @@ import { useVoice, type VoicePlayback } from '../../lib/useVoice'
 
 export interface WorkbenchOptions {
   docked: boolean
-  task?: string
+  tasks: readonly { id: string; label: string }[]
+  highlightTaskId?: string
   focusRequest: number
   onActivate: () => void
-  onClearTask: () => void
+  onClearTask: (id: string) => void
 }
 
 export interface ChatWorkspaceProps extends AgentChatOptions {
@@ -270,10 +271,11 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
     // 只发图不打字是允许的；两个都空才是真的没内容。
     if (draft === '' && image === undefined) return false
     if (activeBusy || thinking || probing) return false
-    const value = workbench?.task ? `关于${workbench.task}：${draft || '请帮我查看这张图片'}` : draft
+    const value = draft
+    const serviceIds = audience === 'customer' && workbench ? workbench.tasks.map(task => task.id) : undefined
     workbench?.onActivate()
     if (usingAgent) {
-      agent.send(value, image)
+      agent.send(value, image, serviceIds)
       setInput('')
       return true
     }
@@ -319,6 +321,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
 
   return (
     <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', workbench && 'workbench-chat', docked && 'workbench-chat-docked')}>
+      {workbench && !docked && workbench.focusRequest > 0 && <span key={workbench.focusRequest} className="workbench-chat-flash" aria-hidden="true" />}
       {audience === 'customer' && <AgentCardSecret />}
       <h1 hidden={docked} className="sr-only">{audience === 'staff' ? '工作人员助手' : workbench ? '智能金融工作台' : '助手'}</h1>
 
@@ -505,8 +508,13 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             {docked && (activeBusy || agent.pending || agent.ask) && <button type="button" className="workbench-chat-alert" onClick={workbench?.onActivate}>
               {agent.pending ? '有一项操作需要确认' : agent.ask ? '助手需要补充信息' : '助手正在回复'}<span>返回对话 →</span>
             </button>}
-            {workbench?.task && <div className="workbench-intent"><span>{workbench.task}</span>
-              {!docked && <button type="button" aria-label={`撤销「${workbench.task}」`} onClick={workbench.onClearTask}><CloseIcon size={14} /></button>}
+            {!!workbench?.tasks.length && <div className="workbench-intents" aria-label="已选择的功能">
+              {workbench.tasks.map(task => <div key={task.id} className="workbench-intent"><span>{task.label}</span>
+                {!docked && workbench.highlightTaskId === task.id && workbench.focusRequest > 0 && <span key={workbench.focusRequest} className="workbench-intent-burst" aria-hidden="true">
+                  {Array.from({ length: 8 }, (_, index) => <i key={index} />)}
+                </span>}
+                {!docked && <button type="button" aria-label={`撤销「${task.label}」`} onClick={() => workbench.onClearTask(task.id)}><CloseIcon size={14} /></button>}
+              </div>)}
             </div>}
             {/* 语音状态条：只在语音模式下出现。麦克风开着这件事必须**一直看得见**，
                 不能只在按钮上变个颜色——用户切到别的标签页回来就不知道还在不在录。 */}

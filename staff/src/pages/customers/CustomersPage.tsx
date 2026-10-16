@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
 import { ApiError, api, type CustomerProfile, type CustomerSummary } from '@/api'
 import { CARD_STATUS_LABEL, TX_STATUS_LABEL, formatCents, formatTime } from './labels'
@@ -46,13 +47,11 @@ export function CustomersPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-[var(--color-ink)]">客户查询</h1>
-      </div>
+    <div className="staff-page">
+      <PageHeader title="客户查询" description="查找客户，按事由查看完整资料。" />
 
       {/* 搜索：手机号 / 账号 / 姓名（清单 §2） */}
-      <div className="mt-4 flex items-center gap-3">
+      <div className="staff-toolbar">
         <input
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
@@ -77,7 +76,7 @@ export function CustomersPage() {
         </div>
       )}
 
-      <table className="staff-table mt-4">
+      <div className="staff-table-wrap mt-4"><table className="staff-table">
         <thead>
           <tr>
             <th>客户</th>
@@ -90,6 +89,8 @@ export function CustomersPage() {
           {results.map((c) => (
             <tr
               key={c.customerId}
+              tabIndex={0}
+              onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setPendingView(c); setReason(''); setProfile(null) } }}
               onClick={() => {
                 setPendingView(c)
                 setReason('')
@@ -119,12 +120,12 @@ export function CustomersPage() {
           {results.length === 0 && !error && (
             <tr>
               <td colSpan={4} className="py-8 text-center text-sm text-[var(--color-ink-mute)]">
-                没有匹配的客户
+                {searching ? '正在查询客户…' : '没有匹配的客户'}
               </td>
             </tr>
           )}
         </tbody>
-      </table>
+      </table></div>
 
       {/* 事由弹层：查看完整资料前必填，后端据此落账（清单 §2 / 不变量 10） */}
       {pendingView && !profile && (
@@ -133,8 +134,7 @@ export function CustomersPage() {
             查看「{pendingView.name}」完整资料
           </div>
           <p className="mt-1 text-xs text-[var(--color-ink-mute)]">
-            完整资料含账户余额与流水，本次查看会记入审计（谁在何时看过谁）。审计日志仅主管可查，客服侧看不到菜单。
-            请填写事由。
+            请填写查看事由，本次访问将记入审计记录。
           </p>
           <div className="mt-3 flex items-center gap-3">
             <input
@@ -192,7 +192,7 @@ export function CustomersPage() {
 
           <div>
             <div className="mb-2 text-sm font-semibold text-[var(--color-ink)]">账户</div>
-            <table className="staff-table">
+            <div className="staff-table-wrap"><table className="staff-table">
               <thead>
                 <tr>
                   <th>账户</th>
@@ -207,12 +207,12 @@ export function CustomersPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
 
           <div>
             <div className="mb-2 text-sm font-semibold text-[var(--color-ink)]">银行卡（脱敏）</div>
-            <table className="staff-table">
+            <div className="staff-table-wrap"><table className="staff-table">
               <thead>
                 <tr>
                   <th>尾号</th>
@@ -239,12 +239,12 @@ export function CustomersPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
 
           <div>
             <div className="mb-2 text-sm font-semibold text-[var(--color-ink)]">最近流水</div>
-            <table className="staff-table">
+            <div className="staff-table-wrap"><table className="staff-table">
               <thead>
                 <tr>
                   <th>时间</th>
@@ -269,7 +269,7 @@ export function CustomersPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           </div>
         </div>
       )}

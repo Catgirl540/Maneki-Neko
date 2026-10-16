@@ -326,8 +326,10 @@ export function createAgentClient(options: AgentClientOptions) {
     text: string,
     image?: { data: string; mimeType: string },
     accountId?: string,
+    serviceIds?: readonly string[],
   ): Promise<void> {
     const body: Record<string, unknown> = { text }
+    if (serviceIds !== undefined) body['serviceIds'] = [...serviceIds]
     if (image !== undefined) {
       body['image'] = image
       body['accountId'] = accountId ?? ''

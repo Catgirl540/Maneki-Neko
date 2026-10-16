@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { createCustomerSupportApi } from './support-api.mjs'
 import { createCustomerAuth } from './customer-auth.mjs'
 import { createOperations } from './operations.mjs'
+import { createOpsTerminal } from './ops-terminal.mjs'
 import { mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -63,6 +64,7 @@ const holdTimer = setInterval(() => {
 }, 1000)
 holdTimer.unref?.()
 
+const opsTerminal = createOpsTerminal({ auth: staffApi.auth, writeAudit: staffApi.writeAudit, db: database.db, root })
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
   res.on('finish', () => {
@@ -83,6 +85,7 @@ const server = createServer(async (req, res) => {
   }
   try {
     if (await customerSupport.handle(req, res, url)) return
+    if (await opsTerminal.handle(req, res, url)) return
     if (await staffApi.handle(req, res, url)) return
     if (url.pathname === '/api/agent/transfer/requirements' && req.method === 'GET') {
       const value = await bank.transferRequirements(req)
@@ -122,6 +125,9 @@ const server = createServer(async (req, res) => {
   res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify({ message: '接口不存在', code: 'NOT_FOUND' }))
 })
+server.on('close', () => opsTerminal.close())
+process.once('SIGTERM', () => { opsTerminal.close(); server.close(() => process.exit(0)) })
+process.once('SIGINT', () => { opsTerminal.close(); server.close(() => process.exit(0)) })
 
 server.listen(port, host, () => {
   console.log(`[bank-server] http://${host}:${port}`)

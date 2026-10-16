@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/PageHeader'
 import { useCallback, useState } from 'react'
 import {
   ApiError,
@@ -119,15 +120,15 @@ export function ActionsPage() {
   const activeAction = ACTIONS.find((a) => a.key === action)
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-[var(--color-ink)]">代客办理</h1>
-      </div>
+    <div className="staff-page">
+      <PageHeader title="代客办理" description="核验客户身份后，办理卡片与自动扣款业务。" />
+
+      <ol className="staff-action-steps" aria-label="办理进度">{['选择客户', '核验与办理', '完成'].map((label, index) => <li key={label} aria-current={(done ? 2 : customer ? 1 : 0) === index ? 'step' : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
 
       {/* 选客户 */}
       {!customer && (
         <>
-          <div className="mt-4 flex items-center gap-3">
+          <div className="staff-toolbar">
             <input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
@@ -149,7 +150,7 @@ export function ActionsPage() {
               {error}
             </div>
           )}
-          <table className="staff-table mt-4">
+          <div className="staff-table-wrap mt-4"><table className="staff-table">
             <thead>
               <tr>
                 <th>客户</th>
@@ -195,7 +196,7 @@ export function ActionsPage() {
                 </tr>
               )}
             </tbody>
-          </table>
+          </table></div>
         </>
       )}
 
@@ -343,7 +344,7 @@ export function ActionsPage() {
 
             {activeAction?.highImpact && verificationResult !== 'passed' && (
               <div className="rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-4 py-3 text-sm text-[var(--color-coral)]">
-                「{activeAction.label}」影响资金安全，核验未通过将被后端拒绝。
+                办理「{activeAction.label}」须先通过身份核验。
               </div>
             )}
 

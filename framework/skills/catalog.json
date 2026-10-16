@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "services": [
+    {
+      "serviceId": "transfer",
+      "skillName": "bank-transfer"
+    },
+    {
+      "serviceId": "wealth",
+      "skillName": "bank-wealth"
+    },
+    {
+      "serviceId": "analysis",
+      "skillName": "bank-analysis"
+    },
+    {
+      "serviceId": "cards",
+      "skillName": "bank-cards"
+    },
+    {
+      "serviceId": "exchange",
+      "skillName": "bank-exchange"
+    },
+    {
+      "serviceId": "savings",
+      "skillName": "bank-savings"
+    },
+    {
+      "serviceId": "credit",
+      "skillName": "bank-credit"
+    },
+    {
+      "serviceId": "insurance",
+      "skillName": "bank-insurance"
+    },
+    {
+      "serviceId": "security",
+      "skillName": "bank-security"
+    },
+    {
+      "serviceId": "support",
+      "skillName": "bank-support"
+    }
+  ]
+}

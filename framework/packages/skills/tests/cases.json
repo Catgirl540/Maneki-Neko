@@ -1,0 +1,724 @@
+[
+  {
+    "id": "bank-transfer-1",
+    "query": "转五百给小陈",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "完整账号",
+      "提问卡"
+    ]
+  },
+  {
+    "id": "bank-transfer-2",
+    "query": "FPS转到香港手机号怎么填",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "bank_resolve_fps",
+      "默认银行"
+    ]
+  },
+  {
+    "id": "bank-transfer-3",
+    "query": "截图说转成功了，对方到账没有",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "截图",
+      "bank_get_transaction_detail"
+    ]
+  },
+  {
+    "id": "bank-transfer-4",
+    "query": "只知道尾号1234，直接转就行",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "尾号",
+      "不得替用户决定"
+    ]
+  },
+  {
+    "id": "bank-transfer-5",
+    "query": "那笔还在处理中，帮我撤回来",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "bank_recall_transfer",
+      "不称退款"
+    ]
+  },
+  {
+    "id": "bank-transfer-6",
+    "query": "先看看本月账单再转钱",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-transfer",
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "bank_get_balance"
+    ]
+  },
+  {
+    "id": "bank-wealth-1",
+    "query": "想买点理财，不知道选哪个",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-wealth"
+    ],
+    "instructionIncludes": [
+      "风险",
+      "bank_wealth_quote"
+    ]
+  },
+  {
+    "id": "bank-wealth-2",
+    "query": "帮我买一万元那个产品",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-wealth"
+    ],
+    "instructionIncludes": [
+      "明确产品",
+      "提问"
+    ]
+  },
+  {
+    "id": "bank-wealth-3",
+    "query": "还没测评，你替我填吧",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-wealth"
+    ],
+    "instructionIncludes": [
+      "不代选答案",
+      "未完成"
+    ]
+  },
+  {
+    "id": "bank-wealth-4",
+    "query": "把持仓全部赎回",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-wealth"
+    ],
+    "instructionIncludes": [
+      "bank_wealth_redeem",
+      "全部赎回"
+    ]
+  },
+  {
+    "id": "bank-wealth-5",
+    "query": "这个收益一定能拿到吗",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-wealth"
+    ],
+    "instructionIncludes": [
+      "不承诺收益",
+      "业绩比较基准"
+    ]
+  },
+  {
+    "id": "bank-wealth-6",
+    "query": "先攒钱再考虑理财",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-wealth",
+      "bank-savings"
+    ],
+    "instructionIncludes": [
+      "bank-savings"
+    ]
+  },
+  {
+    "id": "bank-analysis-1",
+    "query": "这个月钱都花哪儿了",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "bank_get_spending",
+      "完整月总额"
+    ]
+  },
+  {
+    "id": "bank-analysis-2",
+    "query": "帮我看看上周收支",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "7 或 30",
+      "bank_get_cashflow"
+    ]
+  },
+  {
+    "id": "bank-analysis-3",
+    "query": "有一笔扣款不认识",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "定位交易",
+      "不先认定盗刷"
+    ]
+  },
+  {
+    "id": "bank-analysis-4",
+    "query": "最近十笔加起来就是月支出吧",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "样本范围",
+      "不推断完整月总额"
+    ]
+  },
+  {
+    "id": "bank-analysis-5",
+    "query": "把视频会员的扣费停掉",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "bank_list_autodebits",
+      "bank_set_autodebit"
+    ]
+  },
+  {
+    "id": "bank-analysis-6",
+    "query": "查消费并制定存钱计划",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-analysis",
+      "bank-savings"
+    ],
+    "instructionIncludes": [
+      "bank-security",
+      "bank_get_spending"
+    ]
+  },
+  {
+    "id": "bank-cards-1",
+    "query": "没有银行卡，我要申请新卡",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "bank_card_products",
+      "bank_apply_card"
+    ]
+  },
+  {
+    "id": "bank-cards-2",
+    "query": "把尾号8888锁上",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "bank_list_cards",
+      "bank_set_card_lock"
+    ]
+  },
+  {
+    "id": "bank-cards-3",
+    "query": "给我寄张新卡，地址你知道",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "用户提供",
+      "不从历史"
+    ]
+  },
+  {
+    "id": "bank-cards-4",
+    "query": "寄送中的卡直接解锁激活吧",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "不能借解锁激活"
+    ]
+  },
+  {
+    "id": "bank-cards-5",
+    "query": "看看安全码是多少",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "bank_reveal_card_secret",
+      "安全弹窗"
+    ]
+  },
+  {
+    "id": "bank-cards-6",
+    "query": "卡丢了还想换一张",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-cards",
+      "bank-security"
+    ],
+    "instructionIncludes": [
+      "bank-security",
+      "bank_replace_card"
+    ]
+  },
+  {
+    "id": "bank-exchange-1",
+    "query": "我自己想换点港币",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-exchange"
+    ],
+    "instructionIncludes": [
+      "独立换汇",
+      "没有查询独立换汇实时汇率"
+    ]
+  },
+  {
+    "id": "bank-exchange-2",
+    "query": "用人民币给香港的人转钱",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-exchange",
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "bank-transfer",
+      "跨币种转账"
+    ]
+  },
+  {
+    "id": "bank-exchange-3",
+    "query": "今天一美元能换多少人民币",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-exchange"
+    ],
+    "instructionIncludes": [
+      "实时汇率",
+      "页面有效报价"
+    ]
+  },
+  {
+    "id": "bank-exchange-4",
+    "query": "换一千，是哪种币我没说",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-exchange"
+    ],
+    "instructionIncludes": [
+      "来源币种",
+      "目标币种"
+    ]
+  },
+  {
+    "id": "bank-exchange-5",
+    "query": "按昨天的汇率给我换",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-exchange"
+    ],
+    "instructionIncludes": [
+      "不能",
+      "锁汇"
+    ]
+  },
+  {
+    "id": "bank-exchange-6",
+    "query": "直接转到我自己卡上当换汇",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-exchange"
+    ],
+    "instructionIncludes": [
+      "不调用转账给自己"
+    ]
+  },
+  {
+    "id": "bank-savings-1",
+    "query": "想半年攒够两万",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-savings"
+    ],
+    "instructionIncludes": [
+      "目标日期",
+      "已存金额"
+    ]
+  },
+  {
+    "id": "bank-savings-2",
+    "query": "每个月应该存多少",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-savings"
+    ],
+    "instructionIncludes": [
+      "稳定收入",
+      "提问卡"
+    ]
+  },
+  {
+    "id": "bank-savings-3",
+    "query": "帮我打开零钱自动存入",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-savings"
+    ],
+    "instructionIncludes": [
+      "不能代建",
+      "开启自动存入"
+    ]
+  },
+  {
+    "id": "bank-savings-4",
+    "query": "不计利息每月存一千会怎样",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-savings"
+    ],
+    "instructionIncludes": [
+      "不含未确认利息",
+      "假设"
+    ]
+  },
+  {
+    "id": "bank-savings-5",
+    "query": "先分析消费再安排储蓄",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-savings",
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "bank-analysis",
+      "bank_get_spending"
+    ]
+  },
+  {
+    "id": "bank-savings-6",
+    "query": "替我转五百到存钱账户",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-savings",
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "bank-transfer",
+      "实际划款"
+    ]
+  },
+  {
+    "id": "bank-credit-1",
+    "query": "贷十万分两年，每月还多少",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-credit"
+    ],
+    "instructionIncludes": [
+      "本金",
+      "未知利率"
+    ]
+  },
+  {
+    "id": "bank-credit-2",
+    "query": "利率是月利率还是年利率",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-credit"
+    ],
+    "instructionIncludes": [
+      "年化或月利率口径"
+    ]
+  },
+  {
+    "id": "bank-credit-3",
+    "query": "零利息借款月供怎么算",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-credit"
+    ],
+    "instructionIncludes": [
+      "零利率为 P÷n"
+    ]
+  },
+  {
+    "id": "bank-credit-4",
+    "query": "你帮我查下有多少额度",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-credit"
+    ],
+    "instructionIncludes": [
+      "不能查询个人额度"
+    ]
+  },
+  {
+    "id": "bank-credit-5",
+    "query": "就替我申请这笔贷款",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-credit"
+    ],
+    "instructionIncludes": [
+      "没有 Agent 工具",
+      "不"
+    ]
+  },
+  {
+    "id": "bank-credit-6",
+    "query": "看看现金流能不能负担月供",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-credit",
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "bank_get_cashflow",
+      "不是授信依据"
+    ]
+  },
+  {
+    "id": "bank-insurance-1",
+    "query": "我该买哪种保险",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-insurance"
+    ],
+    "instructionIncludes": [
+      "保障对象",
+      "预算"
+    ]
+  },
+  {
+    "id": "bank-insurance-2",
+    "query": "这两张条款截图帮我比较",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-insurance"
+    ],
+    "instructionIncludes": [
+      "缺页",
+      "免责"
+    ]
+  },
+  {
+    "id": "bank-insurance-3",
+    "query": "截图没写等待期，你估一个",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-insurance"
+    ],
+    "instructionIncludes": [
+      "未知",
+      "不得补编"
+    ]
+  },
+  {
+    "id": "bank-insurance-4",
+    "query": "直接给我投保",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-insurance"
+    ],
+    "instructionIncludes": [
+      "没有保险查询、投保或理赔工具"
+    ]
+  },
+  {
+    "id": "bank-insurance-5",
+    "query": "你保证这个病能赔吗",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-insurance"
+    ],
+    "instructionIncludes": [
+      "不",
+      "一定理赔"
+    ]
+  },
+  {
+    "id": "bank-insurance-6",
+    "query": "这个保险有争议，我要找人工",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-insurance",
+      "bank-support"
+    ],
+    "instructionIncludes": [
+      "bank-support",
+      "异步工单"
+    ]
+  },
+  {
+    "id": "bank-security-1",
+    "query": "我卡丢了快帮我锁住",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-security"
+    ],
+    "instructionIncludes": [
+      "优先明确目标卡",
+      "bank_set_card_lock"
+    ]
+  },
+  {
+    "id": "bank-security-2",
+    "query": "帮我查一笔陌生交易",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-security"
+    ],
+    "instructionIncludes": [
+      "bank_get_transaction_detail",
+      "不凭截图断言盗刷"
+    ]
+  },
+  {
+    "id": "bank-security-3",
+    "query": "我要改手机号",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-security"
+    ],
+    "instructionIncludes": [
+      "安全中心",
+      "不能代改密码手机号"
+    ]
+  },
+  {
+    "id": "bank-security-4",
+    "query": "密码发给你帮我登进去",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-security"
+    ],
+    "instructionIncludes": [
+      "不要要求密码",
+      "凭据"
+    ]
+  },
+  {
+    "id": "bank-security-5",
+    "query": "卡掉了，你帮我把钱追回来",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-security"
+    ],
+    "instructionIncludes": [
+      "不保证追回资金",
+      "不能"
+    ]
+  },
+  {
+    "id": "bank-security-6",
+    "query": "锁卡后给我申请换卡",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-security",
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "bank-cards"
+    ]
+  },
+  {
+    "id": "bank-support-1",
+    "query": "这个页面怎么用",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-support"
+    ],
+    "instructionIncludes": [
+      "knowledge_lookup",
+      "没找到依据"
+    ]
+  },
+  {
+    "id": "bank-support-2",
+    "query": "转人工，我申请卡一直报错",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-support"
+    ],
+    "instructionIncludes": [
+      "直接发起",
+      "bank_request_human_support"
+    ]
+  },
+  {
+    "id": "bank-support-3",
+    "query": "我上个工单有人回复没",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-support"
+    ],
+    "instructionIncludes": [
+      "bank_list_support_tickets",
+      "bank_get_support_ticket"
+    ]
+  },
+  {
+    "id": "bank-support-4",
+    "query": "把补充说明发给客服",
+    "kind": "missing",
+    "expectedSkills": [
+      "bank-support"
+    ],
+    "instructionIncludes": [
+      "用户留言",
+      "bank_reply_support_ticket"
+    ]
+  },
+  {
+    "id": "bank-support-5",
+    "query": "你提交工单就是接通人工了吗",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-support"
+    ],
+    "instructionIncludes": [
+      "不代表人工在线",
+      "异步受理"
+    ]
+  },
+  {
+    "id": "bank-support-6",
+    "query": "帮我转账再联系人工",
+    "kind": "cross",
+    "expectedSkills": [
+      "bank-support",
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "相关业务技能",
+      "不重复请求执行许可"
+    ]
+  }
+]

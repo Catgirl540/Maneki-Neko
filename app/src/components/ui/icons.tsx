@@ -73,6 +73,28 @@ export const ChartIcon = (p: IconProps) => (
   </Icon>
 )
 
+export const TrendUpIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 18 9 12l4 3 7-9" />
+    <path d="M14 6h6v6" />
+  </Icon>
+)
+
+export const ReceiptIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+    <path d="M9 7h6M9 11h6M9 15h3" />
+  </Icon>
+)
+
+export const PiggyBankIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M19 9a7 7 0 0 0-2.3-2.6L17 3l-4 2.2a11 11 0 0 0-2-.2C6.6 5 3 7.8 3 11.5c0 2 1 3.8 2.5 5V20h3v-2h6v2h3v-3.6c1-.7 1.7-1.5 2.2-2.4H22V9z" />
+    <path d="M8 8h4M3 10c-2 0-2 3 0 3" />
+    <circle cx="16" cy="9.5" r=".6" fill="currentColor" stroke="none" />
+  </Icon>
+)
+
 export const ShieldIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 3.2 5 6v6c0 4.2 2.9 7.6 7 8.8 4.1-1.2 7-4.6 7-8.8V6z" />

@@ -338,4 +338,12 @@ const recent = recoveryHistory(Array.from({ length: 80 }, (_, i) => ({ kind: 'us
 eq([recent.length, recent[0].text, recent.at(-1).text], [40, '消息 40', '消息 79'], '恢复保留最近 40 条且顺序不变')
 const bounded = recoveryHistory(Array.from({ length: 40 }, (_, i) => ({ kind: 'user', id: String(i), text: '界'.repeat(10000) })))
 report(new TextEncoder().encode(JSON.stringify(bounded)).byteLength <= 48_000, '恢复按 UTF-8 字节控制体积，避免中文超出请求预算')
+installStorage()
+saveConversations([conversation({ items: [
+  { kind: 'user', id: 'chosen', text: '申请新卡', serviceIds: ['cards', 'security'] },
+  { kind: 'user', id: 'cleared', text: '普通问题', serviceIds: [] },
+] })])
+eq(loadConversations()[0].items.map(item => item.serviceIds), [['cards', 'security'], []], '历史保留每条消息的功能选择快照，清除选择也保留为空数组')
+const invalidSelection = sanitizeConversations([conversation({ items: [{ kind: 'user', id: 'bad-selection', text: '旧记录', serviceIds: 'cards' }] })])[0]
+report(invalidSelection.items[0].serviceIds === undefined && invalidSelection.items[0].text === '旧记录', '损坏的功能选择被丢弃，原始消息继续可读')
 process.exit(failures === 0 ? 0 : 1)

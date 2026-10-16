@@ -1,80 +1,50 @@
 import { useState } from 'react'
 import { ApiError } from '@/api'
 import { useSession } from '@/store/session-context'
+import { WorkbenchBrand } from '../../../app/src/components/brand/WorkbenchBrand'
+import { AlertIcon, ArrowLeftIcon, EyeIcon, EyeOffIcon, ArrowRightIcon } from '../../../app/src/components/ui/icons'
 
-/**
- * 员工登录页（独立于客户登录，清单 §1）。演示账号：王小明/123456、李主管/123456。
- * **登录成功后本页不跳转**——重定向只在 App.tsx 的 LoginRoute 做（照客户端的教训：
- * 两处都跳会互相覆盖，来源页被吃掉）。
- */
+/** 登录跳转统一由 LoginRoute 处理，保留原始来源页与角色路由。 */
 export function LoginPage() {
   const { login } = useSession()
   const [name, setName] = useState('王小明')
   const [password, setPassword] = useState('')
+  const [reveal, setReveal] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const customerHome = import.meta.env.BASE_URL.replace(/staff\/$/, '') || '/'
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
+    if (busy) return
     setBusy(true)
     setError(null)
-    try {
-      await login(name, password)
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : '登录失败，请稍后再试')
-    } finally {
-      setBusy(false)
-    }
+    try { await login(name, password) }
+    catch (err) { setError(err instanceof ApiError ? err.message : '登录失败，请稍后再试') }
+    finally { setBusy(false) }
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--color-paper)]">
-      <form
-        onSubmit={submit}
-        className="w-90 rounded-[var(--radius-card)] bg-[var(--color-surface)] border border-[var(--color-line)] p-8 space-y-4"
-      >
-        <div>
-          <div className="text-xl font-semibold text-[var(--color-ink)]">工作人员端</div>
-          <div className="text-sm text-[var(--color-ink-mute)]">招财猫银行 · 员工登录</div>
-        </div>
-
-        <label className="block">
-          <span className="text-sm text-[var(--color-ink-soft)]">员工姓名</span>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2"
-          />
-        </label>
-
-        <label className="block">
-          <span className="text-sm text-[var(--color-ink-soft)]">密码</span>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full rounded-[var(--radius-field)] border border-[var(--color-line-strong)] px-3 py-2"
-          />
-        </label>
-
-        {error && (
-          <div className="rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-3 py-2 text-sm text-[var(--color-coral)]">
-            {error}
+  return <>
+    <div className="staff-demo"><AlertIcon size={12} />比赛演示作品 · 非真实银行</div>
+    <div className="login-layout staff-login">
+      <div className="login-backdrop" aria-hidden="true">{['one', 'two', 'three', 'four'].map(id => <span key={id} className={`login-bubble login-bubble-${id}`} />)}</div>
+      <header className="login-header"><a href={customerHome} className="login-brand" aria-label="招财猫银行首页"><WorkbenchBrand /></a><a href={customerHome} className="login-staff-link"><ArrowLeftIcon size={14} />返回客户网站</a></header>
+      <main className="login-main">
+        <section className="login-card" aria-labelledby="staff-login-title">
+          <div className="login-card-content">
+            <span className="staff-login-eyebrow">工作人员工作空间</span>
+            <h1 id="staff-login-title">登录工作人员账户</h1>
+            <form className="login-form" onSubmit={submit}>
+              <div><label htmlFor="staff-name">员工姓名</label><input id="staff-name" value={name} onChange={e => setName(e.target.value)} autoComplete="username" required /></div>
+              <div><label htmlFor="staff-password">密码</label><div className="staff-login-password"><input id="staff-password" type={reveal ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /><button type="button" className="login-reveal" aria-label={reveal ? '隐藏密码' : '显示密码'} aria-pressed={reveal} onClick={() => setReveal(value => !value)}>{reveal ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}</button></div></div>
+              {error && <p role="alert" className="login-error">{error}</p>}
+              <button type="submit" disabled={busy} className="login-submit">{busy ? '登录中…' : '登录'}<ArrowRightIcon size={16} /></button>
+            </form>
           </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={busy}
-          className="w-full rounded-[var(--radius-field)] bg-[var(--color-gold)] py-2.5 font-medium text-white hover:bg-[var(--color-gold-deep)] disabled:opacity-60"
-        >
-          {busy ? '登录中…' : '登录'}
-        </button>
-
-        <div className="text-xs text-[var(--color-ink-mute)] leading-5">
-          演示账号：王小明（客服）/ 李主管（主管）/ 运维人员，密码均为 123456
-        </div>
-      </form>
+          <div className="login-card-footer staff-login-help"><details><summary>演示账号</summary><p>王小明（客服）/ 李主管（主管）/ 运维人员<br />密码均为 123456</p></details></div>
+        </section>
+        <footer className="login-footer"><span>© MONEY MEOW BANK</span><span>工作人员端</span></footer>
+      </main>
     </div>
-  )
+  </>
 }

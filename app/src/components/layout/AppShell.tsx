@@ -10,10 +10,12 @@ export function AppShell() {
   const { pathname, search } = useLocation()
   const navigate = useNavigate()
   const home = pathname === '/dashboard' || pathname === '/support'
-  const [serviceId, setServiceId] = useState<SmartServiceId>()
+  const [serviceIds, setServiceIds] = useState<SmartServiceId[]>([])
+  const [highlightTaskId, setHighlightTaskId] = useState<SmartServiceId>()
   const [focusRequest, setFocusRequest] = useState(0)
   const pageScroller = useRef<HTMLDivElement>(null)
-  const service = home ? smartServices.find(item => item.id === serviceId) : serviceForPath(pathname)
+  const service = serviceForPath(pathname)
+  const services = home ? smartServices.filter(item => serviceIds.includes(item.id)) : service ? [service] : []
   const flow = new URLSearchParams(search).get('flow')
   useEffect(() => {
     pageScroller.current?.scrollTo({ top: 0 })
@@ -22,8 +24,18 @@ export function AppShell() {
 
   function activate() {
     if (!home) {
-      setServiceId(service?.id)
+      if (service) setServiceIds(ids => ids.includes(service.id) ? ids : [...ids, service.id])
       navigate('/dashboard')
+    }
+  }
+
+  function toggleService(id: SmartServiceId) {
+    if (serviceIds.includes(id)) {
+      setServiceIds(ids => ids.filter(item => item !== id))
+    } else {
+      setServiceIds(ids => [...ids, id])
+      setHighlightTaskId(id)
+      setFocusRequest(value => value + 1)
     }
   }
 
@@ -34,9 +46,10 @@ export function AppShell() {
       <TopBar />
       <main id="main-content" tabIndex={-1} className="workbench-main-content">
         <div ref={pageScroller} hidden={home} className="business-scroll">{!home && <div key={pathname} className="business-content"><Outlet /></div>}</div>
-        <SupportPage workbench={{ docked: !home, task: service?.label, focusRequest,
-          onActivate: activate, onClearTask: () => setServiceId(undefined),
-        }} selectedService={serviceId} onSelectService={id => { setServiceId(id); setFocusRequest(value => value + 1) }} />
+        <SupportPage workbench={{ docked: !home, tasks: services, focusRequest, highlightTaskId,
+          onActivate: activate, onClearTask: id => setServiceIds(ids => ids.filter(item => item !== id)),
+        }} selectedServices={serviceIds} onSelectService={toggleService}
+          onClearServices={() => { setServiceIds([]); setHighlightTaskId(undefined) }} />
       </main>
     </div>
   </div>

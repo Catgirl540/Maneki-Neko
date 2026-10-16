@@ -99,6 +99,16 @@ if [ -n "$rag_block" ]; then ok "知识库插件行 luckycat-rag 在树中"; els
 if grep -q 'corpusPath: /' <<<"$rag_block"; then ok "语料路径已替换为绝对路径"; else bad "语料路径未替换（占位符没处理？）"; fi
 if grep -q 'maxInjectBytes: 2000' <<<"$rag_block"; then ok "注入预算已显式配置（2000 字节）"; else bad "注入预算未显式配置"; fi
 
+for id in skills skill-filesystem tool-skill; do
+  if [ -n "$(entry_block "$id")" ]; then ok "技能行已挂载: $id"; else bad "技能行缺失: $id"; fi
+done
+skill_block="$(entry_block skill-filesystem)"
+if grep -q 'includeDefaultRoots: false' <<<"$skill_block" && grep -q 'bundledSkillDir: /' <<<"$skill_block"; then
+  ok "技能只读取指定目录，默认主机目录扫描已关闭"
+else
+  bad "技能目录未隔离或绝对路径未替换"
+fi
+
 # V2e 加固
 hard_block="$(entry_block luckycat-hardening)"
 if [ -n "$hard_block" ]; then ok "加固插件行 luckycat-hardening 在树中"; else bad "加固插件行缺失"; fi
@@ -157,9 +167,9 @@ fi
 # （`ctx.tools.restrict`）只在 **agent 作用域**可用（官方源码原话：context-global
 # 会 "mask every agent"），profile 层拿不到这个口子。所以这 4 个**会出现在工具面上**，
 # 文件类工具均不在白名单；图片通过 SDK 的内联块传入。
-expected_names='ask_user_question,bank_get_balance,bank_get_transaction_detail,bank_list_transactions,bank_reveal_card_secret,bank_transfer,bank_wealth_quote,bank_wealth_redeem,bank_wealth_subscribe,edit,knowledge_lookup,luckycat_ping,luckycat_probe_secret,read,read_image,write'
+expected_names='ask_user_question,bank_get_balance,bank_get_transaction_detail,bank_list_transactions,bank_reveal_card_secret,bank_transfer,bank_wealth_quote,bank_wealth_redeem,bank_wealth_subscribe,edit,knowledge_lookup,luckycat_ping,luckycat_probe_secret,read,read_image,skill,write'
 if grep -q "^\[luckycat-probe\] names=$expected_names$" <<<"$probe_out"; then
-  ok "工具面集合完全匹配（生产 15 个 + 探针 1 个）"
+  ok "工具面集合完全匹配（生产工具 + skill + 探针）"
 else
   bad "工具面集合不匹配（有意外增删）: $(grep 'names=' <<<"$probe_out")"
 fi

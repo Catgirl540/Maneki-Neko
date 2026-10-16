@@ -48,6 +48,7 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 | 按钮、表单、弹窗等通用控件 | `src/components/ui/` |
 | 图表、品牌图形 | `src/components/charts/`、`src/components/brand/` |
 | 颜色、字体、圆角与工作台布局 | `src/styles/tokens.css`、`src/styles/workbench.css`；基础样式在 `global.css` |
+| 登录页布局与样式 | `src/pages/LoginPage.tsx`、`src/styles/login.css`；中央表单垂直居中，背景为蓝紫渐变泡泡；保留现有验证码与银行登录接口 |
 | 银行接口、类型与 HTTP 请求 | `src/api/contract.ts`、`types.ts`、`http.ts` |
 | 登录态与业务辅助逻辑 | `src/store/`、`src/lib/` |
 | Agent 卡片、消息与语音 | `src/components/agent/`、`src/api/agent.ts`、`src/lib/useAgentChat.ts`、`src/lib/useVoice.ts` |
@@ -79,7 +80,7 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 
 侧栏主导航为「账户总览、转账与支付、银行卡、账单与交易、理财与储蓄」。账户总览 `/dashboard` 展示助手与十个智能服务；资金信息在侧栏「账户资产」`/accounts`，其余业务集中在 `/services`，个人资料从左下角进入。
 
-`AppShell.tsx` 始终挂载同一个 `SupportPage`，业务页只替换 `Outlet`，不得把助手放回各路由分别挂载，否则切页会丢失输入草稿、待发图片和正在接收的事件。`ChatWorkspace` 的可选 `workbench` 配置控制首页/底部输入栏展示；员工端未传此配置，继续沿用原界面。选择智能服务不会自动发送消息；真正发送时才附上任务类别并回到首页。工具与支付确认沿用已有实现。
+`AppShell.tsx` 始终挂载同一个 `SupportPage`，业务页只替换 `Outlet`，不得把助手放回各路由分别挂载，否则切页会丢失输入草稿、待发图片和正在接收的事件。`ChatWorkspace` 的可选 `workbench` 配置控制首页/底部输入栏展示；员工端使用独立 client 和身份，不传客户功能选择。选择智能服务不会自动发送消息；真正发送时用 `serviceIds` 提交本轮选择并回到首页，原始消息不加标题前缀。服务端按唯一映射加载完整技能，多选组合、清除后自动匹配；历史重发沿用原消息的选择快照。工具与支付确认沿用已有实现，维护见 [业务技能说明](../framework/design/SMART-SERVICE-SKILLS.md)。
 
 首页保留「历史对话、新对话、转人工、人工工单」。人工工单是异步处理，组件位于 `src/components/support/HumanSupport.tsx`。独立 Agent 未接通时明确显示未连接，禁用助手发送，不以固定话术冒充智能回复；传统业务与手动转人工仍可使用。
 
@@ -146,6 +147,8 @@ node tools/check-http-frontend.mjs
 助手正文按累计快照更新同一气泡，完成后替换为最终文本；生成期间不自动朗读。运行 `node tools/check-agent-streaming.mjs` 验证流式显示、断线恢复与消息合并。
 
 ## 7. 构建与发布
+
+独立域名 `https://bank.waveflow.men/` 部署在 guga，使用根路径构建；配置、接口代理及回滚见 [guga 站点说明](../design/deploy/guga.md)。
 
 线上客户端部署在 `/bank/`，按以下配置构建：
 

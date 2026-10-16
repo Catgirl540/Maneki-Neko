@@ -1,113 +1,63 @@
 import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { ApiError, api, type Ticket } from '@/api'
 import { useSession } from '@/store/session-context'
 import { STATUS_CLASS, TICKET_STATUS_LABEL, formatTime } from '@/pages/tickets/labels'
+import { PageHeader } from '@/components/PageHeader'
+import { useStaffClock } from '@/layout/useStaffClock'
+import { SupportCat } from '../../../../app/src/components/brand/WorkbenchBrand'
+import { ReceiptIcon, UserIcon, ChatIcon, CheckIcon, UsersIcon, CardIcon, ShieldIcon, ChevronRightIcon, ArrowRightIcon, RefreshIcon } from '../../../../app/src/components/ui/icons'
 
-/**
- * 工作台（登录后落地页，甲模块）。
- * 3 秒轮询拉最新工单，突出「待处理」的新单——demo §7 第 2 步：agent 建单后
- * 这里不刷新也能冒出，点单进工单中心处理。
- */
+/** 统计与队列均来自真实工单列表，沿用每 3 秒更新。 */
 export function WorkbenchPage() {
-  const navigate = useNavigate()
   const { user } = useSession()
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
   const refresh = useCallback(async () => {
-    try {
-      setTickets(await api.listTickets())
-      setError(null)
-    } catch (e) {
-      // 后端没起时不白屏，顶部给一句人话（验收 §8）
-      setError(e instanceof ApiError ? e.message : '工单列表加载失败，请检查后端是否已启动')
-    }
+    try { setTickets(await api.listTickets()); setLoaded(true); setError(null) }
+    catch (e) { setError(e instanceof ApiError ? e.message : '工单列表加载失败，请稍后重试') }
   }, [])
+  useEffect(() => { void refresh(); const timer = setInterval(refresh, 3000); return () => clearInterval(timer) }, [refresh])
+  const pending = tickets.filter(t => t.status === 'open')
+  const mine = tickets.filter(t => (t.status === 'processing' || t.status === 'waiting') && t.assigneeId === user?.id)
+  const now = useStaffClock()
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hourCycle: 'h23' }).format(now))
+  const greeting = hour < 12 ? '上午好' : hour < 18 ? '下午好' : '晚上好'
+  const metrics = [
+    { label: '待处理工单', value: pending.length, note: `其中 ${pending.filter(t => t.priority === 'high').length} 项加急`, to: '/tickets?status=open', Icon: ReceiptIcon },
+    { label: '我的待办', value: mine.length, note: '由我负责的进行中工单', to: '/tickets?assignee=me', Icon: UserIcon },
+    { label: '等待客户', value: tickets.filter(t => t.status === 'waiting').length, note: '等待客户补充信息', to: '/tickets?status=waiting', Icon: ChatIcon },
+    { label: '已解决', value: tickets.filter(t => t.status === 'resolved').length, note: '当前工单列表中的已解决项', to: '/tickets?status=resolved', Icon: CheckIcon },
+  ]
 
-  useEffect(() => {
-    refresh()
-    const timer = setInterval(refresh, 3000)
-    return () => clearInterval(timer)
-  }, [refresh])
-
-  const pending = tickets.filter((t) => t.status === 'open')
-  const mine = tickets.filter(
-    (t) => (t.status === 'processing' || t.status === 'waiting') && t.assigneeId === user?.id,
-  )
-
-  return (
-    <div>
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-[var(--color-ink)]">工作台</h1>
-          <p className="mt-1 text-sm text-[var(--color-ink-mute)]">新工单与待办，3 秒自动刷新</p>
-        </div>
-        <button
-          onClick={() => navigate('/tickets')}
-          className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-paper)]"
-        >
-          查看全部工单
-        </button>
-      </div>
-
-      {error && (
-        <div className="mt-4 rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-4 py-3 text-sm text-[var(--color-coral)]">
-          {error}
-        </div>
-      )}
-
-      {/* 概览 */}
-      <div className="mt-5 grid grid-cols-2 gap-4">
-        <div className="rounded-[var(--radius-tile)] border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
-          <div className="text-sm text-[var(--color-ink-mute)]">待处理工单</div>
-          <div className="mt-1 text-3xl font-semibold text-[var(--color-ink)]">{pending.length}</div>
-        </div>
-        <div className="rounded-[var(--radius-tile)] border border-[var(--color-line)] bg-[var(--color-surface)] p-5">
-          <div className="text-sm text-[var(--color-ink-mute)]">我的待办</div>
-          <div className="mt-1 text-3xl font-semibold text-[var(--color-ink)]">{mine.length}</div>
-        </div>
-      </div>
-
-      {/* 最新待处理 */}
-      <h2 className="mt-6 text-sm font-medium text-[var(--color-ink-soft)]">最新待处理</h2>
-      <table className="staff-table mt-3">
-        <thead>
-          <tr>
-            <th>状态</th>
-            <th>客户</th>
-            <th>事由</th>
-            <th>创建</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pending.slice(0, 8).map((t) => (
-            <tr
-              key={t.ticketId}
-              onClick={() => navigate('/tickets')}
-              className="cursor-pointer hover:bg-[var(--color-gold-tint)]"
-            >
-              <td>
-                <span
-                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLASS[t.status]}`}
-                >
-                  {TICKET_STATUS_LABEL[t.status]}
-                </span>
-              </td>
-              <td>{t.customerName ?? t.customerId}</td>
-              <td className="max-w-64 truncate">{t.reason}</td>
-              <td className="text-xs text-[var(--color-ink-mute)]">{formatTime(t.createdAt)}</td>
-            </tr>
-          ))}
-          {pending.length === 0 && !error && (
-            <tr>
-              <td colSpan={4} className="py-8 text-center text-sm text-[var(--color-ink-mute)]">
-                暂无待处理工单
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+  return <div className="staff-page">
+    <span className="staff-eyebrow">{greeting}，{user?.name}</span>
+    <PageHeader title="工作台" description="从待办开始，跟进每一位客户。" actions={<><span className="staff-live">自动更新</span><button type="button" onClick={() => void refresh()} aria-label="刷新工作台"><RefreshIcon size={15} /></button></>} />
+    {error && <div role="alert" className="mb-5 rounded-tile bg-coral-wash px-4 py-3 text-sm text-coral">{error}{loaded && ' · 当前保留上次结果'}</div>}
+    <div className="staff-metrics">{metrics.map(({ label, value, note, to, Icon }) => <Link className="staff-metric" to={to} key={label}>
+      <span>{label}<Icon size={18} /></span><strong>{loaded ? value : '—'}</strong><small>{loaded ? note : '正在读取工单'}</small>
+    </Link>)}</div>
+    <div className="staff-dashboard-grid">
+      <section className="staff-table-wrap">
+        <header className="staff-table-caption"><h2>最新待处理</h2><Link className="staff-button" to="/tickets">查看全部工单<ArrowRightIcon size={13} /></Link></header>
+        <table className="staff-table"><thead><tr><th>客户与事由</th><th>状态</th><th>创建时间</th><th></th></tr></thead>
+          <tbody>{pending.slice(0, 8).map(ticket => <tr key={ticket.ticketId}>
+            <td><Link className="staff-ticket-link" to={`/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`}><strong>{ticket.customerName ?? ticket.customerId}</strong><span>{ticket.reason}</span></Link></td>
+            <td><span className={`rounded-full px-2 py-1 text-xs ${STATUS_CLASS[ticket.status]}`}>{TICKET_STATUS_LABEL[ticket.status]}</span>{ticket.priority === 'high' && <span className="ml-2 text-xs text-coral">加急</span>}</td>
+            <td className="text-xs text-ink-mute">{formatTime(ticket.createdAt)}</td>
+            <td><Link className="staff-ticket-open" aria-label={`查看工单 ${ticket.ticketId}`} to={`/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`}><ChevronRightIcon size={16} /></Link></td>
+          </tr>)}{pending.length === 0 && <tr><td colSpan={4}><div className="staff-empty"><span><ReceiptIcon size={22} /></span><strong>{error ? '工单暂时无法加载' : loaded ? '暂无待处理工单' : '正在加载工单…'}</strong>{loaded && !error && <small>新工单到达后会自动出现在这里</small>}</div></td></tr>}</tbody>
+        </table>
+      </section>
+      <aside>
+        <section className="staff-shortcuts"><h2>常用功能</h2>{[
+          { to: '/customers', label: '查询客户', note: '资料、账户与交易记录', Icon: UsersIcon },
+          { to: '/actions', label: '办理卡片与代扣', note: '锁卡、限额和自动扣款', Icon: CardIcon },
+          { to: '/approvals', label: '查看在途交易', note: '风险核对与业务处置', Icon: ShieldIcon },
+        ].map(({ to, label, note, Icon }) => <Link key={to} to={to}><span><Icon size={19} /></span><span>{label}<small>{note}</small></span><ChevronRightIcon size={14} /></Link>)}</section>
+        <section className="staff-dashboard-assistant"><SupportCat /><h2>让助手搭把手</h2><p>查询客户、梳理工单，协助办理业务。</p><Link className="staff-button staff-button-primary" to="/assistant">打开智能助手<ArrowRightIcon size={14} /></Link></section>
+      </aside>
     </div>
-  )
+  </div>
 }

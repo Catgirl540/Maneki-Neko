@@ -19,7 +19,7 @@ export type ChatItem =
    * 原图只发给 agent，存档里放原图会一张就吃掉 `MAX_STORE_BYTES`（2MB）的大半。
    * 见 `lib/image.ts` 的 `prepareImage`——它返回的两份数据是分开的。
    */
-  | { kind: 'user'; id: string; text: string; thumb?: string; imageName?: string }
+  | { kind: 'user'; id: string; text: string; thumb?: string; imageName?: string; serviceIds?: string[] }
   | { kind: 'assistant'; id: string; text: string; messageId?: string; streaming?: boolean }
   | { kind: 'tool'; id: string; name: string; state: 'running' | 'done' | 'error'; text?: string }
   | { kind: 'notice'; id: string; text: string; tone: 'info' | 'error' }
@@ -261,12 +261,16 @@ function sanitizeItem(raw: unknown, index: number): ChatItem | undefined {
       ? raw['thumb']
       : undefined
     const imageName = typeof raw['imageName'] === 'string' && raw['imageName'] !== '' ? raw['imageName'] : undefined
+    const selected = raw['serviceIds']
+    const serviceIds = Array.isArray(selected) && selected.length <= 10 && selected.every(id => typeof id === 'string' && id.length <= 64)
+      ? [...new Set(selected as string[])] : undefined
     return {
       kind,
       id,
       text,
       ...thumb === undefined ? {} : { thumb },
       ...imageName === undefined ? {} : { imageName },
+      ...serviceIds === undefined ? {} : { serviceIds },
     }
   }
   if (kind === 'notice') {

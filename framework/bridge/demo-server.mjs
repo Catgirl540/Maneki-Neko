@@ -71,6 +71,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const STAFF_MODE = process.env.LUCKYCAT_AUDIENCE === 'staff'
 const OPS_MODE = STAFF_MODE && process.env.LUCKYCAT_STAFF_MODE === 'ops'
 const PROFILE = OPS_MODE ? 'staff-ops' : STAFF_MODE ? 'staff' : 'luckycat'
+const serviceSkillContext = STAFF_MODE ? undefined : (await import('./service-skills.mjs')).serviceSkillContext
 const OPS_WORKSPACE = resolve(process.env.LUCKYCAT_OPS_WORKSPACE ?? join(ROOT, '..'))
 
 // 硬闸：DSH_HOME 只能是仓库内的 .dsh-home（与 bridge/run.mjs 同一口径）。
@@ -817,6 +818,8 @@ async function handle(req, res) {
       sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
+    if (STAFF_MODE && body.serviceIds !== undefined) throw bankError('工作人员助手不接受客户智能服务选择', 400)
+    const skillPrefix = serviceSkillContext?.(body.serviceIds) ?? ''
     let blocks
     if (image !== undefined) {
       const data = typeof image?.data === 'string' ? image.data : ''
@@ -873,12 +876,12 @@ async function handle(req, res) {
        */
       console.log(`[demo-server] 图片已归档：${filePath}`)
       blocks = []
-      if (text !== '') blocks.push({ type: 'text', text })
+      if (text !== '' || skillPrefix) blocks.push({ type: 'text', text: skillPrefix + (text || '请帮我查看这张图片') })
       blocks.push({ type: 'image', data, mimeType })
     }
     if (sessionOf(sessionId).busy || sessions.get(sessionId).stopTask) throw bankError('上一轮还在进行中，请等它结束', 409)
     // 只有文字时仍然按字符串递——那是走熟了的路，没必要为图片把它改掉
-    const turn = runTurn(sessionId, blocks ?? text)
+    const turn = runTurn(sessionId, blocks ?? skillPrefix + text)
     activeTurns.add(turn)
     void turn.finally(() => activeTurns.delete(turn))
     sendJson(res, 202, { accepted: true })

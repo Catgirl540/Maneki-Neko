@@ -1,0 +1,10 @@
+{
+  "name": "@luckycat/dsh-skills",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "网页客户业务技能：挂载原生技能目录与加载工具",
+  "main": "index.mjs",
+  "exports": { ".": "./index.mjs", "./package.json": "./package.json", "./cordis.patch.yml": "./cordis.patch.yml" },
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+}

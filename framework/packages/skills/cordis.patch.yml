@@ -1,0 +1,11 @@
+- insert:
+    - id: skills
+      name: '@deepseek-ai/dsh-skill'
+    - id: skill-filesystem
+      name: '@deepseek-ai/dsh-skill-filesystem'
+      config:
+        includeDefaultRoots: false
+    - id: tool-skill
+      name: '@deepseek-ai/dsh-tool-skill'
+      config:
+        catalogDescriptionMaxLength: 180

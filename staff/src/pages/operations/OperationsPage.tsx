@@ -1,13 +1,19 @@
-import { useCallback, useEffect, useState } from 'react'
+import { PageHeader } from '@/components/PageHeader'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api, type OperationsOverview } from '@/api'
+
+const OpsTerminal = lazy(() => import('./terminal/OpsTerminal').then(module => ({ default: module.OpsTerminal })))
 
 const time = (value: string) => new Date(value).toLocaleString('zh-CN')
 const size = (value: number | null) => value === null ? '未知' : `${(value / 1024 / 1024).toFixed(2)} MB`
 const SERVICE: Record<string, string> = { bank: '银行后端', staff: '工作人员端', settlement: '自动结算' }
 const EVENT: Record<string, string> = { 'http-error': '服务请求失败', startup: '服务启动', 'settlement-error': '自动结算失败' }
-const panel = 'rounded-2xl border border-[var(--color-line)] bg-[var(--color-surface)] p-5'
+const panel = 'rounded-[var(--radius-card)] border border-[var(--color-line)] bg-[var(--color-surface)] p-5'
 
 export function OperationsPage() {
+  const [view, setView] = useState<'overview' | 'terminal'>('overview')
+  const [terminalOpened, setTerminalOpened] = useState(false)
+  function openTerminal() { setTerminalOpened(true); setView('terminal') }
   const [data, setData] = useState<OperationsOverview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -22,11 +28,14 @@ export function OperationsPage() {
   const events = data?.events.filter(event => showAll || event.level === 'error') ?? []
   const unhealthy = data?.services.filter(service => service.status !== 'up').length ?? 0
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div><div className="text-xs font-medium tracking-widest text-[var(--color-gold-deep)]">OPERATIONS</div><h1 className="mt-1 text-3xl font-semibold">运维监控</h1><p className="mt-2 text-sm text-[var(--color-ink-mute)]">查看服务、运行事件、备份和版本信息</p></div>
-        <button disabled={busy} onClick={() => void refresh()} className="rounded-lg bg-[var(--color-gold)] px-5 py-2.5 font-medium text-white disabled:opacity-50">{busy ? '检查中…' : '刷新状态'}</button>
+    <div className="staff-page staff-ops-page">
+      <PageHeader title="运维监控" description="服务、运行事件、备份与版本。" actions={<><button type="button" className="staff-button" onClick={openTerminal}>打开终端</button><button disabled={busy} onClick={() => void refresh()} className="staff-button staff-button-primary">{busy ? '检查中…' : '刷新状态'}</button></>} />
+      <div className="staff-ops-tabs" role="tablist" aria-label="运维视图">
+        <button type="button" role="tab" id="ops-overview-tab" aria-controls="ops-overview-panel" aria-selected={view === 'overview'} onClick={() => setView('overview')}>概览</button>
+        <button type="button" role="tab" id="ops-terminal-tab" aria-controls="ops-terminal-panel" aria-selected={view === 'terminal'} onClick={openTerminal}>终端</button>
       </div>
+      <div id="ops-terminal-panel" role="tabpanel" aria-labelledby="ops-terminal-tab" hidden={view !== 'terminal'}>{terminalOpened && <Suspense fallback={<p role="status">正在加载终端…</p>}><OpsTerminal visible={view === 'terminal'} /></Suspense>}</div>
+      <div id="ops-overview-panel" role="tabpanel" aria-labelledby="ops-overview-tab" hidden={view !== 'overview'} className="space-y-6">
       {error && <div role="alert" className="rounded-lg bg-[var(--color-coral-wash)] p-4 text-[var(--color-coral)]">{error}{data && ' · 当前保留上次检查结果'}</div>}
       {!data && !error && <div role="status" className={panel}>正在检查运行环境…</div>}
       {data && <>
@@ -40,7 +49,7 @@ export function OperationsPage() {
         </div>
         <section className={panel}>
           <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-semibold">服务状态</h2><span className="text-xs text-[var(--color-ink-mute)]">检查时间 {time(data.checkedAt)}</span></div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{data.services.map(service => <div key={service.id} className="rounded-xl border border-[var(--color-line)] p-4">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{data.services.map(service => <div key={service.id} className="rounded-[var(--radius-card)] border border-[var(--color-line)] p-4">
             <div className="flex items-center justify-between"><span className="font-medium">{service.name}</span><span className={`rounded-full px-2.5 py-1 text-xs ${service.status === 'up' ? 'bg-[var(--color-blue-wash)] text-[var(--color-blue-deep)]' : 'bg-[var(--color-coral-wash)] text-[var(--color-coral)]'}`}>{service.status === 'up' ? '正常' : service.status === 'down' ? '不可访问' : '未知'}</span></div>
             <p className="mt-3 text-sm text-[var(--color-ink-mute)]">{service.detail}</p>{service.latencyMs !== null && <p className="mt-1 text-xs text-[var(--color-ink-mute)]">检查耗时 {service.latencyMs} ms</p>}
           </div>)}</div>
@@ -59,6 +68,7 @@ export function OperationsPage() {
           {!events.length ? <div className="mt-5 rounded-lg bg-[var(--color-paper)] p-5 text-center text-sm text-[var(--color-ink-mute)]">{showAll ? '暂无运行事件' : '当前展示范围内没有错误记录'}</div> : <div className="mt-4 overflow-x-auto"><table className="staff-table w-full"><thead><tr><th>时间</th><th>服务</th><th>事件</th><th>状态</th><th>错误码</th></tr></thead><tbody>{events.map(event => <tr key={event.id}><td className="whitespace-nowrap">{time(event.createdAt)}</td><td>{SERVICE[event.service] ?? event.service}</td><td>{EVENT[event.kind] ?? event.kind}</td><td>{event.status ?? '—'}</td><td>{event.code}</td></tr>)}</tbody></table></div>}
         </section>
       </>}
+      </div>
     </div>
   )
 }

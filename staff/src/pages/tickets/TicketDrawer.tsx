@@ -128,9 +128,9 @@ export function TicketDrawer({
 
   return (
     // 固定遮罩 + 右侧面板。demo 用组件内联实现，不引第三方抽屉库（不变量 4）
-    <div className="fixed inset-0 z-20 flex justify-end">
+    <div className="staff-drawer-overlay fixed inset-0 z-20 flex justify-end">
       <div className="flex-1 bg-black/20" onClick={() => { if (!busy) onClose() }} />
-      <div className="flex h-full w-full max-w-[480px] min-w-0 flex-col border-l border-[var(--color-line)] bg-[var(--color-surface)] shadow-xl">
+      <div className="staff-drawer flex h-full w-full max-w-[480px] min-w-0 flex-col border-l border-[var(--color-line)] bg-[var(--color-surface)] shadow-xl">
         <header className="flex items-center justify-between border-b border-[var(--color-line)] px-5 py-4">
           <div>
             <div className="font-mono text-sm text-[var(--color-ink-mute)]">{ticketId}</div>

@@ -1,12 +1,12 @@
-import { CardIcon, ChartIcon, ChatIcon, GlobalIcon, LockIcon, PigIcon, ShieldIcon, TransferIcon, WalletIcon } from '@/components/ui/icons'
+import { CardIcon, ChatIcon, GlobalIcon, LockIcon, PiggyBankIcon, ReceiptIcon, ShieldIcon, TransferIcon, TrendUpIcon, WalletIcon } from '@/components/ui/icons'
 
 export const smartServices = [
   { id: 'transfer', label: '智能转账', Icon: TransferIcon, paths: ['/transfer', '/receiving'] },
-  { id: 'wealth', label: '理财顾问', Icon: ChartIcon, paths: ['/wealth', '/wealth/cash-management', '/wealth/investments'] },
-  { id: 'analysis', label: '账单分析', Icon: ChartIcon, paths: ['/analysis', '/analysis/statistics', '/analysis/autodebits', '/transactions'] },
+  { id: 'wealth', label: '理财顾问', Icon: TrendUpIcon, paths: ['/wealth', '/wealth/cash-management', '/wealth/investments'] },
+  { id: 'analysis', label: '账单分析', Icon: ReceiptIcon, paths: ['/analysis', '/analysis/statistics', '/analysis/autodebits', '/transactions'] },
   { id: 'cards', label: '银行卡管家', Icon: CardIcon, paths: ['/cards'] },
   { id: 'exchange', label: '换汇助手', Icon: GlobalIcon, paths: ['/exchange'] },
-  { id: 'savings', label: '储蓄规划', Icon: PigIcon, paths: ['/dashboard/savings'] },
+  { id: 'savings', label: '储蓄规划', Icon: PiggyBankIcon, paths: ['/dashboard/savings'] },
   { id: 'credit', label: '借款测算', Icon: WalletIcon, paths: ['/credit', '/cashflow'] },
   { id: 'insurance', label: '保险咨询', Icon: ShieldIcon, paths: ['/wealth/insurance'] },
   { id: 'security', label: '安全助手', Icon: LockIcon, paths: ['/security'] },

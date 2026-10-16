@@ -1,3 +1,4 @@
+import { PageHeader } from '@/components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
 import {
   ApiError,
@@ -183,16 +184,13 @@ export function ApprovalsPage() {
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-[var(--color-ink)]">处置中心</h1>
-        <button
+    <div className="staff-page">
+      <PageHeader title="处置中心" description="核对在途交易与待审批业务。" actions={<button
           onClick={refresh}
           className="rounded-[var(--radius-tile)] border border-[var(--color-line-strong)] px-3 py-1.5 text-sm text-[var(--color-ink-soft)] hover:bg-[var(--color-paper)]"
         >
           刷新
-        </button>
-      </div>
+        </button>} />
       <p className="mt-1 text-xs text-[var(--color-ink-mute)]">
         大额转账默认在窗口到点自动到账；员工只有拦截权（一票否决），拦截须选理由。
       </p>
@@ -205,7 +203,7 @@ export function ApprovalsPage() {
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="staff-toolbar">
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
@@ -223,7 +221,7 @@ export function ApprovalsPage() {
         </span>
       </div>
 
-      <table className="staff-table mt-4">
+      <div className="staff-table-wrap mt-4"><table className="staff-table">
         <thead>
           <tr>
             <th>单号</th>
@@ -242,6 +240,8 @@ export function ApprovalsPage() {
             return (
               <tr
                 key={a.approvalId}
+                tabIndex={0}
+                onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedId(a.approvalId); resetActionState() } }}
                 onClick={() => {
                   setSelectedId(a.approvalId)
                   resetActionState()
@@ -272,13 +272,13 @@ export function ApprovalsPage() {
             </tr>
           )}
         </tbody>
-      </table>
+      </table></div>
 
       {/* 详情抽屉：参数快照 + 倒计时 + 拦截/立即到账（结构对齐 TicketDrawer） */}
       {selected && (
-        <div className="fixed inset-0 z-30 flex justify-end">
+        <div className="staff-drawer-overlay fixed inset-0 z-30 flex justify-end">
           <div className="flex-1 bg-black/20" onClick={() => setSelectedId(null)} />
-          <div className="flex h-full w-[480px] flex-col overflow-y-auto border-l border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-xl">
+          <div className="staff-drawer flex h-full w-[480px] flex-col overflow-y-auto border-l border-[var(--color-line)] bg-[var(--color-surface)] p-5 shadow-xl">
             <div className="flex items-start justify-between">
               <div>
                 <h2 className="text-lg font-semibold text-[var(--color-ink)]">
