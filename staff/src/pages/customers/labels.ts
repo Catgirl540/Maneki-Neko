@@ -13,13 +13,13 @@ export const TX_STATUS_LABEL: Record<string, string> = {
   failed: '失败',
 }
 
-/** 整数分 → 带符号的人民币字符串。负号表示支出（与客户端 signedAmount 一致）。 */
-export function formatCents(cents: number): string {
+/** 整数分 → 带币种的金额。旧人民币调用保持兼容，外币不套用人民币符号。 */
+export function formatCents(cents: number, currency = 'CNY'): string {
   const sign = cents < 0 ? '-' : ''
   const abs = Math.abs(cents)
   const yuan = Math.floor(abs / 100)
   const fen = String(abs % 100).padStart(2, '0')
-  return `${sign}¥${yuan.toLocaleString('zh-CN')}.${fen}`
+  return `${sign}${currency === 'CNY' ? '¥' : `${currency} `}${yuan.toLocaleString('zh-CN')}.${fen}`
 }
 
 export function formatTime(iso: string): string {

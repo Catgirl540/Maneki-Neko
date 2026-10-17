@@ -1,16 +1,18 @@
+> 当前后端为 PostgreSQL 16；SQLite 文档与旧演示脚本只保留迁移历史。启动、测试和生产模式以 [当前后端说明](server/README.md) 及 [启动指引](README-START.md) 为准。
+
 > 当前账户模型：[一个资金账户、多币种余额、多张卡](docs/product/account-model.md)。历史设计与演示快照不能覆盖该约束。
 
 # Maneki-Neko（招财猫）
 
 > **先核对客户端版本**：[CLIENTS.md](CLIENTS.md)。网页用户端维护 `app/`；安卓新版为 Flutter `mobile/`。旧 Kotlin 工程与旧网页视觉资料已移入 [archive/](archive/README.md)。本文部分业务与历史演进记录保留原文，当前视觉与导航以 [网页维护手册](app/README.md) 为准。
 
-> 本地启动前端、SQLite 后端与演示登录，请先看 [简洁启动说明](README-START.md)。
+> 本地启动前端、PostgreSQL 后端与隔离演示登录，请先看 [简洁启动说明](README-START.md)。
 
 > 客户端日常开发、配置、验证与排错，见 [前端维护手册](app/README.md)。
 
 > Maneki-Neko(招财猫)是一个集成的AI banking智能体，为了解决团队四人如何拿下10w的现实问题
 
-本仓库包含**网页前端与 Node.js + SQLite HTTP 后端**。开发与生产默认从 `/api` 读取业务数据；浏览器 mock 仅用于显式开启的开发测试。
+本仓库包含**网页前端与 Node.js + PostgreSQL HTTP 后端**。开发与生产默认从 `/api` 读取业务数据；浏览器 mock 仅用于显式开启的开发测试。
 银行接口、请求与响应类型以 `app/src/api/contract.ts`、`app/src/api/types.ts` 和
 `app/src/api/http.ts` 为准，业务规则由 `app/src/api/mock/` 与服务端实现共同定义。
 面向调用方的接口文档见 [docs/api/README.md](docs/api/README.md)。
@@ -21,7 +23,7 @@
 
 ## 招财猫银行 · luckycat BANK
 
-虚拟（模拟）银行的网页版。前后端分离架构，业务数据由 SQLite 后端通过 HTTP 提供，
+虚拟（模拟）银行的网页版。前后端分离架构，业务数据由 PostgreSQL 后端通过 HTTP 提供，
 后端就绪后只需切一个环境变量，业务代码零改动。
 
 - 当前网页品牌：招财猫银行 / MONEY MEOW BANK
@@ -119,10 +121,10 @@ node tools/shoot.mjs            # 截图输出到 docs/design/implementation-scr
 
 ## 2.1 接上 Agent 与当前银行账户
 
-智能客服默认调用独立 SQLite 银行后端，使用网页当前登录用户的权限。服务不可用时，页面使用银行 HTTP 客服消息接口，并标明智能助手未连接。
+智能客服调用 PostgreSQL 银行后端，使用网页当前登录用户的权限。服务不可用时，页面使用银行 HTTP 客服消息接口，并标明智能助手未连接。
 
 ```bash
-# 终端 1：仓库根目录，Node.js 24
+# 终端 1：先按 README-START.md 配置并初始化专用 PostgreSQL 开发库，再运行
 node server/index.mjs
 
 # 终端 2：Agent（模型密钥只通过服务端环境变量或受保护的环境文件提供）
@@ -141,7 +143,7 @@ Agent 需要服务端 `OPENROUTER_API_KEY`；模型与知识库配置仍由框�
 
 OpenRouter 主模型由 `LUCKYCAT_MODEL` 指定；设置 `LUCKYCAT_FALLBACK_MODELS=deepseek/deepseek-v4.1-flash,z-ai/glm-5.3-flash` 后，主模型失败时按顺序回落。回落由 OpenRouter 在单次模型请求内处理，工具和确认流程保持原有校验。运行 `node tools/check-model-fallbacks.mjs` 验证请求适配层。
 
-登录后可以查询余额、流水、交易详情、理财产品与持仓。转账必须明确付款账户、收款人、**完整收款账号**及银行代码/地区；不能仅凭尾号扣款。确认卡展示后端核对的信息和费用，支付密码由当前银行账户校验，返回同一 SQLite 后端的实际业务回执。当前 Agent 转账支持境内人民币银行转账，FPS、跨境与换汇请使用账户总览的转出弹窗。
+登录后可以查询余额、流水、交易详情、理财产品与持仓。转账必须明确付款账户、收款人、**完整收款账号**及银行代码/地区；不能仅凭尾号扣款。确认卡展示后端核对的信息和费用，支付密码由当前银行账户校验，返回同一 PostgreSQL 后端的业务回执。当前 Agent 转账支持境内人民币银行转账，FPS、跨境与换汇请使用账户总览的转出弹窗。
 
 理财申购需要先在理财页面开户和完成风险测评，并在确认卡中手动抄录风险语句。赎回使用实际持仓编号和份额；后端仍校验封闭期及可赎回份额。卡号/CVV 只在短时窗口展示，关闭、切到后台或到期会清除，不进入模型与对话存档。
 
@@ -152,7 +154,8 @@ OpenRouter 主模型由 `LUCKYCAT_MODEL` 指定；设置 `LUCKYCAT_FALLBACK_MODE
 无需外部模型费用的联调验证（模型协议使用本机 fixture，银行服务与 Harness 均实际运行）：
 
 ```bash
-node tools/check-agent-bank.mjs
+# 先配置四个专用测试库并构建 framework，详见 server/README.md
+npm --prefix server run check:integration
 node tools/check-agent-http.mjs
 node tools/check-agent-http.mjs --browser # 需要 Chromium，可指定 CHROME_PATH
 ```

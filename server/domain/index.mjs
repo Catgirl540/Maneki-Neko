@@ -252,7 +252,7 @@ function pushTransaction(tx, detail, save = true, identity) {
  * 改副本只会让接口响应里余额变了、库里没变，刷新后金额又跳回去。
  */
 function applyBalance(accountId, delta, save = true) {
-    const row = loadDb().accounts.find((a) => a.id === accountId);
+    const row = findBalance(loadDb(), accountId);
     if (!row)
         throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND');
     if (!Number.isSafeInteger(delta) || !Number.isSafeInteger(row.balance + delta) || !Number.isSafeInteger(row.available + delta) || row.balance + delta < 0 || row.available + delta < 0)
@@ -1110,7 +1110,7 @@ export function createBankBusinessApi(options) {
                 settleCurrency: account.currency,
                 location: '招财猫银行 App',
                 remark: `境外转账手续费 · ${req.payeeName.trim()}`,
-            });
+            }, false);
         }
         // 收款人簿：同标识视为同一人，只更新时间；否则新增
         const existing = db.payees.find((p) => `${p.channel}:${p.fpsMethod ?? ''}:${p.fpsId ?? ''}:${p.accountNo ?? ''}` ===
@@ -1141,7 +1141,6 @@ export function createBankBusinessApi(options) {
                     : { accountNo: (req.payeeAccountNo ?? '').replace(/\D/g, '') }),
             });
         }
-        persist();
         persist();
         return {
             transactionId: tx.id,
@@ -1428,11 +1427,11 @@ export function createBankBusinessApi(options) {
             await delay(620);
             const db = loadDb();
             const product = productByCode(req.productCode);
-            const account = settlementAccount(db);
             // —— 先开理财账户：银行户 ≠ 理财户（ZA 也是这么分的）——
             if (!db.wealthAccount.opened) {
                 throw new ApiError('请先开立理财账户', 403, 'WEALTH_ACCOUNT_REQUIRED');
             }
+            const account = settlementAccount(db);
             // —— 适当性：不是提示，是硬拦截 ——
             // 「误导投资者购买与其风险承受能力不相匹配的理财产品」是明令禁止的行为
             const risk = withDerivedRisk(db);

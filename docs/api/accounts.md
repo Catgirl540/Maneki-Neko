@@ -21,6 +21,10 @@
 
 `currencyBalances` 是该账户下的币种记账分区，每项包含 `id`、`currency`、`balance`、`available` 等字段，共享同一个 `accountNo`。分区 `id` 用于兼容既有流水和换汇接口，不代表另外开立账户。不同币种金额不得直接相加。
 
+PostgreSQL 档案 v20 保留退役账本行。旧分区 ID 和旧账号仍可解析到当前归属；历史交易的 SQL 原始关联与回单账号快照保留，读取时返回当前 `accountId` 及可选的 `legacyAccountId`。首次换汇只初始化币种余额，跨币种 FPS 按确认报价贷记收款人的登记币种分区。
+
+员工客户档案的 `accounts[].currencyBalances` 与 `recentTransactions[].currency` 指明金额币种；显示外币不得加人民币符号。未提供交易币种的旧客户端夹具仍按原人民币契约兼容。
+
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 账户 ID |

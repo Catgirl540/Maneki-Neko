@@ -1,42 +1,39 @@
-# 本地前后端启动（Windows / PowerShell）
+# 本地启动（Node.js 24 + PostgreSQL 16）
 
-客户端版本入口见 [CLIENTS.md](CLIENTS.md)：当前网页在 `app/`，安卓新版为 Flutter `mobile/`；旧 Kotlin 与旧网页设计已归档。
+客户端版本见 [CLIENTS.md](CLIENTS.md)，账户关系见 [单资金账户约束](docs/product/account-model.md)。当前网页在 `app/`，员工端在 `staff/`，安卓新版为 Flutter `mobile/`。以下从仓库根目录运行，示例使用 PowerShell。
 
-需要 **Node.js 24**（自带 npm）。所有命令从包含 `app/`、`server/` 的仓库根目录开始。
-你当前运行的目录是 `C:\AI banking\Maneki-Neko`；队友使用自己克隆的目录。
-
-## 1. 首次准备
-
-安装依赖，首次或依赖更新后执行：
+## 1. 安装依赖
 
 ```powershell
+npm --prefix server ci
 npm --prefix app ci
 npm --prefix staff ci
 ```
 
-首次克隆后，要复现共享的虚拟卡、余额和流水，再执行：
+安装并启动 PostgreSQL 16，为自己创建专用开发数据库（例如 `maneki_bank_dev`）。通过受保护的本地环境配置提供 `BANK_DATABASE_URL` 和 `BANK_DATA_KEY`；连接串不能指向公网客户库。新空库的数据密钥可用 `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` 生成一次，保存到受保护配置。已有数据库必须沿用匹配密钥，不能重新生成覆盖。
+
+不要把 `demo-database/bank.sqlite` 复制到 `server/data/` 作为现版服务数据库。SQLite 只作为停止写入后的历史迁移源，迁移步骤见 [PostgreSQL 运维手册](docs/bank-postgresql-operations.md)。
+
+## 2. 初始化隔离开发库并启动后端
+
+确认已在当前终端加载上述专用开发连接和密钥后：
 
 ```powershell
-New-Item -ItemType Directory -Force server/data | Out-Null
-Copy-Item demo-database/bank.sqlite server/data/bank.sqlite
-```
-
-已有本地数据库时跳过复制，保留当前工作状态。需要替换已有数据时，先停止后端并备份，按 [数据库恢复说明](demo-database/README.md) 操作。
-
-## 2. 终端一：启动后端
-
-在仓库根目录运行，并保留终端：
-
-```powershell
+$env:NODE_ENV='development'
+$env:BANK_INTEGRATION_MODE='sandbox'
+$env:BANK_ALLOW_DEMO_SEED='true'
+node server/bootstrap-postgres.mjs
+$env:BANK_AUTO_MIGRATE='false'
 node server/index.mjs
 ```
 
-看到 `[bank-server] http://127.0.0.1:8080` 表示启动成功。
-可访问 <http://127.0.0.1:8080/health> 检查状态。SQLite 的实验功能提示不影响启动。
+结构初始化需要数据库所有者权限。日常运行应改用已授权的应用角色；权限模板及维护步骤见 [server/README.md](server/README.md)。仅全新隔离开发库可创建演示数据。已有客户库的迁移必须保留原余额、冻结、流水、凭证和匹配密钥。
 
-## 3. 终端二：启动前端
+`http://127.0.0.1:8080/health` 应返回 `database: "postgresql"`。`commercialReady=false` 表示真实银行通道尚未就绪，不是数据库连接失败。生产要求 `BANK_INTEGRATION_MODE=live`，不会开放模拟短信、身份核验和资金办理；不得把本节开发配置用于生产。
 
-新开终端，进入同一个仓库根目录后运行：
+## 3. 启动统一网页
+
+另开终端：
 
 ```powershell
 $env:VITE_USE_MOCK='false'
@@ -44,33 +41,41 @@ $env:VITE_PROXY_TARGET='http://127.0.0.1:8080'
 npm --prefix app run dev
 ```
 
-客户端登录页为 <http://127.0.0.1:5180/login>，工作人员登录页为 <http://127.0.0.1:5180/staff/login>；客户端登录页也有工作人员入口。两端共用这个前端服务，两个终端都需要保持运行。
+客户入口为 <http://127.0.0.1:5180/login>，员工入口为 <http://127.0.0.1:5180/staff/login>。构建使用 `npm --prefix app run build`，会同时生成客户与员工页面到 `app/dist/`；两端依赖都要安装。
 
-`npm --prefix app run build` 会同时生成两端，统一产物位于 `app/dist/`，工作人员页面位于 `app/dist/staff/`。回归检查可运行 `node tools/check-unified-site.mjs`，使用临时数据库验证两端登录、同源代理和权限隔离。
+仅上述隔离 sandbox 演示库使用主客户 `13800138000`、另一客户 `13600136000`，登录密码 `123456`、支付密码 `888888`；短信码由页面显示。开发员工初始账号为王小明、李主管、运维人员，未显式配置时开发密码为 `123456`。生产不创建这些默认凭据。
 
-## 4. 演示登录
+## 4. 启动 Agent
 
-工作人员端默认使用同一网站的 <http://127.0.0.1:5180/staff/login>，无需额外启动。需要单独开发工作人员页面时，也可运行 `npm --prefix staff run dev`，使用 5181 端口。
-运维账号 `运维人员 / 123456` 可查看服务、事件、备份与版本；接口说明见 [运维监控](docs/api/operations.md)，日常维护、备份和恢复步骤见 [运维端维护手册](docs/operations-maintenance.md)。
-工作人员助手入口 `/staff/assistant`，客服/主管使用 `framework` 中 `npm run start:staff`（8789），运维使用 `npm run start:ops`（8790）。运维原生 DSH 工具和 Clef Flash 风险确认的配置见 [工作人员 Agent](docs/api/staff-agent.md#运维原生-dsh-与-clef-flash)。
+```powershell
+npm --prefix framework ci
+bash framework/scripts/link-local.sh
+bash framework/scripts/build.sh
+bash framework/scripts/bootstrap.sh
+```
 
-- 主账号：`13800138000`；另一个演示账号：`13600136000`。
-- 登录密码：`123456`；支付密码：`888888`。
-- 点击「获取验证码」，验证码会显示在输入框下方，再填入登录。
+通过受保护配置提供服务端模型密钥、`LUCKYCAT_BANK_URL=http://127.0.0.1:8080`、`LUCKYCAT_SESSION_DATABASE_URL` 与独立的 `LUCKYCAT_SESSION_DATA_KEY`，再运行 `node framework/bridge/demo-server.mjs`。会话库需先由所有者执行 `framework/bridge/session-schema.sql`，运行角色只授予 AI schema 所需权限。客户、员工及运维分别使用 `customer`、`staff`、`ops` namespace；各 namespace 单实例持锁。
 
-获取验证码失败时，先确认后端终端仍在运行、`/health` 能打开。
-端口被占用时不要重复启动同一个服务；停止服务可在对应终端按 `Ctrl+C`。
+模型密钥不放入 `VITE_*`，AI 会话密钥不能用银行数据密钥替代。完整配置见 [AI 会话维护说明](docs/bank-ai-session-postgresql.md)。
 
-上述步骤覆盖网页和 SQLite 银行业务。AI 对话服务已接同一登录账户；还需启动框架桥接服务、编译插件及配置服务端模型密钥，步骤见 [完整 README §2.1](README.md#21-接上-agent-与当前银行账户)。
+## 5. 验证整合
 
-## 5. 安卓客户端（Flutter）
+按 [后端验证说明](server/README.md#验证) 准备四个专用可丢弃 PostgreSQL 测试库；禁止使用客户库。完成上述框架构建后：
 
-新版安卓版位于 `mobile/`，按照 Android 设计稿使用「账户、理财、助手、我的」四个入口，直接连接银行 HTTP 与 Agent 服务。旧 `android/` Kotlin 工程保留作迁移参考。
+```powershell
+npm --prefix app run check:account-model
+npm --prefix server run check:integration
+npm --prefix app run build
+```
+
+整合门禁缺少任何测试连接都会失败，不将数据库测试跳过当作验收。旧 SQLite 工具入口仍会以 `LEGACY_SQLITE_FIXTURE_DISABLED` 拒绝启动。`node server/smoke.mjs` 只探测已运行服务，不写入业务。
+
+## 6. 安卓客户端
 
 ```powershell
 cd mobile
 flutter pub get
-flutter run --dart-define-from-file=config/public-server.json
+flutter run --dart-define-from-file=config/local-emulator.json
 ```
 
-当前公网接口前缀为 `http://120.48.123.112/bank`；本机模拟器联调用 `config/local-emulator.json`。构建、签名、接口维护与测试见 [Flutter 维护说明](mobile/README.md)。
+构建、签名及接口配置见 [Flutter 维护说明](mobile/README.md)。根目录 `android/` 仅为归档提示，不能用于构建新版 App。

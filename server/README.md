@@ -38,6 +38,21 @@ node smoke.mjs
 
 完整 PostgreSQL 集成测试需要明确配置专用测试库：`BANK_TEST_DATABASE_URL`、`BANK_CONNECT_TEST_DATABASE_URL`（库名 `maneki_connector_test`）、`BANK_HTTP_TEST_DATABASE_URL`（库名 `maneki_http_test`）。HTTP 测试会清空专用测试库的业务 schema，禁止设置生产连接。未提供 URL 的数据库测试会跳过，不能把跳过当作验收通过。
 
+单账户与 Agent 完整整合门禁从仓库根运行 `npm --prefix server run check:integration`。它要求以下四个连接全部明确配置（允许 `_` 加小写字母、数字的后缀），缺少配置立即失败：
+
+| 环境变量 | 专用数据库名 |
+| --- | --- |
+| `BANK_TEST_DATABASE_URL` | `maneki_bank_test` |
+| `BANK_CONNECT_TEST_DATABASE_URL` | `maneki_connector_test` |
+| `BANK_HTTP_TEST_DATABASE_URL` | `maneki_http_test` |
+| `LUCKYCAT_SESSION_TEST_DATABASE_URL` | `maneki_ai_sessions_test` |
+
+这些库都须可丢弃，并由测试角色拥有建表、建 schema 权限。先安装 `server`、`app`、`staff`、`framework` 依赖，运行 `bash framework/scripts/link-local.sh`、`bash framework/scripts/build.sh` 和 `bash framework/scripts/bootstrap.sh`。会话测试可设置 `LUCKYCAT_PG_MODULE_PATH` 为已安装 `server/node_modules/pg` 的绝对路径，或先安装 `framework/bridge/pg-runtime` 的独立依赖。
+
+门禁依次执行银行数据库/HTTP、Agent 桥接测试和 `tools/check-agent-http.mjs`。HTTP 夹具使用 `server/testing/http-fixture.mjs`，只重建显式指定的 `maneki_http_test`；Agent 只重建 `maneki_ai_sessions_test` 的 AI schema。验证迁移、冻结保留、原交易/凭证身份、旧 ID 写入、跨币种 FPS、手续费失败回滚、幂等重试、live 拒绝模拟业务、会话重启、角色隔离、确认卡、SSE、模型重试及图片上下文；模型上游是本机协议夹具，不产生模型 API 费用。
+
+`server/sqlite-legacy-database.mjs` 已移除：它没有调用方且不符合现版异步事务接口。`bank-schema.sql` 仍作为只读迁移源与 SQLite 导入测试的结构依据。旧 `tools/` SQLite 集成入口保留明确拒绝，不能通过删除保护导入来启动现版后端。运维 PTY 检查另用 `node --test server/ops-terminal.test.mjs`；root 环境拒绝 PTY，相关真实终端测试会明确跳过，不能据此宣称完成终端交互验收。
+
 `smoke.mjs` 只查询已有服务，默认 `BANK_SMOKE_BASE_URL=http://127.0.0.1:8080`，不发送短信、不开户、不转账。`/health` 和 `/ready` 表示后端技术可达性，另有 `commercialReady` 和 `bankConnection` 表明银行接入状态；员工可查询 `/staff-api/bank-connection/readiness`。
 
 [运维手册](../docs/bank-postgresql-operations.md) · [数据库设计](../docs/bank-database-design.md)

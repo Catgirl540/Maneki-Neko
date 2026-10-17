@@ -20,9 +20,9 @@
 
 ## 兼容与迁移
 
-本仓库本地演示银行使用档案 v19：`accounts` 保存唯一资金账户，内部 `currencyBalances` 保存外币记账分区。SQLite 的兼容表 `bank_accounts` 仍包含记账分区，表行数不等于客户账户数。
+当前 PostgreSQL 后端与浏览器模拟均使用档案 v20：`accounts` 保存唯一资金账户，内部 `currencyBalances` 保存外币记账分区；`retiredBalances` 保留被合并的旧账本行并将其余额归零。PostgreSQL 的兼容表 `bank_accounts` 保存这三类内部记录，表行数不等于客户资金账户数。生产入口不再使用 SQLite。
 
-旧同币种账户合并余额、可用余额和账务关联，旧 ID 经 `accountAliases` 解析；不同币种分别保留。历史回单原始账号快照不重写。迁移必须可重复执行，不能重置数据库、清空流水或借合并解除冻结。
+旧同币种账户合并余额、可用余额和账务关联，旧 ID 经 `accountAliases` 解析，旧账号经 `accountNumberAliases` 解析；不同币种分别保留。SQL 历史交易的原 `account_id`、交易编号与时间不变，读取时投影到当前分区，并保留 `legacyAccountId`。历史回单原始账号快照不重写。迁移必须可重复执行，不能重置数据库、清空流水或借合并解除冻结。余额迁移产生新的平衡凭证，不删除或重写原凭证；任何持久化失败都回滚整笔业务。
 
 这些说明针对当前仓库实现。公网后端若使用其他存储版本，须核对其适配与迁移，不能直接覆盖生产数据库。
 
@@ -34,8 +34,7 @@
 
 ```bash
 npm --prefix app run check:account-model
-node tools/check-issue-fixes.mjs
-node server/smoke.mjs
+npm --prefix server run check:integration
 ```
 
-网页 `npm run build` 的 `prebuild` 会自动检查维护文档；第一项额外检查内存业务夹具；后两项使用临时 SQLite 数据库，验证迁移、重启和 HTTP 业务。另按改动运行网页构建及知识/技能校验。只有用户明确改变产品要求时，才可修改上述模型及门禁。
+网页 `npm run build` 的 `prebuild` 会自动检查维护文档；第一项额外检查内存业务夹具。整合门禁需要四个专用可丢弃的 PostgreSQL 测试库，缺少连接直接失败；配置与框架构建步骤见 [后端维护说明](../../server/README.md)。它验证迁移、重启、旧 ID 写入、跨币种 FPS、手续费原子写入、并发、幂等、live 模式、Agent 持久化与角色隔离。旧 SQLite 集成入口仍明确停用，`server/smoke.mjs` 只对已有服务做只读探活。另按改动运行网页构建及知识/技能校验。只有用户明确改变产品要求时，才可修改上述模型及门禁。

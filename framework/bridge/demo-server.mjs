@@ -68,7 +68,6 @@ import { createClefReviewer } from './clef-reviewer.mjs'
 import { OPS_NATIVE_TOOLS } from '../packages/ops-native/src/names.mjs'
 import { createEventPolling } from './event-polling.mjs'
 import { createAssistantStream } from './assistant-stream.mjs'
-import { cancelAgent } from './agent-control.mjs'
 import { openSessionStore, legacyContext } from './session-store.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -101,8 +100,6 @@ process.env.LUCKYCAT_BANK_MODE = HTTP_BANK ? 'http' : 'demo'
 const INTERNAL_TOKEN = randomBytes(32).toString('base64url')
 process.env.LUCKYCAT_INTERNAL_TOKEN = INTERNAL_TOKEN
 const controlDir = await mkdtemp(join(tmpdir(), 'luckycat-control-'))
-const controlSocket = join(controlDir, 'agent.sock')
-process.env.LUCKYCAT_CONTROL_SOCKET = controlSocket
 process.env.LUCKYCAT_BANK_TOOL_URL = `http://127.0.0.1:${PORT}/internal/bank-tool`
 process.env.LUCKYCAT_CONSENT_URL = `http://127.0.0.1:${PORT}/consent/challenge`
 process.env.LUCKYCAT_QUESTION_URL = `http://127.0.0.1:${PORT}/agent-api/questions`
@@ -561,7 +558,6 @@ async function ensureHarness() {
       { insert: [
         { id: 'luckycat-sdk-resume', name: join(ROOT, 'bridge/sdk-session-resume.mjs'), inject: ['sdkAppStartup', 'loader', 'agents', 'sessionPersistence'], config: { maxTokensAsSuccess: false } },
         { id: 'luckycat-assistant-stream', name: join(ROOT, 'bridge/assistant-stream-plugin.mjs') },
-        { id: 'luckycat-agent-control', name: join(ROOT, 'bridge/agent-control-plugin.mjs') },
       ] },
     ]), { mode: 0o600 })
     // 当前适配器没有 extra_body 配置；仅给这个子进程加载请求适配层。
@@ -850,7 +846,9 @@ async function handle(req, res) {
     entry.stopTask = (async () => {
       // 正在初始化 / 排入运行时的会话可能还没有 agent，重试直到取消或本轮退出。
       for (let i = 0; i < 100 && entry.busy; i++) {
-        try { if (await cancelAgent(controlSocket, INTERNAL_TOKEN, entry.id)) break } catch { /* 尚在启动 */ }
+        try {
+          if ((await harness?.client.request('luckycat.cancel', { sessionId: entry.id, token: INTERNAL_TOKEN }, 2000))?.cancelled) break
+        } catch { /* 尚在启动 */ }
         await new Promise(resolve => setTimeout(resolve, 50))
       }
       for (const [id, pending] of pendingConsents) if (pending.challenge.sessionId === entry.id) settleConsent(id, { decision: 'reject', challengeId: id })

@@ -1,190 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { spawn } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { createServer } from 'node:net'
-import { tmpdir } from 'node:os'
-import { basename, dirname, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
-import { createPgClient } from './pg-client.mjs'
-import { openBankDatabase, PROFILES_KEY, reconcileDatabase } from './database.mjs'
 import { ACCOUNT_OPENING_PLEDGE } from './lib/account-opening.mjs'
-import { routes } from './api/contract.mjs'
-
-// These fixtures reset only an explicitly named, disposable PostgreSQL database.
-// They never read BANK_DATABASE_URL or the shared BANK_TEST_DATABASE_URL.
-const testUrl = process.env.BANK_HTTP_TEST_DATABASE_URL
-const testOptions = { skip: !testUrl, concurrency: false }
-function dedicatedName(name) { return /^maneki_http_test(?:_[a-z0-9_]+)?$/.test(name) }
-function verifyUrl() {
-  let parsed
-  try { parsed = new URL(testUrl) } catch { throw new Error('BANK_HTTP_TEST_DATABASE_URL must be a PostgreSQL test database URL') }
-  const name = decodeURIComponent(parsed.pathname.slice(1))
-  assert(['postgres:', 'postgresql:'].includes(parsed.protocol) && dedicatedName(name), 'HTTP fixture database name must be maneki_http_test or start with maneki_http_test_')
-  return name
-}
-async function resetDatabase(db, expectedName) {
-  const actual = (await db.query('SELECT current_database() AS name')).rows[0].name
-  assert(actual === expectedName && dedicatedName(actual), 'refusing to reset a database outside the dedicated HTTP fixture')
-  for (const schema of ['regulatory', 'accounting', 'banking', 'public']) await db.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`)
-  await db.query('CREATE SCHEMA public')
-}
-async function bootstrap(env) {
-  const child = spawn(process.execPath, [join(root, 'server/bootstrap-postgres.mjs')], { cwd: root, env, stdio: ['ignore','pipe','pipe'], windowsHide: true })
-  let output = ''
-  for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { output = (output + bytes).slice(-12000) })
-  const code = await new Promise((resolveExit, reject) => { child.once('error', reject); child.once('exit', resolveExit) })
-  assert.equal(code, 0, `PostgreSQL fixture bootstrap failed (exit ${code}): ${output.replaceAll(testUrl, '[test database]')}`)
-}
-const root = resolve(import.meta.dirname, '..')
-async function fixture({ production = false, mode = 'sandbox' } = {}) {
-  const expectedName = verifyUrl()
-  const temporaryRoot = resolve(tmpdir()), directory = mkdtempSync(join(temporaryRoot, 'banking-http-'))
-  const inspection = createPgClient(testUrl, { schema: 'public' })
-  const dataKey = randomBytes(32).toString('base64'), supervisorPassword = randomBytes(24).toString('base64url')
-  let child, output = '', base, cleaned = false, startupError
-  const call = async (path, { method = 'GET', token, body, key } = {}) => {
-    const response = await fetch(base + path, {
-      method, signal: AbortSignal.timeout(15000),
-      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(key ? { 'idempotency-key': key } : {}) },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    })
-    return { status: response.status, body: await response.json() }
-  }
-  const database = work => work(inspection)
-  async function editCustomer(customerId, edit) {
-    const previousKey = process.env.BANK_DATA_KEY
-    let connection
-    try {
-      process.env.BANK_DATA_KEY = dataKey
-      connection = await openBankDatabase(testUrl, { schema: 'public', autoMigrate: false })
-      await connection.storage.beginUnitOfWork({ requestId: `http-test-rename-${randomUUID()}` })
-      const profiles = JSON.parse(connection.storage.getItem(PROFILES_KEY))
-      const profile = Object.values(profiles).find(row => row.user.id === customerId)
-      assert(profile, 'temporary customer must exist before rename')
-      await edit(profile, connection)
-      connection.storage.setItem(PROFILES_KEY, JSON.stringify(profiles))
-      await connection.storage.commitUnitOfWork()
-    } finally {
-      await connection?.close()
-      if (previousKey === undefined) delete process.env.BANK_DATA_KEY
-      else process.env.BANK_DATA_KEY = previousKey
-    }
-  }
-  const renameCustomer = (customerId, name) => editCustomer(customerId, profile => { profile.user.name = name })
-  async function close() {
-    if (cleaned) return
-    cleaned = true
-    try {
-      if (child && child.exitCode === null && child.signalCode === null) {
-        child.kill()
-        let deadline
-        await Promise.race([
-          new Promise(resolveExit => child.once('exit', resolveExit)),
-          new Promise(resolveTimeout => { deadline = setTimeout(resolveTimeout, 5000); deadline.unref() }),
-        ])
-        clearTimeout(deadline)
-        if (child.exitCode === null && child.signalCode === null) {
-          child.kill('SIGKILL')
-          await new Promise(resolveExit => child.once('exit', resolveExit))
-        }
-      }
-      await resetDatabase(inspection, expectedName)
-    } finally {
-      await inspection.close()
-      const cleanupTarget = resolve(directory)
-      assert.equal(dirname(cleanupTarget), temporaryRoot, 'cleanup must remain in the test temporary root')
-      assert(basename(cleanupTarget).startsWith('banking-http-'), 'cleanup requires the fixture directory prefix')
-      rmSync(cleanupTarget, { recursive: true, force: true })
-    }
-  }
-  try {
-    await resetDatabase(inspection, expectedName)
-    const probe = createServer()
-    const port = await new Promise((resolvePort, reject) => {
-      probe.once('error', reject)
-      probe.listen(0, '127.0.0.1', () => resolvePort(probe.address().port))
-    })
-    await new Promise(resolveClose => probe.close(resolveClose))
-    base = `http://127.0.0.1:${port}`
-    const env = {
-      ...process.env,
-      NODE_ENV: production ? 'production' : 'test',
-      BANK_HOST: '127.0.0.1', BANK_PORT: String(port),
-      BANK_DATABASE_URL: testUrl, BANK_DATABASE_SCHEMA: 'public', BANK_AUTO_MIGRATE: 'false',
-      BANK_BACKUP_DIR: join(directory, 'backups'), BANK_INTEGRATION_MODE: mode,
-      BANK_TRANSFER_REVIEW_CENTS: '1000', BANK_TRANSFER_HOLD_SECONDS: '5',
-      BANK_ALLOW_DEMO_SEED: 'true', BANK_DATA_KEY: dataKey,
-      BANK_CSR_PASSWORD: randomBytes(24).toString('base64url'),
-      BANK_SUPERVISOR_PASSWORD: supervisorPassword,
-      BANK_OPS_PASSWORD: randomBytes(24).toString('base64url'),
-      STAFF_AGENT_TOKEN: randomBytes(32).toString('base64url'), BANK_WEBHOOK_ENABLED: 'false',
-    }
-    await bootstrap(env)
-    child = spawn(process.execPath, [join(root, 'server/index.mjs')], {
-      cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-    })
-    child.once('error', error => { startupError = error })
-    for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { output = (output + bytes).slice(-12000) })
-    let ready = false
-    for (let i = 0; i < 180; i++) {
-      if (startupError) throw startupError
-      if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Bank fixture exited during startup:\n${output.replaceAll(testUrl, '[test database]')}`)
-      try { ready = (await call('/health')).body.ok === true } catch {}
-      if (ready) break
-      await delay(100)
-    }
-    assert(ready, `Bank fixture did not become healthy:\n${output.replaceAll(testUrl, '[test database]')}`)
-    const supervisorLogin = async () => ok(await call('/staff-api/login', {
-      method: 'POST', body: { name: '李主管', password: supervisorPassword },
-    })).token
-    return { call, database, close, supervisorLogin, renameCustomer, editCustomer }
-  } catch (error) { await close(); throw error }
-}
-
-const ok = (result, label = 'request') => {
-  assert.equal(result.status, 200, `${label}: ${result.status} ${result.body.code ?? ''}`)
-  return result.body
-}
-async function login(app, phone) {
-  const sms = ok(await app.call('/api/auth/sms-code', { method: 'POST', body: { phone } }), 'send SMS')
-  const body = { phone, password: '123456', smsCode: sms.demoCode }
-  const user = ok(await app.call('/api/auth/login', { method: 'POST', body }), 'customer login')
-  const accounts = ok(await app.call('/api/accounts', { token: user.token }))
-  return { ...user, phone, accounts, loginBody: body }
-}
-async function register(app, phone, name) {
-  const sms = ok(await app.call('/api/auth/sms-code', { method: 'POST', body: { phone } }))
-  const face = ok(await app.call('/api/security/verify', { method: 'POST', body: { channel: 'face' } }))
-  const user = ok(await app.call('/api/auth/register', {
-    method: 'POST', body: { phone, holderName: name, password: '123456', smsCode: sms.demoCode,
-      faceTicket: face.ticket, idNumber: '330106199203047234', pledge: ACCOUNT_OPENING_PLEDGE },
-  }), 'customer registration')
-  return { ...user, phone, accounts: ok(await app.call('/api/accounts', { token: user.token })) }
-}
-function transfer(sender, recipient, amount, memo = 'HTTP integration') {
-  return { fromAccountId: sender.accounts[0].id, channel: 'bank', scope: 'domestic',
-    payeeName: recipient.user.name, payeeAccountNo: recipient.accounts[0].accountNo,
-    payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount, memo }
-}
-async function account(app, customer, id = customer.accounts[0].id) {
-  return ok(await app.call(`/api/accounts/${id}`, { token: customer.token }))
-}
-async function reconcile(app) {
-  const result = await app.database(db => reconcileDatabase(db))
-  assert.equal(result.ok, true, JSON.stringify(result))
-  assert.deepEqual(result.foreignKeys, [])
-  assert.deepEqual(result.unbalancedBatches, [])
-  assert.deepEqual(result.accountMismatches, [])
-}
-async function financialState(app) {
-  return app.database(db => db.transaction(async () => ({
-    accounts: (await db.query('SELECT owner_id,id,balance_cents,available_cents FROM bank_accounts ORDER BY owner_id,id')).rows,
-    counts: await Promise.all(['bank_transactions', 'journal_batches', 'journal_entries', 'balance_changes', 'bank_idempotency']
-      .map(async table => [table, (await db.query(`SELECT COUNT(*) AS n FROM ${table}`)).rows[0].n])),
-  }), { isolationLevel: 'REPEATABLE READ', readOnly: true }))
-}
+import { fixture, ok, login, register, transfer, account, reconcile, financialState, testOptions, routes } from './testing/http-fixture.mjs'
 
 test('bank HTTP transactions and security preserve customer funds and balanced accounting', { ...testOptions, timeout: 180000 }, async t => {
   const app = await fixture()
@@ -479,6 +298,91 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
   })
 })
 
+test('single funding HTTP migration, currency transfers and fees remain atomic and idempotent', { ...testOptions, timeout: 90000 }, async t => {
+  const app = await fixture({ reviewThreshold: 100000 })
+  t.after(() => app.close())
+  const sender = await login(app, '13800138000'), recipient = await login(app, '13600136000')
+  const legacyId = 'test_legacy_cny', legacyNo = '8820999988880001'
+  await t.test('retired IDs accept writes and retired account numbers resolve to the same funding account', async () => {
+    const before = await account(app, sender)
+    await app.editCustomer(sender.user.id, profile => {
+      profile.schema = 18
+      profile.accounts.push({ ...profile.accounts[0], id: legacyId, accountNo: legacyNo, balance: 3000, available: 2500 })
+    })
+    const accounts = ok(await app.call('/api/accounts', { token: sender.token }))
+    assert.equal(accounts.length, 1)
+    assert.equal(accounts[0].balance, before.balance + 3000)
+    assert.equal(accounts[0].available, before.available + 2500)
+    assert.equal((await account(app, sender, legacyId)).id, sender.accounts[0].id)
+    const deposit = ok(await app.call(routes.deposit(legacyId), { method: 'POST', token: sender.token, body: { amount: 200, channel: 'salary' } }))
+    assert.equal(deposit.id, sender.accounts[0].id)
+    const receipt = ok(await app.call('/api/transfers', { method: 'POST', token: recipient.token,
+      body: { ...transfer(recipient, sender, 100), payeeAccountNo: legacyNo } }))
+    assert.equal(receipt.settlementStatus, 'success')
+    assert.equal((await account(app, sender)).balance, before.balance + 3300)
+    await reconcile(app)
+  })
+  const exchange = async (customer, currency) => {
+    const body = { fromAccountId: customer.accounts[0].id, toCurrency: currency, amount: 10000 }
+    const quote = ok(await app.call(routes.exchangeQuote(), { method: 'POST', token: customer.token, body }))
+    ok(await app.call(routes.exchange(), { method: 'POST', token: customer.token, body: { ...body, quoteId: quote.quoteId, paymentPassword: '888888' } }))
+    const accounts = ok(await app.call('/api/accounts', { token: customer.token }))
+    assert.equal(accounts.length, 1)
+    assert(accounts[0].currencyBalances.every(row => row.accountNo === accounts[0].accountNo))
+    return accounts[0].currencyBalances.find(row => row.currency === currency)
+  }
+  await t.test('cross-currency FPS credits the registered HKD partition exactly once and staff sees the currency', async () => {
+    const hkd = await exchange(recipient, 'HKD')
+    ok(await app.call(routes.fpsRegistration(), { method: 'POST', token: recipient.token,
+      body: { accountId: hkd.id, region: 'HK', currency: 'HKD', idType: 'fpsid', id: '9199911', paymentPassword: '888888' } }))
+    const registration = ok(await app.call(routes.fpsResolve(), { method: 'POST', token: sender.token, body: { idType: 'fpsid', fpsId: '9199911' } }))
+    const body = { fromAccountId: sender.accounts[0].id, channel: 'fps', scope: 'overseas', fpsMethod: 'fpsid', fpsId: '9199911',
+      payeeName: registration.name, payeeBankCode: 'LCB', payeeBankRegion: 'HK', payeeCurrency: 'HKD', amount: 100, memo: 'cross-currency FPS fixture' }
+    const quote = ok(await app.call(routes.transferQuote(), { method: 'POST', token: sender.token, body }))
+    body.confirmedQuote = { version: 1, submitBefore: Date.now() + 30000, fromCurrency: 'CNY', fee: quote.fee, fx: quote.fx }
+    const before = await account(app, sender), key = `fps-${randomUUID()}`
+    const result = ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body, key }))
+    assert.equal(result.fx.toCurrency, 'HKD')
+    assert.deepEqual(ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body, key })), result)
+    assert.equal((await account(app, sender)).balance, before.balance - 100)
+    assert.equal((await account(app, recipient, hkd.id)).balance, hkd.balance + result.fx.toAmount)
+    const staff = await app.supervisorLogin()
+    const profile = ok(await app.call(`/staff-api/customers/${recipient.user.id}/profile?reason=currency-regression`, { token: staff }))
+    assert.equal(profile.accounts.length, 1)
+    assert(profile.recentTransactions.some(row => row.currency === 'HKD' && row.amount === result.fx.toAmount))
+    await reconcile(app)
+  })
+  await t.test('CNY-only savings rejects foreign currency without modifying balances', async () => {
+    const usd = await exchange(sender, 'USD'), before = await financialState(app)
+    const result = await app.call(routes.savingsRoundup(), { method: 'PATCH', token: sender.token,
+      body: { enabled: false, roundupTo: 100, dailyCap: 1000, accountId: usd.id, goalId: null } })
+    assert.equal(result.status, 400)
+    assert.equal(result.body.code, 'CURRENCY_MISMATCH')
+    assert.deepEqual(await financialState(app), before)
+  })
+  await t.test('overseas principal, fee, payee and idempotency record commit or roll back together', async () => {
+    const body = { fromAccountId: sender.accounts[0].id, channel: 'bank', scope: 'overseas',
+      payeeBankCode: '004', payeeBankRegion: 'HK', payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY external', amount: 100, memo: 'fee transaction fixture' }
+    const before = await account(app, sender), key = `fee-${randomUUID()}`
+    const result = ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body, key }))
+    assert.equal(result.fee, 5000)
+    const first = await financialState(app)
+    assert.deepEqual(ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body, key })), result)
+    assert.deepEqual(await financialState(app), first)
+    assert.equal((await account(app, sender)).balance, before.balance - result.amount - result.fee)
+    await app.database(db => db.exec(`CREATE FUNCTION reject_fee_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+      IF NEW.counterparty='手续费' THEN RAISE EXCEPTION 'TEST ONLY fee failure'; END IF; RETURN NEW; END $$;
+      CREATE TRIGGER reject_fee_fixture BEFORE INSERT ON bank_transactions FOR EACH ROW EXECUTE FUNCTION reject_fee_fixture()`))
+    try {
+      const failed = await app.call(routes.transfers(), { method: 'POST', token: sender.token, body: { ...body, payeeName: 'TEST ONLY failed payee' }, key: `fail-fee-${randomUUID()}` })
+      assert.equal(failed.status, 500)
+      assert.deepEqual(await financialState(app), first)
+    } finally { await app.database(db => db.exec('DROP TRIGGER reject_fee_fixture ON bank_transactions; DROP FUNCTION reject_fee_fixture()')) }
+    assert(!ok(await app.call(routes.payees(), { token: sender.token })).some(row => row.name === 'TEST ONLY failed payee'))
+    await reconcile(app)
+  })
+})
+
 test('explicit live mode in an isolated production fixture rejects unavailable SMS and identity providers', { ...testOptions, timeout: 60000 }, async t => {
   const app = await fixture({ production: true, mode: 'live' })
   t.after(() => app.close())
@@ -500,21 +404,30 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
   await app.database(db => db.query(`INSERT INTO customer_sessions(id,owner_id,phone,device,created_at,expires_at,ended_at)
     VALUES($1,$2,$3,'TEST ONLY direct session',$4,$5,NULL)`, [sessionId, customer.id, customer.phone, new Date().toISOString(), Date.now() + 3_600_000]))
   const supervisor = await app.supervisorLogin(), transactionId = `txn_live_${randomUUID()}`, approvalId = `A_live_${randomUUID()}`
+  const recipient = { name: 'TEST ONLY live hold recipient', accountNo: '8820999999990001' }
   let cardId, mandateId, request, holdUntil
   // Persist an actual executable legacy hold. Without the live bankHooks guard,
   // staff settlement would move these balances rather than merely returning 404.
-  await app.editCustomer(customer.id, profile => {
+  await app.editCustomer(customer.id, (profile, _connection, profiles) => {
     const from = profile.accounts.find(row => row.currency === 'CNY' && row.available >= 1200)
-    const to = profile.accounts.find(row => row.currency === 'CNY' && row.id !== from?.id)
-    assert(from && to, 'the disposable legacy fixture needs two CNY accounts')
+    assert(from, 'the disposable fixture needs one funded CNY account')
+    assert.equal(profile.accounts.length, 1, 'live rejection must also hold under the single funding account model')
+    // Explicitly seed a different fixture owner. Production may contain only the
+    // bootstrap customer and must never create a second account for that owner.
+    const target = structuredClone(profile)
+    target.user = { ...target.user, id: 'test_live_recipient', phone: '13900139088', name: recipient.name }
+    target.accounts = [{ ...from, accountNo: recipient.accountNo, balance: 0, available: 0 }]
+    Object.assign(target, { currencyBalances: [], retiredBalances: [], accountAliases: {}, accountNumberAliases: {},
+      transactions: [], cards: [], cardSecrets: {}, fpsRegistrations: [], payees: [], autoDebits: [] })
+    profiles[target.user.phone] = target
     cardId = profile.cards.find(row => row.status === 'active')?.id
     mandateId = profile.autoDebits?.[0]?.id ?? 'test-only-missing-mandate'
     holdUntil = new Date(Date.now() + 60_000).toISOString()
-    request = { fromAccountId: from.id, channel: 'bank', scope: 'domestic', payeeName: profile.user.name,
-      payeeAccountNo: to.accountNo, payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount: 1200, memo: 'TEST ONLY blocked live settlement' }
+    request = { fromAccountId: from.id, channel: 'bank', scope: 'domestic', payeeName: recipient.name,
+      payeeAccountNo: recipient.accountNo, payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount: 1200, memo: 'TEST ONLY blocked live settlement' }
     from.available -= 1200
     profile.transactions.unshift({ id: transactionId, accountId: from.id, direction: 'out', amount: 1200, signedAmount: -1200,
-      counterparty: profile.user.name, memo: request.memo, category: 'transfer', status: 'pending', pendingReason: 'inflight',
+      counterparty: recipient.name, memo: request.memo, category: 'transfer', status: 'pending', pendingReason: 'inflight',
       createdAt: new Date().toISOString(), holdUntil, heldRequest: request, heldFrozenAmount: 1200,
       detail: { referenceNo: `TEST-${transactionId}`, channel: 'transfer', settleCurrency: 'CNY', balanceBefore: from.balance, balanceAfter: from.balance } })
   })

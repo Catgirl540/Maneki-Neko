@@ -137,7 +137,7 @@ node tools/check-http-frontend.mjs
 收款字段与剪贴板检查运行 `node tools/check-receiving.mjs`。
 
 上述浏览器脚本需要可用的 Chromium，可通过 `CHROME_PATH` 指定；HTTP 脚本自行启动临时后端和数据库。
-涉及 Agent HTTP 链路的修改，再运行 `node tools/check-agent-http.mjs`（使用 fixture，不调用付费模型）。
+涉及 Agent HTTP 链路的修改，配置 `BANK_HTTP_TEST_DATABASE_URL` 与 `LUCKYCAT_SESSION_TEST_DATABASE_URL` 两个专用可丢弃库后运行 `node tools/check-agent-http.mjs`；数据库命名、依赖及框架构建步骤见 `server/README.md`。检查使用真实 PostgreSQL、Harness 与本地模型协议夹具，不调用付费模型。
 `node tools/check-agent-risk.mjs` 使用本地 HTTP 夹具验证余额工具的测评状态及确认流程：`unassessed` 为未完成、`expired` 为已完成但过期、`valid` 为有效、`unknown` 为无法确认；未完成时不返回默认等级、分数或日期作为个人测评历史。
 新增网页流程可独立验证：`node --import ./tools/ts-resolve-hook.mjs tools/check-web-ui-inputs.mjs` 检查金额与证件号展示；设置 `CHROME_PATH` 后运行 `node tools/check-web-ui-corrections.mjs`，只启动前端并模拟 API 响应，覆盖报价变化/过期、表单校验、核验入口及手机布局。
 客户端测试报告回归运行 `node tools/check-web-report-regressions.mjs`：使用非安全 HTTP 本地域名，所有银行与 Agent 请求均拦截为夹具，覆盖复制降级及手动复制、非法转账金额、登录深链、账单分页与失败重试、风险测评状态、空设备/日志和语音禁用原因。
@@ -203,4 +203,4 @@ npm --prefix app run build:server
 
 每位客户只有一个资金账户，多张银行卡绑定同一账户。`GET /api/accounts` 的 `currencyBalances` 保存各币种余额；币种分区 ID 用于兼容流水与换汇请求，不作为独立账户或卡账户展示。不同币种不能直接加总。
 
-本地银行档案 v19 将旧卡账户的同币种余额、可用余额及关联流水合并，保留回单原始账号快照；外币移入 `currencyBalances`，换汇不再开户。SQLite 中的 `bank_accounts` 兼容表仍记录记账分区，不能用该表行数作为客户账户数。新增能力应覆盖 `tools/check-single-account.mjs`，迁移不可用重置数据库代替。
+银行档案 v20 将旧卡账户的同币种余额、可用余额及关联流水投影到同一资金账户，保留原回单、SQL 交易关联和旧账本行；外币使用 `currencyBalances`，换汇不再开户。PostgreSQL 中的 `bank_accounts` 兼容表保存内部币种及退役账本记录，不能用该表行数作为客户账户数。新增能力应覆盖 `tools/check-single-account.mjs` 和 `npm --prefix server run check:integration`，迁移不可用重置数据库代替。

@@ -1350,6 +1350,7 @@ export function createMockApi(options?: {
             location: '招财猫银行 App',
             remark: `境外转账手续费 · ${req.payeeName.trim()}`,
           },
+          false,
         )
       }
 
@@ -1386,8 +1387,6 @@ export function createMockApi(options?: {
             : { accountNo: (req.payeeAccountNo ?? '').replace(/\D/g, '') }),
         })
       }
-      persist()
-
       persist()
       return {
         transactionId: tx.id,
@@ -1724,12 +1723,12 @@ export function createMockApi(options?: {
       await delay(620)
       const db = loadDb()
       const product = productByCode(req.productCode)
-      const account = settlementAccount(db)
 
       // —— 先开理财账户：银行户 ≠ 理财户（ZA 也是这么分的）——
       if (!db.wealthAccount.opened) {
         throw new ApiError('请先开立理财账户', 403, 'WEALTH_ACCOUNT_REQUIRED')
       }
+      const account = settlementAccount(db)
 
       // —— 适当性：不是提示，是硬拦截 ——
       // 「误导投资者购买与其风险承受能力不相匹配的理财产品」是明令禁止的行为

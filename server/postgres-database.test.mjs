@@ -8,6 +8,7 @@ import { join } from 'node:path'
 import { CURRENT_KEY, PROFILES_KEY, CORE_SCHEMA_VERSION, openBankDatabase, reconcileDatabase } from './database.mjs'
 import { createPgClient, postgresParameters } from './pg-client.mjs'
 import { createDataCipher } from './database-crypto.mjs'
+import { normalizeFundingAccount } from '../shared/account-model.mjs'
 
 const url = process.env.BANK_TEST_DATABASE_URL
 process.env.BANK_DATA_KEY ??= Buffer.alloc(32, 39).toString('base64')
@@ -64,6 +65,46 @@ test('repeated snapshots keep sequence identity and post balance deltas once', o
   profile.accounts[0].available -= 100; stage(bank, profile); await bank.storage.flush()
   assert.equal(await count(bank, 'journal_batches'), 2)
   assert.equal((await reconcileDatabase(bank.db)).ok, true)
+}))
+
+test('single funding migration preserves frozen money, original transaction identity and retired ledger history across restart', options, () => scratch(async (bank, schema) => {
+  const profile = sample()
+  profile.accounts.push({ ...profile.accounts[0], id: 'old-cny', accountNo: '8820990000000002', balance: 25_000, available: 20_000 },
+    { ...profile.accounts[0], id: 'old-usd', accountNo: '8820990000000003', currency: 'USD', balance: 10_000, available: 9_000 })
+  profile.cards[0].accountId = 'old-cny'
+  profile.transactions[0].accountId = 'old-cny'
+  profile.transactions[0].detail.accountNo = '8820990000000002'
+  await seed(bank, profile)
+  const original = (await bank.db.query('SELECT seq,account_id,created_at,amount_cents FROM bank_transactions')).rows[0]
+  const historicEntries = (await bank.db.query('SELECT * FROM journal_entries ORDER BY id')).rows
+  const migrated = clone(profile)
+  normalizeFundingAccount(migrated); migrated.schema = 20
+  // A rejected migration must not leave aliases or half of the balance move.
+  const invalid = clone(migrated); invalid.transactions[0].amount += 1
+  stage(bank, invalid)
+  await assert.rejects(bank.storage.flush())
+  assert.deepEqual(JSON.parse(bank.storage.getItem(CURRENT_KEY)), profile)
+  stage(bank, migrated); await bank.storage.flush()
+  assert.equal(migrated.accounts.length, 1)
+  assert.equal(migrated.accounts[0].balance, 125_000)
+  assert.equal(migrated.accounts[0].available, 120_000)
+  assert.equal(migrated.currencyBalances[0].available, 9_000)
+  assert.deepEqual((await bank.db.query('SELECT seq,account_id,created_at,amount_cents FROM bank_transactions')).rows[0], original)
+  assert.deepEqual((await bank.db.query('SELECT * FROM journal_entries WHERE id <= $1 ORDER BY id', [historicEntries.at(-1).id])).rows, historicEntries)
+  assert.equal((await bank.db.query("SELECT balance_cents FROM bank_accounts WHERE id='old-cny'")).rows[0].balance_cents, 0)
+  const batches = await count(bank, 'journal_batches')
+  const reopened = await openBankDatabase(url, { schema, autoMigrate: false })
+  try {
+    const saved = JSON.parse(reopened.storage.getItem(CURRENT_KEY))
+    assert.equal(saved.transactions[0].accountId, 'a1')
+    assert.equal(saved.transactions[0].legacyAccountId, 'old-cny')
+    assert.equal(saved.transactions[0].detail.accountNo, '8820990000000002')
+    assert.equal(saved.cards[0].accountId, 'a1')
+    assert.equal(saved.accountNumberAliases['8820990000000002'], 'a1')
+    normalizeFundingAccount(saved); stage(reopened, saved); await reopened.storage.flush()
+    assert.equal(await count(reopened, 'journal_batches'), batches, 'repeated migration cannot move funds twice')
+    assert.equal((await reconcileDatabase(reopened.db)).ok, true)
+  } finally { await reopened.close() }
 }))
 
 test('unit of work commits audit SQL and final profile together and rolls both back', options, () => scratch(async bank => {

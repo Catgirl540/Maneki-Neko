@@ -1,4 +1,7 @@
-import './legacy-sqlite-fixture-disabled.mjs'
+import { fixture as bankFixture } from '../server/testing/http-fixture.mjs'
+import { createPgClient } from '../server/pg-client.mjs'
+import { readFile } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
 /** 使用本机模型协议 fixture 驱动真实 Harness、银行 HTTP 与可选浏览器；不调用外部模型。 */
 import { createServer as http } from 'node:http'
 import { createServer as net } from 'node:net'
@@ -12,7 +15,16 @@ import { summarizeRiskAssessment } from '../framework/bridge/wealth-risk.mjs'
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const tmp = await mkdtemp(join(tmpdir(), 'agent-runtime-'))
 const free = async () => { const s=net();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p }
-const bankPort = await free(), agentPort = await free(), providerPort = await free()
+const sessionUrl = process.env.LUCKYCAT_SESSION_TEST_DATABASE_URL
+if (!sessionUrl || !/^postgres(?:ql)?:$/.test(new URL(sessionUrl).protocol)) throw new Error('LUCKYCAT_SESSION_TEST_DATABASE_URL must specify its dedicated disposable PostgreSQL database')
+assert.match(new URL(sessionUrl).pathname, /^\/maneki_ai_sessions_test(?:_[a-z0-9_]+)?$/, 'Agent regression requires its dedicated disposable session database')
+const sessionDb = createPgClient(sessionUrl)
+const backend = await bankFixture()
+assert.match((await sessionDb.query('SELECT current_database() AS name')).rows[0].name, /^maneki_ai_sessions_test(?:_[a-z0-9_]+)?$/)
+await sessionDb.query('DROP SCHEMA IF EXISTS ai_sessions CASCADE')
+await sessionDb.query(await readFile(new URL('../framework/bridge/session-schema.sql', import.meta.url), 'utf8'))
+const sessionKey = randomBytes(32).toString('base64')
+const agentPort = await free(), providerPort = await free()
 const processes=[]; let agentLog='';let modelRequests=[];let fixtures={};const counters={}; let vite, browser
 const provider=http(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body);modelRequests.push(data)
@@ -21,27 +33,29 @@ const provider=http(async(req,res)=>{
  const first=(counters[which]=(counters[which]??0)+1)===1
  const tool=fixtures[which]
  if (tool.failAlways || tool.failAt?.includes(counters[which])) {
+   if (tool.failDelayMs) await new Promise(r=>setTimeout(r,tool.failDelayMs))
    res.writeHead(tool.status ?? 503, {'content-type':'application/json'})
    res.end(JSON.stringify({error:{message:'fixture transient failure',type:'server_error'}}));return
  }
  res.writeHead(200,{'content-type':'text/event-stream'})
  const send=(delta,finish_reason=null)=>res.write(`data: ${JSON.stringify({id:'chatcmpl-test',object:'chat.completion.chunk',created:1,model:'luckycat-test',choices:[{index:0,delta,finish_reason}]})}\n\n`)
  const useTool = first && !!tool.name
- send({role:'assistant',...(useTool?{tool_calls:[{index:0,id:`call_${which}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]}:{content:'已根据账户服务返回的结果完成处理。'})})
+ send({role:'assistant',...(useTool?{tool_calls:[{index:0,id:`call_${which}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]}:{content:'已根据账户服务返回的结果'})})
+ if (!useTool) { await new Promise(r => setTimeout(r, 100)); send({content:'完成处理。'}) }
  send({},useTool?'tool_calls':'stop');res.end('data: [DONE]\n\n')
 }); await new Promise(r=>provider.listen(providerPort,'127.0.0.1',r))
 const start=(file,env)=>{const c=spawn(process.execPath,[file],{cwd:root,env:{...process.env,...env},stdio:['ignore','pipe','pipe']});processes.push(c);c.stdout.on('data',x=>agentLog+=x);c.stderr.on('data',x=>agentLog+=x);return c}
-const bank=`http://127.0.0.1:${bankPort}`, agent=`http://127.0.0.1:${agentPort}`
+const bank=backend.base, agent=`http://127.0.0.1:${agentPort}`
 const api=async(base,path,token,body)=>{const r=await fetch(base+path,{method:body===undefined?'GET':'POST',headers:{'content-type':'application/json',...(token?{authorization:`Bearer ${token}`}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});return {status:r.status,data:await r.json()}}
 const ready=async(base,path,token)=>{for(let n=0;n<100;n++){try{if((await api(base,path,token)).status===200)return}catch{}await new Promise(r=>setTimeout(r,100))}throw new Error(agentLog)}
 const controllers=[]
 try{
- start('server/index.mjs',{BANK_PORT:String(bankPort),BANK_DB_FILE:join(tmp,'bank.sqlite'),BANK_STATE_FILE:join(tmp,'state.json')});await ready(bank,'/health')
+ await ready(bank,'/health')
  const login=async phone=>{const sms=(await api(bank,'/api/auth/sms-code',null,{phone})).data;return (await api(bank,'/api/auth/login',null,{phone,password:'123456',smsCode:sms.demoCode})).data}
  const a=await login('13800138000'),b=await login('13600136000');const accounts=(await api(bank,'/api/accounts',a.token)).data,other=(await api(bank,'/api/accounts',b.token)).data
  fixtures={fixture_balance:{name:'bank_get_balance',args:{}},fixture_transfer:{name:'bank_transfer',args:{fromAccountId:accounts[0].id,payeeName:b.user.name,payeeAccountNo:other[0].accountNo,payeeBankCode:'LCB',payeeBankRegion:'CN',amountCents:500,memo:'runtime check'}},fixture_question:{name:'ask_user_question',args:{questions:[{id:'purpose',question:'请选择用途',options:[{label:'生活',description:'日常支出'},{label:'其他',description:'其他用途'}]}]}}}
- const patch=join(tmp,'provider.yml');await writeFile(patch,`- id: llm-pi-ai\n  config:\n    providers:\n      test:\n        apiKeyEnv: LUCKYCAT_TEST_KEY\n        api: openai-completions\n        baseURL: http://127.0.0.1:${providerPort}/v1\n        retryPolicy:\n          mode: normal\n          maxRetries: 3\n          retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]\n          backoff:\n            initialDelayMs: 250\n            maxDelayMs: 500\n            jitterRatio: 0\n        models:\n          - id: luckycat-test\n            name: Test\n            contextWindow: 128000\n- id: luckycat-rag\n  disabled: true\n- id: luckycat-embedding\n  disabled: true\n`)
- start('framework/bridge/demo-server.mjs',{LUCKYCAT_DEMO_PORT:String(agentPort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_PROVIDER:'test',LUCKYCAT_MODEL:'luckycat-test',LUCKYCAT_TEST_KEY:'test-only',LUCKYCAT_PATCHES:patch,LUCKYCAT_DISABLE_VOICE:'1'})
+ const patch=join(tmp,'provider.yml');await writeFile(patch,`- id: llm-pi-ai\n  config:\n    providers:\n      test:\n        apiKeyEnv: LUCKYCAT_TEST_KEY\n        api: openai-completions\n        baseURL: http://127.0.0.1:${providerPort}/v1\n        retryPolicy:\n          mode: normal\n          maxRetries: 3\n          retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]\n          backoff:\n            initialDelayMs: 250\n            maxDelayMs: 500\n            jitterRatio: 0\n        models:\n          - id: luckycat-test\n            name: Test\n            input: [text, image]\n            contextWindow: 128000\n- id: luckycat-rag\n  disabled: true\n- id: luckycat-embedding\n  disabled: true\n`)
+ start('framework/bridge/demo-server.mjs',{LUCKYCAT_DEMO_PORT:String(agentPort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_SESSION_DATABASE_URL:sessionUrl,LUCKYCAT_SESSION_DATA_KEY:sessionKey,LUCKYCAT_PROVIDER:'test',LUCKYCAT_MODEL:'luckycat-test',LUCKYCAT_TEST_KEY:'test-only',LUCKYCAT_PATCHES:patch,LUCKYCAT_DISABLE_VOICE:'1',LUCKYCAT_SESSION_DIR:join(tmp,'context')})
  await ready(agent,'/agent-api/health',a.token);assert.equal((await api(agent,'/agent-api/health')).status,401);assert.equal((await api(agent,'/consent/challenge',null,{})).status,403)
  const session=(await api(agent,'/agent-api/sessions',a.token,{})).data.sessionId
  assert.equal((await api(agent,`/agent-api/sessions/${session}`,b.token)).status,404)
@@ -59,7 +73,7 @@ try{
  const result=await wait(e=>e.type==='tool-result');assert.equal(result.isError,false);assert(result.text.includes('http'))
  const riskResult = JSON.parse(result.text).risk
  assert.deepEqual(riskResult, summarizeRiskAssessment((await api(bank, '/api/wealth/overview', a.token)).data.risk))
- await wait(e=>e.type==='status'&&e.status==='idle');console.log('PASS 实际 Harness → 确认卡 → HTTP 工具 → SSE 返回账户数据')
+ await wait(e=>e.type==='status'&&e.status==='idle');assert(events.some(e=>e.type==='assistant-update'&&e.text));console.log('PASS 实际 Harness → 确认卡 → HTTP 工具 → SSE 流式返回账户数据')
  // Separate session to keep fixture provider deterministic.
  const transferSession=(await api(agent,'/agent-api/sessions',a.token,{})).data.sessionId
  events.length=0;c.abort();await pump
@@ -77,7 +91,7 @@ try{
  const modelText=JSON.stringify(modelRequests);assert(!modelText.includes(a.token));assert(!modelText.includes('"888888"'));console.log('PASS Harness 转账只在确认验密后入账，银行令牌和支付密码不进入模型请求')
  tc.abort();await tp
  // 参数错误与准备失败必须保持为真实工具错误，不能伪装成用户拒绝。
- const { amountCents: omittedAmount, ...withoutAmount } = fixtures.fixture_transfer.args
+ const { amountCents: _omittedAmount, ...withoutAmount } = fixtures.fixture_transfer.args
  fixtures.fixture_missing_amount = { name: 'bank_transfer', args: withoutAmount }
  fixtures.fixture_quote_failure = { name: 'bank_transfer', args: { ...withoutAmount, amountCents: 200000000 } }
  fixtures.fixture_cancel_transfer = { name: 'bank_transfer', args: { ...withoutAmount, amountCents: 500 } }
@@ -115,7 +129,7 @@ try{
  fixtures.fixture_auto_exhaust = { failAlways: true }
  fixtures.fixture_auth_failure = { failAlways: true, status: 401 }
  fixtures.fixture_auto_payment = { ...fixtures.fixture_transfer, args: { ...withoutAmount, amountCents: 700 }, failAt: [2, 3] }
- fixtures.fixture_auto_cancel = { failAlways: true }
+ fixtures.fixture_auto_cancel = { failAlways: true, failDelayMs: 500 }
  for (const name of ['fixture_auto_recover', 'fixture_auto_exhaust', 'fixture_auth_failure', 'fixture_auto_payment', 'fixture_auto_cancel']) {
    const sid = (await api(agent, '/agent-api/sessions', a.token, {})).data.sessionId
    let cursor = (await api(agent, `/agent-api/sessions/${sid}/events`, a.token)).data.cursor
@@ -164,6 +178,22 @@ try{
    }
  }
  console.log('PASS 自动重试恢复、3次耗尽、认证不重试、停止取消退避；付款后回复重试只扣款一次')
+ fixtures.fixture_image = {}
+ const imageSession = (await api(agent, '/agent-api/sessions', a.token, {})).data.sessionId
+ const image = { mimeType: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAn0lEQVRoge2SQQkAQRDDKqJiT1gEroh7hIFCBKSh6cdpoht0A9ArdhfiLtENugHoFbsLcZfoBt0A9IrdhbhLdINuAHrF7kLcJbpBNwC9Ynch7hLdoBuAXrG7EHeJbtANQK/YXYi7RDfoBqBX7C7EXaIbdAPQK3YX4i7RDboB6BW7C3GX6AbdAPSK3YW4S3SDbgB6xe5C3CW6QTcAveIfHnbOAS1j/WHTAAAAAElFTkSuQmCC' }
+ assert.equal((await api(agent, `/agent-api/sessions/${imageSession}/messages`, b.token, { text: 'fixture_image', image })).status, 404)
+ assert.equal((await api(agent, `/agent-api/sessions/${imageSession}/messages`, a.token, { text: 'fixture_image', image })).status, 202)
+ let imageEvents
+ for (let n=0;n<200;n++) {
+   imageEvents = (await api(agent, `/agent-api/sessions/${imageSession}/events?after=0`, a.token)).data.events
+   if (imageEvents.some(e=>e.type==='status'&&e.status==='idle')) break
+   await new Promise(r=>setTimeout(r,50))
+ }
+ assert(!imageEvents.some(e=>e.type==='error'), JSON.stringify(imageEvents))
+ assert(imageEvents.some(e=>e.type==='assistant'&&e.text))
+ assert(modelRequests.some(req=>req.messages.some(message=>Array.isArray(message.content)&&message.content.some(block=>block.type==='image_url'&&block.image_url.url.includes(image.data)))))
+ assert(!JSON.stringify(modelRequests).includes(a.token))
+ console.log('PASS 图片内联进入模型上下文，跨客户发送被拒，流式结果持久化')
  if (process.argv.includes('--browser')) {
    const { chromium } = await import('playwright-core')
    const { createServer } = await import('../app/node_modules/vite/dist/node/index.js')
@@ -261,4 +291,4 @@ try{
 
  }
  console.log('ALL PASS')
-}catch(error){console.error(agentLog);throw error}finally{await browser?.close();await vite?.close();controllers.forEach(c=>c.abort());processes.reverse().forEach(c=>c.kill('SIGTERM'));await Promise.all(processes.map(c=>new Promise(r=>c.exitCode===null?c.once('exit',r):r())));provider.closeAllConnections();await new Promise(r=>provider.close(r));await rm(tmp,{recursive:true,force:true})}
+}catch(error){console.error(agentLog);throw error}finally{await browser?.close();await vite?.close();controllers.forEach(c=>c.abort());processes.reverse().forEach(c=>c.kill('SIGTERM'));await Promise.all(processes.map(c=>new Promise(r=>c.exitCode===null?c.once('exit',r):r())));provider.closeAllConnections();await new Promise(r=>provider.close(r));await backend.close();await sessionDb.query('DROP SCHEMA IF EXISTS ai_sessions CASCADE');await sessionDb.close();await rm(tmp,{recursive:true,force:true})}

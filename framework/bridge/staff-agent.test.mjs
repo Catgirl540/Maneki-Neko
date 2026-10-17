@@ -1,24 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer } from 'node:net'
-import { spawn } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
+import { fixture as bankFixture, testOptions } from '../../server/testing/http-fixture.mjs'
 import { createStaffAgent, sanitizeStaffResult } from './staff-agent.mjs'
 import { prepareTransfer } from './transfer-agent.mjs'
 import { checkPolicy } from '../scripts/check-staff-tool-policy.mjs'
 
-test('员工工具在独立 SQLite HTTP 后端验证权限、确认与真实业务', async t => {
-  const dir = await mkdtemp(join(tmpdir(), 'staff-agent-'))
-  const socket = createServer(); await new Promise(r => socket.listen(0, '127.0.0.1', r))
-  const port = socket.address().port; await new Promise(r => socket.close(r))
+test('员工工具在独立 PostgreSQL HTTP 后端验证权限、确认与真实业务', { ...testOptions, timeout: 60000 }, async t => {
+  const backend = await bankFixture({ reviewThreshold: 50000000, holdSeconds: 300 })
   const root = fileURLToPath(new URL('../../', import.meta.url))
-  const base = `http://127.0.0.1:${port}`
-  const child = spawn(process.execPath, [join(root, 'server/index.mjs')], { cwd: root, env: { ...process.env, BANK_PORT: String(port), BANK_DB_FILE: join(dir, 'bank.sqlite'), BANK_STATE_FILE: join(dir, 'empty.json') }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
-  let log = ''; child.stdout.on('data', x => log += x); child.stderr.on('data', x => log += x)
+  const base = backend.base
   const api = async (path, token, body, method = body === undefined ? 'GET' : 'POST') => {
     const res = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
     const value = await res.json(); if (!res.ok) throw Object.assign(Error(value.message), { status: res.status }); return value
@@ -30,10 +23,9 @@ test('员工工具在独立 SQLite HTTP 后端验证权限、确认与真实业�
     const i = input(id, name, args); const c = await agent.prepare(i); await agent.approve(c, verification); return agent.execute(i)
   }
   try {
-    for (let i = 0; ; i++) { try { await api('/health'); break } catch { if (i >= 100) throw Error(log); await new Promise(r => setTimeout(r, 100)) } }
-    const csr = await api('/staff-api/login', null, { name: '王小明', password: '123456' })
-    const supervisor = await api('/staff-api/login', null, { name: '李主管', password: '123456' })
-    const ops = await api('/staff-api/login', null, { name: '运维人员', password: '123456' })
+    const csr = await backend.staffLogin('王小明')
+    const supervisor = await backend.staffLogin('李主管')
+    const ops = await backend.staffLogin('运维人员')
     for (const [id, who] of [['csr', csr], ['supervisor', supervisor], ['ops', ops]]) sessions.set(id, { ownerId: who.staff.id, bankToken: who.token, activity: { cancelled: false }, stopping: false })
     let customerId, cardId, ticketId, customerLogin
     await t.test('配置只允许员工工具和提问工具', () => assert.equal(checkPolicy(join(root, 'framework/profiles/staff/cordis.patch.yml')), 16))
@@ -158,6 +150,6 @@ test('员工工具在独立 SQLite HTTP 后端验证权限、确认与真实业�
       await assert.rejects(agent.execute(i), e => e.status === 401)
     })
   } finally {
-    agent.close(); child.kill(); await new Promise(r => child.once('exit', r)); await rm(dir, { recursive: true, force: true })
+    agent.close(); await backend.close()
   }
 })

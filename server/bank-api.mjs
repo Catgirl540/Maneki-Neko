@@ -1,5 +1,14 @@
 // HTTP adapter for server-owned banking business rules. All mutations are committed as a single unit.
 import { randomUUID } from 'node:crypto'
+import { maskPhone } from './lib/format.mjs'
+
+/** Deterministic sandbox status tags; no inferred risk score or credit decision. */
+function riskTagsFor(profile) {
+  const tags = []
+  if (profile.transactions.some(row => row.pendingReason === 'inflight')) tags.push('大额转账关注')
+  if (profile.cards.some(row => row.status === 'locked')) tags.push('有锁卡')
+  return tags
+}
 
 /** 用来把 `routes.xxx(SENTINEL)` 里的参数位找出来，从而推出路径模板。 */
 const SENTINEL = '\u0000ARG\u0000'
@@ -261,7 +270,7 @@ export async function createBankApi({
     settleClearingTransactions: mockSettleClearing,
   } = mockModule
   const { routes, ApiError } = contractModule
-  const { findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb, ledgerBalances } = dbModule
+  const { findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb, ledgerBalances, findBalance } = dbModule
   await storage.beginUnitOfWork()
   try { dbModule.loadDb(); await storage.commitUnitOfWork() }
   catch (error) { await storage.rollbackUnitOfWork(); throw error }
@@ -601,6 +610,7 @@ export async function createBankApi({
           recentTransactions: txs.map((t) => ({
             id: t.id,
             amount: t.signedAmount,
+            currency: findBalance(profile, t.accountId)?.currency ?? t.detail?.settleCurrency,
             counterparty: t.counterparty,
             status: t.status,
             ...(t.pendingReason ? { pendingReason: t.pendingReason } : {}),

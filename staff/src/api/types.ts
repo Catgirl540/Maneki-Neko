@@ -156,6 +156,7 @@ export interface CustomerProfile {
   recentTransactions: Array<{
     id: string
     amount: Cents
+    currency?: string
     counterparty: string
     status: string
     /** 'inflight' = 在途延迟到账 · 'clearing' = 模拟清算（§9.2） */
