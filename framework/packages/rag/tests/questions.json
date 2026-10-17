@@ -378,5 +378,15 @@
     "query": "工单已解决还能继续发消息吗",
     "source": "kb-assistant#human-replies",
     "critical": true
+  },
+  {
+    "query": "一个储蓄资金账户能关联多张银行卡吗",
+    "source": "kb-accounts#relations",
+    "critical": true
+  },
+  {
+    "query": "申请银行卡会再开户吗，卡片是不是单独存钱",
+    "source": "kb-accounts#relations",
+    "critical": true
   }
 ]

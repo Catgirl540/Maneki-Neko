@@ -18,6 +18,9 @@ const text = id => corpus.documents.flatMap(d => d.sections.map(s => ({ key: `${
 const api = createMockApi()
 resetDb()
 const account = (await api.listAccounts())[0]
+assert.equal((await api.listAccounts()).length, 1)
+assert.match(text('kb-accounts#relations'), /只有一个储蓄资金账户/)
+assert((await api.listCards()).every(card => card.accountId === account.id))
 const quote = patch => api.quoteTransfer({ fromAccountId: account.id, amount: 100000, scope: 'domestic', channel: 'bank', bankCode: 'LCB', bankRegion: 'CN', ...patch })
 const domestic = await quote({})
 assert.match(text('kb-accounts#deposit'), /暂不展示或分享 FPS 手机号、ID/)

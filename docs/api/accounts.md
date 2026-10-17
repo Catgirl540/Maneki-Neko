@@ -15,17 +15,23 @@
 
 `POST /api/auth/sms-code` → `{ sent: true, demoCode: "000000" }`（演示环境才回传 `demoCode`）。
 
-## 账户列表（多币种）
+## 唯一资金账户与多币种余额
 
-`GET /api/accounts` → `Account[]`
+`GET /api/accounts` → `Account[]`。本地实现返回一个资金账户，多张银行卡关联同一 `id`。
+
+`currencyBalances` 是该账户下的币种记账分区，每项包含 `id`、`currency`、`balance`、`available` 等字段，共享同一个 `accountNo`。分区 `id` 用于兼容既有流水和换汇接口，不代表另外开立账户。不同币种金额不得直接相加。
+
+PostgreSQL 档案 v20 保留退役账本行。旧分区 ID 和旧账号仍可解析到当前归属；历史交易的 SQL 原始关联与回单账号快照保留，读取时返回当前 `accountId` 及可选的 `legacyAccountId`。首次换汇只初始化币种余额，跨币种 FPS 按确认报价贷记收款人的登记币种分区。
+
+员工客户档案的 `accounts[].currencyBalances` 与 `recentTransactions[].currency` 指明金额币种；显示外币不得加人民币符号。未提供交易币种的旧客户端夹具仍按原人民币契约兼容。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 账户 ID |
-| `accountNo` | string | 卡号（前端只展示尾号） |
+| `accountNo` | string | 银行账户号，与银行卡号分开 |
 | `label` | string | 账户名 |
 | `currency` | `'CNY'\|'USD'\|'HKD'` | 币种 |
-| `type` | string | 账户类型 |
+| `kind` | string | 账户类型 |
 | `balance` | Cents | 余额（分） |
 
 > 多币种对账：`Account.currency` 即权威币种；`formatCurrency(balance, currency)` 渲染。
@@ -72,21 +78,21 @@
 | 响应字段 | 说明 |
 | --- | --- |
 | `fx` | `FxQuote`：汇率、点差、锁价有效期等（口径同转账报价） |
-| `toAccountNo` | 目标币种账户；**不存在时后端返回「将自动开立」并自动开立同币种子账户** |
-| `toAvailableAfter` | 换汇后目标账户可用余额（预估） |
+| `toAccountNo` | 唯一资金账户号；缺少目标币种时仅初始化该币种余额，不另行开户 |
+| `toAvailableAfter` | 换汇后目标币种可用余额（预估） |
 
 ### 执行
 
 `POST /api/exchange` → `ExchangeResult`
 
 ```json
-{ "fromAccountId": "acc_0001", "toCurrency": "USD", "amount": 100000, "paymentPassword": "888888" }
+{ "fromAccountId": "acc_0001", "toCurrency": "USD", "amount": 100000, "quoteId": "报价返回的 quoteId", "paymentPassword": "888888" }
 ```
 
 | 响应字段 | 说明 |
 | --- | --- |
 | `transactionId` / `referenceNo` | 交易 ID / 业务参考号 |
-| `fromAccountId` / `toAccountId` | 扣账 / 入账账户 |
+| `fromAccountId` / `toAccountId` | 扣账 / 入账记账分区 ID（保留原接口字段名） |
 | `fx` | 成交汇率 |
 | `createdAt` | 成交时间 |
 

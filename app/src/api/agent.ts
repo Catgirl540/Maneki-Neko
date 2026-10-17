@@ -99,6 +99,7 @@ export type AgentEvent =
   | { type: 'session-restored'; interrupted: boolean }
   | { type: 'card-secret'; cardId: string; field: string; value: string; expiresAt: number }
   | { type: 'status'; status: 'running' | 'idle' }
+  | { type: 'model-retry'; phase: 'waiting' | 'running'; attempt: number; maxRetries?: number; delayMs: number; reason?: string }
   | { type: 'assistant'; text: string; messageId?: string }
   | { type: 'assistant-update'; messageId: string; text: string }
   | { type: 'assistant-reset'; messageId: string }

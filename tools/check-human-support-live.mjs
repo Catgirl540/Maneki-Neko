@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Opt-in real model smoke: only temporary customer data and a non-financial support ticket. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'

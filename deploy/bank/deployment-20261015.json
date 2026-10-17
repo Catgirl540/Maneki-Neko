@@ -1,0 +1,16 @@
+{
+  "host": "120.48.123.112",
+  "release": "/srv/maneki-bank/releases/core-20261015-r2",
+  "database": "/var/lib/luckycat-bank/bank.sqlite",
+  "integrationMode": "sandbox",
+  "schemaVersion": 2026101501,
+  "accountsPreserved": 12,
+  "transactionsPreserved": 49,
+  "frontEndUnchanged": true,
+  "frontendSha256": "bf23972c586c7c192ac139c60777e3c2fbf66206f1ef6acda0cac24a904e446e",
+  "artifactSha256": "23fdac62391ed9e75db79e2d7910379af76e7d0b6d0ae93a70d7f1391e7e2cc4",
+  "verifiedAt": "2026-10-15T17:10:36+08:00",
+  "backendTestsPassed": 34,
+  "operationsTestsPassed": 8,
+  "snapshotRestoreVerified": true
+}

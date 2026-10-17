@@ -146,7 +146,12 @@ export function createHttpPollChannel(options: { url: string; timeoutMs: number 
           throw new ConsentError('CHANNEL_UNREACHABLE', `连不上确认通道 ${endpoint.origin}`, { cause: error })
         }
         if (!response.ok) {
-          throw new ConsentError('CHANNEL_HTTP_STATUS', `确认通道返回 ${response.status} ${response.statusText}`)
+          let detail = ''
+          try {
+            const body = await response.json() as { error?: unknown }
+            if (typeof body.error === 'string') detail = `：${body.error.slice(0, 300)}`
+          } catch { /* 非 JSON 错误页只报告状态码。 */ }
+          throw new ConsentError('CHANNEL_HTTP_STATUS', `确认信息准备失败（HTTP ${response.status}）${detail}`)
         }
         return await readAnswer(response)
       } finally {

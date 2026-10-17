@@ -4,15 +4,17 @@
 客户端只依赖 `app/src/api/contract.ts` 的 `BankApi` 与 `routes` 路径表，
 后端（`server/` + `framework/bridge/`）把同一份契约映射成 `/api/*`。
 
+账户、币种余额与银行卡的关系以 [账户模型约束](../product/account-model.md) 为准；分区 ID 不代表独立开户。
+
 ## 单一事实源
 
 - 路径与接口面：`app/src/api/contract.ts`（`routes` + `BankApi`）
 - 请求 / 响应类型：`app/src/api/types.ts`
 - HTTP 适配：`app/src/api/http.ts`
-- 浏览器模拟 + 服务端复用：`app/src/api/mock/`
-- 后端路由映射：`framework/bridge/demo-bank.mjs`（启动时断言 `ROUTES` 与 `BankApi` 双向对齐）
+- 浏览器模拟：`app/src/api/mock/`；服务端业务：`server/domain/`；单账户纯规则：`shared/account-model.mjs`
+- 后端路由映射：`server/bank-api.mjs`（启动时断言 `ROUTES` 与 `BankApi` 双向对齐）；`framework/bridge/demo-bank.mjs` 仅保留历史独立演示入口
 
-改接口时，`types.ts → contract.ts → http.ts → mock → demo-bank.mjs` 必须一起改，
+改接口时，`types.ts → contract.ts → http.ts → mock → server/api/contract.mjs → server/domain/ → server/bank-api.mjs` 必须一起核对，
 再更新本目录与根 `README.md` 的接口清单；`node tools/check-contract.mjs`、`node tools/check-routes.mjs` 用于校验一致性。
 
 ## 基本约定

@@ -10,6 +10,7 @@
  */
 
 import { STORAGE_KEYS, storage, trySet } from './storage'
+import { groupChatMessages } from './agentTurns'
 const historyKey = (ownerId?: string) => ownerId ? `${STORAGE_KEYS.agentSessions}.${ownerId}` : STORAGE_KEYS.agentSessions
 
 /** 对话里的一条内容。 */
@@ -131,9 +132,11 @@ export function relativeTime(
   return `${at.getFullYear()} 年 ${at.getMonth() + 1} 月 ${at.getDate()} 日`
 }
 
-/** 一段对话有多少条"人看得见"的内容（工具执行过程不算）。 */
+/** 用户提问和整轮助手答复各算一条，过程中的分段与工具不重复计数。 */
 export function messageCount(conversation: StoredConversation): number {
-  return conversation.items.filter(item => item.kind === 'user' || item.kind === 'assistant').length
+  return groupChatMessages(conversation.items).filter(
+    message => message.kind === 'user' || message.items.some(item => item.kind === 'assistant'),
+  ).length
 }
 
 /**

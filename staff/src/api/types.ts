@@ -146,7 +146,7 @@ export interface CustomerProfile {
   customerId: string
   name: string
   phoneMasked: string
-  accounts: Array<{ id: string; label: string; balance: Cents }>
+  accounts: Array<{ id: string; label: string; currency?: string; balance: Cents; available?: Cents; currencyBalances?: Array<{ id: string; currency: string; balance: Cents; available: Cents }> }>
   cards: Array<{ id: string; last4: string; status: string }>
   /**
    * 代扣协议列表（v1.2 补，乙交付记录 §4.2）。
@@ -156,6 +156,7 @@ export interface CustomerProfile {
   recentTransactions: Array<{
     id: string
     amount: Cents
+    currency?: string
     counterparty: string
     status: string
     /** 'inflight' = 在途延迟到账 · 'clearing' = 模拟清算（§9.2） */

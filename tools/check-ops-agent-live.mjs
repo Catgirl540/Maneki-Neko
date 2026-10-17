@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Real GLM + Clef, isolated synthetic workspace and bank; keys only in process environment. */
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'

@@ -11,6 +11,8 @@ import { EmptyState, Skeleton } from '@/components/ui/Segmented'
 import { TransactionRow } from '@/components/ui/TransactionRow'
 import { ArrowDownLeftIcon, ArrowUpRightIcon, CardIcon, GlobalIcon } from '@/components/ui/icons'
 import { CURRENCY_SYMBOL, formatCurrency, formatToday } from '@/lib/format'
+import { currencyBalances } from '@/lib/currencyBalances'
+import { CURRENCY_LABEL } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
 import { useReveal } from '@/lib/useReveal'
 
@@ -43,9 +45,9 @@ export function DashboardPage() {
         <div><span>本月净变动</span><strong className="num">{balance.shown ? `${current.monthNetChange < 0 ? '-' : '+'}${formatCurrency(current.monthNetChange, current.currency)}` : '••••••'}</strong></div>
         <div className="account-summary-actions"><Button size="sm" onClick={() => openFlow('in')} icon={<ArrowDownLeftIcon size={16} />}>转入</Button><Button size="sm" variant="primary" onClick={() => openFlow('out')} icon={<ArrowUpRightIcon size={16} />}>转出</Button></div>
       </section>
-      {accounts.data.length > 1 && <div className="account-balance-list" aria-label="其他资金账户">
-        {accounts.data.slice(1).map(account => <article key={account.id}>
-          <span>{account.label}<small>{account.currency} · 尾号 {account.accountNo.slice(-4)}</small></span>
+      {currencyBalances(accounts.data).length > 1 && <div className="account-balance-list" aria-label="外币余额">
+        {currencyBalances(accounts.data).filter(row => row.currency !== current.currency).map(account => <article key={account.id}>
+          <span>{CURRENCY_LABEL[account.currency]}<small>{account.currency}</small></span>
           <strong className="num">{balance.shown ? formatCurrency(account.balance, account.currency) : '••••••'}</strong>
         </article>)}
       </div>}

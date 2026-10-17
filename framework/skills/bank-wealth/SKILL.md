@@ -17,6 +17,7 @@
       "ask_user_question"
     ],
     "sources": [
+      "docs/product/account-model.md",
       "framework/bridge/bank-agent.mjs",
       "framework/packages/bank-demo/src/http-tools.ts",
       "framework/knowledge/06-wealth.md",
@@ -33,6 +34,8 @@
 ## 必要信息
 
 比较产品先了解用途、可承受风险与资金期限。申购需明确产品与金额；赎回需本人持仓与份额，未指定份额按工具语义为全部赎回，意图不明确先提问。
+
+理财账户只代表投资资格和委托关系，申赎使用唯一储蓄资金账户；不能将理财开户描述成另开存钱账户。
 
 ## 办理步骤
 

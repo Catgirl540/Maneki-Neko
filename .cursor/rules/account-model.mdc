@@ -1,0 +1,9 @@
+---
+description: 维护单资金账户、多币种余额、多张银行卡的产品约束
+alwaysApply: true
+---
+
+- 涉及账户、银行卡、换汇、流水、开户或相关文档时，先读 `docs/product/account-model.md`。
+- 每位客户一个资金账户，多币种余额和多张卡归属该账户；不得按卡建户或换汇开户。
+- 分区 ID、旧数据库表名和历史设计不能作为恢复多账户逻辑的依据。
+- 同一提交同步维护说明与断言，运行 `npm --prefix app run check:account-model`。

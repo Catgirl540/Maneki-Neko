@@ -264,7 +264,7 @@ export function CardsPage() {
             <div className="card-overview">
               <div className="card-account-details">
                 <dl>
-                  <div><dt>关联资金账户</dt><dd>{linkedAccount?.label ?? '—'}<small>{linkedAccount ? `尾号 ${linkedAccount.accountNo.slice(-4)} · ${linkedAccount.currency}` : ''}</small></dd></div>
+                  <div><dt>资金账户</dt><dd>{linkedAccount?.label ?? '—'}<small>{linkedAccount ? `尾号 ${linkedAccount.accountNo.slice(-4)} · ${linkedAccount.currency}` : ''}</small></dd></div>
                   <div><dt>可用余额</dt><dd className="card-available-balance"><strong className="num">{linkedAccount
                     ? balanceShown ? formatCurrency(linkedAccount.available, linkedAccount.currency) : `${CURRENCY_SYMBOL[linkedAccount.currency]}••••••`
                     : '—'}</strong><RevealToggle shown={balanceShown} onToggle={toggleBalanceShown} /></dd></div>

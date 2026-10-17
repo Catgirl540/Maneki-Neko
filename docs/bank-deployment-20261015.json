@@ -1,0 +1,78 @@
+{
+  "verifiedAt": "2026-10-15T10:14:29Z",
+  "host": "120.48.123.112",
+  "release": "pg-20261015-r2",
+  "database": "PostgreSQL 16.15",
+  "databaseName": "maneki_bank",
+  "coreSchema": 2026101502,
+  "bankingAccountingSchema": 2026101504,
+  "integrationMode": "live",
+  "commercialReady": false,
+  "partnerBank": "not_selected",
+  "migration": {
+    "customers": 10,
+    "accounts": 12,
+    "historicalTransactions": 49,
+    "legacyJournalEntries": 6,
+    "approvals": 5,
+    "auditLogsAtMigration": 55,
+    "currency": "CNY",
+    "balanceCents": "44632455",
+    "availableCents": "44632455"
+  },
+  "aiMigration": {
+    "customer": {
+      "sessions": 8,
+      "events": 294
+    },
+    "staff": {
+      "sessions": 1,
+      "events": 20
+    },
+    "ops": {
+      "sessions": 3,
+      "events": 51
+    }
+  },
+  "validation": {
+    "backendTestsPassed": 65,
+    "aiDatabaseTestsPassed": 10,
+    "aiPublisherTestsPassed": 4,
+    "roleChecksPassed": 29,
+    "failed": 0,
+    "skipped": 0,
+    "financialBalancesUnchanged": true,
+    "authenticatedAiHealthPassed": true,
+    "frontendChanged": false
+  },
+  "backup": {
+    "file": "/var/backups/luckycat-bank/postgresql/bank-20261015T101055Z-198dcd9df191.dump",
+    "sizeBytes": 597351,
+    "sha256": "d43039ea2bbe7dbc6af490ae2c6f2748220a7d7f408c00d307fe06e3023f9a36",
+    "snapshotAt": "2026-10-15T10:10:55.231146Z"
+  },
+  "restoreDrill": {
+    "target": "bank_restore_maneki_20261015",
+    "inventoryMatched": true,
+    "customerProfilesDecrypted": 10,
+    "aiSessionsVerified": 12,
+    "aiEventsDecrypted": 365,
+    "databaseRestoreSeconds": 1.17,
+    "productionSwitched": false
+  },
+  "frontendSha256": "bf23972c586c7c192ac139c60777e3c2fbf66206f1ef6acda0cac24a904e446e",
+  "services": [
+    "luckycat-bank",
+    "luckycat-bridge",
+    "luckycat-staff-agent",
+    "luckycat-ops-agent"
+  ],
+  "remainingCommercialDependencies": [
+    "specific_bank_contract_and_production_api",
+    "bank_authorization_and_payment_dispatch_adapter",
+    "bank_uat_and_reconciliation",
+    "trusted_https",
+    "approved_accounting_policies_and_subject_versions",
+    "privacy_security_and_disaster_recovery_acceptance"
+  ]
+}

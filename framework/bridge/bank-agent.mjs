@@ -396,7 +396,10 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       if (['bank_list_banks', 'bank_list_payees'].includes(input.toolName)) {
         const query = String(input.arguments.keyword ?? '').trim().toLowerCase()
         const rows = data.filter(item => (input.toolName !== 'bank_list_banks' || !input.arguments.region || item.region === input.arguments.region) && (!query || [item.name, item.bankName, item.code, item.accountNo, item.fpsId].some(v => typeof v === 'string' && v.toLowerCase().includes(query))))
-        return { dataSource: 'http', result: { items: rows.slice(0, 20).map(item => input.toolName === 'bank_list_banks' ? { code: item.code, region: item.region, name: item.name, internal: !!item.internal } : item), total: rows.length, truncated: rows.length > 20, ...(rows.length > 20 ? { notice: '请提供更具体的名称或银行地区以缩小范围，不得猜测未返回的信息。' } : {}) } }
+        const notices = []
+        if (input.toolName === 'bank_list_payees') notices.push('这里只查询当前客户已保存的收款人，不是全行账户查询。未找到不代表账号不存在或户名错误；新收款人无需先保存，信息齐全后请用 bank_verify_recipient 核验。')
+        if (rows.length > 20) notices.push('请提供更具体的名称或银行地区以缩小范围，不得猜测未返回的信息。')
+        return { dataSource: 'http', result: { items: rows.slice(0, 20).map(item => input.toolName === 'bank_list_banks' ? { code: item.code, region: item.region, name: item.name, internal: !!item.internal } : item), total: rows.length, truncated: rows.length > 20, ...(input.toolName === 'bank_list_payees' ? { scope: 'saved-payees' } : {}), ...(notices.length ? { notice: notices.join(' ') } : {}) } }
       }
       if (input.toolName === 'bank_list_cards') return { dataSource: 'http', result: data.map(safeCard) }
       if (writable.has(input.toolName)) publish(input.sessionId, { type: 'bank-updated' })

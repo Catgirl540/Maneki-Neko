@@ -4,7 +4,7 @@
  * 这张卡对应运行时里**已经挂住**的那次工具调用：用户不回答，工具就一直不返回，
  * 模型的这一轮也走不下去。所以它是"必须处理"的东西，不是一条可以划过去的通知。
  *
- * 三种答法，可以混着用：
+ * 三种答法；单选题的选项与自填互斥，多选题可组合：
  *   1. **单选**（`multiSelect` 缺省）：选项渲染成 radio，选一个；
  *   2. **多选**（`multiSelect: true`）：渲染成 checkbox，选几个；
  *   3. **自己写**：每道题都带一个自由输入框（「其他」）。
@@ -24,6 +24,7 @@ import { AlertIcon, CheckIcon, SparkleIcon } from '../ui/icons'
 import { cn } from '../../lib/cn'
 import type { PendingAsk } from '../../lib/useAgentChat'
 import type { QuestionAnswerItem } from '../../api/agent'
+import { emptyQuestionDraft, isQuestionAnswered, questionAnswer, selectCustomAnswer, selectQuestionOption, writeCustomAnswer, type QuestionDraft } from '../../lib/questionDrafts'
 
 /** 把剩余时间说成「还剩 1 分 20 秒」。 */
 function remainingText(expiresAt: number, now: number): string {
@@ -31,20 +32,6 @@ function remainingText(expiresAt: number, now: number): string {
   if (seconds <= 0) return '已超时，需要重新发起'
   if (seconds < 60) return `还剩 ${seconds} 秒`
   return `还剩 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
-}
-
-/** 一道题当前的作答状态。 */
-interface Draft {
-  /** 选中的选项标签。 */
-  selected: string[]
-  /** 自由输入框里的字。 */
-  custom: string
-}
-
-/** 这道题算不算答了：选了选项，或者自己写了非空白的字。 */
-function isAnswered(draft: Draft | undefined): boolean {
-  if (draft === undefined) return false
-  return draft.selected.length > 0 || draft.custom.trim() !== ''
 }
 
 export function QuestionCard({
@@ -56,7 +43,7 @@ export function QuestionCard({
   onSubmit: (answers: QuestionAnswerItem[]) => void
 }) {
   const { question, submitting, error } = ask
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({})
+  const [drafts, setDrafts] = useState<Record<string, QuestionDraft>>({})
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -67,36 +54,22 @@ export function QuestionCard({
   const expired = now > question.expiresAt
   const secondsLeft = Math.ceil((question.expiresAt - now) / 1000)
   const urgent = !expired && secondsLeft <= 30
-  const allAnswered = question.questions.every(item => isAnswered(drafts[item.id]))
+  const allAnswered = question.questions.every(item => isQuestionAnswered(drafts[item.id]))
   const canSubmit = !submitting && !expired && allAnswered
 
   /** 改一道题的草稿。 */
-  function patchDraft(id: string, change: (draft: Draft) => Draft): void {
-    setDrafts(prev => ({ ...prev, [id]: change(prev[id] ?? { selected: [], custom: '' }) }))
+  function patchDraft(id: string, change: (draft: QuestionDraft) => QuestionDraft): void {
+    setDrafts(prev => ({ ...prev, [id]: change(prev[id] ?? emptyQuestionDraft()) }))
   }
 
   /** 点一个选项。单选替换、多选增删。 */
   function toggleOption(id: string, label: string, multiSelect: boolean): void {
-    patchDraft(id, (draft) => {
-      if (!multiSelect) return { ...draft, selected: [label] }
-      const selected = draft.selected.includes(label)
-        ? draft.selected.filter(item => item !== label)
-        : [...draft.selected, label]
-      return { ...draft, selected }
-    })
+    patchDraft(id, draft => selectQuestionOption(draft, label, multiSelect))
   }
 
   function submit(): void {
     if (!canSubmit) return
-    onSubmit(question.questions.map((item) => {
-      const draft = drafts[item.id] ?? { selected: [], custom: '' }
-      const custom = draft.custom.trim()
-      return {
-        id: item.id,
-        selected: draft.selected,
-        ...custom === '' ? {} : { custom },
-      }
-    }))
+    onSubmit(question.questions.map(item => questionAnswer(item.id, drafts[item.id] ?? emptyQuestionDraft())))
   }
 
   return (
@@ -127,7 +100,7 @@ export function QuestionCard({
 
       <div className="mt-3 flex flex-col gap-4">
         {question.questions.map(item => {
-          const draft = drafts[item.id] ?? { selected: [], custom: '' }
+          const draft = drafts[item.id] ?? emptyQuestionDraft()
           const multi = item.multiSelect ?? false
           const groupName = `ask_${question.questionId}_${item.id}`
           return (
@@ -179,20 +152,29 @@ export function QuestionCard({
                 </div>
               )}
 
-              {/* 自由输入**常驻**：模型给的选项是它的想象力上限，不该是用户的。 */}
-              <input
-                value={draft.custom}
-                onChange={(e) => { patchDraft(item.id, d => ({ ...d, custom: e.target.value })) }}
-                onKeyDown={(e) => {
-                  // 回车直接提交——多道题时只有全都答了才真的提交（canSubmit 会挡）。
-                  if (e.key === 'Enter') { e.preventDefault(); submit() }
-                }}
-                disabled={submitting || expired}
-                placeholder={(item.options ?? []).length > 0 ? '或者自己写一个答案' : '输入你的答案'}
-                aria-label={`${item.question}（自己写答案）`}
-                data-question-custom
-                className="mt-2 h-10 w-full rounded-chip border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
-              />
+              {/* 单选互斥，多选允许组合；输入时自动选中自填，切回选项时保留但不提交草稿。 */}
+              <div className={cn('mt-2 rounded-chip border bg-surface px-3 py-2',
+                draft.customSelected ? 'border-gold' : 'border-line')}>
+                {(item.options ?? []).length > 0 && <label className="mb-2 flex cursor-pointer items-center gap-2.5 text-[13px] text-ink">
+                  <input type={multi ? 'checkbox' : 'radio'} name={groupName} checked={draft.customSelected}
+                    onChange={e => patchDraft(item.id, d => selectCustomAnswer(d, multi, e.target.checked))}
+                    disabled={submitting || expired} className="size-4 shrink-0 accent-[var(--color-gold)]" />
+                  自己填写
+                </label>}
+                <input
+                  value={draft.custom}
+                  onChange={(e) => { patchDraft(item.id, d => writeCustomAnswer(d, e.target.value, multi)) }}
+                  onKeyDown={(e) => {
+                    // 回车直接提交——多道题时只有全都答了才真的提交（canSubmit 会挡）。
+                    if (e.key === 'Enter') { e.preventDefault(); submit() }
+                  }}
+                  disabled={submitting || expired}
+                  placeholder="输入你的答案"
+                  aria-label={`${item.question}（自己写答案）`}
+                  data-question-custom
+                  className="h-10 w-full rounded-chip border border-line bg-surface px-3 text-[13px] text-ink outline-none transition-colors placeholder:text-ink-mute focus:border-gold disabled:bg-sunk"
+                />
+              </div>
             </fieldset>
           )
         })}

@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** Same-origin client/staff smoke: isolated SQLite, random ports, no model calls. */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'

@@ -1,0 +1,47 @@
+[Unit]
+Description=Luckycat PostgreSQL bank platform API
+After=network.target postgresql.service
+Requires=postgresql.service
+Wants=luckycat-staff-agent.service luckycat-ops-agent.service
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=bank
+Group=bank
+WorkingDirectory=/srv/maneki-bank/current
+Environment=NODE_ENV=production
+Environment=BANK_HOST=127.0.0.1
+Environment=BANK_PORT=8080
+Environment=BANK_AUTO_MIGRATE=false
+Environment=BANK_INTEGRATION_MODE=live
+Environment=BANK_PG_STATUS_FILE=/var/lib/luckycat-bank/backup-status.json
+EnvironmentFile=/etc/luckycat-bank/bank.env
+EnvironmentFile=/etc/luckycat-bank/pg-app.env
+ExecStart=/usr/bin/flock --shared --nonblock --no-fork /var/lib/luckycat-bank/.maintenance.lock /opt/maneki-node24/bin/node server/index.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=/var/lib/luckycat-bank
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=luckycat-bank
+
+[Install]
+WantedBy=multi-user.target

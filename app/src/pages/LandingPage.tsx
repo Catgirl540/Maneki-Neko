@@ -94,7 +94,7 @@ function AnalysisPreview() {
 }
 function TransferPreview() {
   return <ServicePreview title="转账与银行卡" Icon={TransferIcon} rows={[
-    ['选择付款账户', '从已开通的账户选择付款卡。'],
+    ['确认付款信息', '从储蓄账户付款，多张银行卡共享账户余额。'],
     ['核对收款信息', '确认收款人、金额、费用与到账方式。'],
     ['查询交易状态', '提交后按服务端返回的状态与回执展示。'],
   ]} />

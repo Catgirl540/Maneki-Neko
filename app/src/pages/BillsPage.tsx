@@ -1,7 +1,9 @@
+import { currencyBalances } from '@/lib/currencyBalances'
+import { CURRENCY_LABEL } from '@/lib/format'
 import { useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, ApiError } from '@/api'
-import type { BankCard, Transaction, TransactionCategory } from '@/api/types'
+import type { Transaction, TransactionCategory } from '@/api/types'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -47,8 +49,8 @@ export function BillsPage() {
   const setCategory = (value: TransactionCategory | 'all') => setFilter('category', value)
   const setSelectedAccountId = (value: string) => setFilter('account', value)
   const account = useAsync(() => api.listAccounts(), [])
-  const cards = useAsync<BankCard[]>(() => api.listCards(), [])
-  const accountId = account.data?.find(row => row.id === selectedAccountId)?.id ?? account.data?.[0]?.id
+  const balances = currencyBalances(account.data ?? [])
+  const accountId = balances.find(row => row.id === selectedAccountId)?.id ?? balances[0]?.id
   const queryKey = JSON.stringify([accountId, category, keyword, page])
   const transactions = useAsync<{ items: Transaction[]; total: number; queryKey: string }>(
     async () => ({ ...(accountId ? await api.listTransactions(accountId, { page, size: PAGE_SIZE, category, keyword }) : { items: [], total: 0 }), queryKey }),
@@ -82,7 +84,7 @@ export function BillsPage() {
     }
   }
 
-  const requests = [account, cards, transactions]
+  const requests = [account, transactions]
   const failed = requests.filter(state => state.error !== null && state.data === null)
   if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
   if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
@@ -119,16 +121,15 @@ export function BillsPage() {
           }
         />
 
-        {(account.data?.length ?? 0) > 1 && (
-          <div className="mt-5 flex flex-wrap gap-2" aria-label="选择流水账户">
-            {account.data?.map((row) => {
-              const card = cards.data?.find((item) => item.accountId === row.id && item.status !== 'replaced')
+        {balances.length > 1 && (
+          <div className="mt-5 flex flex-wrap gap-2" aria-label="选择流水币种">
+            {balances.map((row) => {
               return <button key={row.id} type="button" onClick={() => setSelectedAccountId(row.id)}
                 aria-pressed={accountId === row.id}
                 className={`rounded-chip border px-3 py-2 text-[12px] transition-colors ${accountId === row.id
                   ? 'border-gold bg-gold-wash text-gold-deep'
                   : 'border-line text-ink-soft hover:border-gold'}`}>
-                {card?.productName ?? row.label} · 尾号 {card?.last4 ?? row.accountNo.slice(-4)}
+                {CURRENCY_LABEL[row.currency]} · {row.currency}
               </button>
             })}
           </div>

@@ -720,5 +720,20 @@
       "相关业务技能",
       "不重复请求执行许可"
     ]
+  },
+  {
+    "id": "bank-transfer-unsaved-recipient",
+    "query": "户名就是测试收款人，账号和银行地区都告诉你了，没有存收款人也能转吧？",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-transfer"
+    ],
+    "instructionIncludes": [
+      "不是全行账户查询",
+      "空列表不代表账号不存在",
+      "用户已提供完整账号和户名时沿用原值",
+      "bank_verify_recipient",
+      "先澄清"
+    ]
   }
 ]

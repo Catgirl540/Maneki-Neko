@@ -42,6 +42,9 @@ export interface ReceivingInfo {
   fpsId: string
 }
 
+/** 同一资金账户下的币种余额；id 是记账分区标识，不是新账户号。 */
+export type CurrencyBalance = Omit<Account, 'currencyBalances'>
+
 export interface Account {
   id: string
   kind: AccountKind
@@ -50,6 +53,7 @@ export interface Account {
   currency: Currency
   balance: Cents
   available: Cents
+  currencyBalances?: CurrencyBalance[]
   /** 年化利率，如 0.0155 表示 1.55% */
   interestRate: number
   /** 本月净变动（收入 - 支出），由后端汇总，用于首页涨跌标签 */
@@ -165,6 +169,8 @@ export interface TransactionDetail {
 
 /** 交易详情接口的返回：台账行 + 附加明细 */
 export interface TransactionRecord extends Transaction {
+  businessType?: 'exchange'
+  legacyAccountId?: string
   detail: TransactionDetail
   /**
    * 在途转账的指令快照（清单 §9.4：入窗时冻结，到账按它执行）。
@@ -676,6 +682,8 @@ export interface CashFlowPoint {
 }
 
 export interface CashFlow {
+  currency?: Currency
+  byCurrency?: Partial<Record<Currency, Omit<CashFlow, 'byCurrency'>>>
   days: number
   points: CashFlowPoint[]
   totalIncome: Cents
@@ -683,6 +691,8 @@ export interface CashFlow {
 }
 
 export interface SpendingAnalysis {
+  currency?: Currency
+  byCurrency?: Partial<Record<Currency, Omit<SpendingAnalysis, 'byCurrency'>>>
   month: string
   total: Cents
   monthOverMonth: number

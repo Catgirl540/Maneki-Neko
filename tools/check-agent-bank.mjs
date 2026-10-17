@@ -1,3 +1,4 @@
+import './legacy-sqlite-fixture-disabled.mjs'
 /** 无外部模型费用：真实 SQLite/HTTP 后端 + 账户绑定/确认/执行通道验证。 */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
@@ -49,6 +50,24 @@ try {
   assert.notEqual(accounts[0].accountNo, other[0].accountNo)
   await assert.rejects(run('bank_get_balance', { accountId: other[0].id }), e => e.status === 404)
   console.log('PASS 登录认证、跨账户会话拒绝，余额读取同一银行后端')
+  const recipientPhone = '13900139016'
+  const recipientSms = await call('/api/auth/sms-code', null, { phone: recipientPhone })
+  const face = await call('/api/security/verify', null, { channel: 'face' })
+  await import('./ts-resolve-hook.mjs')
+  const { ACCOUNT_OPENING_PLEDGE } = await import('../app/src/lib/account-opening.ts')
+  const recipient = await call('/api/auth/register', null, { phone: recipientPhone, password: '123456', holderName: '测试收款人', idNumber: '310101199001011234', smsCode: recipientSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
+  const saved = (await run('bank_list_payees', { keyword: recipient.account.accountNo })).result
+  assert.equal(saved.total, 0)
+  assert.equal(saved.scope, 'saved-payees')
+  assert.match(saved.notice, /未找到不代表账号不存在/)
+  assert.equal((await run('bank_verify_recipient', { bankCode: 'LCB', bankRegion: 'CN', accountNo: recipient.account.accountNo, payeeName: '测试收款人' })).result.kind, 'internal')
+  await assert.rejects(run('bank_verify_recipient', { bankCode: 'LCB', bankRegion: 'CN', accountNo: recipient.account.accountNo, payeeName: '错误户名' }), /姓名|户名/)
+  const unsaved = await prepare('bank_transfer', { fromAccountId: accounts[0].id, payeeName: '测试收款人', payeeAccountNo: recipient.account.accountNo, payeeBankCode: 'LCB', payeeBankRegion: 'CN', amountCents: 100 })
+  assert(unsaved.challenge.fields.some(f => f.label === '收款银行' && f.value.includes('CN LCB')))
+  await assert.rejects(agent.execute(unsaved.input), e => e.code === 'CONSENT_REQUIRED')
+  agent.forget(unsaved.challenge)
+  assert.equal((await call('/api/accounts', recipient.token))[0].balance, 0)
+  console.log('PASS 新开户未保存的收款人仍可校验并生成确认卡，错误户名拒绝且未确认不扣款')
   const tx = await run('bank_list_transactions', { accountId: accounts[0].id, limit: 3 })
   assert(tx.result.items.length <= 3)
   if (tx.result.items[0]) { const detail = await run('bank_get_transaction_detail', { transactionId: tx.result.items[0].id }); assert.equal(detail.result.id, tx.result.items[0].id) }
