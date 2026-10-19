@@ -7,6 +7,9 @@ import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { validateSkills } from '../framework/scripts/check-skills.mjs'
+import { fixture as bankFixture } from '../server/testing/http-fixture.mjs'
+import { createPgClient } from '../server/pg-client.mjs'
+import { randomBytes } from 'node:crypto'
 
 const root = resolve(import.meta.dirname, '..')
 const dir = await mkdtemp(join(tmpdir(), 'bank-skills-harness-'))
@@ -18,7 +21,7 @@ const listen = server => new Promise(r => server.listen(0, '127.0.0.1', () => r(
 async function freePort() { const s = createServer(); const p = await listen(s); await new Promise(r => s.close(r)); return p }
 const env = { ...process.env }
 for (const name of Object.keys(env)) if (/TOKEN|API_KEY|ACCESS_KEY|SECRET/.test(name)) delete env[name]
-let bank, agent, bridge, a, b, launch, fixtureSeq = 0
+let bank, backend, sessionDb, sessionFixtureReady = false, agent, bridge, a, b, launch, fixtureSeq = 0
 function start(file, extra) {
   const p = spawn(process.execPath, [join(root, file)], { cwd: root, detached: true, env: { ...env, ...extra }, stdio: ['ignore', 'pipe', 'pipe'] })
   const child = { p, log: '' }; children.push(child)
@@ -107,10 +110,19 @@ const load = name => ({ name: 'skill', args: { name } })
 const approve = c => call(agent, `/agent-api/consent/${c.challengeId}`, a.token, { decision: 'approve', ...(c.verification === 'payment-password' ? { paymentPassword: '888888' } : {}) })
 
 try {
-  const bankPort = await freePort(), agentPort = await freePort()
-  bank = `http://127.0.0.1:${bankPort}`; agent = `http://127.0.0.1:${agentPort}`
-  const bankChild = start('server/index.mjs', { BANK_PORT: String(bankPort), BANK_DB_FILE: join(dir, 'bank.sqlite'), BANK_STATE_FILE: join(dir, 'absent.json') })
-  await ready(bankChild, bank, '/health')
+  const sessionUrl = process.env.LUCKYCAT_SESSION_TEST_DATABASE_URL
+  assert(sessionUrl, '必须显式提供独立的 PostgreSQL Agent 测试库')
+  const parsed = new URL(sessionUrl)
+  assert(['postgres:', 'postgresql:'].includes(parsed.protocol))
+  assert.match(parsed.pathname, /^\/maneki_ai_sessions_test(?:_[a-z0-9_]+)?$/)
+  sessionDb = createPgClient(sessionUrl)
+  assert.match((await sessionDb.query('SELECT current_database() AS name')).rows[0].name, /^maneki_ai_sessions_test(?:_[a-z0-9_]+)?$/)
+  sessionFixtureReady = true
+  await sessionDb.query('DROP SCHEMA IF EXISTS ai_sessions CASCADE')
+  await sessionDb.query(await readFile(join(root, 'framework/bridge/session-schema.sql'), 'utf8'))
+  const sessionKey = randomBytes(32).toString('base64')
+  backend = await bankFixture({ reviewThreshold: 50000000 })
+  bank = backend.base; agent = `http://127.0.0.1:${await freePort()}`
   const login = async phone => { const sms = await call(bank, '/api/auth/sms-code', null, { phone }); return call(bank, '/api/auth/login', null, { phone, password: '123456', smsCode: sms.demoCode }) }
   a = await login('13800138000'); b = await login('13600136000')
   const providerPort = await listen(provider), patch = join(dir, 'provider.yml')
@@ -119,7 +131,7 @@ try {
     { id: 'luckycat-embedding', disabled: true },
   ]))
   launch = async () => {
-    bridge = start('framework/bridge/demo-server.mjs', { LUCKYCAT_DEMO_PORT: String(agentPort), LUCKYCAT_BANK_URL: bank, LUCKYCAT_SESSION_DIR: join(dir, 'context'), LUCKYCAT_PROVIDER: 'test', LUCKYCAT_MODEL: 'skills-test', LUCKYCAT_TEST_KEY: 'local-only', LUCKYCAT_PATCHES: patch, LUCKYCAT_DISABLE_VOICE: '1' })
+    bridge = start('framework/bridge/demo-server.mjs', { LUCKYCAT_DEMO_PORT: new URL(agent).port, LUCKYCAT_BANK_URL: bank, LUCKYCAT_SESSION_DATABASE_URL: sessionUrl, LUCKYCAT_SESSION_DATA_KEY: sessionKey, LUCKYCAT_SESSION_DIR: join(dir, 'context'), LUCKYCAT_PROVIDER: 'test', LUCKYCAT_MODEL: 'skills-test', LUCKYCAT_TEST_KEY: 'local-only', LUCKYCAT_PATCHES: patch, LUCKYCAT_DISABLE_VOICE: '1' })
     await ready(bridge, agent, '/agent-api/health', a.token)
   }
   await launch()
@@ -238,5 +250,10 @@ try {
 finally {
   for (const child of children.toReversed()) await stop(child)
   provider.closeAllConnections(); await new Promise(r => provider.close(r))
+  await backend?.close()
+  if (sessionDb) {
+    try { if (sessionFixtureReady) await sessionDb.query('DROP SCHEMA IF EXISTS ai_sessions CASCADE') }
+    finally { await sessionDb.close() }
+  }
   await rm(dir, { recursive: true, force: true })
 }

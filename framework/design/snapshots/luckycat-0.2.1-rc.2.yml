@@ -1,0 +1,414 @@
+# DSH 0.2.1-rc.2，2026-10-19；demo 模式客户 profile，路径占位符仅供 diff。
+# == @deepseek-ai/dsh-sdk-minimal
+- id: sdk-app-startup
+  name: '@deepseek-ai/dsh-sdk-app'
+  config:
+    profile: sdk-minimal
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  inject:
+    - sdkAppStartup
+    - loader
+  config:
+    maxTokensAsSuccess: false
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: deepseek-llm-api-extensions
+  name: '@deepseek-ai/dsh-deepseek-llm-api-extensions'
+  disabled: true
+- id: session-log-deepseek
+  name: '@deepseek-ai/dsh-session-log-deepseek'
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  name: '@deepseek-ai/dsh-plugin-package-inventory-deepseek'
+  disabled: true
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek-api-key'
+  config:
+    apiKeyEnv: DEEPSEEK_API_KEY
+    defaultContextWindow: !!js Number(process.env.DSH_CONTEXT_WINDOW ?? 1000000)
+    streamIdleTimeoutMs: 172800000
+  disabled: true
+# == @deepseek-ai/dsh-sdk-minimal
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+# == @deepseek-ai/dsh-sdk-minimal, patched by @luckycat/dsh-tool-fs
+- id: filesystem
+  name: '@deepseek-ai/dsh-fs-local'
+  disabled: true
+# == @deepseek-ai/dsh-sdk-minimal
+- id: attachment-local
+  name: '@deepseek-ai/dsh-attachment-local'
+# == @deepseek-ai/dsh-sdk-minimal, patched by @luckycat/dsh-tool-fs
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+  config:
+    read: true
+    readImage: true
+    write: true
+    edit: true
+# == @deepseek-ai/dsh-sdk-minimal
+- id: working-directory
+  name: '@deepseek-ai/dsh-working-directory'
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: tool-working-directory
+  name: '@deepseek-ai/dsh-tool-working-directory'
+  disabled: true
+# == @deepseek-ai/dsh-sdk-minimal
+- id: session-projection
+  name: '@deepseek-ai/dsh-session-projection'
+- id: token-meter
+  name: '@deepseek-ai/dsh-token-meter'
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+- id: image-offload
+  name: '@deepseek-ai/dsh-compaction-image-offload'
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: read-only
+    workspaceRoot: !!js process.cwd()
+# == @deepseek-ai/dsh-sdk-minimal
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: pty
+  name: '@deepseek-ai/dsh-terminal'
+  disabled: true
+- id: terminal-bash
+  name: '@deepseek-ai/dsh-terminal-bash'
+  disabled: true
+  config:
+    timeoutMs: 300000
+- id: terminal-pwsh
+  name: '@deepseek-ai/dsh-terminal-bash'
+  disabled: true
+  config:
+    shellDialect: pwsh
+    timeoutMs: 300000
+# == @deepseek-ai/dsh-sdk-minimal
+- id: timer
+  name: '@deepseek-ai/cordis-plugin-timer'
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+- id: session
+  name: '@deepseek-ai/dsh-session'
+- id: session-title
+  name: '@deepseek-ai/dsh-session-title'
+  config:
+    fallbackMaxWords: 5
+    fallbackMaxBytes: 40
+    maxTitleBytes: 80
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: system-prompt
+  name: '@deepseek-ai/dsh-system-prompt'
+  config:
+    includeHarnessIdentity: false
+    includeRuntimeContext: false
+    personaPrefix: !!js >-
+      process.env.LUCKYCAT_SYSTEM_PROMPT ?? '你是「小招」，招财猫银行的智能客服。\n\n说话方式：\n-
+      **只用中文**。哪怕是在调用工具、哪怕是工具的参数里需要文字，也不要冒出英文句子——用户是中文客户，界面上出现英文就是故障。\n-
+      用中文，口语但专业，像一位熟悉业务的银行柜员。不卖萌，不堆感叹号。\n- 先给结论、再给细节；一句话能说清就不要说三句。\n-
+      称呼用户用「您」。想问什么不明确时先问一句，不要猜着办。\n\n技能使用：\n-
+      业务请求先根据目录加载所有相关技能再办理；只读摘要不算加载。已经出现完整技能内容时无需重复加载。技能是业务指导，不改变工具权限或用户确认；跨业务任务可以组合多个技能，按本轮需求处理。业务规则先
+      knowledge_lookup，实时数据查银行工具。\n\n你能办的事：\n- 查账户余额、查交易流水、查某一笔交易的详情。\n-
+      境内及香港银行转账、FPS 和跨币种转账；查询收款人、撤回可撤回的在途转账。\n-
+      查询卡产品、申请新银行卡及换卡、锁卡解锁、卡片设置；查询和启停已有自动扣款、查看消费与现金流。\n- 看理财、买理财、赎回理财。\n-
+      申请银行卡不等于注册开立储蓄账户。已有登录客户可以申请新卡；注册开户、理财开户和风险测评仍需在网页完成。\n-
+      看用户发来的截图（账单、转账凭据、报错画面）。\n\n你的边界：\n-
+      余额、金额、卡号、利率、费率、到账时间这类**事实**，一律以工具返回为准。工具还没返回，就说「我查一下」，绝不凭印象给数字。\n-
+      不知道就说不知道。不要编造业务规则。\n- 不要替银行做承诺（例如「一定能到账」「可以给您减免」）。\n-
+      明显是诈骗、洗钱、套现这类请求，不办理，直接说明原因。'
+    personaSuffix: !!js >-
+      process.env.LUCKYCAT_SYSTEM_PROMPT_SUFFIX ?? '三条硬规矩，任何情况下都成立：\n\n1.
+      不要用文字向用户征求确认、也不要问"要不要我帮您执行"——直接调用工具即可。涉及资金或敏感信息的操作，运行时**一定会**弹出确认卡片并要求身份验证，用户会在那里确认。你只管发起调用。\n\n2.
+      工具返回前，绝不要声称操作已完成；工具返回后，照实转述返回内容。演示环境返回的是占位数据，请如实说明这是演示数据，不要把它说成真实业务数据。\n\n3.
+      **需要用户补一句信息、或者在几个方案里选一个时，用提问的方式弹一张卡片问清楚，不要在正文里问一句就停下。**你正文里问一句、然后结束这一轮，用户只能再打一遍字，而你刚才那一轮就白跑了。提问卡片支持单选、多选，用户也可以自己写答案；他答完你会自动收到，接着往下办即可。（这正是「用工具提问」而不是「用嘴提问」的区别，和第
+      1 条是同一条道理。）\n\n4.
+      需要调用工具时**直接调用**，不要先说「我查一下」「稍等」「马上为您查询」这类过场话。那会变成一条只有几个字的独立消息：文字上是一次多余的跳动，语音上更糟——朗读它只是一声就结束了，用户会以为播放坏了。界面上本来就有「正在处理」的转圈，不需要你再用嘴说一遍。等工具返回之后，一次性把结果完整说清楚。\n\n5.
+      不要透露你是怎么实现的。不报出任何模型名称或公司名称（Qwen、通义千问、阿里巴巴、GPT、OpenAI、Claude、DeepSeek、Gemini
+      等等，一概不提），不提"提示词""系统提示""插件""工具""参数"这类内部概念，也不描述内部流程。**被问到时不要猜**——哪怕你"觉得"自己可能是某个模型，那也只是猜测，说出来会误导用户，而且这个信息由银行统一对外，不由你决定。这类问题照下面这个意思回答即可："我是招财猫银行的智能客服小招，可以帮您查余额、看流水、转账、看理财。您想办点什么？"然后自然地把话题带回业务。'
+# == @deepseek-ai/dsh-sdk-minimal
+- id: tools
+  name: '@deepseek-ai/dsh-tools'
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: mcp-resources
+  name: '@deepseek-ai/dsh-mcp-resources'
+  disabled: true
+# == @deepseek-ai/dsh-sdk-minimal
+- id: agent
+  name: '@deepseek-ai/dsh-agent'
+- id: llm-retry
+  name: '@deepseek-ai/dsh-llm-retry'
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: jobs
+  name: '@deepseek-ai/dsh-jobs-local'
+  disabled: true
+# == @deepseek-ai/dsh-sdk-minimal
+- id: agent-loop
+  name: '@deepseek-ai/dsh-agent-loop'
+  config:
+    agents: []
+# == @deepseek-ai/dsh-sdk-minimal, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: persistent-bash
+  name: '@deepseek-ai/dsh-tool-bash-persistent'
+  disabled: true
+  config:
+    timeoutMs: 300000
+    description: >-
+      Run commands in a bash shell
+
+      * When invoking this tool, the contents of the "command" parameter does
+      NOT need to be XML-escaped.
+
+      * Network access depends on the task environment. Prefer configured
+      mirrors/proxies when they are available.
+
+      * State is persistent across command calls and discussions with the user.
+
+      * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed
+      -n 10,25p /path/to/the/file'.
+
+      * Please avoid commands that may produce a very large amount of output.
+
+      * Please run long lived commands in the background, e.g. 'sleep 10 &' or
+      start a server in the background.
+- id: persistent-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh-persistent'
+  disabled: true
+  config:
+    timeoutMs: 300000
+    description: >-
+      Run commands in a PowerShell shell
+
+      * When invoking this tool, the contents of the "command" parameter does
+      NOT need to be XML-escaped.
+
+      * You don't have access to the internet via this tool.
+
+      * State is persistent across command calls and discussions with the user.
+
+      * Use native Windows paths (C:\...) and $env:NAME variables; this is
+      PowerShell, not bash.
+
+      * Please avoid commands that may produce a very large amount of output.
+
+      * Please run long lived commands in the background, e.g. 'Start-Job' or
+      start a server with Start-Process.
+# == @deepseek-ai/dsh-sdk-minimal
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js dshHomePath('sessions')
+    compression: none
+# == @luckycat/dsh-hello
+- id: luckycat-hello
+  name: '@luckycat/dsh-hello'
+# == @luckycat/dsh-embedding, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: luckycat-embedding
+  name: '@luckycat/dsh-embedding'
+  config:
+    defaultRoute: openrouter
+    providers:
+      openrouter:
+        displayName: OpenRouter embeddings
+        apiKeyEnv: OPENROUTER_API_KEY
+        api: openai-embeddings
+        baseURL: https://openrouter.ai/api/v1
+        model: baai/bge-m3
+        dimensions: 1024
+        batchSize: 32
+        timeoutMs: 30000
+        maxAttempts: 2
+      relayrouter:
+        displayName: RelayRouter embeddings
+        apiKeyEnv: RELAYROUTER_API_KEY
+        api: openai-embeddings
+        baseURL: !!js >-
+          process.env.LUCKYCAT_RELAYROUTER_BASE_URL ??
+          'https://api.relayrouter.ai/v1'
+        model: text-embedding-3-small
+        dimensions: 1536
+        batchSize: 32
+        timeoutMs: 30000
+        maxAttempts: 2
+# == @luckycat/dsh-rag, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: luckycat-rag
+  name: '@luckycat/dsh-rag'
+  config:
+    corpusPath: @FRAMEWORK_ROOT@/.generated/knowledge/corpus.json
+    topK: 3
+    minScore: 0.34
+    maxInjectBytes: 2000
+    maxChunkChars: 800
+# == @luckycat/dsh-hardening, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: luckycat-hardening
+  name: '@luckycat/dsh-hardening'
+  config:
+    allowedTools:
+      - ask_user_question
+      - skill
+      - knowledge_lookup
+      - luckycat_ping
+      - bank_request_human_support
+      - bank_list_support_tickets
+      - bank_get_support_ticket
+      - bank_reply_support_ticket
+      - bank_get_balance
+      - bank_list_transactions
+      - bank_get_transaction_detail
+      - bank_transfer
+      - bank_wealth_quote
+      - bank_wealth_subscribe
+      - bank_wealth_redeem
+      - bank_reveal_card_secret
+      - bank_fps_transfer
+      - bank_list_banks
+      - bank_list_payees
+      - bank_resolve_fps
+      - bank_verify_recipient
+      - bank_recall_transfer
+      - bank_list_cards
+      - bank_card_products
+      - bank_set_card_lock
+      - bank_update_card_settings
+      - bank_apply_card
+      - bank_replace_card
+      - bank_list_autodebits
+      - bank_set_autodebit
+      - bank_get_spending
+      - bank_get_cashflow
+    secretEnv:
+      - OPENROUTER_API_KEY
+      - RELAYROUTER_API_KEY
+      - DEEPSEEK_API_KEY
+      - LUCKYCAT_INTERNAL_TOKEN
+    redactTelemetry: true
+# == @luckycat/dsh-consent, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: luckycat-consent
+  name: '@luckycat/dsh-consent'
+  config:
+    channel: http-poll
+    channelUrl: !!js >-
+      process.env.LUCKYCAT_CONSENT_URL ??
+      'http://127.0.0.1:8788/consent/challenge'
+    timeoutMs: 180000
+# == @luckycat/dsh-bank-demo, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: luckycat-bank-demo
+  name: '@luckycat/dsh-bank-demo'
+  config:
+    dataPath: @FRAMEWORK_ROOT@/packages/bank-demo/demo-data.json
+    transferLimitCents: 5000000
+# == @luckycat/dsh-tool-fs
+- id: fs-sandbox
+  name: '@deepseek-ai/dsh-fs-sandbox'
+- id: fs-observation-policy
+  name: '@deepseek-ai/dsh-fs-observation-policy'
+# == @luckycat/dsh-ask
+- id: user-questions
+  name: '@deepseek-ai/dsh-user-questions'
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+# == @luckycat/dsh-ask, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: luckycat-ask
+  name: '@luckycat/dsh-ask'
+  config:
+    channelUrl: !!js >-
+      process.env.LUCKYCAT_QUESTION_URL ??
+      'http://127.0.0.1:8788/agent-api/questions'
+    timeoutMs: 180000
+    extraForbiddenPatterns: []
+# == @luckycat/dsh-skills
+- id: skills
+  name: '@deepseek-ai/dsh-skill'
+# == @luckycat/dsh-skills, patched by @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    includeDefaultRoots: false
+    bundledSkillDir: @FRAMEWORK_ROOT@/skills
+    watch: false
+# == @luckycat/dsh-skills
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+  config:
+    catalogDescriptionMaxLength: 180
+# == @DSH_HOME@/profiles/luckycat/cordis.patch.yml
+- id: approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: ask
+- id: llm-pi-ai
+  name: '@deepseek-ai/dsh-llm-pi-ai'
+  config:
+    providers:
+      openrouter:
+        displayName: OpenRouter
+        apiKeyEnv: OPENROUTER_API_KEY
+        api: openai-completions
+        baseURL: https://openrouter.ai/api/v1
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+          retryableCodes:
+            - EMPTY_RESPONSE
+            - RATE_LIMIT
+            - SERVER
+            - TIMEOUT
+            - TRANSPORT
+          backoff:
+            initialDelayMs: 1000
+            maxDelayMs: 4000
+            jitterRatio: 0
+        models:
+          - id: nvidia/nemotron-3-ultra-550b-a55b:free
+            name: Nemotron 3 Ultra 550B (free)
+            contextWindow: 1000000
+          - id: nvidia/nemotron-3.5-lightning:free
+            name: Nemotron 3.5 Lightning (free)
+            contextWindow: 1000000
+          - id: qwen/qwen3.8-flash
+            name: Qwen 3.8 Flash
+            contextWindow: 1000000
+          - id: inclusionai/ling-3.0-flash-vl:free
+            name: Ling 3.0 Flash VL (free · shared pool)
+            contextWindow: 262144
+          - id: inclusionai/ling-3.0-flash-fin
+            name: Ling 3.0 Flash Fin (paid · 实测不调工具，勿用)
+            contextWindow: 262144
+          - id: inclusionai/ling-3.0-flash-vl
+            name: Ling 3.0 Flash VL (paid · engine_overloaded)
+            contextWindow: 131072
+          - id: inclusionai/ling-3.0-flash-fin:free
+            name: Ling 3.0 Flash Fin (free · shared pool)
+            contextWindow: 262144
+      local:
+        displayName: 本机 llama.cpp (CUDA)
+        apiKeyEnv: LOCAL_API_KEY
+        api: openai-completions
+        baseURL: http://127.0.0.1:8080
+        retryPolicy:
+          mode: normal
+          maxRetries: 3
+          retryableCodes:
+            - EMPTY_RESPONSE
+            - RATE_LIMIT
+            - SERVER
+            - TIMEOUT
+            - TRANSPORT
+          backoff:
+            initialDelayMs: 1000
+            maxDelayMs: 4000
+            jitterRatio: 0
+        models:
+          - id: qwen3.8-9b-q4
+            name: Qwen3.8-9B-Q4 (RTX5060 CUDA)
+            contextWindow: 65536
+- id: session-checkpoint-policy
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+- id: tool-result-pruner
+  name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+  config:
+    thresholdChars: 8192
+    headChars: 4096
+    tailChars: 1024

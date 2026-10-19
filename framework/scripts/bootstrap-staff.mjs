@@ -26,11 +26,14 @@ const opsProfile = join(home, 'profiles', 'staff-ops')
 await mkdir(opsProfile, { recursive: true })
 const staffPatch = await readFile(join(root, 'profiles/staff/cordis.patch.yml'), 'utf8')
 const opsAllowed = ['ask_user_question', 'staff_operations_overview', ...OPS_NATIVE_TOOLS]
+// 新版插件兼容性校验在表达式求值前检查包名；在生成时选择实际平台包。
+const opsSandbox = process.platform === 'win32' ? '@deepseek-ai/dsh-sandbox-windows-acl' : '@deepseek-ai/dsh-sandbox-local'
 const opsPatch = staffPatch.replace('mode: read-only', 'mode: workspace-write')
+  .replace('- id: tool-fs\n  disabled: true', '- id: tool-fs\n  disabled: false\n  config:\n    read: true\n    readImage: true\n    write: true\n    edit: true')
   .replace('workspaceRoot: !!js process.cwd()', 'workspaceRoot: !!js process.env.LUCKYCAT_OPS_WORKSPACE ?? process.cwd()')
   .replace(/    allowedTools:\r?\n[\s\S]*?(?=    secretEnv:)/, '    allowedTools:\n' + opsAllowed.map(n => '      - ' + n + '\n').join(''))
   .replace('secretEnv: [OPENROUTER_API_KEY, LOCAL_API_KEY, LUCKYCAT_INTERNAL_TOKEN]', 'secretEnv: [OPENROUTER_API_KEY, LOCAL_API_KEY, LUCKYCAT_INTERNAL_TOKEN, CLEF_FLASH_API_KEY, JEV_API_KEY]')
-  + `\n- id: sandbox\n  name: !!js "process.platform === 'win32' ? '@deepseek-ai/dsh-sandbox-windows-acl' : '@deepseek-ai/dsh-sandbox-local'"\n`
+  + `\n- id: sandbox\n  disabled: true\n- insert:\n    - id: ops-sandbox\n      name: '${opsSandbox}'\n`
 await writeFile(join(opsProfile, 'cordis.yml'), '[]\n')
 await writeFile(join(opsProfile, 'cordis.patch.yml'), opsPatch)
 const opsManifest = JSON.parse(await readFile(join(root, 'profiles/staff/package.json'), 'utf8'))

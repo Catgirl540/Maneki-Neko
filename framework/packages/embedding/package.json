@@ -15,8 +15,8 @@
     "./cordis.patch.yml": "./cordis.patch.yml"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.2",
-    "@deepseek-ai/schemastery": "3.18.2"
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/schemastery": "3.18.5"
   },
   "files": [
     "lib/**",

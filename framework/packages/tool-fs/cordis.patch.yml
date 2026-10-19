@@ -1,41 +1,15 @@
-# 把 DSH 原版的 read 工具挂进来（含 read_image），并补齐它依赖的 fs 服务。
-#
-# 为什么要套这一层壳：这些 `@deepseek-ai/*` 包**都不声明 `dsh.bundle`**，
-# 从 profile 的 patch 层里直接写 `- id/name` 挂不动（实测：挂了但服务不出现、无报错）。
-# 本仓库能进树的插件（luckycat-*）都是自己带 bundle 补丁的，这里照同一模式做。
-#
-# 挂载清单**逐行照抄官方 `packages/bundle/base/cordis.patch.yml`**：
-#
-#   base 479 行   - id: fs-sandbox             name: '@deepseek-ai/dsh-fs-sandbox'
-#   base 257 行   - id: fs-observation-policy  name: '@deepseek-ai/dsh-fs-observation-policy'
-#   base 260 行   - id: tool-fs                name: '@deepseek-ai/dsh-tool-fs'
-#   base 118 行   - id: attachment-local       name: '@deepseek-ai/dsh-attachment-local'
-#
-# 之前自己配错了两处，各踩一次坑，记在这里免得再犯：
-#
-#   1) 挂了 `@deepseek-ai/dsh-fs`（抽象 seam）。官方**从不**挂它——它只是
-#      FileSystem 的基类。挂上之后运行时直接崩：
-#      `dsh profile "luckycat": JSON-RPC input closed`。
-#   2) 把 `@deepseek-ai/dsh-fs-local` 当后端单独挂。官方用的是 `fs-sandbox`——
-#      它 `extends LocalFileSystem`，自带本地实现**再加**一层按调用的沙箱围栏，
-#      所以本地后端不需要单独挂。只挂 fs-local 时 `read` 会报
-#      `ctx.fs.resolve is not a function`：工具注册上了、模型也能调用，一读就失败。
-#
-# `attachment-local` 是 `ctx.attachments` 的**提供者**（不是只读库），两件事都靠它：
-#   a) 桥接层把图片当 prompt 块内联发给 SDK 时，没有它会抛
-#      `SDK image prompt requires an attachment store`；
-#   b) `tool-fs` 的 `read_image` 是**按组合条件注册**的——`ctx.inject(['attachments'])`
-#      拿不到服务就不注册。
-#
-# 权限口径：本框架 sandbox-policy 钉的是 `read-only`，`tool-fs` 的 write/edit
-# 一律被 `FS_SANDBOX_DENIED` 挡住；工具面另由 luckycat-hardening 的 allowedTools
-# 过滤。两道锁都不靠"模型自觉"。
+# DSH 0.2 的 sdk-minimal 已挂载 filesystem、tool-fs 和 attachment-local。
+# 替换文件系统提供者，保留原有读写工具面及 hardening 白名单，不重复注册服务。
+- id: filesystem
+  disabled: true
+- id: tool-fs
+  config:
+    read: true
+    readImage: true
+    write: true
+    edit: true
 - insert:
     - id: fs-sandbox
       name: '@deepseek-ai/dsh-fs-sandbox'
     - id: fs-observation-policy
       name: '@deepseek-ai/dsh-fs-observation-policy'
-    - id: tool-fs
-      name: '@deepseek-ai/dsh-tool-fs'
-    - id: attachment-local
-      name: '@deepseek-ai/dsh-attachment-local'

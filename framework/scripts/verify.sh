@@ -7,6 +7,8 @@ set -uo pipefail
 # 此门验收独立演示 profile；HTTP 银行联调由 tools/check-agent-http.mjs 覆盖。
 export LUCKYCAT_BANK_MODE=demo
 source "$(dirname "${BASH_SOURCE[0]}")/_home.sh"
+# _home.sh 会开启 errexit；本验收门需要收集全部失败，空日志目录也应正常跳过。
+set +e
 
 fail=0
 ok() { echo "  ok   $1"; }
@@ -17,6 +19,12 @@ node_eval() {
 }
 
 echo "== V1 零内核改动 =="
+
+if node "$LUCKYCAT_ROOT/scripts/check-dsh-versions.mjs"; then
+  ok "CLI、SDK、插件 peer 与锁文件版本一致"
+else
+  bad "DSH 依赖版本不一致"
+fi
 
 # 只读参考副本必须一尘不染。
 ref="$LUCKYCAT_ROOT/../reference/deepseek-harness"
@@ -46,6 +54,8 @@ if [ -s /tmp/luckycat-verify-dump.err ]; then
 else
   ok "dump-config 零告警（每条补丁都匹配到了目标行）"
 fi
+duplicate_ids="$(awk '/^- id: / {print $3}' <<<"$dump" | sort | uniq -d)"
+if [ -z "$duplicate_ids" ]; then ok "组合树没有重复行 ID"; else bad "组合树重复行 ID: $duplicate_ids"; fi
 
 if grep -q '^    mode: read-only$' <<<"$dump"; then ok "sandbox mode = read-only"; else bad "sandbox mode 不是 read-only"; fi
 if grep -q '^    policy: ask$' <<<"$dump"; then ok "approval policy = ask"; else bad "approval policy 不是 ask"; fi
@@ -61,7 +71,7 @@ entry_block() {
   ' <<<"$dump"
 }
 
-for id in persistent-bash persistent-pwsh terminal-bash terminal-pwsh pty mcp-resources jobs \
+for id in persistent-bash persistent-pwsh terminal-bash terminal-pwsh pty mcp-resources jobs tool-working-directory \
           session-log-deepseek plugin-package-inventory-deepseek deepseek-llm-api-extensions \
           llm-deepseek; do
   if grep -q '^  disabled: true$' <<<"$(entry_block "$id")"; then
@@ -132,7 +142,7 @@ else
 fi
 # 通道地址允许被环境变量覆盖，但不允许被改成明文 http 的外网地址
 # （插件的 assertAllowedEndpoint 会在加载期拒绝；这里做配置层的回归断言）。
-if grep -Eq 'http://(?!127\.0\.0\.1|localhost)' <<<"$consent_block"; then
+if grep -Pq 'http://(?!127\.0\.0\.1(?=[:/]|$)|localhost(?=[:/]|$))' <<<"$consent_block"; then
   bad "确认通道指向了明文 http 的外网地址"
 else
   ok "确认通道没有指向明文 http 的外网地址"

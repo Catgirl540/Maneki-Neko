@@ -1,19 +1,19 @@
 # DSH 钉版本与漂移台账
 
-本框架把底座当**依赖**用，不当源码用。上游是 0.1.x alpha、约 182 提交/天，
-所以这里记下我们依赖的确切版本、行 id 清单与升级流程。
+本框架把底座当**依赖**用，不修改上游源码。这里记录确切版本、组合行 ID 与升级流程。
+2026-10-19 从 `0.1.6-alpha.2` 升级到上游最新发布的候选版 `0.2.1-rc.2`。
 
 ## 1. 钉死版本
 
 | 组件 | 版本 | 说明 |
 |---|---|---|
-| `@deepseek-ai/dsh` | **0.1.6-alpha.2** | 底座 CLI + 运行时，`package.json` 里精确钉死不写 `^` |
-| `@deepseek-ai/cordis` | 4.0.2 | 插件框架（上游 vendored 并 rescope 的 RC 版） |
-| `@deepseek-ai/schemastery` | 3.18.2 | 配置 schema |
+| `@deepseek-ai/dsh`、SDK 与银行插件的 DSH peer | **0.2.1-rc.2** | CLI、SDK、插件清单和锁文件精确一致，不使用 `^` 或 `--legacy-peer-deps` |
+| `@deepseek-ai/cordis` | 4.0.5 | 与新底座一致的插件框架 |
+| `@deepseek-ai/schemastery` | 3.18.5 | 与新底座一致的配置 schema |
 | `typescript` | ^6.0.3 | 与上游一致（**上游是 `^6.0.3`**，别装 7.x） |
 | `@types/node` | ^22.20.3 | Node 22 |
-| 上游源码快照 | `ddefc45fbc` / `dsh-v0.1.6-alpha.2` | `reference/deepseek-harness`，只读 |
-| 基础 bundle | `@deepseek-ai/dsh-sdk-minimal` | 唯一不叠 `dsh-base` 的完整显式树（158 行） |
+| 上游发布 | `dsh-v0.2.1-rc.2` | [发布说明](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.2.1-rc.2)；只读 `reference/` 仍是旧版历史依据，不代表当前运行时 |
+| 基础 bundle | `@deepseek-ai/dsh-sdk-minimal` | 不叠 `dsh-base` 的完整显式树；[客户 profile 快照](snapshots/luckycat-0.2.1-rc.2.yml)中路径已规范化 |
 
 Node 要求 `^22.19.0 || >=24`；本机 v22.22.1。
 
@@ -40,10 +40,13 @@ Node 要求 `^22.19.0 || >=24`；本机 v22.22.1。
 | `luckycat-embedding` | **bundle 插入** + 本文件配置路由 | 向量服务 `ctx.embedding`——DSH **没有** embedding 通道，这是自研包 |
 | `luckycat-rag` | **bundle 插入** + 本文件配置语料/预算 | 知识库检索：`knowledge_lookup` 工具 + 有界注入；语料绝对路径由 bootstrap 替换 |
 | `luckycat-hardening` | **bundle 插入** + 本文件配置白名单/脱敏变量 | 加固：工具结果脱敏（`tools/post-execute`）+ 工具白名单单调守卫（`ctx.tools.guard`）+ 可选遥测脱敏 |
-| `token-meter` | **insert**（补课，抄 dsh-base） | `ctx.tokenMeter`：从会话日志确定性估算 token/上下文压力，不发模型调用 |
+| `token-meter` | 使用 sdk-minimal 原生行 | `ctx.tokenMeter`：从会话日志确定性估算 token/上下文压力，不发模型调用 |
 | `session-checkpoint-policy` | **insert**（补课，抄 dsh-base） | 每次模型请求/顶层分发前的持久化检查点 |
 | `tool-result-pruner` | **insert**（补课，抄 dsh-base 配置） | 压力达标时裁超大工具输出（原始结果仍在日志里） |
-| `compaction-basic` | **insert**（补课，抄 dsh-base） | 长对话压缩；**硬依赖 `tokenMeter`**，必须与 `token-meter` 一起挂 |
+| `compaction-basic` | 使用 sdk-minimal 原生行 | 长对话压缩；**硬依赖 `tokenMeter`**，不重复插入 |
+| `filesystem` | 禁用原生本地提供者，插入 `fs-sandbox` | 保留按调用执行的文件沙箱围栏，避免同一服务同时挂两个提供者 |
+| `tool-working-directory` | 禁用 | 客户、客服及运维均不新增模型切换主机目录的工具 |
+| `tool-fs` / `attachment-local` | 复用原生行 | 客户文件工具继续由原有白名单拒绝；客服禁用文件工具但保留内联图片；运维显式启用文件工具并经既有审批 |
 
 ### 我们自己的 bundle（P4）
 
@@ -89,11 +92,23 @@ workspace sandbox"（见 [P4-PACKAGING.md](P4-PACKAGING.md) §4）——所以�
 
 ## 3. 升级流程（不允许跳步）
 
-1. 改 `package.json` 里 `@deepseek-ai/dsh` 的精确版本；
-2. `npm install` 后跑 `bash scripts/verify.sh`；
+1. 同步修改根清单与 `packages/*/package.json` 中 CLI、SDK 和 DSH peer 的精确版本；
+2. 更新锁文件并正常安装，执行 `npm run check:dsh`、`bash scripts/link-local.sh`、`bash scripts/build.sh` 和 `bash scripts/bootstrap.sh`，再跑 `bash scripts/verify.sh`；
 3. 若 V2 失败，对照 `--dump-config` diff 找出改名/消失的行 id；
 4. 记录版本、日期、行 id 变动与新结论到本文件；
 5. 快照 `--dump-config` 输出入库以便下次 diff。
+
+### 2026-10-19 兼容适配
+
+- 新版工具结果是 `role: tool` 的平铺消息，`toolCallId`、`isError` 在消息本身。桥接层兼容新结构与旧 `tool-result` 嵌套块，保留回执和错误状态。
+- 知识库上下文不再使用通用 `plugin` 来源，改为扩展 `MessageSourceMap` 的 `luckycat-rag` 来源，注入预算仍为 2000 字节。
+- `sdk-minimal` 新增原生文件、目录、用量、压缩和附件行；去掉重复插入，禁用目录工具。运维沙箱采用禁用旧行再插入新行，避免 `name` 匹配失败后悄悄保留旧配置。
+- 版本门检查 CLI、SDK、各插件 peer、安装目录及锁文件。全新 profile 无旧会话日志时，验收正常跳过日志权限检查。
+- 技能端到端入口使用独立 PostgreSQL HTTP 与 AI 会话测试库，拒绝非测试库名称；不再依赖 SQLite。
+
+以上为仓库和本地升级记录；公网版本须以部署记录为准。发布需保留旧代码、依赖、profile 与原生日志备份；回滚时整套恢复，不混用不同版本的 SDK 或覆盖客户数据库。
+
+本次验收：全新隔离 profile 的 `verify.sh` 通过（129 个插件用例），PostgreSQL 桥接测试 45 项通过，技能协议夹具 61 条通过。实际 Harness 的转账确认、支付验密、取消、自动重试、SSE、图片、知识检索和重启恢复均通过；客服与运维 profile 注册探针无加载告警；单账户模型门禁通过。协议夹具不代表真实模型的意图识别准确率，本轮未调用外部模型或修改公网数据。
 
 ## 4. 已知上游地雷
 

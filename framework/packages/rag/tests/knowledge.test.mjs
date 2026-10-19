@@ -86,6 +86,7 @@ test('向量故障仍能回答高频规则，返回路由/版本并记录降级'
   }
   assert.equal(attempts, 4, '失败后下一次可重试，不缓存拒绝的 Promise')
   assert(kb.notices.length)
+  assert(kb.notices.every(n => n.source.kind === 'luckycat-rag' && n.source.form === 'notice'))
   assert.match(kb.tool.description, /never invent values/)
   assert.match(kb.tool.description, /do not show them to customers/)
 })

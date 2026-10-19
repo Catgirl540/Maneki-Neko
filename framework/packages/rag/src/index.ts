@@ -15,11 +15,19 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { boundContextSummary, createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { boundHits, DEFAULT_MAX_INJECT_BYTES } from './bound.ts'
 import { chunkDocuments, DEFAULT_MAX_CHUNK_CHARS, loadCorpus } from './corpus.ts'
 import { outcomeOf, rankHits } from './retrieve.ts'
+
+// DSH 0.2 按生产者扩展来源类型，不再接受通用 plugin 来源。
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'luckycat-rag': { kind: 'luckycat-rag' } & ContextFormed
+  }
+}
 
 export type * from './types.ts'
 export { CorpusError, chunkDocuments, loadCorpus, DEFAULT_MAX_CHUNK_CHARS } from './corpus.ts'
@@ -157,8 +165,7 @@ export function apply(ctx: Context, config: Config): void {
         exec.deferContext(createUserMessage({
           content: [{ type: 'text', text: bounded.text }],
           source: {
-            kind: 'plugin',
-            plugin: name,
+            kind: 'luckycat-rag',
             form: 'notice',
             summary: boundContextSummary(`知识库命中 ${hits.length} 条，注入 ${bounded.injectedBytes} 字节`),
           },

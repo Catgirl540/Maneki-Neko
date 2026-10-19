@@ -1,12 +1,12 @@
-# Attachment storage is provided by the shared staff profile.
+# Attachment storage and tool-fs are provided by sdk-minimal.
 # Native tools/providers from the installed DSH base composition. No replacement shell implementation.
+- id: filesystem
+  disabled: true
 - insert:
     - id: fs-sandbox
       name: '@deepseek-ai/dsh-fs-sandbox'
     - id: fs-observation-policy
       name: '@deepseek-ai/dsh-fs-observation-policy'
-    - id: tool-fs
-      name: '@deepseek-ai/dsh-tool-fs'
     - id: tool-fs-search
       name: '@deepseek-ai/dsh-tool-fs-search'
       config:

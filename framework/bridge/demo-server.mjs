@@ -57,6 +57,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { DeepSeekHarness } from '@deepseek-ai/dsh-sdk-client'
+import { projectToolResult } from './tool-result.mjs'
 import { streamVolcTTS } from './volc-stream.mjs'
 import { createDemoBank } from './demo-bank.mjs'
 import { createBankAgent, bankError } from './bank-agent.mjs'
@@ -503,18 +504,7 @@ function projectEvent(sessionId, event) {
         arguments: safeParse(event.data.arguments),
       }
     case 'tool/result': {
-      // 工具结果的形状与助手消息不同：文本**嵌在** `content[].content[]` 里，
-      // 调用 id 在 `message.source.callId` 上（不在 message.callId）。
-      // 一开始按助手消息那样读，结果界面上"已完成"后面什么都没有——工具返回的
-      // 回执号就丢了，而那正是"真的执行过"的证据。
-      const message = event.data?.message ?? {}
-      const block = Array.isArray(message.content) ? message.content[0] : undefined
-      return {
-        type: 'tool-result',
-        callId: String(message.source?.callId ?? ''),
-        isError: block?.isError === true,
-        text: textOf(block?.content ?? []),
-      }
+      return projectToolResult(event.data?.message)
     }
     case 'approval/asked':
       return { type: 'consent-asked', callId: String(event.data.callId ?? ''), toolName: event.data.toolName }
@@ -523,15 +513,6 @@ function projectEvent(sessionId, event) {
     default:
       return undefined
   }
-}
-
-/** 把内容块里的文本拼起来。 */
-function textOf(content) {
-  if (!Array.isArray(content)) return ''
-  return content
-    .filter(block => block?.type === 'text' && typeof block.text === 'string')
-    .map(block => block.text)
-    .join('')
 }
 
 /** 解析工具参数 JSON；坏了就原样给出（不抛）。 */

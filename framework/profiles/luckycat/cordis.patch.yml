@@ -41,6 +41,9 @@
   disabled: true
 - id: jobs
   disabled: true
+# 新版 sdk-minimal 带目录切换工具，客户助手不开放主机目录操作。
+- id: tool-working-directory
+  disabled: true
 
 # ── 2b. 删行：官方 API 的数据回传（银行框架必须删） ─────────────────────────
 # session-log-deepseek：把「规范化会话日志」**增量上传**给官方 DeepSeek API
@@ -350,13 +353,10 @@
     # 单笔转账上限 5 万元（演示口径）。
     transferLimitCents: 5000000
 
-# ── 9. 长对话与用量（补课：sdk-minimal 不带这些） ───────────────────────────
-# sdk-minimal 没有压缩、没有用量统计：聊长了会直接顶爆上下文，也没有成本数字。
-# 配置照 dsh-base 的出厂行抄（thresholdChars 等）。
+# ── 9. 长对话与用量 ───────────────────────────────────────────────────────
+# 0.2 的 sdk-minimal 已提供 token-meter 与 compaction-basic，不重复插入。
+# 仅补充检查点和大结果裁剪，原始工具结果仍留在日志中。
 - insert:
-    - id: token-meter
-      name: '@deepseek-ai/dsh-token-meter'
-
     - id: session-checkpoint-policy
       name: '@deepseek-ai/dsh-session-checkpoint-policy'
 
@@ -367,8 +367,6 @@
         headChars: 4096
         tailChars: 1024
 
-    - id: compaction-basic
-      name: '@deepseek-ai/dsh-compaction-basic'
 # 业务技能仅供客户 Agent；独立白名单目录，不扫描主机个人/项目技能。
 - id: skill-filesystem
   config:
