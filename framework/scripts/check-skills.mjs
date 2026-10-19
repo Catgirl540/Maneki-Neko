@@ -49,7 +49,7 @@ export function validateSkills({ skillsRoot = resolve(frameworkRoot, 'skills'), 
     for (const tool of [...meta.tools, ...references]) if (!tools.has(tool) || !meta.tools.includes(tool)) throw Error(`${skillName}: 工具未注册或未声明: ${tool}`)
     for (const name of content.matchAll(/\bbank-[a-z]+\b/g)) if (!catalog.services.some(s => s.skillName === name[0])) throw Error(`${skillName}: 引用未知技能 ${name[0]}`)
     if (!content || Buffer.byteLength(content) > MAX_SKILL_BODY_BYTES) throw Error(`${skillName}: 正文为空或超过 ${MAX_SKILL_BODY_BYTES} 字节；禁止截断条件`)
-    for (const title of requiredSections) if (!content.includes(`## ${title}\n`)) throw Error(`${skillName}: 缺少章节 ${title}`)
+    for (const title of requiredSections) if (!content.replaceAll('\r\n', '\n').includes(`## ${title}\n`)) throw Error(`${skillName}: 缺少章节 ${title}`)
     if (![undefined, false].includes(header['disable-model-invocation']) || ![undefined, true].includes(header['user-invocable'])) throw Error(`${skillName}: 必须支持自动与显式调用，调用策略仅接受布尔值`)
     hash.update(skillName).update(raw)
     loaded.push({ ...entry, header, content })

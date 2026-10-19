@@ -9,6 +9,7 @@
 |---|---|---|
 | `@deepseek-ai/dsh`、SDK 与银行插件的 DSH peer | **0.2.1-rc.2** | CLI、SDK、插件清单和锁文件精确一致，不使用 `^` 或 `--legacy-peer-deps` |
 | `@deepseek-ai/cordis` | 4.0.5 | 与新底座一致的插件框架 |
+| `@xmanrui/dsh-im` | 5.1.0 | Bridge 内复用微信/企微运行时；[IM 接入与验证](../../docs/api/im-agent.md)，升级前验证 Controller/Runtime/Harness 适配契约 |
 | `@deepseek-ai/schemastery` | 3.18.5 | 与新底座一致的配置 schema |
 | `typescript` | ^6.0.3 | 与上游一致（**上游是 `^6.0.3`**，别装 7.x） |
 | `@types/node` | ^22.20.3 | Node 22 |

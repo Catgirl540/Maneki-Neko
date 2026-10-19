@@ -58,6 +58,8 @@ bash framework/scripts/bootstrap.sh
 
 模型密钥不放入 `VITE_*`，AI 会话密钥不能用银行数据密钥替代。完整配置见 [AI 会话维护说明](docs/bank-ai-session-postgresql.md)。
 
+微信、企业微信入口见 [IM 接入说明](docs/api/im-agent.md)。在已有银行与 AI 会话配置基础上，设置银行 HTTPS `LUCKYCAT_IM_PUBLIC_URL`，运行 `npm --prefix framework run start:im`，打开 `/agent-api/im` 由运维人员扫码连接机器人。客户独立绑定本人银行账户，业务确认继续在银行页面完成。
+
 ## 5. 验证整合
 
 按 [后端验证说明](server/README.md#验证) 准备四个专用可丢弃 PostgreSQL 测试库；禁止使用客户库。完成上述框架构建后：

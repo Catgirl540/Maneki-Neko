@@ -1,5 +1,7 @@
 # 招财猫银行 · 客户端接口文档（HTTP）
 
+微信、企业微信机器人与银行助手接入见 [IM 接入说明](im-agent.md)。
+
 本目录是网页客户端（`app/`）与银行后端之间的**接口契约**说明。项目前后端分离：
 客户端只依赖 `app/src/api/contract.ts` 的 `BankApi` 与 `routes` 路径表，
 后端（`server/` + `framework/bridge/`）把同一份契约映射成 `/api/*`。

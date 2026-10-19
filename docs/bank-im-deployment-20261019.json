@@ -1,0 +1,78 @@
+{
+  "date": "2026-10-19",
+  "server": "15.235.241.158",
+  "status": "enabled-robot-configured-awaiting-current-customer-binding",
+  "service": "luckycat-agent-demo",
+  "portal": "https://bank.waveflow.men/agent-api/im",
+  "bankEnvironment": "existing-isolated-demo",
+  "bankPort": 8081,
+  "agentPort": 8891,
+  "provider": "openrouter",
+  "model": "qwen/qwen3.8-flash",
+  "dshVersion": "0.2.1-rc.2",
+  "imVersion": "5.1.0",
+  "sourceRelease": "/srv/maneki-bank/releases/20261019-b006b6d",
+  "overlaySha256": "075a262d58950247125b8433bb01d1c190e5e97b8239730165ff129e27b7ac45",
+  "previousBridgeSha256": "1cfdc3e9ef747c34914ef1bbf483e3347d2ad497d2006ad5d63eda9fc1915073",
+  "serverRolloutDirectory": "/home/ubuntu/im-rollout-20261019",
+  "systemdDropIn": "/etc/systemd/system/luckycat-agent-demo.service.d/50-im.conf",
+  "checks": {
+    "existingOpenrouterSyntheticReply": true,
+    "portal200": true,
+    "portalJavascript200": true,
+    "unauthenticatedAdmin401": true,
+    "unauthenticatedBindings401": true,
+    "healthAuthenticationPreserved": true,
+    "agentActive": true,
+    "agentAutomaticRestarts": 0,
+    "otherFiveServicePidsUnchanged": true,
+    "localConnectionTestStopRequested": true
+  },
+  "pending": [
+    "customer-account-binding",
+    "real-bank-query-through-im"
+  ],
+  "smsPortalFix": {
+    "date": "2026-10-19",
+    "artifactSha256": "a987ba5e2c0f20089a53d1f8f97955ced5b04458e90d517c448dd323329d0563",
+    "independentDemoCodeHintAndAutofill": true,
+    "resendCountdownPerPhone": true,
+    "browserRegressionTestsPassed": 10,
+    "publicFilesMatchedUploadedContent": true,
+    "agentNotRestarted": true,
+    "backup": "/home/ubuntu/im-rollout-20261019/sms-ui-backup"
+  },
+  "bindingPortalFix": {
+    "artifactSha256": "f68b4cab963537f568d1444ec681abcc02c670648f93635e0b0ff659c68c482f",
+    "loginAutomaticallyPreviewsPairingSource": true,
+    "usedOrExpiredLinkRecoveryHint": true,
+    "revocationRequiresSecondConfirmation": true,
+    "browserTestsCoverBindRevokeAndRebind": true,
+    "publicScriptContentMatched": true,
+    "agentNotRestarted": true,
+    "bindingDataNotChanged": true,
+    "backup": "/home/ubuntu/im-rollout-20261019/binding-ui-backup"
+  },
+  "routineImQueryFix": {
+    "artifactSha256": "1861545c49c46bac29b60c5e33d4d79e4f8d01ec797b453ba4a550c435c5f1ff",
+    "scope": "allowlisted-read-only-queries-in-active-authenticated-im-turns",
+    "perCallOwnershipArgumentsExpiryAndOneUseChecksPreserved": true,
+    "writeAndCardSecretConfirmationPreserved": true,
+    "bindingScopeNoticeAddedSeparately": true,
+    "skillLineEndingsNormalizedToLFOnServer": true,
+    "startupCompatibilityIssueRepairedAndServiceRecovered": true,
+    "localQueryPersistenceAndConnectionTestsPassed": 7,
+    "existingBrowserRuntimeTestsPassed": 10,
+    "knowledgeAndSkillsValidated": true,
+    "singleAccountModelChecksPassed": true,
+    "demoAgentRestarted": true,
+    "otherFiveServicePidsUnchanged": true,
+    "customerMustRebindOnceAfterRestart": true,
+    "backup": "/home/ubuntu/im-rollout-20261019/query-reuse-backup"
+  },
+  "notes": [
+    "No database migration, data-key replacement, financial transaction or Nginx change performed.",
+    "Local connection-test credentials and routes were not copied to the server.",
+    "Current source release has an incremental IM overlay; preserve it and the pinned dependency on future releases."
+  ]
+}

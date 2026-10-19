@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>招财猫银行 · IM 连接</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;color:#20213a;background:#f3f4fa;color-scheme:light}
+    *{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:0 auto;padding:32px 20px 64px}header{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:30px}h1{font-size:25px;margin:0 0 8px}h2{font-size:18px;margin:0 0 18px}p{line-height:1.65}small,.muted{color:#686c83}section,.card{background:white;border:1px solid #e3e5ef;border-radius:16px;padding:24px;margin:16px 0}label{display:block;margin:15px 0 6px;font-size:14px}input,textarea,select{font:inherit;width:100%;padding:11px 12px;border:1px solid #cdd0e1;border-radius:8px;background:white}textarea{min-height:90px}button{font:inherit;border:0;border-radius:8px;background:#6358d9;color:white;padding:11px 17px;cursor:pointer;margin:12px 8px 0 0}button.secondary{background:#ecebf8;color:#484469}button.danger{background:#fff0f0;color:#ac3232}button:disabled{opacity:.5;cursor:wait}.row{display:flex;align-items:center;gap:12px}.row>*{flex:1}.row button{flex:0 0 auto}.check{display:flex;align-items:flex-start;gap:10px}.check input{width:auto;margin-top:4px}.hidden,[hidden]{display:none!important}#notice{white-space:pre-wrap;color:#84420e;background:#fff3df;border-radius:10px;padding:14px;margin:16px 0;overflow-wrap:anywhere}.qr{width:min(260px,100%);height:auto;display:block;margin:16px 0}article{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f5fc;border-radius:10px;padding:16px;margin:12px 0}.field{border-bottom:1px solid #eeeff5;padding:10px 0;overflow-wrap:anywhere}.field b{display:block;font-size:13px;color:#686c83;margin-bottom:4px}.pairing{background:#f3f1ff;border-color:#d9d2fa}a{color:#594cd0}output{display:block;white-space:pre-wrap;overflow-wrap:anywhere}nav{display:flex;gap:8px}nav button{font-size:13px;margin:0}.session-button{display:block;width:100%;text-align:left;background:#f2f1fa;color:#34304e}#connection-label{overflow-wrap:anywhere}@media(max-width:550px){main{padding:22px 14px}section,.card{padding:18px}header{align-items:flex-start;flex-direction:column}.row{flex-wrap:wrap}.row input{min-width:130px}}
+  </style>
+  <script type="module" src="/agent-api/im/portal.js"></script>
+</head>
+<body><main>
+  <header><div><h1>IM 连接</h1><small>招财猫银行 · 微信与企业微信</small></div><nav><button id="customer-tab" class="secondary">账户连接</button><button id="admin-tab" class="secondary">机器人管理</button></nav></header>
+  <div id="notice" role="status" hidden></div>
+  <section id="connection-test-notice" hidden><h2>本地 IM 连接验证</h2><p>本次仅验证机器人扫码和私聊文字收发。收到消息后会明确回复连接测试成功，未启用模型或银行业务。管理权限仅对本次本机访问有效。</p></section>
+  <section id="login-panel">
+    <h2 id="login-title">登录银行账户</h2><p class="muted">在此完成账户绑定与业务确认。账号密码、支付密码不会发送到 IM 对话。</p>
+    <form id="login-form">
+      <label id="identity-label" for="identity">手机号</label><input id="identity" autocomplete="username" required maxlength="80">
+      <label for="password">登录密码</label><input id="password" type="password" autocomplete="current-password" required maxlength="128">
+      <div id="sms-fields"><label for="sms-code">短信验证码</label><div class="row"><input id="sms-code" inputmode="numeric" autocomplete="one-time-code" maxlength="12"><button id="sms-button" class="secondary" type="button">获取验证码</button></div><p id="sms-hint" role="status" hidden></p></div>
+      <button type="submit">登录</button>
+    </form>
+  </section>
+  <div id="customer-panel" hidden>
+    <section><div class="row"><h2 id="customer-name">账户连接</h2><button id="logout-button" class="secondary">退出页面</button></div><p class="muted">登录授权仅保存在本次服务进程内，银行登录失效或服务重启后需重新连接。</p>
+      <div id="pair-panel" class="card pairing"><h2>绑定 IM 私聊</h2><p>绑定后，此私聊可在登录有效期间查询本人的余额、流水等信息。转账及其他写操作仍需单独确认。</p><label for="pair-code">绑定码</label><input id="pair-code" autocomplete="off" maxlength="80" placeholder="从机器人回复的链接获取"><button id="preview-button" class="secondary">核对来源</button><p id="pair-preview"></p><button id="claim-button" hidden>确认绑定到当前银行账户</button></div>
+      <div id="bindings"></div>
+    </section>
+    <section id="session-panel" hidden><h2 id="connection-label">IM 会话</h2><p id="session-status" class="muted"></p><div id="messages"></div><div id="pending"></div><button id="stop-button" class="danger">停止当前任务</button></section>
+  </div>
+  <div id="admin-panel" hidden>
+    <section><h2>机器人连接</h2><p class="muted">机器人负责收发私聊消息。每位使用者仍需绑定自己的银行账户；群聊不办理个人银行业务。</p><button id="weixin-provision">扫码连接微信</button><button id="wecom-provision">扫码创建企微机器人</button><button id="refresh-button" class="secondary">刷新状态</button><button id="admin-logout-button" class="secondary">退出管理</button><div id="provisioning"></div></section>
+    <section><h2>使用已有企微机器人</h2><form id="wecom-form"><label for="bot-id">Bot ID</label><input id="bot-id" autocomplete="off" required maxlength="256"><label for="bot-secret">Secret</label><input id="bot-secret" type="password" autocomplete="off" required maxlength="1024"><button type="submit">保存并连接</button></form></section>
+    <div id="bots"></div>
+  </div>
+</main></body></html>

@@ -16,7 +16,7 @@ function fixture(store) {
   const response = { write(frame) { state.frames.push(frame) }, end() { state.ended++ } }
   const context = createContext({
     sessions: new Map([['session', entry]]), streams: new Map([['session', new Set([response])]]),
-    HTTP_BANK: true, eventPolling: { remember() {} },
+    HTTP_BANK: true, imBank: undefined, eventPolling: { remember() {} },
     sessionStore: { flush: async () => {}, record(...args) { state.records++; return store(...args) } },
     console: { warn() { state.warnings++ } },
   })

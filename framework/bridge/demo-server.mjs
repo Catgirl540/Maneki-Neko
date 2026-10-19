@@ -30,6 +30,9 @@
  *   LUCKYCAT_BANK_MODE demo 才启用独立占位工具；默认 http
  *   LUCKYCAT_SESSION_DATABASE_URL AI 会话专用 PostgreSQL 角色连接
  *   LUCKYCAT_SESSION_DATA_KEY AI 会话独立持久密钥（Base64 编码的 32 字节）
+ *   LUCKYCAT_IM_ENABLED=1 启用微信、企微客户私聊（默认关闭）
+ *   LUCKYCAT_IM_PUBLIC_URL 银行 HTTPS 公网地址，用于绑定和确认链接
+ *   LUCKYCAT_IM_DATA_KEY 可选独立 IM 密钥；默认从 AI 会话密钥派生
  *   LUCKYCAT_PG_MODULE_PATH 可选，已安装 pg 包的绝对路径
  *   LUCKYCAT_DEMO_PASSWORD 仅旧 demo 模式支付密码，默认 123456
  *   LUCKYCAT_DEMO_TOKEN    可选的访问口令；设了以后所有请求都要带
@@ -70,6 +73,10 @@ import { OPS_NATIVE_TOOLS } from '../packages/ops-native/src/names.mjs'
 import { createEventPolling } from './event-polling.mjs'
 import { createAssistantStream } from './assistant-stream.mjs'
 import { openSessionStore, legacyContext } from './session-store.mjs'
+import { openImStore } from './im-store.mjs'
+import { createImBank } from './im-bank.mjs'
+import { createImChannels } from './im-channels.mjs'
+import { createImHttp } from './im-http.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const STAFF_MODE = process.env.LUCKYCAT_AUDIENCE === 'staff'
@@ -358,6 +365,7 @@ const pendingConsents = new Map()
 /** 每个会话的 SSE 订阅者：sessionId → Set<res>。 */
 const streams = new Map()
 const eventPolling = createEventPolling()
+let imBank, imChannels, imHttp
 
 /** 把一条 SSE 事件推给某个会话的所有订阅者。 */
 let persistenceFailureLogged = false
@@ -383,6 +391,7 @@ function publish(sessionId, event) {
   }
   const delivered = Promise.resolve(durable).then(() => {
     if (persistenceFailureLogged) throw Object.assign(new Error('会话持久化服务不可用'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' })
+    imBank?.observe(sessionId, event)
     for (const res of subscribers) if (!res.writableEnded && !res.destroyed) {
       try { res.write(frame) } catch { streams.get(sessionId)?.delete(res) }
     }
@@ -702,6 +711,7 @@ async function handle(req, res) {
   await sessionStore?.flush()
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   const parts = pathParts(url.pathname)
+  if (imHttp && await imHttp.handle(req, res, { pathname: url.pathname, readJson, sendJson })) return
 
   const internal = url.pathname === '/consent/challenge' || url.pathname === '/agent-api/questions' || url.pathname === '/internal/bank-tool' || url.pathname.startsWith('/internal/ops-tool/')
   if (HTTP_BANK && internal && req.headers['x-luckycat-internal'] !== INTERNAL_TOKEN) {
@@ -761,6 +771,7 @@ async function handle(req, res) {
     await sendJson(res, 200, result)
     return
   }
+  if (imHttp && await imHttp.handle(req, res, { pathname: url.pathname, identity, readJson, sendJson })) return
   // 健康探测：网页据此决定走真 agent 还是回落固定话术。
   if (req.method === 'GET' && parts.join('/') === 'agent-api/health') {
     /*
@@ -789,12 +800,7 @@ async function handle(req, res) {
   // 建会话
   if (req.method === 'POST' && parts.join('/') === 'agent-api/sessions') {
     const context = legacyContext((await readJson(req)).history)
-    if (HTTP_BANK) makeSessionRoom(identity.user.id)
-    const sessionId = `web-${randomUUID()}`
-    const entry = sessionOf(sessionId)
-    if (identity) { entry.ownerId = identity.user.id; entry.bankToken = identity.token }
-    entry.legacyContext = context
-    await sessionStore?.save(entry)
+    const sessionId = await createWebSession(identity, context)
     await sendJson(res, 200, { sessionId })
     return
   }
@@ -819,23 +825,7 @@ async function handle(req, res) {
     if (!entry) throw bankError('会话不存在', 404)
     if (!entry.busy) { await sendJson(res, 200, { stopped: false }); return }
     if (entry.stopTask) { await entry.stopTask; await sendJson(res, 200, { stopped: true }); return }
-    entry.stopping = true
-    entry.activity.cancelled = true
-    entry.assistantStream?.stop()
-    bankAgent?.forgetSession(entry.id)
-    opsGate?.forgetSession(entry.id)
-    entry.stopTask = (async () => {
-      // 正在初始化 / 排入运行时的会话可能还没有 agent，重试直到取消或本轮退出。
-      for (let i = 0; i < 100 && entry.busy; i++) {
-        try {
-          if ((await harness?.client.request('luckycat.cancel', { sessionId: entry.id, token: INTERNAL_TOKEN }, 2000))?.cancelled) break
-        } catch { /* 尚在启动 */ }
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
-      for (const [id, pending] of pendingConsents) if (pending.challenge.sessionId === entry.id) settleConsent(id, { decision: 'reject', challengeId: id })
-      for (const [id, pending] of pendingQuestions) if (pending.sessionId === entry.id) settleQuestion(id, undefined)
-    })().finally(() => { entry.stopTask = undefined })
-    await entry.stopTask
+    await stopSession(entry.id)
     await sendJson(res, 200, { stopped: true })
     return
   }
@@ -1369,6 +1359,15 @@ async function handle(req, res) {
     let challenge = await readJson(req)
     if (OPS_MODE && OPS_NATIVE_TOOLS.includes(challenge.toolName)) challenge = await opsGate.challenge(challenge)
     else if (HTTP_BANK) challenge = await bankAgent.prepare(challenge)
+    let imQueryAuthorized = false
+    try { imQueryAuthorized = imBank && await imBank.authorizeQuery(challenge, bankAgent.approveRoutineQuery) }
+    catch (error) { bankAgent.forget(challenge); throw error }
+    if (imQueryAuthorized) {
+      try { await publish(challenge.sessionId, { type: 'im-query-authorized', challengeId: challenge.challengeId, toolName: challenge.toolName }) }
+      catch (error) { bankAgent.forget(challenge); throw error }
+      await sendJson(res, 200, { decision: 'approve', challengeId: challenge.challengeId })
+      return
+    }
     if (typeof challenge.challengeId !== 'string' || challenge.challengeId === '') {
       await sendJson(res, 400, { error: 'challenge 缺少 challengeId' })
       return
@@ -1434,11 +1433,66 @@ async function handle(req, res) {
   await sendJson(res, 404, { error: `未知路径：${req.method} ${url.pathname}` })
 }
 
+async function createWebSession(identity, context) {
+  if (HTTP_BANK) makeSessionRoom(identity.user.id)
+  const sessionId = `web-${randomUUID()}`
+  const entry = sessionOf(sessionId)
+  if (identity) { entry.ownerId = identity.user.id; entry.bankToken = identity.token }
+  entry.legacyContext = context
+  await sessionStore?.save(entry)
+  return sessionId
+}
+
+async function stopSession(sessionId) {
+  const entry = sessions.get(sessionId)
+  if (!entry?.busy) return
+  if (entry.stopTask) return entry.stopTask
+  entry.stopping = true
+  entry.activity.cancelled = true
+  entry.assistantStream?.stop()
+  bankAgent?.forgetSession(entry.id)
+  opsGate?.forgetSession(entry.id)
+  entry.stopTask = (async () => {
+    for (let i = 0; i < 100 && entry.busy; i++) {
+      try {
+        if ((await harness?.client.request('luckycat.cancel', { sessionId: entry.id, token: INTERNAL_TOKEN }, 2000))?.cancelled) break
+      } catch { /* Runtime may still be starting. */ }
+      await new Promise(resolve => setTimeout(resolve, 50))
+    }
+    for (const [id, pending] of pendingConsents) if (pending.challenge.sessionId === entry.id) settleConsent(id, { decision: 'reject', challengeId: id })
+    for (const [id, pending] of pendingQuestions) if (pending.sessionId === entry.id) settleQuestion(id, undefined)
+  })().finally(() => { entry.stopTask = undefined })
+  return entry.stopTask
+}
+
+if (!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
+  if (!HTTP_BANK) throw Error('IM requires the authenticated bank HTTP mode')
+  const directory = join(SESSION_DIR, 'im')
+  const store = await openImStore(join(directory, 'bank-bindings.enc.json'), process.env.LUCKYCAT_IM_DATA_KEY ?? process.env.LUCKYCAT_SESSION_DATA_KEY)
+  imBank = createImBank({
+    store, publicUrl: process.env.LUCKYCAT_IM_PUBLIC_URL ?? `http://127.0.0.1:${PORT}`,
+    createSession: identity => createWebSession(identity), current: id => bankAgent.current(id), cancel: stopSession,
+    run: (id, text) => {
+      const entry = sessions.get(id)
+      if (!entry || entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
+      const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感卡信息仍须在银行页面授权。】\n' + serviceSkillContext(undefined) + text)
+      activeTurns.add(turn)
+      void turn.finally(() => activeTurns.delete(turn)).catch(() => {})
+      return turn
+    },
+    deliver: (route, text) => imChannels.deliver(route, text),
+  })
+  imChannels = await createImChannels({ directory, credentials: store.credentials, harness: imBank.harness })
+  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080' })
+  await imChannels.initialize()
+}
+
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[demo-server] http://127.0.0.1:${PORT}`)
   console.log(`[demo-server] DSH_HOME=${home}`)
   console.log(`[demo-server] provider=${PROVIDER} model=${MODEL}`)
   if (ACCESS_TOKEN !== '') console.log('[demo-server] 已启用访问口令（x-luckycat-token）')
+  if (imHttp) console.log(`[demo-server] IM 管理与银行确认入口：http://127.0.0.1:${PORT}/agent-api/im`)
 })
 
 /** 优雅退出：结束所有待确认事项与 SSE 连接，再关 harness。 */
@@ -1462,8 +1516,10 @@ async function shutdown() {
   streams.clear()
   server.close()
   try {
+    await imBank?.close()
     if (harness !== undefined) await harness.close()
     await Promise.allSettled(activeTurns)
+    await imChannels?.close()
   } finally {
     try { await sessionStore?.close() }
     finally { await rm(controlDir, { recursive: true, force: true }) }

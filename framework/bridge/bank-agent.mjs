@@ -21,6 +21,7 @@ const digest = value => createHash('sha256').update(stable(value)).digest('hex')
 const field = (label, value, emphasis = false) => ({ label, value: String(value), ...(emphasis ? { emphasis: true } : {}) })
 const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'])
 const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer', 'bank_request_human_support', 'bank_reply_support_ticket'])
+const routineQueries = new Set(['bank_get_balance', 'bank_list_transactions', 'bank_get_transaction_detail', 'bank_list_banks', 'bank_list_payees', 'bank_list_cards', 'bank_card_products', 'bank_list_autodebits', 'bank_get_spending', 'bank_get_cashflow', 'bank_list_support_tickets', 'bank_get_support_ticket'])
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -407,6 +408,15 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
     } finally { g.password = undefined }
   }
   function forgetSession(sessionId) { for (const g of grants.values()) if (g.challenge.sessionId === sessionId) forget(g.challenge) }
+  // Called only through the Bridge's active, authenticated IM binding gate.
+  async function approveRoutineQuery(challenge) {
+    const g = grants.get(key(challenge.sessionId, challenge.callId))
+    if (!g || g.challenge.challengeId !== challenge.challengeId || g.challenge.toolName !== challenge.toolName
+        || !routineQueries.has(g.challenge.toolName) || (g.method ?? 'GET') !== 'GET' || g.body !== undefined
+        || g.challenge.verification || g.challenge.riskAcknowledgementText) return false
+    await approve(g.challenge)
+    return true
+  }
   function close() { for (const g of grants.values()) { clearTimeout(g.timer); g.password = undefined }; grants.clear() }
-  return { authenticate, owned, current, prepare, approve, forget, forgetSession, execute, close }
+  return { authenticate, owned, current, prepare, approve, approveRoutineQuery, forget, forgetSession, execute, close }
 }

@@ -31,6 +31,18 @@ VITE_USE_MOCK=false VITE_BASE_PATH=/ VITE_API_BASE_URL='' VITE_AGENT_URL=/agent-
 
 ## 数据和凭据
 
+### 客户 IM（2026-10-19 增量启用）
+
+已在 `luckycat-agent-demo` 启用微信/企微 IM 适配，公网入口为 `https://bank.waveflow.men/agent-api/im`。该入口沿用演示银行、现有 OpenRouter 模型及客户 AI 会话库。管理机器人需要演示银行的运维账号；客户须在银行页面独立绑定本人账户，才能查询或办理业务。服务器机器人仍需扫码配置，本机连接测试的机器人和绑定不会自动迁入。
+
+本次仅重启演示客户 Agent，其他银行及 Agent 服务的进程未变。新增 drop-in `/etc/systemd/system/luckycat-agent-demo.service.d/50-im.conf` 设置 `LUCKYCAT_IM_ENABLED=1` 和 HTTPS `LUCKYCAT_IM_PUBLIC_URL`；无需修改 Nginx。上游 `@xmanrui/dsh-im@5.1.0` 独立安装于 `/home/ubuntu/im-rollout-20261019/vendor`，通过当前 framework 的 `node_modules/@xmanrui/dsh-im` 链接加载。后续完整发布使用仓库已锁定的 npm 依赖，并保留匹配 IM 密钥和状态目录。
+
+当前 release 包含 IM 增量覆盖文件；原 bridge 备份、包清单与接口检查位于服务器 `/home/ubuntu/im-rollout-20261019/`。部署记录见 [IM 启用记录](../../docs/bank-im-deployment-20261019.json)。管理页及脚本返回 200，未认证管理/客户接口返回 401，服务无自动重启。模型合成请求验证成功；服务器微信扫码、客户绑定及真实银行查询尚待用户验收，不把部署检查当作端到端验收。
+
+若回退，先停演示客户 Agent，恢复备份的 `demo-server.mjs`，撤除本次新增 drop-in，`daemon-reload` 后启动原服务。保留 IM 状态、依赖和备份；不回退数据库，不删除会话或资金数据。
+
+后续 IM 查询修复：已绑定且登录有效的当前私聊请求，对普通只读工具白名单复核归属后直接执行，不再逐次跳转网页确认。写操作和敏感卡信息保持原确认。新增 `bank-agent.approveRoutineQuery` 与 `im-bank.authorizeQuery` 在 Bridge 的内部确认通道串联，仍沿用参数绑定、一次性授权、持久化审计与提交前校验。普通网页及员工 Agent 不使用此授权入口。源码、生成语料、技能与原文件备份位于服务器 `query-reuse-backup` 子目录，检查记录为 `query-checks.json`。此次只重启演示客户 Agent，用户需重新绑定一次。回退这次修复应恢复 `query-reuse-backup` 中的文件并重启演示客户 Agent，保留原 IM 启用 drop-in，不删除用户数据。
+
 本次停止旧写入后分别导出两库，再恢复到新机空库。两库各 73 张表，146 张表逐表记录数在启动前全部匹配，126 个原生日志和附件文件同步恢复。没有重置客户、余额、冻结、流水、员工或 AI 会话数据；账户模型继续遵守 `docs/product/account-model.md`。
 
 配置目录 `/etc/maneki-vps2` 为 root `0700`，其中 `bank-{live,demo}.env`、`agent-{live,demo,staff,ops}.env`、`models.env` 和备份连接文件均为 root `0600`。systemd 注入配置，服务账号不能直接读取秘密文件。数据库角色密码在新机重新生成；银行字段与 AI 会话密钥沿用迁移数据匹配的原值。不要打印配置、提交凭据或重新生成数据密钥。

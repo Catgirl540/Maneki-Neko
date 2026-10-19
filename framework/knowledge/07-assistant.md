@@ -4,7 +4,7 @@ title: "助手能力与对话"
 navigation: "助手"
 routes: ["/support"]
 keywords: ["助手", "图片", "语音", "历史记录", "人工客服", "转人工", "工单", "投诉"]
-sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "server/support-api.mjs", "app/src/components/support/HumanSupport.tsx", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs"]
+sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "server/support-api.mjs", "app/src/components/support/HumanSupport.tsx", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs", "framework/bridge/im-bank.mjs", "docs/api/im-agent.md"]
 ---
 
 ## 助手能办理什么？哪些功能暂不支持？ {#capabilities}
@@ -14,6 +14,8 @@ sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/s
 ## 助手转账要怎么确认？支付密码填在哪里？ {#confirmation}
 
 提交转账、理财申赎、新卡申请、换卡及查看敏感卡信息时，按确认卡片核对业务信息并在专用输入框验证支付密码；不要在聊天正文发送密码、验证码或 CVV。取消或过期的确认不能执行。锁卡解锁、卡片设置、自动扣款启停、在途撤回只需确认，无需支付密码；查询也可能需要授权确认，完成结果以业务返回为准；确认卡不是成功回执。
+
+启用微信或企微渠道时，先通过机器人私聊中的银行链接登录并绑定本人客户身份，绑定不会另开资金账户。登录有效期间，余额、流水、卡片概要、消费及现金流等白名单只读查询由服务端复核客户归属后直接在原私聊回复，不要求逐次打开网页或确认查询；不包含完整卡号、CVV和任何写操作。IM 入口支持文字私聊，群聊、图片及文件办理尚未接入。写操作、敏感卡信息或补充信息仍需打开银行确认页面，密码与风险确认只在银行页面填写，聊天中的同意不放行写入业务。可在银行连接页解除；登录失效或服务重启后需重新连接，不自动续办旧指令。
 
 ## 助手支持截图、照片和文件附件吗？ {#images}
 
