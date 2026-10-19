@@ -81,6 +81,7 @@ const ROUTES = [
   ['PATCH', 'securityRule', 'setSecurityRule', (id, b) => [id, b.enabled]],
   ['PATCH', 'changePhone', 'changePhone', (id, b) => [b]],
   ['POST', 'changePassword', 'changePassword', (id, b) => [b.oldPassword, b.newPassword]],
+  ['POST', 'paymentPassword', 'changePaymentPassword', (id, b) => [b]],
   ['POST', 'verifyIdentity', 'verifyIdentity', (id, b) => [b.channel]],
 
   // —— 客服（固定话术那套；真 agent 走 /agent-api，不是这里）——
@@ -104,8 +105,6 @@ const ROUTES = [
   // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
   ['GET', 'invitations', 'getInvitations', () => []],
   ['GET', 'membership', 'getMembership', () => []],
-  ['POST', 'membershipSubscribe', 'subscribeMembership', (id, b) => [b.planId]],
-  ['POST', 'membershipCancel', 'cancelMembership', () => []],
   ['GET', 'identityStatus', 'getIdentityStatus', () => []],
   ['POST', 'identityOcr', 'runIdentityOcr', () => []],
   ['POST', 'identityLiveness', 'runIdentityLiveness', () => []],
@@ -255,6 +254,7 @@ export async function createBankApi({
   onHoldClosed,
   security,
   database,
+  classify: classifyFn,
 } = {}) {
   if (!storage || !database || !auth || !security) throw new Error('Bank API requires database, authentication and security gateway')
   installBrowserShim(undefined, storage)
@@ -276,7 +276,7 @@ export async function createBankApi({
   catch (error) { await storage.rollbackUnitOfWork(); throw error }
 
   const api = createBankBusinessApi(
-    { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security },
+    { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn },
   )
   // reviewThreshold 允许是函数：mock 内部每笔转账现读，员工端改完立刻生效。
   const patterns = compilePatterns(routes)
@@ -389,7 +389,7 @@ export async function createBankApi({
 
     try {
       // Legacy portfolios are historical demo records, never commercial bank balances.
-      const liveSafe = new Set(['login','register','logout','profile','sendSmsCode','verifyIdentity','changePhone','changePassword','getSecurityOverview','listSupportMessages','sendSupportMessage','requestHumanSupport','listSupportTickets','getSupportTicket','replySupportTicket'])
+      const liveSafe = new Set(['login','register','logout','profile','sendSmsCode','verifyIdentity','changePhone','changePassword','changePaymentPassword','getSecurityOverview','listSupportMessages','sendSupportMessage','requestHumanSupport','listSupportTickets','getSupportTicket','replySupportTicket'])
       if (security.mode === 'live' && !liveSafe.has(entry.bankMethod)) throw Object.assign(new Error('合作银行尚未接入或尚未授权此项能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
       const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : {}
       if (entry.bankMethod === 'login') await security.run(req, () => security.loginAttempt(body.phone))

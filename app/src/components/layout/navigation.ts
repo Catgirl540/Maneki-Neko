@@ -38,7 +38,7 @@ export const serviceGroups = [
     { to: '/security', label: '安全设置', Icon: LockIcon },
     { to: '/security/identity', label: '身份认证', Icon: UserIcon },
     { to: '/security/invitations', label: '邀请与奖励', Icon: UserIcon },
-    { to: '/security/membership', label: '会员与订阅', Icon: UserIcon },
+    { to: '/security/membership', label: '会员等级', Icon: UserIcon },
   ] },
 ]
 

@@ -34,7 +34,7 @@ import { redactSupportText } from '../../shared/support.mjs';
 import { STORAGE_KEYS, storage } from '../lib/storage.mjs';
 import { CHANNEL_LABEL, STATUS_LABEL } from '../lib/tx.mjs';
 import { maskPhone } from '../lib/format.mjs';
-import { CARD_PAYMENT_METHOD, DEFAULT_PAY_PASSWORD, CARD_PRODUCTS, emptyCustomerDomains, lookupFpsRegistration, cardPan, RISK_QUESTIONS, WEALTH_PRODUCTS, toleranceFromScore, FX_QUOTE_TTL, FX_SPREAD, findBank, PAY_PASSWORD_MAX_ATTEMPTS, fxRate, loadDb, findProfileByPhone, findProfileByUserId, findRecipientByNumber, persistRelatedProfiles, forgetProfilePhone, activateDb, makeReferenceNo, monthKey, nextId, persist, toTransactionListItem, withBalances, } from './state.mjs';
+import { CARD_PAYMENT_METHOD, DEFAULT_PAY_PASSWORD, CARD_PRODUCTS, emptyCustomerDomains, lookupFpsRegistration, cardPan, RISK_QUESTIONS, WEALTH_PRODUCTS, toleranceFromScore, FX_QUOTE_TTL, FX_SPREAD, FX_MID_RATES, findBank, PAY_PASSWORD_MAX_ATTEMPTS, cardFeeQuote, effectiveSpread, evaluateMembership, fxRateFor, membershipOverview, recordCardFeeWaiver, OCCUPYING_CARD_STATUSES, loadDb, findProfileByPhone, findProfileByUserId, findRecipientByNumber, persistRelatedProfiles, forgetProfilePhone, activateDb, makeReferenceNo, monthKey, nextId, persist, toTransactionListItem, withBalances, } from './state.mjs';
 import { lookupCardBin } from './card-bin.mjs';
 const delay = async () => {};
 async function passwordDigest(value) { return hashPassword(value); }
@@ -100,17 +100,17 @@ function withDerived(account) {
  * 生成换汇报价。扣账币种与收款币种相同时返回 undefined —— 不需要换汇。
  * 报价带 quotedAt / quoteTtlSeconds，调用方（UI）据此倒计时并在过期后重新询价。
  */
-function buildFxQuote(from, to, fromAmount) {
+function buildFxQuote(db, from, to, fromAmount) {
     if (from === to || fromAmount <= 0)
         return undefined;
-    const rate = fxRate(from, to);
+    const rate = fxRateFor(db, from, to, FX_MID_RATES, FX_SPREAD);
     return {
         fromCurrency: from,
         toCurrency: to,
         rate,
         fromAmount,
         toAmount: Math.round(fromAmount * rate),
-        spread: FX_SPREAD,
+        spread: effectiveSpread(db, FX_SPREAD),
         quoteTtlSeconds: FX_QUOTE_TTL,
         quotedAt: new Date().toISOString(),
     };
@@ -227,12 +227,16 @@ function findCard(id) {
 function newCardCvv() {
     return String(randomInt(100, 1000));
 }
+let txClassifier = null;
 /**
  * 追加一笔台账。渠道与支付方式由调用方显式给出 ——
  * 这样每笔新交易的凭证要素都是真的，而不是事后从分类里猜出来的。
  * 交易前后余额不落库：它们随账户余额变化，由 getTransaction 读取时回推。
+ *
+ * 分类：调用方明确给出 salary / transfer 等语义的直接落库；
+ * 'other' 的支出流水交给模型自动分类（失败保留 other），换汇等 businessType 不参与。
  */
-function pushTransaction(tx, detail, save = true, identity) {
+async function pushTransaction(tx, detail, save = true, identity) {
     const db = loadDb();
     const id = identity?.transactionId ?? nextId('txn');
     const created = {
@@ -241,6 +245,22 @@ function pushTransaction(tx, detail, save = true, identity) {
         createdAt: identity?.createdAt ?? tx.createdAt,
         detail: { ...detail, referenceNo: identity?.referenceNo ?? makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
     };
+    if (txClassifier && created.category === 'other' && created.direction === 'out' && !created.businessType) {
+        try {
+            const category = await txClassifier({
+                counterparty: created.counterparty,
+                memo: created.memo,
+                direction: created.direction,
+                channel: detail.channel,
+                amount: created.amount,
+                currency: detail.settleCurrency ?? findBalance(db, created.accountId)?.currency,
+            });
+            if (category) created.category = category;
+        }
+        catch {
+            // 分类失败不阻塞记账，保持 other
+        }
+    }
     db.transactions.unshift(created);
     if (save)
         persist();
@@ -375,7 +395,7 @@ export function verifyPayPassword(input) {
  * 扣制卡费用并落一笔流水。
  * 收钱必须留痕 —— 只改余额不记账，对账单上就凭空少了一笔。
  */
-function chargeCardFee(amount, label) {
+async function chargeCardFee(amount, label) {
     if (amount <= 0)
         return;
     const db = loadDb();
@@ -384,7 +404,7 @@ function chargeCardFee(amount, label) {
         throw new ApiError('储蓄账户可用余额不足，请先转入后再申请', 400, 'INSUFFICIENT_FUNDS');
     }
     applyBalance(account.id, -amount);
-    pushTransaction({
+    await pushTransaction({
         accountId: account.id,
         direction: 'out',
         amount,
@@ -441,6 +461,8 @@ const EXPORT_COLUMNS = [
  */
 export function createBankBusinessApi(options) {
     const security = options?.security;
+    // 交易自动分类器（OpenRouter），未注入时全部保持调用方给的分类
+    txClassifier = options?.classify ?? null;
     const thresholdSource = options?.reviewThreshold;
     const readThreshold = async () => typeof thresholdSource === 'function' ? await thresholdSource() : thresholdSource;
     const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000;
@@ -486,6 +508,9 @@ export function createBankBusinessApi(options) {
             if (req.password.length < 6 || req.password.length > 20) {
                 throw new ApiError('登录密码需为 6–20 个字符', 400, 'WEAK_PASSWORD');
             }
+            if (!/^\d{6}$/.test(req.paymentPassword)) {
+                throw new ApiError('请设置 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD');
+            }
             if (!req.holderName.trim())
                 throw new ApiError('请填写姓名', 400, 'NAME_REQUIRED');
             if (!/^\d{17}[\dXx]$/.test(req.idNumber.trim()))
@@ -517,7 +542,7 @@ export function createBankBusinessApi(options) {
                 id: `u_${Date.now()}`,
                 name: req.holderName.trim(),
                 phone,
-                memberLevel: '普通会员',
+                memberLevel: '白银会员',
                 avatarInitial: req.holderName.trim().slice(0, 1),
             };
             next.passwordDigest = await passwordDigest(req.password);
@@ -526,7 +551,7 @@ export function createBankBusinessApi(options) {
             next.transactions = [];
             // 新用户不能继承当前档案的演示收款人或支付密码状态。
             next.payees = [];
-            next.payPassword = hashPassword(DEFAULT_PAY_PASSWORD);
+            next.payPassword = hashPassword(req.paymentPassword);
             next.payPasswordFailures = 0;
             next.cards = [];
             next.cardSecrets = {};
@@ -545,7 +570,9 @@ export function createBankBusinessApi(options) {
         },
         async profile() {
             await delay(140);
-            return loadDb().user;
+            const db = loadDb();
+            if (evaluateMembership(db)) persist();
+            return db.user;
         },
         async listAccounts() {
         await delay(160);
@@ -680,7 +707,7 @@ export function createBankBusinessApi(options) {
         accountId = account.id;
         applyBalance(accountId, amount, false);
         const salary = channel === 'salary';
-        pushTransaction({
+        await pushTransaction({
             accountId,
             direction: 'in',
             amount,
@@ -799,7 +826,7 @@ export function createBankBusinessApi(options) {
                     ? '实时到账'
                     : '预计 2 小时内到账';
         // 扣账币种 ≠ 收款币种时才需要换汇
-        const fx = buildFxQuote(current.currency, req.payeeCurrency ?? current.currency, req.amount);
+        const fx = buildFxQuote(db, current.currency, req.payeeCurrency ?? current.currency, req.amount);
         const requiresConfirm = req.amount >= LARGE_TRANSFER;
         return {
             fee,
@@ -891,7 +918,7 @@ export function createBankBusinessApi(options) {
             ? Math.max(Math.round(req.amount * OVERSEAS_RATE), OVERSEAS_MIN_FEE)
             : 0;
         const total = req.amount + fee;
-        const quotedFx = buildFxQuote(account.currency, req.payeeCurrency ?? account.currency, req.amount);
+        const quotedFx = buildFxQuote(db, account.currency, req.payeeCurrency ?? account.currency, req.amount);
         assertTransferConfirmation(req, fee, account.currency, quotedFx, options?.acceptedQuote);
         if (req.confirmedRecipient) {
             const registered = req.fpsMethod && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod, req.fpsId ?? '') : undefined;
@@ -946,7 +973,7 @@ export function createBankBusinessApi(options) {
                     throw new ApiError('账户可用余额不足', 400, 'INSUFFICIENT_FUNDS');
                 }
             }
-            const held = pushTransaction({
+            const held = await pushTransaction({
                 accountId: req.fromAccountId,
                 direction: 'out',
                 amount: req.amount,
@@ -994,7 +1021,7 @@ export function createBankBusinessApi(options) {
             recipient.account.available += quotedFx?.toAmount ?? req.amount;
             const isOwnAccount = recipient.profile.user.id === db.user.id;
             const createdAt = new Date().toISOString();
-            const outgoing = pushTransaction({
+            const outgoing = await pushTransaction({
                 accountId: sender.id, direction: 'out', amount: req.amount,
                 signedAmount: -req.amount, counterparty: `转账 · ${req.payeeName.trim()}`,
                 memo: req.memo || `本行转账至尾号 ${recipient.account.accountNo.slice(-4)}`,
@@ -1048,7 +1075,7 @@ export function createBankBusinessApi(options) {
         const fx = quotedFx;
         applyBalance(req.fromAccountId, -total, false);
         const bank = findBank(db.banks, req.payeeBankCode, req.payeeBankRegion);
-        const tx = pushTransaction({
+        const tx = await pushTransaction({
             accountId: req.fromAccountId,
             direction: 'out',
             amount: req.amount,
@@ -1092,7 +1119,7 @@ export function createBankBusinessApi(options) {
         if (fee > 0) {
             // 手续费是独立的一笔台账，所以转账详情里不再重复列示 ——
             // 余额回推也就自然对得上（两笔各扣一次）
-            pushTransaction({
+            await pushTransaction({
                 accountId: req.fromAccountId,
                 direction: 'out',
                 amount: fee,
@@ -1183,21 +1210,34 @@ export function createBankBusinessApi(options) {
         },
         async listCardProducts() {
             await delay(140);
-            return CARD_PRODUCTS;
+            const db = loadDb();
+            if (evaluateMembership(db)) persist();
+            return CARD_PRODUCTS.map((product) => ({
+                ...product,
+                held: db.cards.some((c) => c.network === product.network && OCCUPYING_CARD_STATUSES.includes(c.status)),
+                feeQuote: cardFeeQuote(db, product),
+            }));
         },
         async openCard(req) {
             await delay(700);
             const db = loadDb();
+            if (evaluateMembership(db)) persist();
             const product = CARD_PRODUCTS.find((p) => p.code === req.productCode);
             if (!product)
                 throw new ApiError('卡产品不存在', 404, 'PRODUCT_NOT_FOUND');
+            // 每个卡组织至多一张：先拦名额再谈收费，拒绝的申请不收一分钱
+            if (db.cards.some((c) => c.network === product.network && OCCUPYING_CARD_STATUSES.includes(c.status))) {
+                throw new ApiError(`您已持有${product.network === 'visa' ? 'Visa' : '银联'}卡组织的银行卡，每位客户各至多一张，可在卡片管理中办理换卡`, 409, 'CARD_NETWORK_LIMIT');
+            }
             // 先验密码再收钱，顺序不能反
             verifyPayPassword(req.paymentPassword);
             const addressError = validateAddress(req.address);
             if (addressError)
                 throw new ApiError(addressError, 400, 'INVALID_ADDRESS');
-            const fee = product.issuingFee + product.deliveryFee;
-            chargeCardFee(fee, `${product.name} 制卡费${product.deliveryFee > 0 ? '（含寄送费）' : ''}`);
+            const quote = cardFeeQuote(db, product);
+            const fee = quote.payable;
+            await chargeCardFee(fee, `${product.name} 制卡费${product.deliveryFee > 0 ? '（含寄送费）' : ''}`);
+            if (quote.waived > 0) recordCardFeeWaiver(db, quote.waived);
             // 显式构造而不是 spread 旧卡：新卡的字段应当全部明确，不继承别人的地址与费用
             const fresh = {
                 id: nextId('card'),
@@ -1216,6 +1256,7 @@ export function createBankBusinessApi(options) {
                 dailyLimit: 200_000,
                 shippingAddress: req.address,
                 issuingFee: fee,
+                replacedFromId: null,
             };
             db.cards.push(fresh);
             db.cardSecrets[fresh.id] = { cvv: newCardCvv(), pan: cardPan(fresh.network, fresh.last4) };
@@ -1238,6 +1279,7 @@ export function createBankBusinessApi(options) {
         async replaceCard(id, req) {
             await delay(650);
             const db = loadDb();
+            if (evaluateMembership(db)) persist();
             const card = findCard(id);
             if (card.status === 'replaced') {
                 throw new ApiError('该卡已换卡，无法重复操作', 400, 'CARD_REPLACED');
@@ -1246,13 +1288,14 @@ export function createBankBusinessApi(options) {
             const addressError = validateAddress(req.address);
             if (addressError)
                 throw new ApiError(addressError, 400, 'INVALID_ADDRESS');
-            // 换卡按同卡组织的产品定价；本行自有卡没有对应产品，用固定工本费
-            // 换卡按同卡组织的产品定价
+            // 换卡按同卡组织的产品定价；会员制卡费减免同步适用；本行自有卡没有对应产品，用固定工本费
             const product = CARD_PRODUCTS.find((p) => p.network === card.network);
-            const fee = product ? product.issuingFee + product.deliveryFee : 2_000;
-            chargeCardFee(fee, `${card.productName} 换卡工本费`);
+            const quote = cardFeeQuote(db, product ?? { issuingFee: 2_000, deliveryFee: 0 });
+            const fee = quote.payable;
+            await chargeCardFee(fee, `${card.productName} 换卡工本费`);
+            if (quote.waived > 0) recordCardFeeWaiver(db, quote.waived);
+            // 换卡是一笔原子操作：旧卡停用和新卡接替在同一次落库里完成
             card.status = 'replaced';
-            persist();
             const fresh = {
                 ...card,
                 id: nextId('card'),
@@ -1262,6 +1305,7 @@ export function createBankBusinessApi(options) {
                 overseasPayment: false,
                 shippingAddress: req.address,
                 issuingFee: fee,
+                replacedFromId: card.id,
             };
             db.cards.push(fresh);
             // 换发的新卡是另一张卡，安全码必须重新生成，不能沿用旧卡的
@@ -1464,7 +1508,7 @@ export function createBankBusinessApi(options) {
             const netAmount = req.amount - fee;
             const shares = Number((netAmount / product.nav).toFixed(2));
             applyBalance(account.id, -req.amount);
-            pushTransaction({
+            await pushTransaction({
                 accountId: account.id,
                 direction: 'out',
                 amount: req.amount,
@@ -1536,7 +1580,7 @@ export function createBankBusinessApi(options) {
             const net = gross - fee;
             const account = settlementAccount(db);
             applyBalance(account.id, net);
-            pushTransaction({
+            await pushTransaction({
                 accountId: account.id,
                 direction: 'in',
                 amount: net,
@@ -1658,6 +1702,33 @@ async getSecurityOverview() {
             });
             persist();
         },
+        async changePaymentPassword(req) {
+            await delay(420);
+            const db = loadDb();
+            if (typeof req.oldPassword === 'string' && req.oldPassword.length > 0) {
+                // 常规修改：和付款一样验原密码，错误次数会累计、已锁定必须走核身重置
+                verifyPayPassword(req.oldPassword);
+            }
+            else {
+                // 忘记原密码或已锁定：核身重置是唯一出口
+                if (!req.faceTicket) {
+                    throw new ApiError('请先完成人脸识别', 400, 'FACE_REQUIRED');
+                }
+            }
+            if (!/^\d{6}$/.test(req.newPassword)) {
+                throw new ApiError('请设置 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD');
+            }
+            db.payPassword = hashPassword(req.newPassword);
+            db.payPasswordFailures = 0;
+            db.security.logs.unshift({
+                id: nextId('log'),
+                action: req.oldPassword ? '修改支付密码' : '重置支付密码',
+                detail: req.oldPassword ? '凭原支付密码修改' : '人脸核身后重置',
+                createdAt: new Date().toISOString(),
+                level: 'warn',
+            });
+            persist();
+        },
         async verifyIdentity(channel) {
             return security.issueIdentityTicket(channel);
         },
@@ -1726,6 +1797,7 @@ async getSecurityOverview() {
         async quoteExchange(req) {
         await delay(180);
         const db = loadDb();
+        if (evaluateMembership(db)) persist();
         const from = findBalance(db, req.fromAccountId);
         if (!from)
             throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND');
@@ -1737,7 +1809,7 @@ async getSecurityOverview() {
         if (req.amount > from.available) {
             throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE');
         }
-        const rate = fxRate(from.currency, req.toCurrency);
+        const rate = fxRateFor(db, from.currency, req.toCurrency, FX_MID_RATES, FX_SPREAD);
         const toAmount = Math.round(req.amount * rate);
         if (!Number.isSafeInteger(toAmount) || toAmount <= 0)
             throw new ApiError('换汇金额过小或超出范围', 400, 'INVALID_AMOUNT');
@@ -1755,7 +1827,7 @@ async getSecurityOverview() {
                 rate,
                 fromAmount: req.amount,
                 toAmount,
-                spread: FX_SPREAD,
+                spread: effectiveSpread(db, FX_SPREAD),
                 quoteTtlSeconds: FX_QUOTE_TTL,
                 quotedAt: new Date().toISOString(),
             },
@@ -1773,7 +1845,7 @@ async getSecurityOverview() {
         const confirmed = exchangeQuotes.get(req.quoteId);
         if (!confirmed || confirmed.expiresAt <= Date.now())
             throw new ApiError('报价已过期，请重新询价', 409, 'QUOTE_EXPIRED');
-        if (confirmed.ownerId !== db.user.id || confirmed.accountId !== from.id || confirmed.amount !== req.amount || confirmed.toCurrency !== req.toCurrency || confirmed.rate !== fxRate(from.currency, req.toCurrency))
+        if (confirmed.ownerId !== db.user.id || confirmed.accountId !== from.id || confirmed.amount !== req.amount || confirmed.toCurrency !== req.toCurrency || confirmed.rate !== fxRateFor(db, from.currency, req.toCurrency, FX_MID_RATES, FX_SPREAD))
             throw new ApiError('报价已变化，请重新确认', 409, 'QUOTE_CHANGED');
         exchangeQuotes.delete(req.quoteId);
         if (req.toCurrency === from.currency) {
@@ -1784,7 +1856,7 @@ async getSecurityOverview() {
         if (req.amount > from.available) {
             throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE');
         }
-        const rate = fxRate(from.currency, req.toCurrency);
+        const rate = fxRateFor(db, from.currency, req.toCurrency, FX_MID_RATES, FX_SPREAD);
         const toAmount = Math.round(req.amount * rate);
         if (!Number.isSafeInteger(toAmount) || toAmount <= 0)
             throw new ApiError('换汇金额过小或超出范围', 400, 'INVALID_AMOUNT');
@@ -1810,7 +1882,7 @@ async getSecurityOverview() {
         applyBalance(target.id, toAmount, false);
         const now = new Date().toISOString();
         const crossLabel = `币种划转 · ${from.currency}→${req.toCurrency}`;
-        const outflow = pushTransaction({
+        const outflow = await pushTransaction({
             businessType: 'exchange',
             accountId: from.id,
             direction: 'out',
@@ -1833,7 +1905,7 @@ async getSecurityOverview() {
             exchangeRate: rate,
             exchangeRateNote: `1 ${from.currency} = ${req.toCurrency} ${formatRate(rate)}`,
         }, false);
-        pushTransaction({
+        await pushTransaction({
             businessType: 'exchange',
             accountId: target.id,
             direction: 'in',
@@ -1868,7 +1940,7 @@ async getSecurityOverview() {
                 rate,
                 fromAmount: req.amount,
                 toAmount,
-                spread: FX_SPREAD,
+                spread: effectiveSpread(db, FX_SPREAD),
                 quoteTtlSeconds: FX_QUOTE_TTL,
                 quotedAt: now,
             },
@@ -1968,49 +2040,9 @@ async getSecurityOverview() {
         },
         async getMembership() {
             await delay(180);
-            return loadDb().membership;
-        },
-        async subscribeMembership(planId) {
-            await delay(620);
             const db = loadDb();
-            const plan = db.membership.plans.find((p) => p.id === planId);
-            if (!plan)
-                throw new ApiError('会员套餐不存在', 404, 'PLAN_NOT_FOUND');
-            const now = new Date();
-            db.membership.current = {
-                planId: plan.id,
-                planName: plan.name,
-                status: 'active',
-                price: plan.price,
-                period: plan.period,
-                startedAt: now.toISOString(),
-                renewAt: new Date(now.getTime() + 30 * 86_400_000).toISOString(),
-            };
-            db.membership.records.unshift({
-                id: nextId('mbr'),
-                label: `开通 ${plan.name}`,
-                amount: plan.price,
-                createdAt: now.toISOString(),
-            });
-            persist();
-            return db.membership;
-        },
-        async cancelMembership() {
-            await delay(420);
-            const db = loadDb();
-            if (db.membership.current.status !== 'active') {
-                throw new ApiError('当前没有生效的会员', 400, 'NO_ACTIVE_MEMBERSHIP');
-            }
-            db.membership.current.status = 'canceled';
-            db.membership.current.renewAt = null;
-            db.membership.records.unshift({
-                id: nextId('mbr'),
-                label: '取消自动续费',
-                amount: 0,
-                createdAt: new Date().toISOString(),
-            });
-            persist();
-            return db.membership;
+            if (evaluateMembership(db)) persist();
+            return membershipOverview(db, FX_MID_RATES);
         },
         async getIdentityStatus() {
             await delay(200);
@@ -2131,7 +2163,7 @@ async getSecurityOverview() {
             applyBalance(account.id, req.amount, false);
             db.credit.loans.unshift(loan);
             db.credit.availableCredit -= req.amount;
-            pushTransaction({
+            await pushTransaction({
                 accountId: account.id,
                 direction: 'in',
                 amount: req.amount,
@@ -2279,7 +2311,7 @@ async getSecurityOverview() {
             db.insurance.policies.unshift(policy);
             db.insurance.totalCoverage += product.coverage;
             applyBalance(account.id, -product.premiumPerYear, false);
-            pushTransaction({
+            await pushTransaction({
                 accountId: account.id,
                 direction: 'out',
                 amount: product.premiumPerYear,

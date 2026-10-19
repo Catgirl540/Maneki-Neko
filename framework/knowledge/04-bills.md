@@ -4,12 +4,14 @@ title: "账单、回单与导出"
 navigation: "账户"
 routes: ["/analysis", "/transactions/:id"]
 keywords: ["账单", "流水", "回单", "CSV"]
-sources: ["app/src/pages/BillsPage.tsx", "app/src/pages/TransactionDetailPage.tsx", "app/src/api/mock/index.ts", "framework/packages/bank-demo/src/http-tools.ts"]
+sources: ["app/src/pages/BillsPage.tsx", "app/src/pages/TransactionDetailPage.tsx", "app/src/api/mock/index.ts", "server/lib/categorize.mjs", "framework/packages/bank-demo/src/http-tools.ts"]
 ---
 
 ## 在哪里看账单和搜索流水？ {#list}
 
 进入「账户 → 账单」选择账户，按页面日期、分类、关键词筛选交易。助手可查询当前账户流水，支持关键词与最近条数，一次最多二十条；暂不支持按上个月等月份、日期范围或分类做完整分页查询。查不到不能等同于没有发生交易。
+
+交易分类由银行在记账时写入：转账、工资等按业务确定，其他支出由服务端自动归类，失败时记为「其他」。助手不能设置或修改分类，某笔交易被归入「其他」不代表交易不存在或未发生。
 
 ## 怎么查看交易详情与转账状态？ {#detail}
 

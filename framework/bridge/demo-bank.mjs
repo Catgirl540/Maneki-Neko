@@ -132,8 +132,6 @@ const ROUTES = [
   // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
   ['GET', 'invitations', 'getInvitations', () => []],
   ['GET', 'membership', 'getMembership', () => []],
-  ['POST', 'membershipSubscribe', 'subscribeMembership', (id, b) => [b.planId]],
-  ['POST', 'membershipCancel', 'cancelMembership', () => []],
   ['GET', 'identityStatus', 'getIdentityStatus', () => []],
   ['POST', 'identityOcr', 'runIdentityOcr', () => []],
   ['POST', 'identityLiveness', 'runIdentityLiveness', () => []],

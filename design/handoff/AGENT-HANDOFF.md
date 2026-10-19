@@ -2,34 +2,35 @@
 
 更新：2026-10-19。本次交接只整理文档，银行卡与会员新体系尚未实现、未部署。旧版交接中的 SQLite、裸 IP 发布和旧源码目录操作已退出当前流程；历史可通过 Git 查看。
 
+**2026-10 进展：卡数量限制与统一会员等级已在本地实现并通过验收**（`tools/check-card-limit.mjs`、`tools/check-membership.mjs`、`check-single-account.mjs`、lint/build、服务端测试）。规则细节见 [银行卡与会员体系](../../docs/product/cards-and-membership-proposal.md)——该文已从草案转为现行规则说明。尚未提交到远端、未部署公网；存量客户档案的迁移按 `normalizeMembership`/档案迁移幂等执行，重复卡保留为历史记录不删除。
+
 ## 1. 先读与当前任务
 
-先读根目录 `AGENTS.md`、[客户端版本](../../CLIENTS.md)、[账户模型](../../docs/product/account-model.md)，再读[银行卡与会员规则草案](../../docs/product/cards-and-membership-proposal.md)。
+先读根目录 `AGENTS.md`、[客户端版本](../../CLIENTS.md)、[账户模型](../../docs/product/account-model.md)，再读[银行卡与会员体系](../../docs/product/cards-and-membership-proposal.md)。
 
-用户最新要求：**每位客户至多一张 Visa、一张银联，并设计类似 ZA 用户等级与微众会员的分级体系。** 用户随后要求更新文档，暂由其他 Agent 接手；没有要求立即改业务代码或迁移客户数据。
+用户最新要求：**每位客户至多一张 Visa、一张银联，并设计类似 ZA 用户等级与微众会员的分级体系。** 用户随后确认统一客户会员等级并按建议稿门槛落地（白银开户即享、黄金日均 1 万、铂金 10 万、钻石 50 万），两部分均已实现。
 
 本轮开始时业务代码基线为已推送的 `main`，最新提交 `52b92ef`。本地目录 `/home/bigguga/文档/招财猫Bank`；仓库 `https://github.com/Catgirl540/Maneki-Neko`。接手先检查工作区及远端最新状态，不假定分支与服务器相同。
 
-## 2. 已确认与待确认
+## 2. 已确认（均已实现）
 
-已确认：Visa、银联各至多一张；延续一个储蓄资金账户、多币种余额，银行卡不单独存钱。
+- Visa、银联各至多一张；使用中/锁定/寄送中占名额，replaced 不占；换卡原子接替名额；服务端强制（`CARD_NETWORK_LIMIT`，先于验密与收费）。
+- 统一客户会员等级四档：白银开户即享、黄金上月日均资产 ≥1 万、铂金 ≥10 万、钻石 ≥50 万；评级资产仅储蓄余额折人民币；北京时间日终快照、缺日按 0 计；惰性评定（读会员页/申卡/换汇触发）。
+- 权益：制卡/换卡费年度减免（黄金半价 1 次、铂金全免 1 次、钻石全免 2 次含寄送）+ 换汇点差折扣（9/8/7 折）；返现、加息为规划中不展示。
+- 旧月费套餐停止办理，收进 `membership.legacy` 只读；`subscribeMembership`/`cancelMembership` 接口与路由已移除。
+- 存量重复卡保留为历史记录（replaced），不静默删除、作废或替用户换卡；阻止继续增发。
+- 一次性虚拟卡号派生自已占名额的实体卡，是临时凭证不额外占名额。
 
-以下是上一位 Agent 的建议，**用户尚未确认，不能直接当作正式规则上线**：
+待确认：规划中权益的结算方式与预算；卡面按等级区分的设计。
 
-- 统一客户会员等级，两种卡共享等级与权益；也已询问用户是否希望每种卡独立分级，尚未收到选择。
-- 四档白银、黄金、铂金、钻石；开户即享及日均资产 1 万、10 万、50 万元只是建议参数，不是用户定案或其他银行现行门槛。
-- 上月日均资产评定本月等级、北京时间日终快照、评级资产组成及换算方式，均待确定。
-- 用资产等级替换当前付费订阅、改名“会员与权益”、各档费用优惠及卡面方案，均为建议。
-- 锁定、待激活等状态占名额，换卡接替名额，虚拟卡及一次性凭证口径见草案；落地前确认边界。
+## 3. 实现位置
 
-尚未获得存量重复卡的保留方案。不得静默删除、作废、替用户换卡，或将草案门槛用于服务器真实评定。
-
-## 3. 已查明的实现差距
-
-- 默认演示档案有两张 Visa、一张银联，不符合新数量要求。
-- `openCard` 当前未按客户和卡组织限制数量，不能只把网页按钮隐藏。
-- 用户资料中有固定“金卡会员”，会员域另有普通会员和月费套餐，数据口径不一致。
-- 当前套餐只记录订阅设置，扣费和所列权益没有完整接通，不能宣称已享权益。
+- 共享规则：`shared/membership.mjs`（档位/评定/报价/快照），两侧各自注入自己的 `FX_MID_RATES`。
+- 服务端：`server/domain/index.mjs`（`openCard`/`replaceCard`/`getMembership`/换汇）、`server/domain/state.mjs`（种子、迁移、`persist` 记录快照）、`server/bank-api.mjs`（删两条订阅路由）、`server/database.mjs`（`assetSnapshots` 入 membership 域表）。
+- 网页 mock：`app/src/api/mock/{index,db}.ts` 镜像同一规则；`MOCK_SCHEMA` 升 21。
+- 页面：`MembershipPage`（会员等级）、`CardApplicationModal`（`held`/`feeQuote` 展示）、导航与安全中心文案。
+- 断言：`tools/check-card-limit.mjs`、`tools/check-membership.mjs`、`check-single-account.mjs`、`check-web-ui-corrections.mjs`。
+- 文档：`docs/api/cards.md`、`docs/api/profile.md`、`docs/api/README.md`、`framework/knowledge/03-cards.md`。
 - 注册新客户当前创建资金账户但不自动发卡；不要误将默认演示卡当作注册必须附送的卡。
 
 代码入口：

@@ -47,6 +47,7 @@ const face = await api.verifyIdentity('face')
 const result = await api.register({
   phone,
   password,
+  paymentPassword: '246810',
   holderName: '测试用户',
   idNumber: '310101199001011234',
   smsCode: sms.demoCode,
@@ -72,6 +73,37 @@ try {
   reused = error?.code === 'SMS_NOT_SENT'
 }
 check(reused, '短信验证码登录后一次性消费')
+
+// 支付密码：开户时设置，安全中心可修改或经人脸核身重置，不再使用演示固定值
+let defaultPinRejected = false
+try {
+  await api.changePaymentPassword({ oldPassword: '888888', newPassword: '112233' })
+} catch (error) {
+  defaultPinRejected = error?.code === 'BAD_PAY_PASSWORD'
+}
+check(defaultPinRejected, '新用户支付密码不是演示固定值 888888')
+
+await api.changePaymentPassword({ oldPassword: '246810', newPassword: '112233' })
+let oldPinRejected = false
+try {
+  await api.changePaymentPassword({ oldPassword: '246810', newPassword: '999999' })
+} catch (error) {
+  oldPinRejected = error?.code === 'BAD_PAY_PASSWORD'
+}
+check(oldPinRejected, '修改支付密码后原密码失效')
+
+const resetFace = await api.verifyIdentity('face')
+await api.changePaymentPassword({ faceTicket: resetFace.ticket, newPassword: '135790' })
+await api.changePaymentPassword({ oldPassword: '135790', newPassword: '246810' })
+check(true, '人脸核身可重置支付密码，重置后可再修改')
+
+let missingPinRejected = false
+try {
+  await api.changePaymentPassword({ newPassword: '112233' })
+} catch (error) {
+  missingPinRejected = error?.code === 'FACE_REQUIRED'
+}
+check(missingPinRejected, '缺少原密码与核身票据时拒绝修改支付密码')
 
 const demoAgainSms = await api.sendSmsCode('13800138000')
 await api.login('13800138000', '123456', demoAgainSms.demoCode)

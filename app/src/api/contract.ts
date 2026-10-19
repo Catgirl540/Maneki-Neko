@@ -18,6 +18,7 @@ import type {
   CardApplication,
   CardProduct,
   ChangePhoneRequest,
+  ChangePaymentPasswordRequest,
   CardReplaceRequest,
   CashFlow,
   Cents,
@@ -155,6 +156,8 @@ export const routes = {
   security: () => '/api/security/overview',
   securityRule: (id: string) => `/api/security/rules/${id}`,
   changePassword: () => '/api/security/password',
+  /** 修改 / 重置支付密码 */
+  paymentPassword: () => '/api/security/payment-password',
   /** 更换登录手机号（高危操作） */
   changePhone: () => '/api/auth/phone',
   verifyIdentity: () => '/api/security/verify',
@@ -177,8 +180,6 @@ export const routes = {
   // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
   invitations: () => '/api/invitations',
   membership: () => '/api/membership',
-  membershipSubscribe: () => '/api/membership/subscribe',
-  membershipCancel: () => '/api/membership/cancel',
   identityStatus: () => '/api/identity/status',
   identityOcr: () => '/api/identity/ocr',
   identityLiveness: () => '/api/identity/liveness',
@@ -310,6 +311,8 @@ export interface BankApi {
   getSecurityOverview(): Promise<SecurityOverview>
   setSecurityRule(id: string, enabled: boolean): Promise<SecurityOverview>
   changePassword(oldPassword: string, newPassword: string): Promise<void>
+  /** 修改或重置支付密码：原密码修改 / 人脸核身重置 */
+  changePaymentPassword(req: ChangePaymentPasswordRequest): Promise<void>
   /** 更换登录手机号：人脸核身 + 新号短信验证 */
   changePhone(req: ChangePhoneRequest): Promise<User>
   verifyIdentity(channel: 'sms' | 'face'): Promise<{ ticket: string }>
@@ -339,8 +342,6 @@ export interface BankApi {
   // —— 我的域扩展 ——
   getInvitations(): Promise<InvitationsOverview>
   getMembership(): Promise<MembershipOverview>
-  subscribeMembership(planId: string): Promise<MembershipOverview>
-  cancelMembership(): Promise<MembershipOverview>
   getIdentityStatus(): Promise<IdentityStatus>
   runIdentityOcr(): Promise<IdentityOcrResult>
   runIdentityLiveness(): Promise<{ verified: boolean; verifiedAt: string }>

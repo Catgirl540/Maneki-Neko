@@ -16,8 +16,13 @@ const accounts = ['CNY', 'USD', 'HKD'].map((currency, i) => ({ id: `a${i}`, kind
 const loanProduct = { id: 'loan', name: '测试借款', description: '借款产品', minAmount: 10000, maxAmount: 1000000,
   minTermMonths: 3, maxTermMonths: 12, apr: .04, disbursement: '以办理结果为准', tags: [] }
 const investProduct = { id: 'fund', code: 'FUND', name: '测试基金', category: 'fund', nav: 1, risk: 'low', oneYearReturn: 0, minAmount: 10000 }
-const membership = { current: { planId: 'gold', planName: '金卡', status: 'canceled', price: 1900, period: '每月', startedAt: date, renewAt: null },
-  plans: [{ id: 'gold', name: '金卡', price: 1900, period: '每月', perks: [] }], records: [{ id: 'record', label: '订阅设置', amount: 1900, createdAt: date }] }
+const membership = { tier: 'gold', tierName: '黄金会员', since: date,
+  evaluation: { for: '2026-10', avgAssets: 1500000, coveredDays: 30, daysInMonth: 30, evaluatedAt: date },
+  nextEvaluationAt: '2026-11-01', upgradeGap: 8500000, nextTierName: '铂金会员',
+  benefits: { cardFeeWaiversPerYear: 1, cardFeeWaiversUsed: 0, includeShipping: false, fxFeeRate: 0.9, plannedPerks: ['刷卡消费返现', '储蓄余额加息收益'] },
+  records: [{ id: 'record', label: '会员评级：白银会员 → 黄金会员（2026-09 日均资产）', amount: 0, createdAt: date }],
+  legacy: { current: { planId: 'gold', planName: '金卡', status: 'canceled', price: 1900, period: '每月', startedAt: date, renewAt: null },
+    plans: [{ id: 'gold', name: '金卡', price: 1900, period: '每月', perks: [] }] } }
 let rate = .14, ttl = 30, accountFailure = false, showOcr = true, holdQuote = false, releaseQuote
 let roundup = { enabled: false, roundupTo: 100, dailyCap: 1000, accountId: 'a0', goalId: null }
 const goals = []
@@ -225,17 +230,18 @@ try {
   assert(!writes.some(w => w.path === '/api/credit/loans/apply'))
   console.log('PASS 定投账户加载失败可重试，定投/借款金额错误不发办理请求')
 
-  await visit('/security/membership', '会员与订阅')
+  await visit('/security/membership', '会员等级')
   const membershipText = await page.locator('main').innerText()
-  assert(membershipText.includes('自动续费设置已关闭'))
+  assert(membershipText.includes('黄金会员'))
+  assert(membershipText.includes('剩余 1 次 / 每年 1 次'))
+  assert(membershipText.includes('规划中'))
+  assert(membershipText.includes('旧月费套餐已停止办理'))
   assert(!membershipText.includes('尚未开通付费会员'))
-  assert(!membershipText.includes('-¥'))
-  assert(membershipText.includes('扣费与权益暂未开放'))
-  console.log('PASS 取消续费状态与套餐记录不伪装为实际扣款')
+  console.log('PASS 会员等级页展示评定结果、年度权益与旧套餐只读历史')
 
   const views = [['/exchange','多币种与划转'],['/security/identity','身份认证'],['/cashflow','工资与备用金'],
     ['/wealth/cash-management','现金管理'],['/credit','借款与分期'],['/wealth/investments','投资与定投'],
-    ['/dashboard/savings','存钱计划'],['/security/membership','会员与订阅']]
+    ['/dashboard/savings','存钱计划'],['/security/membership','会员等级']]
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const [url, title] of views) {

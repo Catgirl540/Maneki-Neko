@@ -112,6 +112,8 @@ export async function createSecurityGateway(db, auth) {
     async before(req, method, body) {
       if (mode === 'live' && PARTNER_OPERATIONS.has(method)) this.capability('合作银行支付或产品')
       if (['register', 'changePhone', 'openWealthAccount'].includes(method)) await this.consumeIdentityTicket(body.faceTicket)
+      // 支付密码核身重置：没带原密码就必须有人脸票据；凭原密码修改不消耗票据
+      if (method === 'changePaymentPassword' && !body.oldPassword) await this.consumeIdentityTicket(body.faceTicket)
       if (method === 'submitTransfer') {
         if (!['bank', 'fps'].includes(body.channel) || !['domestic', 'overseas'].includes(body.scope)) fail('无效转账渠道或范围', 400, 'INVALID_TRANSFER_CHANNEL')
         if (!(body.payeeBankCode === 'LCB' && body.payeeBankRegion === 'CN' && body.scope === 'domestic' && body.channel === 'bank')) this.capability('跨行清算')

@@ -58,6 +58,8 @@ export const routes = {
     security: () => '/api/security/overview',
     securityRule: (id) => `/api/security/rules/${id}`,
     changePassword: () => '/api/security/password',
+    /** 修改 / 重置支付密码 */
+    paymentPassword: () => '/api/security/payment-password',
     /** 更换登录手机号（高危操作） */
     changePhone: () => '/api/auth/phone',
     verifyIdentity: () => '/api/security/verify',
@@ -77,8 +79,6 @@ export const routes = {
     // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
     invitations: () => '/api/invitations',
     membership: () => '/api/membership',
-    membershipSubscribe: () => '/api/membership/subscribe',
-    membershipCancel: () => '/api/membership/cancel',
     identityStatus: () => '/api/identity/status',
     identityOcr: () => '/api/identity/ocr',
     identityLiveness: () => '/api/identity/liveness',

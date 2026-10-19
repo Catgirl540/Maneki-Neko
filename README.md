@@ -143,6 +143,8 @@ Agent 需要服务端 `OPENROUTER_API_KEY`；模型与知识库配置仍由框�
 
 OpenRouter 主模型由 `LUCKYCAT_MODEL` 指定；设置 `LUCKYCAT_FALLBACK_MODELS=deepseek/deepseek-v4.1-flash,z-ai/glm-5.3-flash` 后，主模型失败时按顺序回落。回落由 OpenRouter 在单次模型请求内处理，工具和确认流程保持原有校验。运行 `node tools/check-model-fallbacks.mjs` 验证请求适配层。
 
+银行后端复用 `OPENROUTER_API_KEY` 做交易自动分类：记账时对未指定分类的支出流水调用 OpenRouter 决策模型（默认 `perplexity/pplx-decider-flash-v1.2`，`BANK_CATEGORIZE_MODEL` 可换）归入消费分类；未配置密钥、超时或响应无效时回落 `other`，不影响记账。详见 `server/README.md`。
+
 登录后可以查询余额、流水、交易详情、理财产品与持仓。转账必须明确付款账户、收款人、**完整收款账号**及银行代码/地区；不能仅凭尾号扣款。确认卡展示后端核对的信息和费用，支付密码由当前银行账户校验，返回同一 PostgreSQL 后端的业务回执。当前 Agent 转账支持境内人民币银行转账，FPS、跨境与换汇请使用账户总览的转出弹窗。
 
 理财申购需要先在理财页面开户和完成风险测评，并在确认卡中手动抄录风险语句。赎回使用实际持仓编号和份额；后端仍校验封闭期及可赎回份额。卡号/CVV 只在短时窗口展示，关闭、切到后台或到期会清除，不进入模型与对话存档。
@@ -213,7 +215,7 @@ node tools/check-agent-http.mjs --browser # 需要 Chromium，可指定 CHROME_P
 | `/cashflow` | 工资与备用金 | 是 |
 | `/credit` | 借款与分期 | 是 |
 | `/wealth/cash-management` / `/wealth/investments` / `/wealth/insurance` | 现金管理 / 投资与定投 / 保险保障 | 是 |
-| `/security/identity` / `/security/invitations` / `/security/membership` | 身份认证 / 邀请与奖励 / 会员与订阅 | 是 |
+| `/security/identity` / `/security/invitations` / `/security/membership` | 身份认证 / 邀请与奖励 / 会员等级 | 是 |
 | `/transactions/:id` | 交易详情（电子回单） | 是 |
 | 其它 | 回落到 `/`（官网） | — |
 
@@ -445,9 +447,7 @@ DELETE /api/savings/goals/:id       删除储蓄目标
 PATCH  /api/savings/roundup         配置消费凑整转存规则
 
 GET    /api/invitations             邀请码 / 好友进度 / 奖励
-GET    /api/membership             会员套餐与当前订阅 / 扣款记录
-POST   /api/membership/subscribe    开通或更换会员套餐
-POST   /api/membership/cancel       取消会员自动续费
+GET    /api/membership             会员等级、月度评定与年度权益（旧套餐只读留在 legacy）
 GET    /api/identity/status         身份认证状态与开户验证进度
 POST   /api/identity/ocr            证件 OCR 识别
 POST   /api/identity/liveness       人脸活体核验
@@ -484,6 +484,7 @@ PATCH  /api/autodebits/:id                    启停自动扣款
 
 GET    /api/security/overview       安全评分 / 设备 / 日志 / 风控规则
 POST   /api/security/password       重置登录密码
+POST   /api/security/payment-password  修改 / 核身重置支付密码
 POST   /api/security/verify
 PATCH  /api/security/rules/:id        开关某条风控规则
 

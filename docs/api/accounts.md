@@ -49,6 +49,8 @@ PostgreSQL 档案 v20 保留退役账本行。旧分区 ID 和旧账号仍可解
 | `keyword` | 备注 / 对手方关键字 |
 | `currency` | **多币种对账**：按币种筛选，`all` 表示不限 |
 
+`Transaction.category` 由服务端在记账时确定：`salary`、`transfer` 与带 `businessType` 的流水（如账户内换汇）按业务语义写死；其余支出流水经 OpenRouter 决策模型自动归类（见 [服务端说明](../../server/README.md#交易自动分类)），超时或响应无效时回落 `other`。客户端和助手都不能手动改分类，回落 `other` 不等于交易未发生。
+
 ## 单笔交易详情 / 回单
 
 - `GET /api/transactions/:id` → `TransactionRecord`（交易编号、渠道、汇率、前后余额等凭证要素）。

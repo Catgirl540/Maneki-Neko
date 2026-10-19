@@ -223,7 +223,7 @@ try {
   const sms = await endpoint('/api/auth/sms-code', null, { phone: newPhone })
   const face = await endpoint('/api/security/verify', null, { channel: 'face' })
   const fresh = await endpoint('/api/auth/register', null, {
-    phone: newPhone, password: '123456', holderName: '联调新用户', idNumber: '110101199001011234',
+    phone: newPhone, password: '123456', paymentPassword: '888888', holderName: '联调新用户', idNumber: '110101199001011234',
     smsCode: sms.demoCode, faceTicket: face.ticket,
     pledge: '本人充分了解并清楚知晓出租、出借、出售、购买账户的相关法律责任和惩戒措施，承诺依法依规开立和使用本人账户',
   })

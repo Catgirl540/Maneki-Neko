@@ -4,12 +4,14 @@ title: "收支分析与自动扣款"
 navigation: "账户"
 routes: ["/analysis/statistics", "/analysis/autodebits"]
 keywords: ["消费分析", "收支分析", "现金流", "自动扣款"]
-sources: ["app/src/pages/AnalysisPage.tsx", "app/src/pages/AutoDebitsPage.tsx", "app/src/api/mock/index.ts", "framework/bridge/bank-agent.mjs"]
+sources: ["app/src/pages/AnalysisPage.tsx", "app/src/pages/AutoDebitsPage.tsx", "app/src/api/mock/index.ts", "server/lib/categorize.mjs", "framework/bridge/bank-agent.mjs"]
 ---
 
 ## 这个月花了多少钱？怎么查看消费分类？ {#spending}
 
 到「账户 → 账单 → 收支分析」查看本月支出、分类构成、最大支出分类与近六个月走势。也可请助手查询本月或指定月份消费分析，结果直接来自银行统计，不能用最近二十条流水冒充月度总额。历史月份的环比和近期走势仍按页面口径，不能自行解释成相对所选月。
+
+分类构成来自流水的记账分类：转账、工资等按业务写入，其余支出由服务端自动归类，无法归类时进入「其他」。助手不能改分类，也不能承诺把「其他」里的交易改归到某个消费分类。
 
 ## 在哪里看现金流和收支趋势？ {#cashflow}
 

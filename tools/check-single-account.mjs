@@ -18,7 +18,12 @@ const original = loadDb()
 assert.equal(original.accounts.length, 1)
 assert.equal(original.cards.length, 3)
 assert(original.cards.every(card => card.accountId === original.accounts[0].id))
-console.log('PASS 三张初始卡共享一个资金账户')
+// 名额口径：1 张在用 Visa + 2 张历史卡（replaced 不占名额）；银联名额空着
+const occupying = original.cards.filter(c => ['active', 'locked', 'pending'].includes(c.status))
+assert.equal(occupying.length, 1)
+assert.equal(occupying[0].network, 'visa')
+assert(original.cards.filter(c => c.network === 'unionpay').every(c => c.status === 'replaced'))
+console.log('PASS 三张初始卡共享一个资金账户；每个卡组织至多一张在用卡')
 
 const old = structuredClone(original); old.schema = 18
 const main = old.accounts[0]
@@ -72,16 +77,25 @@ assert.equal(history.total, 2)
 console.log('PASS 双向换汇仅新增币种余额，同一账户号；支付密码失败不扣款；币种流水可查')
 
 const product = CARD_PRODUCTS[0]
+assert.equal(product.network, 'unionpay')
 const cardCount = (await api.listCards()).length
 await api.openCard({ productCode: product.code, address: { recipient: '林小满', phone: '13800138000', region: '上海市', city: '上海市', detail: '浦东新区测试路100号', postalCode: '200120' }, paymentPassword: '888888' })
 assert.equal((await api.listCards()).length, cardCount + 1)
 assert.equal((await api.listAccounts()).length, 1)
 assert((await api.listCards()).every(card => card.accountId === before.id))
-console.log('PASS 申请新卡只增加卡片，所有卡共享账户')
+// 名额占满后：同组织再申请被拒且不收费，Visa 侧更早就被占住
+const balanceAfterUnionpay = (await api.listAccounts())[0].balance
+const addr = { recipient: '林小满', phone: '13800138000', region: '上海市', city: '上海市', detail: '浦东新区测试路100号', postalCode: '200120' }
+for (const code of [CARD_PRODUCTS[0].code, CARD_PRODUCTS.find(p => p.network === 'visa').code]) {
+  await assert.rejects(api.openCard({ productCode: code, address: addr, paymentPassword: '888888' }), (e) => e.code === 'CARD_NETWORK_LIMIT')
+}
+assert.equal((await api.listCards()).length, cardCount + 1)
+assert.equal((await api.listAccounts())[0].balance, balanceAfterUnionpay)
+console.log('PASS 申请新卡只增加卡片，所有卡共享账户；同组织重复申请被拒且不收费')
 
 const newSms = await api.sendSmsCode('13900139099')
 const face = await api.verifyIdentity('face')
-await api.register({ phone: '13900139099', password: 'safe123', holderName: '隔离测试', idNumber: '310101199001011234', smsCode: newSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
+await api.register({ phone: '13900139099', password: 'safe123', paymentPassword: '888888', holderName: '隔离测试', idNumber: '310101199001011234', smsCode: newSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
 const fresh = await api.listAccounts()
 assert.equal(fresh.length, 1)
 assert.equal(fresh[0].balance, 0)

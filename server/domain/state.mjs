@@ -1,5 +1,25 @@
 import { ledgerBalances, findBalance, normalizeFundingAccount } from '../../shared/account-model.mjs';
 export { ledgerBalances, findBalance, normalizeFundingAccount } from '../../shared/account-model.mjs';
+import { beijingDay, freshMembership, normalizeMembership, recordAssetSnapshot } from '../../shared/membership.mjs';
+export {
+    beijingDay,
+    beijingMonth,
+    cardFeeQuote,
+    effectiveSpread,
+    evaluateMembership,
+    freshMembership,
+    fxRateFor,
+    membershipOverview,
+    nextMonth,
+    nextTier,
+    normalizeMembership,
+    OCCUPYING_CARD_STATUSES,
+    MEMBER_TIER_RULES,
+    previousMonth,
+    ratedAssets,
+    recordAssetSnapshot,
+    recordCardFeeWaiver,
+} from '../../shared/membership.mjs';
 import { hashPassword, needsRehash } from '../passwords.mjs';
 // Server-owned business implementation; API contract preserved from the existing client.
 /* ==========================================================================
@@ -42,7 +62,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin.mjs';
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
  */
-export const MOCK_SCHEMA = 20;
+export const MOCK_SCHEMA = 21;
 const DAY = 86_400_000;
 /** 借记卡的展示文案，与种子数据里的星享借记卡一致 */
 export const CARD_PAYMENT_METHOD = '招财猫 · 星享借记卡 尾号 8888';
@@ -162,6 +182,25 @@ function monthKey(offset = 0) {
     d.setDate(1);
     d.setMonth(d.getMonth() + offset);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+/**
+ * 会员评定的日终资产快照种子：最近 62 个北京自然日各一条，
+ * 围绕基准余额 ±1.5% 内的确定性波动（固定种子伪随机，断言可复现）。
+ * 这是演示档案的初始凭证，不是从流水回推出来的 —— 正式客户
+ * 的快照只能从 `persist()` 起逐日积累，缺日按 0 计日均。
+ */
+function seedAssetSnapshots(base) {
+    let x = 88_230_001 >>> 0;
+    const rand = () => {
+        x = (Math.imul(x ^ (x >>> 15), 2246822519) + 0x9e3779b9) >>> 0;
+        return x / 0xffffffff;
+    };
+    const out = [];
+    for (let n = 61; n >= 1; n--) {
+        const jitter = Math.round(base * (rand() - 0.5) * 0.03);
+        out.push({ date: beijingDay(Date.now() - n * DAY), assets: base + jitter });
+    }
+    return out;
 }
 let seq = 0;
 const nextId = (prefix) => `${prefix}_${String(++seq).padStart(4, '0')}`;
@@ -1074,7 +1113,7 @@ function seed() {
             id: 'u_0001',
             name: '林小满',
             phone: '13800138000',
-            memberLevel: '金卡会员',
+            memberLevel: '钻石会员',
             avatarInitial: '林',
         },
         passwordDigest: '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92',
@@ -1222,12 +1261,13 @@ function seed() {
                 theme: 'gold',
                 network: 'unionpay',
                 kind: 'debit',
-                status: 'locked',
+                // 历史卡：银联名额空出来才能演示再次申请；已换卡的卡不占名额
+                status: 'replaced',
                 onlinePayment: false,
                 overseasPayment: false,
                 dailyLimit: 2_000_000,
             },
-            // 在制卡中的 Visa 卡：让「邮寄地址 + 已收制卡费」这两个状态一进页面就看得到
+            // 历史卡：曾是寄送中的 Visa 卡，寄送信息 + 已收制卡费两个状态仍可点开看
             {
                 id: nextId('card'),
                 accountId: accounts[2].id,
@@ -1238,7 +1278,7 @@ function seed() {
                 theme: 'gold',
                 network: 'visa',
                 kind: 'debit',
-                status: 'pending',
+                status: 'replaced',
                 onlinePayment: false,
                 overseasPayment: false,
                 dailyLimit: 200_000,
@@ -1360,35 +1400,40 @@ function seed() {
             ],
             totalEarned: 3000,
         },
+        // 会员等级按上月日均储蓄资产评定；旧月费套餐只做只读历史，不能再买
         membership: {
-            current: {
-                planId: 'free',
-                planName: '普通会员',
-                status: 'none',
-                price: 0,
-                period: '—',
-                startedAt: null,
-                renewAt: null,
+            ...freshMembership(),
+            tier: 'diamond',
+            legacy: {
+                current: {
+                    planId: 'free',
+                    planName: '普通会员',
+                    status: 'none',
+                    price: 0,
+                    period: '—',
+                    startedAt: null,
+                    renewAt: null,
+                },
+                plans: [
+                    {
+                        id: 'gold',
+                        name: '招财金卡会员',
+                        price: 1_900,
+                        period: '每月',
+                        perks: ['跨行转账手续费全免', '专属理财优先购', '生日双倍积分'],
+                        highlight: true,
+                    },
+                    {
+                        id: 'platinum',
+                        name: '白金会员',
+                        price: 4_900,
+                        period: '每月',
+                        perks: ['含金卡全部权益', '专属客户经理', '机场贵宾厅每年 6 次', '境外取现免手续费'],
+                    },
+                ],
             },
-            plans: [
-                {
-                    id: 'gold',
-                    name: '招财金卡会员',
-                    price: 1_900,
-                    period: '每月',
-                    perks: ['跨行转账手续费全免', '专属理财优先购', '生日双倍积分'],
-                    highlight: true,
-                },
-                {
-                    id: 'platinum',
-                    name: '白金会员',
-                    price: 4_900,
-                    period: '每月',
-                    perks: ['含金卡全部权益', '专属客户经理', '机场贵宾厅每年 6 次', '境外取现免手续费'],
-                },
-            ],
-            records: [],
         },
+        assetSnapshots: seedAssetSnapshots(accounts[0].balance),
         identity: {
             level: 'verified',
             idType: '居民身份证',
@@ -1556,9 +1601,8 @@ function seed() {
      * 固定值而不是随机：演示要能复现，断言也才有得对。
      */
     db.cardSecrets = {
+        // 只有使用中（active）的卡留安全码；已换卡的历史卡秘密随旧卡一起作废
         [db.cards[0].id]: { cvv: '417', pan: cardPan('visa', db.cards[0].last4) },
-        [db.cards[1].id]: { cvv: '926', pan: cardPan('unionpay', db.cards[1].last4) },
-        [db.cards[2].id]: { cvv: '305', pan: cardPan('visa', db.cards[2].last4) },
     };
     normalizeFundingAccount(db);
     return db;
@@ -1575,7 +1619,7 @@ function ensureDemoRecipient() {
     if (all['13600136000'])
         return;
     const demo = seed();
-    demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberLevel: '普通会员', avatarInitial: '陈' };
+    demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberLevel: '白银会员', avatarInitial: '陈' };
     demo.accounts = [{
             id: 'acc_demo_chen', kind: 'savings', label: '储蓄账户',
             accountNo: '8820000000124471', currency: 'CNY',
@@ -1618,6 +1662,9 @@ export function findRecipientByNumber(number) {
 /** 一次保存付款人与收款人的档案；SQLite 存储适配器负责落盘。 */
 export function persistRelatedProfiles(related) {
     const current = loadDb();
+    recordAssetSnapshot(current, FX_MID_RATES);
+    for (const profile of related)
+        recordAssetSnapshot(profile, FX_MID_RATES);
     const all = profiles();
     all[current.user.phone] = current;
     for (const profile of related)
@@ -1721,7 +1768,8 @@ export function emptyCustomerDomains(user, accountId) {
             streak: { days: 0, longestDays: 0, lastSavedAt: '', badges: [] }, rewards: [] },
         virtualCards: [],
         invitations: { invite: { code: `LC-${user.id}`, link: `https://luckycat.bank/i/LC-${user.id}`, createdAt: new Date().toISOString() }, friends: [], rewards: [], totalEarned: 0 },
-        membership: { current: catalog.membership.current, plans: catalog.membership.plans, records: [] },
+        membership: freshMembership(),
+        assetSnapshots: [],
         identity: { level: 'none', idType: '', maskedIdNumber: '', verifiedAt: '', livenessVerified: false, steps: [], ocr: null },
         salaryPlan: { salaryDay: 8, amount: 0, employer: '', accountId, nextPayday: '', history: [] },
         overdraft: { ...catalog.overdraft, active: false, creditLimit: 0, available: 0, used: 0, activatedAt: null },
@@ -1736,6 +1784,9 @@ export function migrateProfile(profile) {
     if (!Number.isInteger(profile.schema) || profile.schema > MOCK_SCHEMA || !profile.user || !Array.isArray(profile.accounts)) {
         throw new Error('无法识别客户档案版本，已保留原数据');
     }
+    // 会员结构与快照字段的修补对全版本幂等：旧订阅套餐收进 legacy，新字段补默认
+    normalizeMembership(profile);
+    profile.assetSnapshots ??= [];
     if (profile.schema === MOCK_SCHEMA)
         return profile;
     profile = structuredClone(profile);
@@ -1777,6 +1828,8 @@ export function loadDb() {
 }
 export function persist() {
     if (cache) {
+        // 每次落盘顺手记一笔当日（北京时间）资产快照：当日最后一次写即日终值
+        recordAssetSnapshot(cache, FX_MID_RATES);
         if (!storage.setMany([[STORAGE_KEYS.mockDb, cache], [PROFILES_KEY, { ...profiles(), [cache.user.phone]: cache }]])) {
             cache = null;
             throw new Error('客户档案写入失败，请重试');

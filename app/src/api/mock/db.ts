@@ -1,4 +1,11 @@
 import { ledgerBalances, findBalance, normalizeFundingAccount } from '../../../../shared/account-model.mjs'
+import {
+  beijingDay,
+  freshMembership,
+  normalizeMembership,
+  recordAssetSnapshot,
+} from '../../../../shared/membership.mjs'
+import type { MembershipState } from '../../../../shared/membership.mjs'
 /* ==========================================================================
    本地模拟数据库
    纯前端 MVP 的数据源：内存对象 + localStorage 持久化。
@@ -33,7 +40,6 @@ import type {
   SavingsOverview,
   VirtualCard,
   InvitationsOverview,
-  MembershipOverview,
   IdentityStatus,
   SalaryPlan,
   OverdraftFacility,
@@ -78,7 +84,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
  */
-export const MOCK_SCHEMA = 20
+export const MOCK_SCHEMA = 21
 
 export interface MockDb {
   fpsRegistrations: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; registeredAt: string }[]
@@ -129,8 +135,10 @@ export interface MockDb {
   virtualCards: VirtualCard[]
   /** 邀请与奖励 */
   invitations: InvitationsOverview
-  /** 会员与订阅 */
-  membership: MembershipOverview
+  /** 会员等级：上月日均储蓄资产评定；旧月费套餐收进 legacy 只读 */
+  membership: MembershipState
+  /** 储蓄资产日终快照（北京时间日期 → 折人民币余额），会员评定的原始凭证 */
+  assetSnapshots: { date: string; assets: Cents }[]
   /** 身份认证状态与开户验证进度 */
   identity: IdentityStatus
 
@@ -281,6 +289,26 @@ function monthKey(offset = 0): string {
   d.setDate(1)
   d.setMonth(d.getMonth() + offset)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/**
+ * 会员评定的日终资产快照种子：最近 62 个北京自然日各一条，
+ * 围绕基准余额 ±1.5% 内的确定性波动（固定种子伪随机，断言可复现）。
+ * 这是演示档案的初始凭证，不是从流水回推出来的 —— 正式客户
+ * 的快照只能从 `persist()` 起逐日积累，缺日按 0 计日均。
+ */
+function seedAssetSnapshots(base: Cents): { date: string; assets: Cents }[] {
+  let x = 88_230_001 >>> 0
+  const rand = () => {
+    x = (Math.imul(x ^ (x >>> 15), 2246822519) + 0x9e3779b9) >>> 0
+    return x / 0xffffffff
+  }
+  const out: { date: string; assets: Cents }[] = []
+  for (let n = 61; n >= 1; n--) {
+    const jitter = Math.round(base * (rand() - 0.5) * 0.03)
+    out.push({ date: beijingDay(Date.now() - n * DAY), assets: base + jitter })
+  }
+  return out
 }
 
 let seq = 0
@@ -1248,7 +1276,7 @@ function seed(): MockDb {
       id: 'u_0001',
       name: '林小满',
       phone: '13800138000',
-      memberLevel: '金卡会员',
+      memberLevel: '钻石会员',
       avatarInitial: '林',
     },
     passwordDigest: '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92',
@@ -1396,12 +1424,13 @@ function seed(): MockDb {
         theme: 'gold',
         network: 'unionpay',
         kind: 'debit',
-        status: 'locked',
+        // 历史卡：银联名额空出来才能演示再次申请；已换卡的卡不占名额
+        status: 'replaced',
         onlinePayment: false,
         overseasPayment: false,
         dailyLimit: 2_000_000,
       },
-      // 在制卡中的 Visa 卡：让「邮寄地址 + 已收制卡费」这两个状态一进页面就看得到
+      // 历史卡：曾是寄送中的 Visa 卡，寄送信息 + 已收制卡费两个状态仍可点开看
       {
         id: nextId('card'),
         accountId: accounts[2].id,
@@ -1412,7 +1441,7 @@ function seed(): MockDb {
         theme: 'gold',
         network: 'visa',
         kind: 'debit',
-        status: 'pending',
+        status: 'replaced',
         onlinePayment: false,
         overseasPayment: false,
         dailyLimit: 200_000,
@@ -1534,35 +1563,40 @@ function seed(): MockDb {
       ],
       totalEarned: 3000,
     },
+    // 会员等级按上月日均储蓄资产评定；旧月费套餐只做只读历史，不能再买
     membership: {
-      current: {
-        planId: 'free',
-        planName: '普通会员',
-        status: 'none',
-        price: 0,
-        period: '—',
-        startedAt: null,
-        renewAt: null,
+      ...freshMembership(),
+      tier: 'diamond',
+      legacy: {
+        current: {
+          planId: 'free',
+          planName: '普通会员',
+          status: 'none',
+          price: 0,
+          period: '—',
+          startedAt: null,
+          renewAt: null,
+        },
+        plans: [
+          {
+            id: 'gold',
+            name: '招财金卡会员',
+            price: 1_900,
+            period: '每月',
+            perks: ['跨行转账手续费全免', '专属理财优先购', '生日双倍积分'],
+            highlight: true,
+          },
+          {
+            id: 'platinum',
+            name: '白金会员',
+            price: 4_900,
+            period: '每月',
+            perks: ['含金卡全部权益', '专属客户经理', '机场贵宾厅每年 6 次', '境外取现免手续费'],
+          },
+        ],
       },
-      plans: [
-        {
-          id: 'gold',
-          name: '招财金卡会员',
-          price: 1_900,
-          period: '每月',
-          perks: ['跨行转账手续费全免', '专属理财优先购', '生日双倍积分'],
-          highlight: true,
-        },
-        {
-          id: 'platinum',
-          name: '白金会员',
-          price: 4_900,
-          period: '每月',
-          perks: ['含金卡全部权益', '专属客户经理', '机场贵宾厅每年 6 次', '境外取现免手续费'],
-        },
-      ],
-      records: [],
     },
+    assetSnapshots: seedAssetSnapshots(accounts[0].balance),
     identity: {
       level: 'verified',
       idType: '居民身份证',
@@ -1731,9 +1765,8 @@ function seed(): MockDb {
    * 固定值而不是随机：演示要能复现，断言也才有得对。
    */
   db.cardSecrets = {
+    // 只有使用中（active）的卡留安全码；已换卡的历史卡秘密随旧卡一起作废
     [db.cards[0].id]: { cvv: '417', pan: cardPan('visa', db.cards[0].last4) },
-    [db.cards[1].id]: { cvv: '926', pan: cardPan('unionpay', db.cards[1].last4) },
-    [db.cards[2].id]: { cvv: '305', pan: cardPan('visa', db.cards[2].last4) },
   }
 
   normalizeFundingAccount(db)
@@ -1752,7 +1785,7 @@ function ensureDemoRecipient(): void {
   const all = profiles()
   if (all['13600136000']) return
   const demo = seed()
-  demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberLevel: '普通会员', avatarInitial: '陈' }
+  demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberLevel: '白银会员', avatarInitial: '陈' }
   demo.accounts = [{
     id: 'acc_demo_chen', kind: 'savings', label: '储蓄账户',
     accountNo: '8820000000124471', currency: 'CNY',
@@ -1795,6 +1828,8 @@ export function findRecipientByNumber(number: string): { profile: MockDb; accoun
 /** 一次保存付款人与收款人的档案；SQLite 存储适配器负责落盘。 */
 export function persistRelatedProfiles(related: MockDb[]): void {
   const current = loadDb()
+  recordAssetSnapshot(current, FX_MID_RATES)
+  for (const profile of related) recordAssetSnapshot(profile, FX_MID_RATES)
   const all = profiles()
   all[current.user.phone] = current
   for (const profile of related) all[profile.user.phone] = profile
@@ -1888,10 +1923,21 @@ function syncSeq(db: MockDb): void {
 }
 
 export { ledgerBalances, findBalance, normalizeFundingAccount } from '../../../../shared/account-model.mjs'
+export {
+  cardFeeQuote,
+  effectiveSpread,
+  evaluateMembership,
+  fxRateFor,
+  membershipOverview,
+  MEMBER_TIER_RULES,
+  OCCUPYING_CARD_STATUSES,
+  ratedAssets,
+  recordCardFeeWaiver,
+} from '../../../../shared/membership.mjs'
 
 /** Only product catalogues are shared. Customer activity always starts empty. */
 export function emptyCustomerDomains(user: User, accountId: string): Pick<MockDb,
-  'savings' | 'virtualCards' | 'invitations' | 'membership' | 'identity' | 'salaryPlan' |
+  'savings' | 'virtualCards' | 'invitations' | 'membership' | 'assetSnapshots' | 'identity' | 'salaryPlan' |
   'overdraft' | 'credit' | 'cashManagement' | 'investments' | 'insurance' | 'fpsRegistrations'> {
   const catalog = seed()
   return {
@@ -1900,7 +1946,8 @@ export function emptyCustomerDomains(user: User, accountId: string): Pick<MockDb
       streak: { days: 0, longestDays: 0, lastSavedAt: '', badges: [] }, rewards: [] },
     virtualCards: [],
     invitations: { invite: { code: `LC-${user.id}`, link: `https://luckycat.bank/i/LC-${user.id}`, createdAt: new Date().toISOString() }, friends: [], rewards: [], totalEarned: 0 },
-    membership: { current: catalog.membership.current, plans: catalog.membership.plans, records: [] },
+    membership: freshMembership(),
+    assetSnapshots: [],
     identity: { level: 'none', idType: '', maskedIdNumber: '', verifiedAt: '', livenessVerified: false, steps: [], ocr: null },
     salaryPlan: { salaryDay: 8, amount: 0, employer: '', accountId, nextPayday: '', history: [] },
     overdraft: { ...catalog.overdraft, active: false, creditLimit: 0, available: 0, used: 0, activatedAt: null },
@@ -1915,6 +1962,9 @@ export function migrateProfile(profile: MockDb): MockDb {
   if (!Number.isInteger(profile.schema) || profile.schema > MOCK_SCHEMA || !profile.user || !Array.isArray(profile.accounts)) {
     throw new Error('无法识别客户档案版本，已保留原数据')
   }
+  // 会员结构与快照字段的修补对全版本幂等：旧订阅套餐收进 legacy，新字段补默认
+  normalizeMembership(profile)
+  profile.assetSnapshots ??= []
   if (profile.schema === MOCK_SCHEMA) return profile
   profile = structuredClone(profile)
   const defaults = emptyCustomerDomains(profile.user, profile.accounts[0]?.id ?? '')
@@ -1952,6 +2002,8 @@ export function loadDb(): MockDb {
 
 export function persist(): void {
   if (cache) {
+    // 每次落盘顺手记一笔当日（北京时间）资产快照：当日最后一次写即日终值
+    recordAssetSnapshot(cache, FX_MID_RATES)
     if (!storage.setMany([[STORAGE_KEYS.mockDb, cache], [PROFILES_KEY, { ...profiles(), [cache.user.phone]: cache }]])) {
       cache = null
       throw new Error('客户档案写入失败，请重试')

@@ -103,7 +103,7 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
     assert.equal(reused.body.code, 'SMS_NOT_SENT')
     const before = await financialState(app)
     const forged = await app.call('/api/auth/register', { method: 'POST', body: {
-      phone: '13900139002', password: '123456', holderName: '伪造核验测试', smsCode: '000000',
+      phone: '13900139002', password: '123456', paymentPassword: '888888', holderName: '伪造核验测试', smsCode: '000000',
       faceTicket: 'verify.face.1234567890', idNumber: '330106199203047234', pledge: ACCOUNT_OPENING_PLEDGE,
     } })
     assert.equal(forged.status, 403)
@@ -435,8 +435,8 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
     VALUES($1,'transfer',$2,'TEST ONLY existing legacy hold',NULL,'pending','pending',$3)`, [approvalId, JSON.stringify({ customerId: customer.id, transactionId, request, amount: 1200, holdUntil }), new Date().toISOString()]))
   const before = await financialState(app)
   await t.test('every legacy financial contract route refuses live demo reads and writes', async () => {
-    const safe = new Set(['login','register','logout','profile','smsCode','verifyIdentity','changePhone','changePassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
-    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','membershipSubscribe','membershipCancel','identityOcr','identityLiveness','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll'])
+    const safe = new Set(['login','register','logout','profile','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
+    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','identityOcr','identityLiveness','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll'])
     const patches = new Set(['cardSettings','autoDebit','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep'])
     for (const [name, build] of Object.entries(routes)) {
       if (safe.has(name)) continue
