@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-19",
+  "baseCommit": "9f0656fa63932fe89c0dd04b8050e13926a90802",
+  "release": "20261019-agent-health",
+  "files": {
+    "app/src/api/agent.ts": "11c9482c8346bcf61e4e7d578d8555b87ca2296c2ed11bd26b4585420c43cfa6",
+    "app/src/lib/useAgentChat.ts": "b4f0d882f8ded1656ab2d3a74da91fabcdd255fd651b96b2c9d14d4cad4d0835"
+  },
+  "indexSha256": "b1f553ebe54db95d207b40f287fa2a0542a42117dd1b60ad41410f9fb63f66ec",
+  "checks": [
+    "delayed-health-4500ms",
+    "automatic-health-recovery",
+    "online-event-recovery",
+    "cleanup-no-session-creation",
+    "app-and-staff-production-build"
+  ],
+  "pendingUiChangesIncluded": false,
+  "url": "https://bank.waveflow.men/",
+  "deployedDirectory": "/var/www/bank.waveflow.men/releases/20261019-agent-health",
+  "previousRelease": "/var/www/bank.waveflow.men/releases/20261017-9f0656f",
+  "backendRestarted": false,
+  "publicIndexChecksumMatched": true,
+  "publicBrowserLoginPassed": true,
+  "publicAgentConnected": true,
+  "publicModelReplyPassed": true
+}

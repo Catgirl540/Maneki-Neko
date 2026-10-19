@@ -1,0 +1,21 @@
+[Unit]
+Description=Luckycat isolated PUBLIC DEMO customer Agent
+After=network-online.target luckycat-bank-demo.service
+Requires=luckycat-bank-demo.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/srv/maneki-bank/demo-20261017/framework
+Environment=PATH=/opt/maneki-node24/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/luckycat/luckycat.env
+EnvironmentFile=-/etc/luckycat/model-routing.env
+EnvironmentFile=/etc/luckycat-bank-demo/agent.env
+ExecStart=/opt/maneki-node24/bin/node bridge/demo-server.mjs
+Restart=on-failure
+RestartSec=5
+MemoryMax=650M
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

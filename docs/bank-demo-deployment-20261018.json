@@ -1,0 +1,43 @@
+{
+  "date": "2026-10-18",
+  "timezone": "Asia/Shanghai",
+  "url": "https://bank.waveflow.men/",
+  "sourceCommit": "9f0656fa63932fe89c0dd04b8050e13926a90802",
+  "demoSourceRoot": "/srv/maneki-bank/demo-20261017",
+  "database": "maneki_bank_demo",
+  "integrationMode": "sandbox",
+  "realSmsSent": false,
+  "seededFromEmptyDatabase": true,
+  "liveCustomerDataCopied": false,
+  "separateBankAndSessionKeys": true,
+  "separateOwnerAppWorkerAiRoles": true,
+  "services": {
+    "luckycat-bank-demo": 8081,
+    "luckycat-agent-demo": 8891
+  },
+  "publicCustomerUpstreams": {
+    "/api/": "http://120.48.123.112/bank-demo/api/",
+    "/agent-api/": "http://120.48.123.112/bank-demo/agent-api/"
+  },
+  "preserved": {
+    "liveServicesAndData": true,
+    "staffAndOperationsRoutes": true,
+    "staticFrontendRelease": true,
+    "flutterDownloads": true
+  },
+  "validation": {
+    "nginxConfigurationPassedBothServers": true,
+    "sixServicesActive": true,
+    "publicBrowserDemoCodeDisplayed": true,
+    "publicBrowserCustomerLoginPassed": true,
+    "agentSessionPersistencePassed": true,
+    "publicBrowserModelReplyPassed": true,
+    "liveHealthStillLive": true,
+    "demoHealthSandbox": true
+  },
+  "rollback": {
+    "gugaProxyBackup": "/etc/nginx/snippets/bank.waveflow.men-app.conf.before-demo-20261017",
+    "bankNginxBackup": "/var/backups/luckycat-bank-demo/opencode-web.before-demo.conf",
+    "databaseRollbackRequired": false
+  }
+}

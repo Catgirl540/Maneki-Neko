@@ -1,0 +1,72 @@
+{
+  "date": "2026-10-19T09:33:00.258653+00:00",
+  "url": "https://bank.waveflow.men",
+  "server": "15.235.241.158",
+  "revision": "b006b6da3777856943d076c377c1383496020da5",
+  "dshVersion": "0.2.1-rc.2",
+  "nodeVersion": "24.21.0",
+  "postgresqlMajor": 16,
+  "sourceRelease": "/srv/maneki-bank/releases/20261019-b006b6d",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261019-b006b6d",
+  "frontendOverlays": {
+    "app/src/api/agent.ts": "11c9482c8346bcf61e4e7d578d8555b87ca2296c2ed11bd26b4585420c43cfa6",
+    "app/src/lib/useAgentChat.ts": "b4f0d882f8ded1656ab2d3a74da91fabcdd255fd651b96b2c9d14d4cad4d0835"
+  },
+  "artifactSha256": "c36eec12736826f767913e46d1854ebd3a188f6c1ae04e3cb78655d0a4887263",
+  "migration": {
+    "databases": [
+      "maneki_bank",
+      "maneki_bank_demo"
+    ],
+    "tablesVerified": 146,
+    "perTableCountsMatchedBeforeStartup": true,
+    "nativeStateFiles": 126,
+    "snapshotSha256": "2c3317f2c839cf6a7206c37e7c2e99306c15079ad88291b39d1e78df1ed4a15b",
+    "backupLocation": "/var/backups/maneki-vps2-20261019",
+    "oldWritersStoppedAndAutostartDisabled": true,
+    "databasePasswordsRegenerated": true,
+    "fieldAndSessionKeysPreserved": true
+  },
+  "services": {
+    "luckycat-bank": 8080,
+    "luckycat-bank-demo": 8081,
+    "luckycat-bridge": 8898,
+    "luckycat-agent-demo": 8891,
+    "luckycat-staff-agent": 8789,
+    "luckycat-ops-agent": 8790
+  },
+  "checks": [
+    "https-and-http-redirect",
+    "browser-demo-code-login",
+    "single-funding-account-response",
+    "visible-real-model-reply",
+    "staff-and-ops-auth-isolation",
+    "both-database-reconciliations",
+    "both-snapshot-backups-with-manifests",
+    "all-services-active",
+    "immutable-apk-with-range-support",
+    "flutter-apk-sha256",
+    "authenticated-sse-stream",
+    "browser-session-context-after-restart"
+  ],
+  "timers": [
+    "maneki-live-backup.timer",
+    "maneki-demo-backup.timer",
+    "maneki-live-reconcile.timer",
+    "maneki-demo-reconcile.timer",
+    "certbot.timer"
+  ],
+  "apk": {
+    "fileName": "luckycat-android-b8b8c2be47c8.apk",
+    "versionName": "1.0.2",
+    "versionCode": 3,
+    "bytes": 154966093,
+    "sha256": "b8b8c2be47c81cdca3ea8daecff7cb38681728becca5bbe17e335405edf7d6d6"
+  },
+  "notes": [
+    "No customer financial transaction executed during deployment verification.",
+    "Frontend contains the two previously deployed health fixes; subsequent avatar/video and support navigation updates are excluded from this deployment.",
+    "Existing live commercial gate and ops terminal enablement were not expanded.",
+    "No database rollback may discard writes accepted after cutover."
+  ]
+}

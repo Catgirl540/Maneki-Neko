@@ -1,5 +1,7 @@
 # 裸 IP 公网部署
 
+> 本页描述旧裸 IP 部署。2026-10-19 起，域名的前后端与数据库已迁往新 VPS，当前路径、配置和回滚流程见 [单机部署说明](../../deploy/single-host/README.md)。不要用本页旧地址覆盖现网。
+
 部署对象为合并后的 `main`：客户网页、同站工作人员端、Flutter 安卓下载，以及银行和三个 Agent 通道。
 
 - 客户网页：`http://120.48.123.112/bank/`
@@ -11,7 +13,7 @@
 
 先用 `tools/package-android-download.mjs <Flutter APK>` 准备静态下载，再执行 `npm --prefix app run build:server`。产物同时包含 `staff/` 与 `downloads/`。静态发布到独立 `releases/<版本>/bank/`，检查后原子替换 `current-bank` 链接，保留旧目录。
 
-银行数据库继续使用 `/var/lib/luckycat/bank.sqlite`。发布前使用 SQLite backup API 创建一致性快照；不要覆盖数据库或部署共享演示库。现有服务器源码目录如有未提交改动，应在独立目录准备发布，保留原工作区。
+在线银行数据库已经迁移至 PostgreSQL 16。发布前使用 `deploy/postgres/backup.py` 创建带一致性清单的逻辑备份；SQLite 文件仅作为历史迁移材料，不能作为在线库覆盖。客户演示库与员工后台库保持隔离。现有服务器源码目录如有未提交改动，应在独立目录准备发布，保留原工作区。
 
 模型和语音凭据继续由 `/etc/luckycat/luckycat.env`、`model-routing.env` 提供，不复制到前端或仓库。两个新增 Agent unit 最后读取角色配置文件（root:root 600），覆盖公共配置中的端口、会话目录和 patch：
 

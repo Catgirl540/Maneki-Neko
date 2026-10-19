@@ -1,8 +1,10 @@
 # guga 网页站点
 
+> 2026-10-19 后本页仅保留旧分离部署记录。域名已迁往 `15.235.241.158`，前后端同机，见 [当前单机部署说明](../../deploy/single-host/README.md)。不要重新部署本页的跨机代理作为当前配置。
+
 客户网页：`https://bank.waveflow.men/`；工作人员：`/staff/`。
 
-此站点只托管当前 `app/` 构建（包含共享的工作人员页面），不迁移银行数据库或 Agent。同源 `/api/`、`/staff-api/`、三个 Agent 通道及 `/downloads/` 代理到原服务器 `http://120.48.123.112/bank/`。Agent 代理禁用缓冲，保留流式输出。
+此站点托管当前 `app/` 构建（包含共享的工作人员页面），后端位于原银行服务器。客户 `/api/` 和 `/agent-api/` 使用独立 `/bank-demo/` 演示环境，页面展示演示验证码；`/staff-api/`、员工/运维 Agent 及 `/downloads/` 保持原 `/bank/` 上游。Agent 代理禁用缓冲，保留流式输出。
 
 ## 构建
 
@@ -27,6 +29,28 @@ Nginx 配置：
 ## 运维终端
 
 模板中的新增终端通道经过 guga 本机 `127.0.0.1:18080` 的加密 SSH 转发，不使用普通 API 的公网 HTTP 上游。启用条件、凭据和回收规则见 [运维终端说明](../../docs/api/ops-terminal.md)。工作人员新版页面已发布；公网终端后端和 SSH 转发尚未启用，不要直接用带有该通道的模板覆盖当前可用 Nginx 配置。
+
+## 2026-10-19 Agent 连接恢复修复
+
+静态版本切到 `/var/www/bank.waveflow.men/releases/20261019-agent-health/`，以 `9f0656f` 为基础，仅叠加 `app/src/api/agent.ts` 与 `app/src/lib/useAgentChat.ts` 的连接修复；本地待发布的头像/视频等界面调整未包含。旧 `20261017-9f0656f` 保留，代理路由和银行/Agent 服务未更改。
+
+公网带鉴权的健康请求实测约 2.8～5 秒，旧前端 3 秒超时并永久保持离线。现健康、语音与会话恢复探测统一允许 12 秒、禁用缓存；失败后退避重试，网络/页面恢复时可提前重试，成功后停止，卸载时清理。不会因此自动发送消息或重试办理操作。回归入口为 `node tools/check-agent-health.mjs`。 本次客户与员工生产构建通过，真实浏览器已通过公网演示登录、在线状态和模型回复验证，公网 HTML 摘要与发布清单一致；记录见 [连接修复发布清单](../../docs/bank-agent-connectivity-20261019.json)。
+
+网页回滚备份在 guga 的 `/var/backups/bank-waveflow-men-health-20261019/`，`previous` 记录旧 current 目标，`manifest.json` 保存源文件摘要与 HTML 摘要。按该目标原子恢复 current 软链接即可回滚静态修复；后端、演示库和 live 数据保持各自状态。
+
+## 2026-10-18 客户演示环境
+
+用户明确选择恢复演示验证码。客户 API 与客服已切换到独立 `maneki_bank_demo` PostgreSQL 库及独立 bank/Agent 服务，源码基于 `9f0656f`。从空库创建演示数据，数据密钥、AI 会话密钥、运行角色、profile 与上传目录均独立；原 live 服务及客户数据保留。员工和运维路由仍使用 live。
+
+部署位置、验证和代理回滚见[演示环境维护说明](../../deploy/demo/README.md)。不要为恢复验证码将原 `luckycat-bank.service` 改为 sandbox，也不要将演示源覆盖原 live 发布目录。后续发布须分别维护两套后端。
+
+## 2026-10-17 发布记录
+
+客户与工作人员网页已发布 `main` 的 `9f0656f`，目录为 `/var/www/bank.waveflow.men/releases/20261017-9f0656f/`；旧 `20261016-3dc9bfd` 保留。原服务器的 `/bank/` 同步更新，现有 Flutter 下载保留，未重新构建 APK。
+
+PostgreSQL 改造已合入 main，本次银行与三类 Agent 一起发布到 `/srv/maneki-bank/releases/pg-20261017-9f0656f/`。Agent 的 systemd 发布覆盖将工作目录指向该版本的 `framework/`，客户原生日志与上传目录继续使用 `/srv/maneki-neko/framework/.dsh-home`，员工和运维仍使用各自 `/var/lib/luckycat/` 目录。后续不能只修改旧 `/srv/maneki-neko/framework` 源码来发布 Agent。
+
+发布前已备份并完成隔离恢复、迁移及生产配置启动演练；正式迁移核对余额、冻结、原交易、凭证与 AI 会话不变。网页、接口代理、四个服务及发布后备份巡检通过。线上继续保持 `live`，真实银行通道仍未配置；本次没有完成新登录或真实模型交易验收。详细版本、摘要和备份见 [部署记录](../../docs/bank-deployment-20261017.json)。数据库回退须独立核对，不随静态网页指针自动回退。
 
 ## 2026-10-16 发布记录
 

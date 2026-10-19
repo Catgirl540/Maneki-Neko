@@ -1,0 +1,51 @@
+{
+  "date": "2026-10-17",
+  "timezone": "Asia/Shanghai",
+  "applicationCommit": "9f0656fa63932fe89c0dd04b8050e13926a90802",
+  "bankHost": "120.48.123.112",
+  "bankRelease": "/srv/maneki-bank/releases/pg-20261017-9f0656f",
+  "previousBankRelease": "/srv/maneki-bank/releases/pg-20261016-r1",
+  "agentWorkingDirectory": "/srv/maneki-bank/releases/pg-20261017-9f0656f/framework",
+  "customerRuntimeDirectory": "/srv/maneki-neko/framework/.dsh-home",
+  "staffRuntimeDirectory": "/var/lib/luckycat/staff-agent",
+  "opsRuntimeDirectory": "/var/lib/luckycat/ops-agent",
+  "web": {
+    "url": "https://bank.waveflow.men/",
+    "release": "/var/www/bank.waveflow.men/releases/20261017-9f0656f",
+    "previousRelease": "/var/www/bank.waveflow.men/releases/20261016-3dc9bfd",
+    "indexSha256": "4644f2f8b310cebb3dedc298a01a6c92f08641b4928766923f838a910f771a4b",
+    "bankPathRelease": "/var/www/maneki-neko/releases/web-20261017-9f0656f",
+    "bankPathIndexSha256": "0fe6b632a81da1d38589f00c06fce54d7c771155bec5507c17a5efba9e945a6e"
+  },
+  "database": "PostgreSQL",
+  "integrationMode": "live",
+  "commercialReady": false,
+  "bankConnection": "unconfigured",
+  "backup": {
+    "snapshot": "/var/backups/luckycat-bank/postgresql/bank-20261017T112941Z-97623edbf441.dump",
+    "snapshotAt": "2026-10-17T11:29:41.450300Z",
+    "sha256": "9ae10282d139b331212a728a80aaf3905c94012d1d2a5733a550a0054dc349b3"
+  },
+  "restoreDrillDatabase": "bank_restore_release_20261017_9f0656f",
+  "migration": {
+    "profileVersion": 20,
+    "balancesAndReservationsPreserved": true,
+    "originalTransactionIdentityPreserved": true,
+    "originalJournalsPreserved": true,
+    "aiSessionOwnershipAndEventSequencePreserved": true,
+    "idempotencyVerified": true
+  },
+  "validation": {
+    "fourServicesActive": true,
+    "databaseReconciliationPassed": true,
+    "postReleaseBackupAndCheckPassed": true,
+    "backupAndReconcileTimersActive": true,
+    "customerAndStaffHttpsPagesPassed": true,
+    "bankAndThreeAgentUnauthenticatedRequestsRejected": true,
+    "existingFlutterDownloadPreserved": true,
+    "browserLoginPageRendered": true,
+    "newLiveLoginOrModelTransactionTested": false
+  },
+  "rollbackRecord": "/var/backups/luckycat-bank/release-20261017-9f0656f",
+  "automaticDatabaseRollback": false
+}

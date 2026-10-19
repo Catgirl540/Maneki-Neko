@@ -1,5 +1,7 @@
 # AI 会话 PostgreSQL 运维说明
 
+> 2026-10-19 当前部署见 [单机部署说明](../deploy/single-host/README.md)：原 live 三个 namespace 保留在 `maneki_bank`；独立公开演示客户位于 `maneki_bank_demo`，使用 `maneki_demo_ai` 及 `customer` namespace。新机配置在 `/etc/maneki-vps2/agent-*.env`，不能把两库或匹配密钥混用。以下三通道说明针对 live 库。
+
 本说明覆盖客户、员工和运维 AI bridge 的会话归属、界面事件及旧会话迁移。金融数据库运行说明见 [PostgreSQL 运维手册](bank-postgresql-operations.md)。前端及静态资源不参与本次迁移。
 
 ## 存储与隔离
