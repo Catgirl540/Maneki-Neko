@@ -13,3 +13,7 @@
 ## 2026-10-17
 
 - [Flutter 重设计前归档](2026-10-17/flutter-before-redesign/README.md)：提交 `9f0656f` 的 `mobile/` 源码快照，仅作回滚与功能核对；视觉风格已弃用，新设计不得沿用。当前 Flutter 工程仍由 `mobile/` 维护。
+
+## 2026-10-19
+
+- [DSH 0.1.6-alpha.2 旧版框架](2026-10-19/dsh-before-0.2.1/README.md)：升级前的 `framework/` 源码快照，退出日常维护与部署。当前银行 Agent 维护根目录 `framework/`，版本 `0.2.1-rc.2`；以仓库内安装和版本检查为准，不使用归档或全局 CLI 判断银行运行版本。
