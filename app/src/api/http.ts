@@ -147,6 +147,7 @@ export function createHttpApi(): BankApi {
     changePhone: (req) => patch(routes.changePhone(), req),
     changePassword: (oldPassword, newPassword) =>
       post<void>(routes.changePassword(), { oldPassword, newPassword }),
+    changePaymentPassword: (req) => post<void>(routes.paymentPassword(), req),
     verifyIdentity: (channel) => post(routes.verifyIdentity(), { channel }),
 
     listSupportMessages: () => request(routes.supportHistory()),
@@ -170,8 +171,6 @@ export function createHttpApi(): BankApi {
     // —— 我的域扩展 ——
     getInvitations: () => request(routes.invitations()),
     getMembership: () => request(routes.membership()),
-    subscribeMembership: (planId) => post(routes.membershipSubscribe(), { planId }),
-    cancelMembership: () => post(routes.membershipCancel()),
     getIdentityStatus: () => request(routes.identityStatus()),
     runIdentityOcr: () => post(routes.identityOcr()),
     runIdentityLiveness: () => post(routes.identityLiveness()),

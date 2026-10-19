@@ -26,7 +26,7 @@ npm --prefix app run dev
 ```
 
 前端默认地址为 `http://localhost:5180`，银行后端为 `http://127.0.0.1:8080`。
-演示登录：`13800138000` / `123456`，先获取页面显示的短信验证码；支付密码为 `888888`。
+演示登录：`13800138000` / `123456`，先获取页面显示的短信验证码；该演示账户支付密码为 `888888`（新注册客户在开户表单中自设，安全中心可修改或核身重置）。
 
 只做界面开发、需要浏览器 mock 时：
 
@@ -115,6 +115,7 @@ VITE_USE_MOCK=false npm --prefix app run dev
 - 客户令牌和用户信息保存在 `sessionStorage`，同标签页刷新可恢复；银行服务重启后需要重新登录。
 - 助手历史列表保存在浏览器本地，服务端按客户保存上下文，Agent 重启后可直接继续。旧版本自动迁入最近文字，图片需重发；中断的确认需重新发起，已提交业务以银行记录为准。
 - `src/api/mock/` 的业务逻辑也被服务端复用，修改它会影响后端行为，不能只当作页面样例。
+- 浏览器 mock 不调用付费分类模型；交易自动分类只在真实银行后端记账时发生，mock 流水中未指定分类的支出仍是 `other`。
 
 登录态入口见 `src/store/session.tsx` 和 `src/lib/authToken.ts`。
 敏感操作保留“展示信息 → 用户确认 → 身份验证 → 执行”流程，前端路由守卫不能替代后端鉴权。
@@ -214,6 +215,8 @@ npm --prefix app run build:server
 
 修改前阅读 [账户模型约束](../docs/product/account-model.md)，运行 `npm --prefix app run check:account-model`。
 
-每位客户只有一个资金账户，多张银行卡绑定同一账户。`GET /api/accounts` 的 `currencyBalances` 保存各币种余额；币种分区 ID 用于兼容流水与换汇请求，不作为独立账户或卡账户展示。不同币种不能直接加总。
+每位客户只有一个资金账户，多张银行卡绑定同一账户；每个卡组织（Visa / 银联）至多一张在用卡（使用中、锁定、寄送中占名额，已换发的历史卡不占）。`GET /api/accounts` 的 `currencyBalances` 保存各币种余额；币种分区 ID 用于兼容流水与换汇请求，不作为独立账户或卡账户展示。不同币种不能直接加总。
 
-银行档案 v20 将旧卡账户的同币种余额、可用余额及关联流水投影到同一资金账户，保留原回单、SQL 交易关联和旧账本行；外币使用 `currencyBalances`，换汇不再开户。PostgreSQL 中的 `bank_accounts` 兼容表保存内部币种及退役账本记录，不能用该表行数作为客户账户数。新增能力应覆盖 `tools/check-single-account.mjs` 和 `npm --prefix server run check:integration`，迁移不可用重置数据库代替。
+会员等级（白银/黄金/铂金/钻石）按上月日均储蓄资产评定，规则与服务端共享在 `shared/membership.mjs`：制卡/换卡费年度减免、换汇点差折扣；日终资产快照随 `persist()` 落档，缺日按 0 计。档案 v21 将旧月费套餐收进 `membership.legacy` 只读保留，订阅接口已移除。
+
+银行档案 v20 将旧卡账户的同币种余额、可用余额及关联流水投影到同一资金账户，保留原回单、SQL 交易关联和旧账本行；外币使用 `currencyBalances`，换汇不再开户。PostgreSQL 中的 `bank_accounts` 兼容表保存内部币种及退役账本记录，不能用该表行数作为客户账户数。新增能力应覆盖 `tools/check-single-account.mjs`、`tools/check-card-limit.mjs`、`tools/check-membership.mjs` 和 `npm --prefix server run check:integration`，迁移不可用重置数据库代替。

@@ -117,7 +117,7 @@ try {
     console.log('PASS 多笔跨客户自动到账，收款方为扫描原上下文，重复扫账不重复入账')
     for (const phone of ['13900139000','13700137000']) {
       const sms = await api.sendSmsCode(phone), face = await api.verifyIdentity('face')
-      await api.register({ phone, password: 'safe123', holderName: '测试客户', idNumber: '310101199001011234', smsCode: sms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
+      await api.register({ phone, password: 'safe123', paymentPassword: '888888', holderName: '测试客户', idNumber: '310101199001011234', smsCode: sms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
       const fresh = loadDb(), empty = emptyCustomerDomains(fresh.user, fresh.accounts[0].id)
       for (const key of ['virtualCards','insurance','credit','investments','savings','membership']) assert.deepEqual(fresh[key], empty[key])
       const info = await api.getReceivingInfo(); assert.equal(info.fpsRegistered, false); assert.equal(info.fpsMobile, ''); assert.equal(info.fpsId, '')

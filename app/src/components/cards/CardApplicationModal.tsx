@@ -54,8 +54,8 @@ export function CardApplicationModal({
     if (mode === 'replace' && card) {
       return products.find((p) => p.network === card.network)?.code ?? products[0]?.code ?? ''
     }
-    // 默认选第二张（Visa 全球卡），第一张是基础卡
-    return products[1]?.code ?? products[0]?.code ?? ''
+    // 默认选首个未持有对应卡组织的产品；已占名额的产品只在列表里作提示
+    return products.find((p) => !p.held)?.code ?? products[0]?.code ?? ''
   })
   const [address, setAddress] = useState<MailingAddress>({ ...EMPTY_ADDRESS })
   const [touched, setTouched] = useState<Partial<Record<keyof MailingAddress, boolean>>>({})
@@ -64,7 +64,9 @@ export function CardApplicationModal({
   const [submitting, setSubmitting] = useState(false)
 
   const product = products.find((p) => p.code === productCode) ?? null
-  const fee = product ? product.issuingFee + product.deliveryFee : 0
+  // 实付以后端报价为准（含会员减免），退化为标价合计兜底
+  const fee = product ? (product.feeQuote?.payable ?? product.issuingFee + product.deliveryFee) : 0
+  const blocked = mode === 'open' && product?.held === true
 
   function setField(field: keyof MailingAddress, value: string) {
     setAddress((prev) => ({ ...prev, [field]: value }))
@@ -131,8 +133,8 @@ export function CardApplicationModal({
           <Button block onClick={onClose} disabled={submitting}>
             取消
           </Button>
-          <Button block variant="primary" loading={submitting} onClick={() => void submit()}>
-            {mode === 'open' ? `支付 ¥${formatAmount(fee)} 并申请` : `支付 ¥${formatAmount(fee)} 并换卡`}
+          <Button block variant="primary" loading={submitting} disabled={blocked} onClick={() => void submit()}>
+            {blocked ? '该卡组织已有在用卡' : mode === 'open' ? `支付 ¥${formatAmount(fee)} 并申请` : `支付 ¥${formatAmount(fee)} 并换卡`}
           </Button>
         </>
       }
@@ -145,16 +147,23 @@ export function CardApplicationModal({
             <div className="flex flex-col gap-3">
               {products.map((item) => {
                 const active = item.code === productCode
-                const total = item.issuingFee + item.deliveryFee
+                const quote = item.feeQuote
+                const payable = quote?.payable ?? item.issuingFee + item.deliveryFee
                 return (
                   <button
                     key={item.code}
                     type="button"
-                    onClick={() => setProductCode(item.code)}
+                    onClick={() => !item.held && setProductCode(item.code)}
+                    disabled={item.held}
                     aria-pressed={active}
+                    aria-disabled={item.held}
                     className={cn(
                       'rounded-field border p-4 text-left transition-colors',
-                      active ? 'border-gold bg-gold-tint' : 'border-line hover:border-line-strong',
+                      item.held
+                        ? 'cursor-not-allowed border-line bg-sunk opacity-70'
+                        : active
+                          ? 'border-gold bg-gold-tint'
+                          : 'border-line hover:border-line-strong',
                     )}
                   >
                     <span className="flex items-center gap-3">
@@ -167,21 +176,25 @@ export function CardApplicationModal({
                       >
                         {item.name}
                       </span>
-                      <span className="num shrink-0 text-[15px] font-semibold text-ink">
-                        ¥{formatAmount(total)}
-                      </span>
-                      {active && <CheckIcon size={18} className="shrink-0 text-gold-deep" />}
+                      {item.held ? (
+                        <span className="shrink-0 text-[13px] font-medium text-ink-mute">已持有同组织卡</span>
+                      ) : quote && quote.waived > 0 ? (
+                        <span className="shrink-0 text-right">
+                          <span className="num mr-1.5 text-[13px] text-ink-mute line-through">¥{formatAmount(quote.listFee)}</span>
+                          <span className="num text-[15px] font-semibold text-gold-deep">¥{formatAmount(payable)}</span>
+                        </span>
+                      ) : (
+                        <span className="num shrink-0 text-[15px] font-semibold text-ink">¥{formatAmount(payable)}</span>
+                      )}
+                      {active && !item.held && <CheckIcon size={18} className="shrink-0 text-gold-deep" />}
                     </span>
                     <span className="mt-2 block text-[12px] leading-relaxed text-ink-mute">
                       {item.perks.join(' · ')}
                     </span>
                     <span className="num mt-1.5 block text-[12px] text-ink-mute">
-                      制卡费 ¥{formatAmount(item.issuingFee)}
-                      {item.deliveryFee > 0
-                        ? ` + 寄送费 ¥${formatAmount(item.deliveryFee)}`
-                        : ' · 挂号信寄送免费'}
-                      {' · 预计 '}
-                      {item.deliveryDays} 个工作日寄达
+                      {item.held
+                        ? '每个卡组织至多一张；如需新卡可在卡片列表办理换卡'
+                        : `制卡费 ¥${formatAmount(item.issuingFee)}${item.deliveryFee > 0 ? ` + 寄送费 ¥${formatAmount(item.deliveryFee)}` : ' · 挂号信寄送免费'} · 预计 ${item.deliveryDays} 个工作日寄达${quote && quote.waived > 0 ? ' · 会员减免已计入' : ''}`}
                     </span>
                   </button>
                 )
@@ -280,9 +293,20 @@ export function CardApplicationModal({
                   {product.deliveryFee > 0 ? `¥${formatAmount(product.deliveryFee)}` : '免费'}
                 </dd>
               </div>
+              {product.feeQuote && product.feeQuote.waived > 0 && (
+                <div className="flex justify-between">
+                  <dt className="text-ink-soft">会员等级减免</dt>
+                  <dd className="num text-gold-deep">−¥{formatAmount(product.feeQuote.waived)}</dd>
+                </div>
+              )}
               <div className="flex items-baseline justify-between border-t border-line pt-3">
                 <dt className="text-ink-soft">合计（从储蓄账户扣除）</dt>
-                <dd className="num text-[15px] font-semibold text-ink">¥{formatAmount(fee)}</dd>
+                <dd className="num text-[15px] font-semibold text-ink">
+                  {product.feeQuote && product.feeQuote.waived > 0 && (
+                    <span className="mr-1.5 text-[13px] font-normal text-ink-mute line-through">¥{formatAmount(product.feeQuote.listFee)}</span>
+                  )}
+                  ¥{formatAmount(fee)}
+                </dd>
               </div>
             </dl>
           </section>

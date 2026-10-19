@@ -577,6 +577,20 @@ export interface CardProduct {
   perks: string[]
   /** 预计寄达工作日 */
   deliveryDays: number
+  /** 当前客户已持有同卡组织非历史卡（每位客户每个卡组织至多一张） */
+  held?: boolean
+  /** 按当前会员等级计算的实付报价；无减免时与标价一致 */
+  feeQuote?: CardFeeQuote
+}
+
+/** 制卡 / 换卡实付报价：减免次数由后端核销 */
+export interface CardFeeQuote {
+  /** 标价合计（制卡费 + 寄送费） */
+  listFee: Cents
+  /** 本次实付金额 */
+  payable: Cents
+  /** 会员减免的金额；0 表示无减免 */
+  waived: Cents
 }
 
 /**
@@ -631,6 +645,8 @@ export interface BankCard {
   shippingAddress?: MailingAddress
   /** 已收取的制卡费用合计（工本费 + 寄送费） */
   issuingFee?: Cents
+  /** 换发来源卡 id；新开卡为 null，换发卡指向已停用的旧卡 */
+  replacedFromId?: string | null
 }
 
 /**
@@ -1012,6 +1028,8 @@ export interface SmsCodeResult {
 export interface RegistrationRequest {
   phone: string
   password: string
+  /** 开户时设置的支付密码：6 位数字。支付密码不再使用演示固定值 */
+  paymentPassword: string
   holderName: string
   idNumber: string
   smsCode: string
@@ -1075,6 +1093,22 @@ export interface ChangePhoneRequest {
   /** 发到**新**手机号的验证码 */
   smsCode: string
   faceTicket: string
+}
+
+/**
+ * 修改或重置支付密码。
+ *
+ * 两条路径互斥：
+ * - `oldPassword`：已记得原密码的常规修改，走与付款一致的校验（计错误次数、可能已锁定）。
+ * - `faceTicket`：忘记原密码或已被锁定时，用本人核身来重置 —— 这也是锁定后的唯一出口。
+ * 成功后错误次数清零。新密码必须是 6 位数字。
+ */
+export interface ChangePaymentPasswordRequest {
+  /** 常规修改时必填的原支付密码 */
+  oldPassword?: string
+  /** 核身重置时必填的人脸票据 */
+  faceTicket?: string
+  newPassword: string
 }
 
 /* ==========================================================================
@@ -1293,10 +1327,54 @@ export interface MembershipSubscription {
   renewAt: string | null
 }
 
+/** 统一客户会员等级：白银开户即享，其余按上月日均储蓄资产评定 */
+export type MemberTier = 'silver' | 'gold' | 'platinum' | 'diamond'
+
+/** 一次月度评定结果；缺快照的日子按 0 计入，只可能低估不会高估 */
+export interface MembershipEvaluation {
+  /** 本次评定对应的月份 `YYYY-MM`（本月等级由它决定） */
+  for: string
+  /** 上月日均储蓄资产（分） */
+  avgAssets: Cents
+  /** 上月有日终快照的天数 */
+  coveredDays: number
+  /** 上月总天数 */
+  daysInMonth: number
+  evaluatedAt: string
+}
+
+/** 当年度可用权益额度与已用量 */
+export interface MembershipBenefits {
+  /** 制卡/换卡费年度减免次数 */
+  cardFeeWaiversPerYear: number
+  cardFeeWaiversUsed: number
+  /** 钻石档：减免含寄送费 */
+  includeShipping: boolean
+  /** 换汇点差系数：0.7 = 七折 */
+  fxFeeRate: number
+  /** 规划中尚未开通的权益（不能展示为已享权益） */
+  plannedPerks: string[]
+}
+
 export interface MembershipOverview {
-  current: MembershipSubscription
-  plans: MembershipPlan[]
+  tier: MemberTier
+  /** 等级中文名，如「黄金会员」 */
+  tierName: string
+  /** 当前等级生效起点；无评定历史时为 null */
+  since: string | null
+  /** 最近一次月度评定；新客尚无快照时为 null */
+  evaluation: MembershipEvaluation | null
+  /** 下次评定日（次月 1 日） */
+  nextEvaluationAt: string
+  /** 距下一档的日均资产差额；已是最高档为 null */
+  upgradeGap: Cents | null
+  /** 下一档名称；已是最高档为 null */
+  nextTierName: string | null
+  benefits: MembershipBenefits
+  /** 评级与权益使用记录 */
   records: { id: string; label: string; amount: Cents; createdAt: string }[]
+  /** 旧月费套餐的只读历史；不再支持购买或续费 */
+  legacy?: { current: MembershipSubscription | null; plans: MembershipPlan[] }
 }
 
 /** 证件 OCR 识别结果（演示：服务端按登记资料回填） */

@@ -1,0 +1,14 @@
+{
+  "archiveDate": "2026-10-19",
+  "sourceCommit": "9f0656fa63932fe89c0dd04b8050e13926a90802",
+  "sourcePath": "framework/",
+  "dshVersion": "0.1.6-alpha.2",
+  "file": "dsh-0.1.6-alpha.2-source.tar.gz",
+  "bytes": 412256,
+  "sha256": "7c4a39c1e493b972041382b4a92983fc27c5fccedb1cf89dbf9af6d1a371bff0",
+  "files": 188,
+  "purpose": "Historical source only; excluded from normal maintenance and runtime",
+  "activeSource": "framework/",
+  "activeDshVersion": "0.2.1-rc.2",
+  "scope": "Git-tracked source only; installed dependencies, credentials, databases, profiles with local state and conversation files are not included"
+}

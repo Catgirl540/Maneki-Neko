@@ -90,6 +90,7 @@ import type {
   OverdraftFacility,
   Loan,
   InstallmentPlan,
+  MembershipOverview,
   CashManagement,
   InvestmentsOverview,
   InvestPlan,
@@ -100,7 +101,6 @@ import {
   ledgerBalances,
   findBalance,
   CARD_PAYMENT_METHOD,
-  DEFAULT_PAY_PASSWORD,
   CARD_PRODUCTS,
   emptyCustomerDomains,
   lookupFpsRegistration,
@@ -110,9 +110,16 @@ import {
   toleranceFromScore,
   FX_QUOTE_TTL,
   FX_SPREAD,
+  FX_MID_RATES,
   findBank,
   PAY_PASSWORD_MAX_ATTEMPTS,
-  fxRate,
+  cardFeeQuote,
+  effectiveSpread,
+  evaluateMembership,
+  fxRateFor,
+  membershipOverview,
+  OCCUPYING_CARD_STATUSES,
+  recordCardFeeWaiver,
   loadDb,
   findProfileByPhone,
   findProfileByUserId,
@@ -210,16 +217,16 @@ function withDerived(account: Account): Account {
  * 生成换汇报价。扣账币种与收款币种相同时返回 undefined —— 不需要换汇。
  * 报价带 quotedAt / quoteTtlSeconds，调用方（UI）据此倒计时并在过期后重新询价。
  */
-function buildFxQuote(from: Currency, to: Currency, fromAmount: Cents): FxQuote | undefined {
+function buildFxQuote(db: MockDb, from: Currency, to: Currency, fromAmount: Cents): FxQuote | undefined {
   if (from === to || fromAmount <= 0) return undefined
-  const rate = fxRate(from, to)
+  const rate = fxRateFor(db, from, to, FX_MID_RATES, FX_SPREAD)
   return {
     fromCurrency: from,
     toCurrency: to,
     rate,
     fromAmount,
     toAmount: Math.round(fromAmount * rate),
-    spread: FX_SPREAD,
+    spread: effectiveSpread(db, FX_SPREAD),
     quoteTtlSeconds: FX_QUOTE_TTL,
     quotedAt: new Date().toISOString(),
   }
@@ -663,6 +670,9 @@ export function createMockApi(options?: {
       if (req.password.length < 6 || req.password.length > 20) {
         throw new ApiError('登录密码需为 6–20 个字符', 400, 'WEAK_PASSWORD')
       }
+      if (!/^\d{6}$/.test(req.paymentPassword)) {
+        throw new ApiError('请设置 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD')
+      }
       if (!req.holderName.trim()) throw new ApiError('请填写姓名', 400, 'NAME_REQUIRED')
       if (!/^\d{17}[\dXx]$/.test(req.idNumber.trim())) throw new ApiError('请输入 18 位身份证号', 400, 'INVALID_ID')
       const sms = db.pendingSms
@@ -695,7 +705,7 @@ export function createMockApi(options?: {
         id: `u_${Date.now()}`,
         name: req.holderName.trim(),
         phone,
-        memberLevel: '普通会员',
+        memberLevel: '白银会员',
         avatarInitial: req.holderName.trim().slice(0, 1),
       }
       next.passwordDigest = await passwordDigest(req.password)
@@ -708,7 +718,7 @@ export function createMockApi(options?: {
       next.transactions = []
       // 新用户不能继承当前档案的演示收款人或支付密码状态。
       next.payees = []
-      next.payPassword = DEFAULT_PAY_PASSWORD
+      next.payPassword = req.paymentPassword
       next.payPasswordFailures = 0
       next.cards = []
       next.cardSecrets = {}
@@ -729,7 +739,9 @@ export function createMockApi(options?: {
 
     async profile(): Promise<User> {
       await delay(140)
-      return loadDb().user
+      const db = loadDb()
+      if (evaluateMembership(db)) persist()
+      return db.user
     },
 
     async listAccounts() {
@@ -1016,6 +1028,7 @@ export function createMockApi(options?: {
 
       // 扣账币种 ≠ 收款币种时才需要换汇
       const fx = buildFxQuote(
+        db,
         current.currency,
         req.payeeCurrency ?? current.currency,
         req.amount,
@@ -1108,7 +1121,7 @@ export function createMockApi(options?: {
           ? Math.max(Math.round(req.amount * OVERSEAS_RATE), OVERSEAS_MIN_FEE)
           : 0
       const total = req.amount + fee
-      const quotedFx = buildFxQuote(account.currency, req.payeeCurrency ?? account.currency, req.amount)
+      const quotedFx = buildFxQuote(db, account.currency, req.payeeCurrency ?? account.currency, req.amount)
       assertTransferConfirmation(req, fee, account.currency, quotedFx, options?.acceptedQuote)
       if (req.confirmedRecipient) {
         const registered = req.fpsMethod && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod, req.fpsId ?? '') : undefined
@@ -1431,25 +1444,38 @@ export function createMockApi(options?: {
 
     async listCardProducts(): Promise<CardProduct[]> {
       await delay(140)
-      return CARD_PRODUCTS
+      const db = loadDb()
+      if (evaluateMembership(db)) persist()
+      return CARD_PRODUCTS.map((product) => ({
+        ...product,
+        held: db.cards.some((c) => c.network === product.network && OCCUPYING_CARD_STATUSES.includes(c.status)),
+        feeQuote: cardFeeQuote(db, product),
+      }))
     },
 
     async openCard(req) {
       await delay(700)
       const db = loadDb()
+      if (evaluateMembership(db)) persist()
       const product = CARD_PRODUCTS.find((p) => p.code === req.productCode)
       if (!product) throw new ApiError('卡产品不存在', 404, 'PRODUCT_NOT_FOUND')
+      // 每个卡组织至多一张：先拦名额再谈收费，拒绝的申请不收一分钱
+      if (db.cards.some((c) => c.network === product.network && OCCUPYING_CARD_STATUSES.includes(c.status))) {
+        throw new ApiError(`您已持有${product.network === 'visa' ? 'Visa' : '银联'}卡组织的银行卡，每位客户各至多一张，可在卡片管理中办理换卡`, 409, 'CARD_NETWORK_LIMIT')
+      }
 
       // 先验密码再收钱，顺序不能反
       verifyPayPassword(req.paymentPassword)
       const addressError = validateAddress(req.address)
       if (addressError) throw new ApiError(addressError, 400, 'INVALID_ADDRESS')
 
-      const fee = product.issuingFee + product.deliveryFee
+      const quote = cardFeeQuote(db, product)
+      const fee = quote.payable
       chargeCardFee(
         fee,
         `${product.name} 制卡费${product.deliveryFee > 0 ? '（含寄送费）' : ''}`,
       )
+      if (quote.waived > 0) recordCardFeeWaiver(db, quote.waived)
 
       // 显式构造而不是 spread 旧卡：新卡的字段应当全部明确，不继承别人的地址与费用
       const fresh: BankCard = {
@@ -1469,6 +1495,7 @@ export function createMockApi(options?: {
         dailyLimit: 200_000,
         shippingAddress: req.address,
         issuingFee: fee,
+        replacedFromId: null,
       }
       db.cards.push(fresh)
       db.cardSecrets[fresh.id] = { cvv: newCardCvv(), pan: cardPan(fresh.network, fresh.last4) }
@@ -1492,6 +1519,7 @@ export function createMockApi(options?: {
     async replaceCard(id, req) {
       await delay(650)
       const db = loadDb()
+      if (evaluateMembership(db)) persist()
       const card = findCard(id)
       if (card.status === 'replaced') {
         throw new ApiError('该卡已换卡，无法重复操作', 400, 'CARD_REPLACED')
@@ -1501,14 +1529,15 @@ export function createMockApi(options?: {
       const addressError = validateAddress(req.address)
       if (addressError) throw new ApiError(addressError, 400, 'INVALID_ADDRESS')
 
-      // 换卡按同卡组织的产品定价；本行自有卡没有对应产品，用固定工本费
-      // 换卡按同卡组织的产品定价
+      // 换卡按同卡组织的产品定价；会员制卡费减免同步适用；本行自有卡没有对应产品，用固定工本费
       const product = CARD_PRODUCTS.find((p) => p.network === card.network)
-      const fee = product ? product.issuingFee + product.deliveryFee : 2_000
+      const quote = cardFeeQuote(db, product ?? { issuingFee: 2_000, deliveryFee: 0 })
+      const fee = quote.payable
       chargeCardFee(fee, `${card.productName} 换卡工本费`)
+      if (quote.waived > 0) recordCardFeeWaiver(db, quote.waived)
 
+      // 换卡是一笔原子操作：旧卡停用和新卡接替在同一次落库里完成
       card.status = 'replaced'
-      persist()
 
       const fresh: BankCard = {
         ...card,
@@ -1519,6 +1548,7 @@ export function createMockApi(options?: {
         overseasPayment: false,
         shippingAddress: req.address,
         issuingFee: fee,
+        replacedFromId: card.id,
       }
       db.cards.push(fresh)
       // 换发的新卡是另一张卡，安全码必须重新生成，不能沿用旧卡的
@@ -2003,6 +2033,33 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       persist()
     },
 
+    async changePaymentPassword(req) {
+      await delay(420)
+      const db = loadDb()
+      if (typeof req.oldPassword === 'string' && req.oldPassword.length > 0) {
+        // 常规修改：和付款一样验原密码，错误次数会累计、已锁定必须走核身重置
+        verifyPayPassword(req.oldPassword)
+      } else {
+        // 忘记原密码或已锁定：核身重置是唯一出口
+        if (!req.faceTicket) {
+          throw new ApiError('请先完成人脸识别', 400, 'FACE_REQUIRED')
+        }
+      }
+      if (!/^\d{6}$/.test(req.newPassword)) {
+        throw new ApiError('请设置 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD')
+      }
+      db.payPassword = req.newPassword
+      db.payPasswordFailures = 0
+      db.security.logs.unshift({
+        id: nextId('log'),
+        action: req.oldPassword ? '修改支付密码' : '重置支付密码',
+        detail: req.oldPassword ? '凭原支付密码修改' : '人脸核身后重置',
+        createdAt: new Date().toISOString(),
+        level: 'warn',
+      })
+      persist()
+    },
+
     async verifyIdentity(channel) {
       await delay(600)
       return { ticket: `verify.${channel}.${Date.now()}` }
@@ -2072,6 +2129,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
     async quoteExchange(req): Promise<ExchangeQuote> {
       await delay(180)
       const db = loadDb()
+      if (evaluateMembership(db)) persist()
       const from = findBalance(db, req.fromAccountId)
       if (!from) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
       if (req.toCurrency === from.currency) {
@@ -2081,7 +2139,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       if (req.amount > from.available) {
         throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
       }
-      const rate = fxRate(from.currency, req.toCurrency)
+      const rate = fxRateFor(db, from.currency, req.toCurrency, FX_MID_RATES, FX_SPREAD)
       const toAmount = Math.round(req.amount * rate)
       if (!Number.isSafeInteger(toAmount) || toAmount <= 0) throw new ApiError('换汇金额过小或超出范围', 400, 'INVALID_AMOUNT')
       const target = ledgerBalances(db).find((a) => a.currency === req.toCurrency)
@@ -2096,7 +2154,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
           rate,
           fromAmount: req.amount,
           toAmount,
-          spread: FX_SPREAD,
+          spread: effectiveSpread(db, FX_SPREAD),
           quoteTtlSeconds: FX_QUOTE_TTL,
           quotedAt: new Date().toISOString(),
         },
@@ -2113,7 +2171,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       verifyPayPassword(req.paymentPassword)
       const confirmed = exchangeQuotes.get(req.quoteId)
       if (!confirmed || confirmed.expiresAt <= Date.now()) throw new ApiError('报价已过期，请重新询价', 409, 'QUOTE_EXPIRED')
-      if (confirmed.ownerId !== db.user.id || confirmed.accountId !== from.id || confirmed.amount !== req.amount || confirmed.toCurrency !== req.toCurrency || confirmed.rate !== fxRate(from.currency, req.toCurrency)) throw new ApiError('报价已变化，请重新确认', 409, 'QUOTE_CHANGED')
+      if (confirmed.ownerId !== db.user.id || confirmed.accountId !== from.id || confirmed.amount !== req.amount || confirmed.toCurrency !== req.toCurrency || confirmed.rate !== fxRateFor(db, from.currency, req.toCurrency, FX_MID_RATES, FX_SPREAD)) throw new ApiError('报价已变化，请重新确认', 409, 'QUOTE_CHANGED')
       exchangeQuotes.delete(req.quoteId)
       if (req.toCurrency === from.currency) {
         throw new ApiError('目标币种与扣账币种相同', 400, 'SAME_CURRENCY')
@@ -2122,7 +2180,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       if (req.amount > from.available) {
         throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')
       }
-      const rate = fxRate(from.currency, req.toCurrency)
+      const rate = fxRateFor(db, from.currency, req.toCurrency, FX_MID_RATES, FX_SPREAD)
       const toAmount = Math.round(req.amount * rate)
       if (!Number.isSafeInteger(toAmount) || toAmount <= 0) throw new ApiError('换汇金额过小或超出范围', 400, 'INVALID_AMOUNT')
       let target = ledgerBalances(db).find((a) => a.currency === req.toCurrency)
@@ -2212,7 +2270,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
           rate,
           fromAmount: req.amount,
           toAmount,
-          spread: FX_SPREAD,
+          spread: effectiveSpread(db, FX_SPREAD),
           quoteTtlSeconds: FX_QUOTE_TTL,
           quotedAt: now,
         },
@@ -2307,52 +2365,11 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       return loadDb().invitations
     },
 
-    async getMembership() {
+    async getMembership(): Promise<MembershipOverview> {
       await delay(180)
-      return loadDb().membership
-    },
-
-    async subscribeMembership(planId) {
-      await delay(620)
       const db = loadDb()
-      const plan = db.membership.plans.find((p) => p.id === planId)
-      if (!plan) throw new ApiError('会员套餐不存在', 404, 'PLAN_NOT_FOUND')
-      const now = new Date()
-      db.membership.current = {
-        planId: plan.id,
-        planName: plan.name,
-        status: 'active',
-        price: plan.price,
-        period: plan.period,
-        startedAt: now.toISOString(),
-        renewAt: new Date(now.getTime() + 30 * 86_400_000).toISOString(),
-      }
-      db.membership.records.unshift({
-        id: nextId('mbr'),
-        label: `开通 ${plan.name}`,
-        amount: plan.price,
-        createdAt: now.toISOString(),
-      })
-      persist()
-      return db.membership
-    },
-
-    async cancelMembership() {
-      await delay(420)
-      const db = loadDb()
-      if (db.membership.current.status !== 'active') {
-        throw new ApiError('当前没有生效的会员', 400, 'NO_ACTIVE_MEMBERSHIP')
-      }
-      db.membership.current.status = 'canceled'
-      db.membership.current.renewAt = null
-      db.membership.records.unshift({
-        id: nextId('mbr'),
-        label: '取消自动续费',
-        amount: 0,
-        createdAt: new Date().toISOString(),
-      })
-      persist()
-      return db.membership
+      if (evaluateMembership(db)) persist()
+      return membershipOverview(db, FX_MID_RATES)
     },
 
     async getIdentityStatus() {

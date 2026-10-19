@@ -4,7 +4,7 @@
 
 业务模式是中国内地人民币零售、合作持牌银行托管资金并执行支付。合作银行尚未确定，当前真实银行通道关闭：`commercialReady=false`。平台保存支付意图、授权和经验证的回执；创建支付意图不扣余额、不生成成功到账。生产包没有虚构银行适配器、模拟签名或自动放行开关。
 
-账户模型以 [单资金账户约束](../docs/product/account-model.md) 为准：多张卡共用一个资金账户，外币是余额分区；档案 v20 保留被合并的历史账本行，禁止按卡开户和换汇开户。旧 SQLite 适配仅用于显式测试夹具，不是生产入口。
+账户模型以 [单资金账户约束](../docs/product/account-model.md) 为准：多张卡共用一个资金账户，外币是余额分区；档案 v20 保留被合并的历史账本行，禁止按卡开户和换汇开户。每个卡组织至多一张在用卡（`CARD_NETWORK_LIMIT`，先于验密与收费）；会员等级按上月日均储蓄资产评定，规则共享在 `shared/membership.mjs`，制卡费减免与换汇点差在此结算，`assetSnapshots` 为评定凭证。旧 SQLite 适配仅用于显式测试夹具，不是生产入口。
 
 ## 启动和结构部署
 
@@ -26,6 +26,10 @@ node index.mjs
 `public` 保留加密客户档案、历史账户及流水、认证、员工工单审批和审计。`banking` 存银行准入证据、账户关联、客户授权、幂等支付意图、不可修改回执、outbox、账单和对账异常。`accounting` 提供版本科目、账簿、明细账户、借贷凭证、营业日及日结；平台财务账与银行客户资金备查账分开。`regulatory` 提供版本报表、血缘和校验记录，尚未连接监管报送接口。
 
 科目模板 `CN-PLATFORM-DRAFT-1` 保持草稿，等待主体会计政策审批；`BANK-MEMO-1` 仅为银行资金备查账。不存在适用于所有机构、可直接宣称完整且获监管认可的通用银行科目表。
+
+## 交易自动分类
+
+记账时对 `category === 'other'` 的支出流水调用 OpenRouter 决策模型（默认 `perplexity/pplx-decider-flash-v1.2`，`/api/alpha/decisions`）按对方户名、摘要、渠道与金额归入消费分类；`transfer`、`salary` 等明确赋值与 `businessType` 流水不参与。配置 `OPENROUTER_API_KEY` 即启用，可用 `BANK_CATEGORIZE_MODEL` 换模型；无密钥、超时或响应异常一律回落 `other`，不影响记账。相同流水要素有进程内缓存去重。浏览器 mock 不调用付费模型，行为不变。门禁：`node tools/check-categorize.mjs`（纯夹具）。
 
 ## 验证
 

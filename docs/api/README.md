@@ -41,7 +41,7 @@
 | `NOT_FOUND` | 404 | 资源不存在 |
 | `ACCOUNT_NOT_FOUND` | 404 | 账户不存在 |
 | `CARD_NOT_FOUND` | 404 | 银行卡不存在 |
-| `PLAN_NOT_FOUND` | 404 | 会员套餐不存在 |
+| `CARD_NETWORK_LIMIT` | 409 | 同卡组织已持有在用卡（每个卡组织至多一张） |
 | `INVALID_AMOUNT` | 400 | 金额非法（≤0 等） |
 | `INSUFFICIENT_BALANCE` | 400 | 可用余额不足 |
 | `BAD_PAY_PASSWORD` | 400 | 支付密码错误 |
@@ -63,7 +63,7 @@
 | PATCH | `/api/auth/phone` | 更换登录手机号（人脸 + 新号短信） | 已实现 |
 | GET | `/api/accounts` | 资金账户列表（多币种） | 已实现 |
 | GET | `/api/accounts/:id` | 单个账户 | 已实现 |
-| GET | `/api/accounts/:id/transactions` | 账户流水（分页；支持 `category` / `keyword` / `currency`） | 已实现 |
+| GET | `/api/accounts/:id/transactions` | 账户流水（分页；支持 `category` / `keyword` / `currency`；支出分类由服务端自动归类，见 [accounts.md](accounts.md)） | 已实现 |
 | GET | `/api/accounts/:id/transactions/export` | 流水导出数据集 | 已实现 |
 | GET | `/api/transactions/:id` | 单笔交易详情（凭证） | 已实现 |
 | GET | `/api/transactions/:id/receipt` | 电子回单文件 | 已实现 |
@@ -105,9 +105,7 @@
 | 方法 | 路径 | 说明 | 状态 |
 | --- | --- | --- | --- |
 | GET | `/api/invitations` | 邀请码、好友进度、奖励 | 已实现 |
-| GET | `/api/membership` | 会员套餐与当前订阅 | 已实现 |
-| POST | `/api/membership/subscribe` | 开通 / 更换会员套餐 | 已实现 |
-| POST | `/api/membership/cancel` | 取消自动续费 | 已实现 |
+| GET | `/api/membership` | 会员等级、月度评定与年度权益（旧套餐只读留在 `legacy`） | 已实现 |
 | GET | `/api/identity/status` | 身份认证状态与开户验证进度 | 已实现 |
 | POST | `/api/identity/ocr` | 证件 OCR 识别 | 已实现 |
 | POST | `/api/identity/liveness` | 人脸活体核验 | 已实现 |
@@ -121,7 +119,7 @@
 | 转账 | `GET /api/banks`、`GET /api/receiving`、`POST /api/cards/bin`、`GET /api/payees`、`POST /api/fps/resolve`、`POST /api/transfers/quote`、`POST /api/transfers/recipient`、`POST /api/transfers`、`POST /api/transfers/:id/recall` | 已实现 |
 | 理财 | `GET /api/wealth/products`、`GET /api/wealth/products/:code`、`GET /api/wealth/overview`、`POST /api/wealth/account/open`、`GET /api/wealth/risk/questions`、`POST /api/wealth/risk/assess`、`POST /api/wealth/subscribe`、`POST /api/wealth/redeem` | 已实现 |
 | 财务分析 | `GET /api/analysis/spending`、`GET /api/analysis/cashflow`、`GET /api/autodebits`、`PATCH /api/autodebits/:id` | 已实现 |
-| 安全中心 | `GET /api/security/overview`、`PATCH /api/security/rules/:id`、`POST /api/security/password`、`POST /api/security/verify` | 已实现 |
+| 安全中心 | `GET /api/security/overview`、`PATCH /api/security/rules/:id`、`POST /api/security/password`、`POST /api/security/payment-password`、`POST /api/security/verify` | 已实现 |
 | 智能客服 | `GET /api/support/messages`、`POST /api/support/chat` | 已实现 |
 
 ### 6 工资与备用金

@@ -104,6 +104,8 @@ npm run start:ops
 | `VITE_OPS_AGENT_TARGET` | 工作人员端运维助手代理目标，默认 `http://127.0.0.1:8790` |
 | `LUCKYCAT_BANK_URL` | 助手访问的银行后端，默认 `http://127.0.0.1:8080` |
 | `LUCKYCAT_OPS_WORKSPACE` | 运维助手维护的工作区，启动时明确设置为本仓库 |
+| `OPENROUTER_API_KEY` | 银行后端交易自动分类密钥；未设置则分类器禁用，支出流水回落 `other` |
+| `BANK_CATEGORIZE_MODEL` | 自动分类模型，默认 `perplexity/pplx-decider-flash-v1.2` |
 
 读数含义与边界：
 

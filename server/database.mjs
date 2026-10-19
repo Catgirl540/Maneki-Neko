@@ -15,7 +15,7 @@ const DOMAINS = {
   customer_insurance_state: ['insurance'],
   customer_security_state: ['security', 'pendingSms'],
   customer_identity_state: ['identity'],
-  customer_membership_state: ['invitations', 'membership'],
+  customer_membership_state: ['invitations', 'membership', 'assetSnapshots'],
   customer_payment_state: ['virtualCards'],
   customer_reference_state: ['banks'],
 }

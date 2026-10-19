@@ -33,7 +33,7 @@
 
 ## 适用请求
 
-申请或管理已有银行卡时使用；申请新卡与注册开立储蓄账户是不同业务。每位客户只有一个资金账户，多张银行卡共享该账户；不得为新卡创建账户或描述卡间划转。
+申请或管理已有银行卡时使用；申请新卡与注册开立储蓄账户是不同业务。每位客户只有一个资金账户，多张银行卡共享该账户；不得为新卡创建账户或描述卡间划转。每位客户每个卡组织（Visa / 银联）至多一张：使用中、锁定、寄送中的卡占名额；同组织已有卡时引导换卡，不要重复提交申请（后端返回 CARD_NETWORK_LIMIT 且不收费）。
 
 ## 必要信息
 
@@ -41,7 +41,7 @@
 
 ## 办理步骤
 
-用 bank_list_cards 查询状态、卡编号及设置，bank_card_products 查询可申请产品和实际费用。新卡调用 bank_apply_card，换卡调用 bank_replace_card，并明确旧卡失效。
+用 bank_list_cards 查询状态、卡编号及设置，bank_card_products 查询可申请产品和实际费用（`held` 为 true 的卡组织不可再申请，`feeQuote` 为按会员等级折算的实付价）。新卡调用 bank_apply_card，换卡调用 bank_replace_card，并明确旧卡失效。
 锁定/解锁用 bank_set_card_lock；只修改用户明确要求的字段，调用 bank_update_card_settings。查看卡号或安全码调用 bank_reveal_card_secret，内容由安全弹窗展示，不要求用户回传。
 
 ## 结果说明

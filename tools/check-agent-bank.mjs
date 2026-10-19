@@ -55,7 +55,7 @@ try {
   const face = await call('/api/security/verify', null, { channel: 'face' })
   await import('./ts-resolve-hook.mjs')
   const { ACCOUNT_OPENING_PLEDGE } = await import('../app/src/lib/account-opening.ts')
-  const recipient = await call('/api/auth/register', null, { phone: recipientPhone, password: '123456', holderName: '测试收款人', idNumber: '310101199001011234', smsCode: recipientSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
+  const recipient = await call('/api/auth/register', null, { phone: recipientPhone, password: '123456', paymentPassword: '888888', holderName: '测试收款人', idNumber: '310101199001011234', smsCode: recipientSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
   const saved = (await run('bank_list_payees', { keyword: recipient.account.accountNo })).result
   assert.equal(saved.total, 0)
   assert.equal(saved.scope, 'saved-payees')

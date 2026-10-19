@@ -7,6 +7,7 @@ import { useResetOnOpen } from '@/lib/usePresence'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Field } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
+import { PinInput } from '@/components/ui/PinInput'
 import { Skeleton, Tag } from '@/components/ui/Segmented'
 import { Row, Toggle } from '@/components/ui/Toggle'
 import { Link } from 'react-router-dom'
@@ -32,6 +33,7 @@ export function SecurityPage() {
   const { user, updateUser, logout } = useSession()
   const overview = useAsync<SecurityOverview>(() => api.getSecurityOverview(), [])
   const [passwordOpen, setPasswordOpen] = useState(false)
+  const [payPasswordOpen, setPayPasswordOpen] = useState(false)
   const [phoneOpen, setPhoneOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -157,6 +159,16 @@ export function SecurityPage() {
             />
             <Row
               icon={<ShieldIcon size={20} />}
+              title="支付密码"
+              description="转账、办卡等敏感操作使用，忘记可人脸核身重置"
+              right={
+                <Button size="sm" onClick={() => setPayPasswordOpen(true)}>
+                  修改
+                </Button>
+              }
+            />
+            <Row
+              icon={<ShieldIcon size={20} />}
               title="身份认证"
               description="证件识别、人脸核验与开户验证进度"
               right={
@@ -177,8 +189,8 @@ export function SecurityPage() {
             />
             <Row
               icon={<SparkleIcon size={20} />}
-              title="会员与订阅"
-              description="会员权益、续费与扣款记录"
+              title="会员等级"
+              description="等级评定、年度权益与使用记录"
               right={
                 <Link to="/security/membership" className="inline-flex min-h-10 items-center gap-1 text-[13px] text-gold-deep hover:underline">
                   前往<ChevronRightIcon size={15} />
@@ -289,6 +301,15 @@ export function SecurityPage() {
         }}
       />
 
+      <PayPasswordModal
+        open={payPasswordOpen}
+        onClose={() => setPayPasswordOpen(false)}
+        onDone={(reset) => {
+          setNotice(reset ? '支付密码已重置' : '支付密码已更新')
+          overview.reload()
+        }}
+      />
+
       <PhoneModal
         open={phoneOpen}
         currentPhone={phone}
@@ -386,6 +407,154 @@ function PasswordModal({
           placeholder="再次输入新密码"
           error={error ?? undefined}
         />
+      </div>
+    </Modal>
+  )
+}
+
+/* ------------------------------------------------------- 修改 / 重置支付密码 */
+
+/**
+ * 修改与重置支付密码。
+ *
+ * 记得原密码：常规修改，校验与付款一致（错误次数累计，锁定后必须走核身）。
+ * 忘记或被锁：人脸核身重置 —— 这是锁定后的唯一出口。
+ */
+function PayPasswordModal({
+  open,
+  onClose,
+  onDone,
+}: {
+  open: boolean
+  onClose: () => void
+  onDone: (reset: boolean) => void
+}) {
+  const [resetMode, setResetMode] = useState(false)
+  const [oldPassword, setOldPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [faceTicket, setFaceTicket] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useResetOnOpen(open, () => {
+    setResetMode(false)
+    setOldPassword('')
+    setNewPassword('')
+    setConfirm('')
+    setFaceTicket('')
+    setScanning(false)
+    setError(null)
+  })
+
+  const newReady = /^\d{6}$/.test(newPassword) && newPassword === confirm
+  const canSubmit = newReady && (resetMode ? faceTicket.length > 0 : oldPassword.length === 6)
+
+  async function scanFace() {
+    setScanning(true)
+    setError(null)
+    try {
+      setFaceTicket((await api.verifyIdentity('face')).ticket)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '人脸核身失败，请重试')
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  async function submit() {
+    if (!canSubmit) return
+    setError(null)
+    setBusy(true)
+    try {
+      await api.changePaymentPassword(
+        resetMode ? { faceTicket, newPassword } : { oldPassword, newPassword },
+      )
+      onDone(resetMode)
+      onClose()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : '修改失败，请稍后重试')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={resetMode ? '重置支付密码' : '修改支付密码'}
+      description={
+        resetMode
+          ? '人脸核身后设置新的 6 位数字支付密码。'
+          : '输入原支付密码，再设置新的 6 位数字支付密码。'
+      }
+      footer={
+        <>
+          <Button block onClick={onClose} disabled={busy}>
+            取消
+          </Button>
+          <Button
+            block
+            variant="primary"
+            loading={busy}
+            disabled={!canSubmit}
+            onClick={() => void submit()}
+          >
+            {resetMode ? '确认重置' : '确认修改'}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-5">
+        {resetMode ? (
+          <div className="rounded-field border border-line px-4 py-4">
+            <div className="flex items-center gap-3">
+              <span className="min-w-0 flex-1">
+                <span className="block text-[14px] font-medium text-ink">人脸核身</span>
+                <span className="mt-0.5 block text-[12px] text-ink-mute">
+                  {faceTicket ? '已通过核身' : '忘记原密码或密码已锁定时，需先确认本人'}
+                </span>
+              </span>
+              {faceTicket ? (
+                <Tag tone="blue">已通过</Tag>
+              ) : (
+                <Button size="sm" loading={scanning} onClick={() => void scanFace()}>
+                  开始核身
+                </Button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <PinInput label="原支付密码" value={oldPassword} onChange={setOldPassword} autoFocus />
+        )}
+
+        <PinInput label="新支付密码" value={newPassword} onChange={setNewPassword} />
+        <PinInput
+          label="确认新支付密码"
+          value={confirm}
+          onChange={setConfirm}
+          error={confirm.length > 0 && confirm !== newPassword ? '两次输入的密码不一致' : undefined}
+        />
+
+        {error && (
+          <p className="flex items-start gap-2 rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">
+            <AlertIcon size={16} className="mt-0.5 shrink-0" />
+            {error}
+          </p>
+        )}
+
+        <button
+          type="button"
+          className="self-center text-[13px] text-gold-deep hover:underline"
+          onClick={() => {
+            setResetMode((v) => !v)
+            setError(null)
+          }}
+        >
+          {resetMode ? '记得原密码？返回常规修改' : '忘记支付密码？人脸核身重置'}
+        </button>
       </div>
     </Modal>
   )

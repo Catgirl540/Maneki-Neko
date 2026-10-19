@@ -11,6 +11,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createBankApi } from './bank-api.mjs'
 import { createSecurityGateway } from './security-gateway.mjs'
+import { createCategorizer } from './lib/categorize.mjs'
 import { openBankDatabase } from './database.mjs'
 import { createStaffApi, ensureStaffSchema, getTransferReviewCents } from './staff-api.mjs'
 
@@ -36,6 +37,15 @@ const holdWindowMs = Number(process.env.BANK_TRANSFER_HOLD_SECONDS ?? 300) * 100
 // staffApi 依赖 bank 的资金钩子，bank 的回调又要回写 staffApi 的记录，
 // 所以用前向引用解开环：先建 bank，回调触发时 staffApi 已就位。
 let staffApi
+// 交易自动分类：OpenRouter 模型按对方户名/摘要归入消费分类；无 OPENROUTER_API_KEY 时禁用
+const categorizer = createCategorizer({ apiKey: process.env.OPENROUTER_API_KEY, model: process.env.BANK_CATEGORIZE_MODEL })
+const classify = categorizer.enabled
+  ? async (tx) => {
+      const category = await categorizer.classify(tx)
+      if (category !== 'other') console.log(`[categorize] ${tx.counterparty} → ${category}`)
+      return category
+    }
+  : categorizer.classify
 const bank = await createBankApi({
   security,
   database,
@@ -46,6 +56,7 @@ const bank = await createBankApi({
   holdWindowMs,
   onTransferHeld: (held) => staffApi.createTransferApproval(held),
   onHoldClosed: (closed) => staffApi.closeTransferApproval(closed),
+  classify,
 })
 // 工作人员端 /staff-api/*（见 design/staff-console/）。先于 bank.handle 匹配。
 staffApi = await createStaffApi({
