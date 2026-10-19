@@ -39,7 +39,6 @@ export const serviceGroups = [
     { to: '/security/identity', label: '身份认证', Icon: UserIcon },
     { to: '/security/invitations', label: '邀请与奖励', Icon: UserIcon },
     { to: '/security/membership', label: '会员与订阅', Icon: UserIcon },
-    { to: '/support', label: '智能客服与转人工', Icon: ShieldIcon },
   ] },
 ]
 

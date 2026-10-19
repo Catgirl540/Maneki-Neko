@@ -266,7 +266,8 @@ export function createAgentClient(options: AgentClientOptions) {
   async function probeAgent(): Promise<AgentHealth | null> {
     if (!agentEnabled) return null
     try {
-      const health = await requestJson<AgentHealth>('/health', {}, 3_000)
+      // 公网经过前端代理、Agent 和银行鉴权；3 秒会把正常的跨地域响应误判为离线。
+      const health = await requestJson<AgentHealth>('/health', { cache: 'no-store' }, 12_000)
       if (!isMockMode && health.bankDataSource !== 'http') return null
       return health.ok === true ? health : null
     } catch {
@@ -305,8 +306,8 @@ export function createAgentClient(options: AgentClientOptions) {
     try {
       const state = await requestJson<AgentSessionState>(
         `/sessions/${encodeURIComponent(sessionId)}`,
-        {},
-        3_000,
+        { cache: 'no-store' },
+        12_000,
       )
       return state
     } catch {
@@ -730,8 +731,8 @@ export function createAgentClient(options: AgentClientOptions) {
   async function probeVoiceAvailable(): Promise<VoiceCapability | null> {
     if (!agentEnabled) return null
     try {
-      const health = await requestJson<AgentHealth>('/health', {}, 3_000)
-      const voice = health.voice
+      const health = await probeAgent()
+      const voice = health?.voice
       if (voice === undefined || !voice.asr || !voice.tts || voice.stream === false) return null
       return voice
     } catch {

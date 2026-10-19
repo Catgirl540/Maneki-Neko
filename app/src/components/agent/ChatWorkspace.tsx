@@ -14,6 +14,8 @@ const Markdown = lazy(() => import('./Markdown').then(m => ({ default: m.Markdow
 import { SessionList } from './SessionList'
 import { CatMark } from '../brand/Logo'
 import { SupportCat } from '../brand/WorkbenchBrand'
+import workingCatVideo from '../../assets/design/support-cat-working.mp4'
+import workingCatPoster from '../../assets/design/support-cat-working-poster.webp'
 import { Button } from '../ui/Button'
 import { Card } from '../ui/Card'
 import { Modal } from '../ui/Modal'
@@ -75,6 +77,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
   const loadMessages = props.listMessages ?? fallback?.list
   const historyOpenKey = props.historyOwnerId ? `${STORAGE_KEYS.agentHistoryOpen}.${props.historyOwnerId}` : STORAGE_KEYS.agentHistoryOpen
   const compact = useMediaQuery('(max-width: 959px)')
+  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const agent = useAgentChat(props)
   const [messages, setMessages] = useState<SupportMessage[]>([])
   const [supportError, setSupportError] = useState<string | null>(null)
@@ -119,11 +122,24 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
   const chatMessages = groupChatMessages(items ?? [])
   const latestTurn = chatMessages.at(-1)
   const latestReply = latestTurn?.kind === 'turn' ? turnContent(latestTurn).reply : undefined
+  const latestAssistantTurn = latestTurn?.kind === 'turn' ? turnContent(latestTurn) : undefined
+  const runningWorkTool = latestTurn?.kind === 'turn'
+    ? latestTurn.items.findLast(item => item.kind === 'tool' && item.state === 'running')
+    : undefined
+  const retryProgress = latestAssistantTurn?.notices.find(item => item.id === 'model_retry_progress')
+  const workbenchActivity = !activeBusy ? undefined
+    : retryProgress ? retryProgress.text
+      : runningWorkTool?.kind === 'tool' ? `正在${toolLabel(runningWorkTool.name)}`
+        : latestReply?.streaming || latestAssistantTurn?.lastTool?.state === 'done' ? '正在整理回复'
+          : '正在处理'
 
   // 员工主动留言（listSupportMessages 已按登录人过滤后并进 messages）。
   // 拆出来单列渲染：usingAgent 时下面走的是 items 分支，混在 messages 里会被顶掉。
   const staffNotices = messages.filter((m) => m.role === 'staff')
   const botMessages = messages.filter((m) => m.role !== 'staff')
+  const showWorkbenchPresence = Boolean(workbench && audience === 'customer')
+  const emptyWorkbench = Boolean(workbench && !staffNotices.length && !(usingAgent ? items?.length : messages.length)
+    && !activeBusy && !thinking && !agent.pending && !agent.ask)
 
   // 语音模式下，agent 一开口说话就退出"等回答"状态（转圈该停了）。
   useEffect(() => {
@@ -442,6 +458,25 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
 
           {!usingAgent && !probing && !fallback && !workbench && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-sm text-coral">{audience === 'staff' ? '工作人员助手' : '智能助手'}暂时不可用，请检查服务后刷新重试。</p>}
           {supportError && !usingAgent && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
+          <div hidden={docked} className={showWorkbenchPresence
+            ? cn('workbench-conversation', emptyWorkbench && 'is-empty')
+            : 'contents'}>
+          {showWorkbenchPresence && <>
+            <div className="workbench-presence-slot" aria-hidden="true" />
+            <section className="workbench-agent-presence" aria-label="智能客服状态" aria-live="polite">
+              <div className="workbench-agent-presence-media">
+                {workbenchActivity && !reducedMotion
+                  ? <video src={workingCatVideo} poster={workingCatPoster} autoPlay loop muted playsInline preload="metadata" aria-hidden="true" />
+                  : <SupportCat className="workbench-agent-presence-avatar" />}
+              </div>
+              {workbenchActivity && <div className="workbench-agent-presence-caption">
+                <strong>{workbenchActivity}</strong>
+              </div>}
+            </section>
+          </>}
+          {workbench && <div className={cn('workbench-chat-hero', !emptyWorkbench && 'is-hidden')} aria-hidden={!emptyWorkbench}>
+            <h2>今天想处理什么？</h2>
+          </div>}
           <div ref={scroller} hidden={docked} className="chat-message-scroll min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
             {staffNotices.length > 0 && (
               <section className="rounded-card border border-gold-deep/30 bg-gold-wash/40 p-3">
@@ -452,9 +487,6 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
                   ))}
                 </div>
               </section>
-            )}
-            {workbench && !staffNotices.length && !(usingAgent ? items?.length : messages.length) && !activeBusy && !thinking && !agent.pending && !agent.ask && (
-              <div className="workbench-chat-hero"><SupportCat /><h2>今天想处理什么？</h2></div>
             )}
             {/* 同一次提问的流式分段和工具过程共用一个稳定的助手根节点。 */}
             {usingAgent
@@ -507,6 +539,8 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
                 </span>
               </div>
             )}
+          </div>
+
           </div>
 
           <div className="chat-composer shrink-0 border-t border-line px-3 py-3 sm:px-6 sm:py-4">

@@ -217,7 +217,7 @@ export interface AgentChat {
 }
 
 /**
- * agent 对话 hook。挂载时只做一次健康探测；服务不在就保持 off，不发任何请求。
+ * agent 对话 hook。健康探测失败后退避重试，网络恢复时重新探测；会话仍按需创建。
  * @returns 对话状态与操作。
  */
 export interface AgentChatOptions {
@@ -867,7 +867,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
     }
   }, [destroy])
 
-  // 挂载时探测一次。刻意**不**建会话：会话按需创建，避免留下空日志。
+  // 探测不创建会话。短暂超时后自动恢复，不能把一次慢响应永久锁成 off。
   useEffect(() => {
     mountedRef.current = true
     // 捕获 Map 本身（身份不变，只是一直被改），而不是在清理函数里读 `live.current`。
@@ -879,18 +879,37 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
     }
     if (!agentEnabled) return shutdown
     let cancelled = false
-    void (async () => {
-      const health = await probeAgent()
+    let probing = false
+    let connected = false
+    let failures = 0
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    const probe = async () => {
+      if (cancelled || probing || connected) return
+      clearTimeout(retryTimer)
+      probing = true
+      // 自定义员工 client 也应遵循相同的失败恢复行为。
+      const health = await Promise.resolve().then(probeAgent).catch(() => null)
+      probing = false
       if (cancelled || !mountedRef.current) return
       if (health === null) {
         setStatus('off')
+        const delays = [3_000, 8_000, 20_000, 30_000]
+        retryTimer = setTimeout(() => { void probe() }, delays[Math.min(failures++, delays.length - 1)])
         return
       }
+      connected = true
       setVoice(health.voice)
       setStatus('ready')
-    })()
+    }
+    const reconnect = () => { if (!document.hidden) void probe() }
+    window.addEventListener('online', reconnect)
+    document.addEventListener('visibilitychange', reconnect)
+    void probe()
     return () => {
       cancelled = true
+      clearTimeout(retryTimer)
+      window.removeEventListener('online', reconnect)
+      document.removeEventListener('visibilitychange', reconnect)
       shutdown()
     }
   }, [agentEnabled, probeAgent])

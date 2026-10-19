@@ -37,6 +37,16 @@ VITE_USE_MOCK=true npm --prefix app run dev
 Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 需要联调时，按[项目 README §2.1](../README.md#21-接上-agent-与当前银行账户)准备运行时与服务端密钥。
 
+客服联调需要银行、Agent、网页三个进程同时运行。浏览器 mock 只用于界面开发，其登录态不能用于真实银行 Agent。已准备好隔离 PostgreSQL 开发库、完成 owner 初始化，并将本地银行及 AI 会话配置保存在根目录受保护的 `.env.local` 后，可在三个终端从仓库根目录分别运行：
+
+```bash
+node --env-file=.env.local server/index.mjs
+node --env-file=.env.local framework/bridge/demo-server.mjs
+VITE_USE_MOCK=false npm --prefix app run dev
+```
+
+使用 Node.js 24；Agent 终端另需继承服务端模型密钥。`.env.local` 不提交，已有开发库必须沿用匹配的数据密钥。切换 mock/HTTP 后刷新网页并重新登录。
+
 ## 2. 修改时去哪里找
 
 以下路径均相对于 `app/`。
@@ -78,7 +88,7 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 
 本轮以 `docs/design/exports/2026-10-15/zhaocai-cat-bank.html` 为视觉依据，**仅验收桌面网页**。首页是单一智能工作台，没有传统/智能模式开关。
 
-侧栏主导航为「账户总览、转账与支付、银行卡、账单与交易、理财与储蓄」。账户总览 `/dashboard` 展示助手与十个智能服务；资金信息在侧栏「账户资产」`/accounts`，其余业务集中在 `/services`，个人资料从左下角进入。
+侧栏以「账户总览」和「账户与支付、账单与资金、理财与储蓄、个人与安全」四个分组组织业务，分组子项与 `/services` 共用 `navigation.ts` 中的目录。账户总览 `/dashboard` 展示助手与十个智能服务；资金信息在「账户与支付 → 账户资产」`/accounts`，个人资料从左下角进入。客服从首页「智能客服」进入，转人工与工单保留在聊天顶部，不再放进「个人与安全」或全部服务目录重复展示；`/support` 兼容路由保留。
 
 `AppShell.tsx` 始终挂载同一个 `SupportPage`，业务页只替换 `Outlet`，不得把助手放回各路由分别挂载，否则切页会丢失输入草稿、待发图片和正在接收的事件。`ChatWorkspace` 的可选 `workbench` 配置控制首页/底部输入栏展示；员工端使用独立 client 和身份，不传客户功能选择。选择智能服务不会自动发送消息；真正发送时用 `serviceIds` 提交本轮选择并回到首页，原始消息不加标题前缀。服务端按唯一映射加载完整技能，多选组合、清除后自动匹配；历史重发沿用原消息的选择快照。工具与支付确认沿用已有实现，维护见 [业务技能说明](../framework/design/SMART-SERVICE-SKILLS.md)。
 
@@ -96,7 +106,7 @@ Agent 对话与语音由独立桥接服务提供，本地默认端口为 8788。
 
 旧的 `/dashboard?flow=in|out` 兼容到 `/accounts?flow=in|out`；`/receiving` 兼容到 `/accounts?flow=in`。关闭弹窗会清除 `flow` 参数。原有银行接口、鉴权与金额单位不变。
 
-品牌资源在 `src/assets/design/`，网页字标由 `WorkbenchBrand.tsx` 统一渲染。`support-cat.png` 使用新生成的耳麦招手猫，在首页欢迎区、回复头像和思考状态中共用。主题中的 `gold` 变量名为兼容旧业务组件而保留，实际颜色已为品牌紫；员工端使用独立主题文件。
+品牌资源在 `src/assets/design/`，网页字标由 `WorkbenchBrand.tsx` 统一渲染。`support-cat.png` 是耳麦招手猫的静态形象；`support-cat-working.mp4` 是压缩后的圆形工作循环视频，仅在 Agent 处理请求时播放，并配有 WebP 首帧海报。空会话时静态客服形象位于欢迎语上方；发送消息后，同一头像平滑上移并缩小到顶部状态区，欢迎语淡出，处理期间播放工作视频，结束后恢复静态形象。新对话会平滑回到欢迎区；系统启用“减少动态效果”时使用静态头像并取消位置过渡。主题中的 `gold` 变量名为兼容旧业务组件而保留，实际颜色已为品牌紫；员工端使用独立主题文件。
 
 ## 5. 数据与登录态
 
@@ -143,6 +153,8 @@ node tools/check-http-frontend.mjs
 客户端测试报告回归运行 `node tools/check-web-report-regressions.mjs`：使用非安全 HTTP 本地域名，所有银行与 Agent 请求均拦截为夹具，覆盖复制降级及手动复制、非法转账金额、登录深链、账单分页与失败重试、风险测评状态、空设备/日志和语音禁用原因。
 转入页当前仅展示和复制银行账户资料；接口未提供 FPS 登记归属与状态，确认前不分享 FPS 手机号或 ID。HTTP 下录音不可用时显示原因；复制先尝试兼容方式，失败后可手动选择文本。
 事件流连接释放与失败重试运行 `node tools/check-agent-connections.mjs`；连续新建对话必须关闭上一段空闲连接，握手失败必须停止重连。
+
+Agent 健康、语音能力和会话恢复探测允许 12 秒公网响应，并禁用缓存。首次健康探测失败后按 3、8、20、30 秒退避重试，后续最多每 30 秒一次；网络恢复或重新显示页面时可提前重试，连接成功后停止探测，卸载时清理重试。探测不会创建会话、发送消息或重试业务操作。运行 `node tools/check-agent-health.mjs` 验证慢响应、自动恢复、网络恢复和卸载清理，使用本地 HTTP 夹具，不调用付费模型。
 事件流首帧被缓冲或中途断开时，自动切换到 `/sessions/:id/events` 短请求，按游标续取事件；运行 `node tools/check-agent-polling.mjs` 验证兼容接收、账户隔离和单次卡密展示。
 
 助手每轮答复共用一个根节点与头像，处理过程默认折叠，最终正文保留一套复制、朗读和重新生成按钮；确认卡、提问卡及异常提示保持可见。分组逻辑在 `src/lib/agentTurns.ts`，不改原始事件存档。运行 `node --import ./tools/ts-resolve-hook.mjs tools/check-agent-turns.mjs` 验证多步骤、流式更新及旧历史兼容。
@@ -192,6 +204,7 @@ npm --prefix app run build:server
 | 银行请求失败或返回 HTML | 后端 `/health`、Network 请求地址、`/api` 代理和 `VITE_API_BASE_URL` |
 | 数据像固定样例 | `VITE_USE_MOCK` 及个人 `.env.local`，修改后重启 Vite |
 | 助手无法连接或切回普通客服 | Agent 进程、健康检查、`VITE_AGENT_URL` 与代理目标；银行后端和 Agent 是两个服务 |
+| 客服一发送就返回 502 | 先检查 Vite 的 `VITE_AGENT_TARGET` 及目标端口是否监听；默认是 8788。目标服务未启动会立即失败，尚未调用模型。Agent 直连无令牌返回 401 表示服务可达；登录后再验证健康接口、建会话与 SSE |
 | 子路径资源 404、刷新页面 404 | 构建时的 `VITE_BASE_PATH` 和 nginx 的单页路由回退配置 |
 | 配置或代码改了仍显示旧内容 | 确认访问端口与启动目录，重启 Vite；线上重新构建并发布产物 |
 
