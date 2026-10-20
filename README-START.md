@@ -1,6 +1,6 @@
 # 本地启动（Node.js 24 + PostgreSQL 16）
 
-2026-10-20 隔夜成果、演示入口和测试范围见 [交付说明](docs/overnight-20261020-delivery.md)，逐批调试记录见 [进展文档](docs/overnight-20261020.md)。本批代码的提交以 Git 历史为准；尚未部署服务器，公网页面不能用于核对本批结果。
+2026-10-20 隔夜成果、演示入口和测试范围见 [交付说明](docs/overnight-20261020-delivery.md)，逐批调试记录见 [进展文档](docs/overnight-20261020.md)。代码 `df39575` 已于北京时间 09:28 部署到 `https://bank.waveflow.men`，验收与限制见 [部署记录](docs/bank-deployment-20261020.json)。
 
 客户端版本见 [CLIENTS.md](CLIENTS.md)，账户关系见 [单资金账户约束](docs/product/account-model.md)。当前网页在 `app/`，员工端在 `staff/`，安卓新版为 Flutter `mobile/`。以下从仓库根目录运行，示例使用 PowerShell。
 

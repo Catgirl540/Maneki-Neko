@@ -4,11 +4,11 @@
 
 ## 版本与路径
 
-- 代码：`main` 的 `b006b6da3777856943d076c377c1383496020da5`；DSH `0.2.1-rc.2`，Node `24.21.0`。
-- 另包含原公网已经使用的两项 Agent 健康检查修复：`app/src/api/agent.ts`、`app/src/lib/useAgentChat.ts`。不包含随后源码提交中的客服视频、头像和导航去重调整；这些界面改动尚待公网发布。
-- 服务源码：`/srv/maneki-bank/current` → `/srv/maneki-bank/releases/20261019-b006b6d`。
-- 网页：`/var/www/bank.waveflow.men/current` → `releases/20261019-b006b6d`，员工入口 `/staff/`。
-- `/srv/maneki-neko`、`/srv/maneki-bank/demo-20261017` 和原发布路径为兼容链接，保留已有模型日志及附件中的绝对路径。
+- 当前代码：`main` 的 `df39575d4ffe64296a1a59557ec3da7bf0763036`，2026-10-20 北京时间 09:28 发布；DSH `0.2.1-rc.2`，Node `24.21.0`，IM `5.1.0`。验收见 [部署记录](../../docs/bank-deployment-20261020.json)。
+- 包含已提交的 Agent/银行、统计、定投计划及网页更新；客户与员工网页统一生产构建，未使用 mock。
+- 服务源码：`/srv/maneki-bank/current` → `/srv/maneki-bank/releases/20261020-df39575`；六项服务通过 `90-release-df39575.conf` drop-in 指向新目录。
+- 网页：`/var/www/bank.waveflow.men/current` → `releases/20261020-df39575`，员工入口 `/staff/`。保留旧指纹资源和原下载包。
+- `/srv/maneki-neko`、`/srv/maneki-bank/demo-20261017` 兼容链接仍指向旧发布目录，客户原生日志、附件及 IM 状态保留原路径；额外环境文件显式指定状态目录。**不能删除旧 release**，也不要把兼容链接随意切到空的新状态目录。
 - 本目录两个 Nginx 模板分别安装为 `/etc/nginx/sites-available/bank.waveflow.men` 与 `/etc/nginx/snippets/maneki-single-host.conf`。修改后先 `nginx -t`，再 reload。
 - Flutter 下载清单及 APK 在网页发布目录的 `downloads/`，本机直接提供。沿用既有 `android-v1.0.2` 发布包，SHA256 为 `b8b8c2be47c81cdca3ea8daecff7cb38681728becca5bbe17e335405edf7d6d6`；本次不重新构建安卓客户端。
 

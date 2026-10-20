@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-20T09:28:34+08:00",
+  "url": "https://bank.waveflow.men",
+  "server": "15.235.241.158",
+  "status": "deployed-and-verified",
+  "revision": "df39575d4ffe64296a1a59557ec3da7bf0763036",
+  "sourceRelease": "/srv/maneki-bank/releases/20261020-df39575",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261020-df39575",
+  "previousRelease": "/srv/maneki-bank/releases/20261019-b006b6d",
+  "backupLocation": "/var/backups/maneki-release-20261020-df39575",
+  "sourceArtifactSha256": "ad0317e3124efc91452b7e13fdcf215556e76bc97386f873bdaf44bec943364c",
+  "webArtifactSha256": "edb52c71d6575289c32f7760a419075305d36eba4b21ce530612ab4e06e3a75b",
+  "dshVersion": "0.2.1-rc.2",
+  "imVersion": "5.1.0",
+  "checks": {
+    "allSixServicesActive": true,
+    "allSixServicesAutomaticRestarts": 0,
+    "businessListenersLoopbackOnly": true,
+    "bothBanksReadOnlyHttpSmoke": true,
+    "httpsClientAndStaffAssetsMatchRelease": true,
+    "investmentAndStatisticsDeepLinks": true,
+    "unauthenticatedCustomerStaffAndImRoutesRejected": true,
+    "publicDemoLogin": true,
+    "singleFundingAccount": true,
+    "investmentCatalogReadable": true,
+    "multiCurrencyStatisticsReadable": true,
+    "realHarnessAndConfiguredModelGreeting": true,
+    "greetingInvokedBusinessTools": false,
+    "greetingChangedAccountFunds": false,
+    "predeployDatabaseSnapshots": "both-passed",
+    "predeployReconciliations": "both-passed",
+    "postdeployReconciliations": "both-passed",
+    "maintenanceTimersActive": true,
+    "originalEnvironmentFilesUnchanged": true,
+    "existingImCredentialsDecryptable": true,
+    "androidDownloadManifestUnchanged": true,
+    "nginxConfigurationValid": true
+  },
+  "database": {
+    "structureMigrationExecuted": false,
+    "previousCustomerProfileVersion": 20,
+    "customerProfileVersion": 21,
+    "compatibilityUpgradeOnUse": true,
+    "dataKeysAndConnectionsPreserved": true
+  },
+  "runtimeState": {
+    "originalSessionAndUploadPathsPreserved": true,
+    "historicalCompatibilitySymlinksPreserved": true,
+    "previousHashedWebAssetsRetained": true,
+    "imBankLoginRequiresOnceRebindingAfterRestart": true
+  },
+  "verificationCorrections": [
+    "Verifier initially checked nonexistent staff auth/profile; corrected to actual /staff-api/me.",
+    "Agent message submission correctly returns HTTP 202; corrected the verifier's initial HTTP-200-only expectation."
+  ],
+  "limits": [
+    "No financial transaction or real WeChat message sent for deployment verification.",
+    "Configured model greeting passed; financial-intent accuracy was not benchmarked.",
+    "Investment plans remain plan-only; no automatic debit executor enabled.",
+    "Commercial bank connection gate remains closed.",
+    "Do not delete the previous release: native sessions, uploads and IM state still use its preserved paths.",
+    "Do not restore predeployment databases over accepted writes or blindly roll back to profile-v20 readers."
+  ]
+}
