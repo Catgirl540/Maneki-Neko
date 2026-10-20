@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile, symlink, lstat, readdir } from 'node:fs/pro
 import { spawnSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { checkPolicy } from './check-bank-tool-policy.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const profile = join(root, '.dsh-home', 'profiles', 'luckycat')
@@ -63,5 +62,8 @@ try { await lstat(join(profile, 'node_modules')) } catch (error) {
   if (error.code !== 'ENOENT') throw error
   await symlink(join(root, 'node_modules'), join(profile, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir')
 }
+// Import after compiling: the policy checker reads the just-built tool registry.
+// Loading it before tsc would cache the previous registry and miss newly added tools.
+const { checkPolicy } = await import('./check-bank-tool-policy.mjs')
 checkPolicy(join(profile, 'cordis.patch.yml'))
 console.log('客户 Agent 插件构建、技能与隔离 profile 已就绪。')

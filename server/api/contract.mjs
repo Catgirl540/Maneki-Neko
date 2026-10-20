@@ -95,6 +95,7 @@ export const routes = {
     cashManagementSweep: () => '/api/wealth/cash-management/sweep',
     investments: () => '/api/wealth/investments',
     investPlan: () => '/api/wealth/investments/plan',
+    investPlanStatus: (id) => `/api/wealth/investments/plan/${id}`,
     insurance: () => '/api/wealth/insurance',
     insuranceEnroll: () => '/api/wealth/insurance/enroll',
 };

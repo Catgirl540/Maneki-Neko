@@ -2,9 +2,9 @@
 id: "kb-wealth"
 title: "理财测评、开户与申赎"
 navigation: "理财"
-routes: ["/wealth"]
-keywords: ["理财", "风险测评", "申购", "赎回"]
-sources: ["app/src/pages/WealthPage.tsx", "app/src/components/wealth/WealthAccountOpeningModal.tsx", "app/src/lib/wealth.ts", "app/src/api/mock/index.ts", "framework/bridge/bank-agent.mjs", "framework/bridge/wealth-risk.mjs", "framework/packages/bank-demo/src/http-tools.ts"]
+routes: ["/wealth", "/wealth/investments"]
+keywords: ["理财", "风险测评", "申购", "赎回", "定投", "暂停计划", "取消计划"]
+sources: ["app/src/pages/WealthPage.tsx", "app/src/components/wealth/WealthAccountOpeningModal.tsx", "app/src/lib/wealth.ts", "app/src/api/mock/index.ts", "framework/bridge/bank-agent.mjs", "framework/bridge/wealth-risk.mjs", "framework/bridge/wealth-compare.mjs", "framework/packages/bank-demo/src/http-tools.ts"]
 ---
 
 ## 理财开户还要重新填姓名和身份证吗？ {#opening}
@@ -19,6 +19,10 @@ sources: ["app/src/pages/WealthPage.tsx", "app/src/components/wealth/WealthAccou
 
 在「理财」查看产品详情与持仓，助手可查询产品列表及详情。起购金额、净值、期限、申赎费用与开放状态以当次产品查询为准。理财非存款、产品有风险、投资须谨慎；业绩比较基准不构成收益承诺，不能保证本金或收益。
 
+## 助手可以对比两款理财吗？会自动申购或保证收益吗？ {#compare}
+
+可以比较，但产品对比不会自动申购，也不能保证收益。指定两款产品后，助手先查询真实产品代码，再比较风险等级、期限与赎回开放性、起购/追加金额、业绩基准和费率。提供拟投入金额时，还能显示按产品当前规则估算的申购费、净投入额以及金额门槛是否满足；估算不是申购，不代表余额足够或适当性验证通过。未测评、测评过期和状态未知分别说明，不补造风险等级。比较结果不排序推荐；购买仍需单独确认和支付密码。
+
 ## 怎么申购理财？从哪个账户扣款？ {#subscribe}
 
 在理财页选产品、输入金额，核对风险提示与费用，完整抄录风险确认语句并验证支付密码后申购；助手也可发起申购确认。需理财账户已开立、测评有效、风险匹配、达到起购金额且结算资金账户余额足够。扣款来自理财账户绑定的结算资金账户；申购费按产品规则从申购金额中扣除，实际份额以回执为准。
@@ -26,3 +30,9 @@ sources: ["app/src/pages/WealthPage.tsx", "app/src/components/wealth/WealthAccou
 ## 理财赎回多久到？封闭期能赎回吗？ {#redeem}
 
 在「理财」持仓选择赎回，助手也可发起赎回确认。封闭期未结束不可赎回，份额须大于零且不超过持有份额；未指定份额表示全部赎回。回款到绑定结算资金账户，扣除对应赎回费用，当前回执预计 T+1 个工作日到账；以实际状态与回执为准，不能保证提前到账。
+
+## 如何查询、保存、暂停或取消定投？ {#invest-plan}
+
+在「理财 → 投资与定投」查看专用产品和本人计划，助手也可查询。定投产品代码与普通理财产品目录分开，不能混用。明确产品、每期金额、人民币资金账户和每周/每两周/每月周期后，可核对确认卡并验证支付密码保存计划；需已开立理财账户、有效且匹配的风险测评。
+
+当前仅保存和管理计划，自动扣款执行器尚未开放；计划日期为按所选周期计算的拟定日期，不表示预约已执行、已投资或已经冻结资金。暂停和取消需确认；恢复还需支付密码及重新核验适当性。取消不可恢复，既有投资历史保留，不赎回、不退款。历史展示的累计金额只按银行记录说明，不据计划金额推算已投次数。

@@ -1,4 +1,4 @@
-/** issue #4：运行共用银行实现，只写内存，不连接服务器或模型。 */
+/** 在途转账回归：独立客户各持一个资金账户，仅写内存，不连接服务器或模型。 */
 import assert from 'node:assert/strict'
 class Storage {
   data = new Map()
@@ -8,7 +8,7 @@ class Storage {
 }
 globalThis.window = { localStorage: new Storage(), sessionStorage: new Storage() }
 const { createMockApi, settleHeldTransfer, settleClearingTransactions } = await import('../app/src/api/mock/index.ts')
-const { resetDb, loadDb, persist } = await import('../app/src/api/mock/db.ts')
+const { resetDb, loadDb, persist, findProfileByPhone } = await import('../app/src/api/mock/db.ts')
 const api = createMockApi({ reviewThreshold: 500_000 })
 const plain = createMockApi()
 function request(patch = {}) {
@@ -18,9 +18,17 @@ function request(patch = {}) {
     payeeBankCode: '004', payeeBankRegion: 'HK', amount: 500_000, memo: 'issue4', ...patch,
   }
 }
-function ownRequest(amount) {
-  return request({ scope: 'domestic', payeeName: loadDb().user.name,
-    payeeAccountNo: loadDb().accounts[1].accountNo,
+function recipient() {
+  const profile = findProfileByPhone('13600136000')
+  assert(profile && profile.user.id !== loadDb().user.id)
+  assert.equal(profile.accounts.length, 1)
+  assert.equal(loadDb().accounts.length, 1)
+  return profile
+}
+function internalRequest(amount) {
+  const payee = recipient()
+  return request({ scope: 'domestic', payeeName: payee.user.name,
+    payeeAccountNo: payee.accounts[0].accountNo,
     payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount })
 }
 
@@ -34,7 +42,9 @@ assert.equal(account.balance, 506_000)
 assert.equal(account.available, 1000, '手续费必须一并预留')
 const pendingReceipt = await api.getTransaction(held.transactionId)
 assert.equal(pendingReceipt.detail.balanceBefore, pendingReceipt.detail.balanceAfter)
-await plain.submitTransfer(ownRequest(1000))
+const firstRecipientBalance = recipient().accounts[0].balance
+await plain.submitTransfer(internalRequest(1000))
+assert.equal(recipient().accounts[0].balance, firstRecipientBalance + 1000)
 assert.equal(account.available, 0)
 const paid = await settleHeldTransfer(held.transactionId, 'settled')
 assert.equal(paid.transactionId, held.transactionId)
@@ -78,21 +88,25 @@ console.log('PASS 旧版只冻结本金的指令继续按原金额解冻')
 
 resetDb()
 account = loadDb().accounts[0]
-const internal = await api.submitTransfer(ownRequest(500_000))
+const recipientBefore = recipient().accounts[0].balance
+const senderBefore = account.balance
+const internal = await api.submitTransfer(internalRequest(500_000))
 const internalPaid = await settleHeldTransfer(internal.transactionId, 'settled')
 assert.equal(internalPaid.transactionId, internal.transactionId)
 assert.equal(internalPaid.referenceNo, internal.referenceNo)
 assert.equal((await api.getTransaction(internal.transactionId)).status, 'success')
-assert.equal(loadDb().accounts[1].balance, 500_000)
-console.log('PASS 本行到账同样沿用原交易编号与参考号')
+assert.equal(recipient().accounts[0].balance, recipientBefore + 500_000)
+assert.equal(account.balance, senderBefore - 500_000)
+assert.equal(account.balance + recipient().accounts[0].balance, senderBefore + recipientBefore)
+console.log('PASS 两个独立客户各一个资金账户，本行到账守恒并沿用原编号')
 
 resetDb()
 let threshold = 600_000
 const live = createMockApi({ reviewThreshold: () => threshold })
-const first = await live.submitTransfer(ownRequest(500_000))
+const first = await live.submitTransfer(internalRequest(500_000))
 assert.equal(first.settlementStatus, 'success')
 threshold = 500_000
-const second = await live.submitTransfer(ownRequest(500_000))
+const second = await live.submitTransfer(internalRequest(500_000))
 assert.equal(second.pendingReason, 'inflight')
 const snapshot = structuredClone(loadDb().accounts)
 assert(!settleClearingTransactions(0).includes(second.transactionId))
@@ -103,16 +117,18 @@ console.log('PASS 阈值函数每笔现读，清算扫描不会误结在途指�
 resetDb()
 const boundary = createMockApi({ reviewThreshold: 500_000 })
 for (const amount of [499_999, 500_000, 500_001]) {
-  const value = await boundary.submitTransfer(ownRequest(amount))
+  const value = await boundary.submitTransfer(internalRequest(amount))
   assert.equal(value.pendingReason === 'inflight', amount >= 500_000)
   if (value.pendingReason === 'inflight') await boundary.recallTransfer(value.transactionId)
 }
 const failureBefore = structuredClone(loadDb().accounts)
-const invalidHeld = await boundary.submitTransfer(ownRequest(500_000))
+const recipientFailureBefore = structuredClone(recipient())
+const invalidHeld = await boundary.submitTransfer(internalRequest(500_000))
 loadDb().transactions.find(t => t.id === invalidHeld.transactionId).heldRequest.payeeName = '已变更的户名'
 persist()
 await assert.rejects(settleHeldTransfer(invalidHeld.transactionId, 'settled'), e => e.code === 'PAYEE_NAME_MISMATCH')
 assert.deepEqual(loadDb().accounts, failureBefore)
+assert.deepEqual(recipient(), recipientFailureBefore)
 assert.equal((await boundary.getTransaction(invalidHeld.transactionId)).status, 'failed')
 console.log('PASS 阈值下方/等于/上方明确受控，结算失败解冻且不改变双方余额')
 

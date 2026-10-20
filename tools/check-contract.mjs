@@ -15,6 +15,7 @@
  */
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { returnedApiMethods } from './lib/api-methods.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
 const read = (p) => readFile(path.join(ROOT, p), 'utf8')
@@ -66,10 +67,8 @@ const httpMethods = new Set(
   [...http.matchAll(/^\s{4}(\w+):\s*\(/gm)].map((m) => m[1]),
 )
 
-/** createMockApi 的对象字面量方法名（都是 async xxx( ) */
-const mockMethods = new Set(
-  [...mock.matchAll(/^\s{4}async (\w+)\(/gm)].map((m) => m[1]),
-)
+/** Read the returned object, independent of indentation; do not collect nested helper methods. */
+const mockMethods = returnedApiMethods(mock, 'createMockApi')
 
 const diff = (a, b) => [...a].filter((x) => !b.has(x))
 

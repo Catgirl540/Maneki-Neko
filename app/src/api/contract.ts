@@ -90,6 +90,7 @@ import type {
   InvestmentsOverview,
   InvestPlan,
   InvestPlanRequest,
+  InvestPlanUpdate,
   InsuranceOverview,
   InsurancePolicy,
   InsuranceEnrollRequest,
@@ -199,6 +200,7 @@ export const routes = {
   cashManagementSweep: () => '/api/wealth/cash-management/sweep',
   investments: () => '/api/wealth/investments',
   investPlan: () => '/api/wealth/investments/plan',
+  investPlanStatus: (id: string) => `/api/wealth/investments/plan/${id}`,
   insurance: () => '/api/wealth/insurance',
   insuranceEnroll: () => '/api/wealth/insurance/enroll',
 } as const
@@ -362,6 +364,7 @@ export interface BankApi {
   updateCashSweep(req: CashSweepUpdate): Promise<CashManagement>
   getInvestments(): Promise<InvestmentsOverview>
   createInvestPlan(req: InvestPlanRequest): Promise<InvestPlan>
+  updateInvestPlan(id: string, req: InvestPlanUpdate): Promise<InvestPlan>
   getInsurance(): Promise<InsuranceOverview>
   enrollInsurance(req: InsuranceEnrollRequest): Promise<InsurancePolicy>
 }

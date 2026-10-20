@@ -69,7 +69,7 @@ export function AutoDebitsPage() {
         </div>
       </Card>
 
-      <p className="text-[13px] text-ink-mute">订阅类扣款关停后，商户不会再次发起扣款；已产生的账单仍需支付。</p>
+      <p className="text-[13px] text-ink-mute">停用仅关闭本行此签约项目的自动扣款，不等于取消商户订阅；已产生的账单仍需另行处理，不会自动退款。</p>
     </div>
   )
 }

@@ -152,6 +152,7 @@ const ROUTES = [
   ['PATCH', 'cashManagementSweep', 'updateCashSweep', (id, b) => [b]],
   ['GET', 'investments', 'getInvestments', () => []],
   ['POST', 'investPlan', 'createInvestPlan', (id, b) => [b]],
+  ['PATCH', 'investPlanStatus', 'updateInvestPlan', (id, b) => [id, b]],
   ['GET', 'insurance', 'getInsurance', () => []],
   ['POST', 'insuranceEnroll', 'enrollInsurance', (id, b) => [b]],
 ]

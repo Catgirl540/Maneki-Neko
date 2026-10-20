@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import type { SpendingTrendPoint } from '@/api/types'
+import type { Currency, SpendingTrendPoint } from '@/api/types'
 import { cn } from '@/lib/cn'
-import { formatAmount, formatMoney } from '@/lib/format'
+import { formatCurrency } from '@/lib/format'
 
 /**
  * 近 6 个月支出走势：细柱 + 基线，无网格无花哨。
@@ -13,9 +13,11 @@ import { formatAmount, formatMoney } from '@/lib/format'
 export function TrendBars({
   points,
   height = 132,
+  currency = 'CNY',
 }: {
   points: SpendingTrendPoint[]
   height?: number
+  currency?: Currency
 }) {
   const [active, setActive] = useState<number | null>(null)
   const max = Math.max(...points.map((p) => p.amount), 1)
@@ -27,7 +29,7 @@ export function TrendBars({
       <ul className="sr-only">
         {points.map((point) => (
           <li key={point.month}>
-            {monthOf(point.month)} 月支出 {formatAmount(point.amount)} 元
+            {point.month} 支出 {formatCurrency(point.amount, currency)}
           </li>
         ))}
       </ul>
@@ -53,7 +55,7 @@ export function TrendBars({
                   isShown ? 'font-medium text-ink' : 'text-transparent',
                 )}
               >
-                {formatMoney(point.amount)}
+                {formatCurrency(point.amount, currency)}
               </span>
               <div
                 className={cn(

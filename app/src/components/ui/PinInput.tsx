@@ -107,7 +107,7 @@ export function PinInput({
           />
         ))}
       </div>
-      {error && <p className="mt-2 text-[13px] text-coral">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-[13px] text-coral">{error}</p>}
     </div>
   )
 }

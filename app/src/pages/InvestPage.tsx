@@ -32,6 +32,7 @@ export function InvestPage() {
   const investments = useAsync<InvestmentsOverview>(() => api.getInvestments(), [])
   const accounts = useAsync<Account[]>(() => api.listAccounts(), [])
   const [target, setTarget] = useState<InvestProduct | null>(null)
+  const [planAction, setPlanAction] = useState<{ plan: InvestPlan; status: InvestPlan['status'] } | null>(null)
   const [amountText, setAmountText] = useState('')
   const [cycle, setCycle] = useState('每月')
   const [password, setPassword] = useState('')
@@ -65,10 +66,35 @@ export function InvestPage() {
       toast.show('定投计划已保存', 'success')
     } catch (err) {
       if (err instanceof ApiError && err.code === 'BAD_PAY_PASSWORD') setPassword('')
-      setFormError(err instanceof ApiError ? err.message : '创建失败，请稍后重试')
+      setFormError(err instanceof Error ? err.message : '创建失败，请稍后重试')
     } finally {
       setBusy(false)
     }
+  }
+
+  async function submitPlanAction() {
+    if (!planAction) return
+    if (planAction.status === 'active' && password.length !== 6) return setFormError('请输入 6 位支付密码')
+    setBusy(true)
+    setFormError(null)
+    try {
+      await api.updateInvestPlan(planAction.plan.id, { status: planAction.status, expectedRevision: planAction.plan.revision ?? 0,
+        ...(planAction.status === 'active' ? { paymentPassword: password } : {}) })
+      investments.reload()
+      setPlanAction(null)
+      setPassword('')
+      toast.show(planAction.status === 'cancelled' ? '计划已取消，投资历史保留' : planAction.status === 'paused' ? '计划已暂停' : '计划已恢复保存，自动扣款尚未开放', 'success')
+    } catch (err) {
+      setPassword('')
+      setFormError(err instanceof Error ? err.message : '更新失败，请稍后重试')
+      investments.reload()
+    } finally { setBusy(false) }
+  }
+
+  function openPlanAction(plan: InvestPlan, status: InvestPlan['status']) {
+    setPlanAction({ plan, status })
+    setPassword('')
+    setFormError(null)
   }
 
   if (!investments.data || !accounts.data) {
@@ -104,8 +130,12 @@ export function InvestPage() {
                 <span className="mt-0.5 block text-[12px] text-ink-mute">计划日期 {formatDate(plan.nextRunAt)}</span>
               </span>
               <span className="shrink-0 text-right">
-                <Tag tone={plan.status === 'active' ? 'gold' : 'neutral'}>{plan.status === 'active' ? '已保存' : '已暂停'}</Tag>
+                <Tag tone={plan.status === 'active' ? 'gold' : 'neutral'}>{plan.status === 'active' ? '已保存' : plan.status === 'cancelled' ? '已取消' : '已暂停'}</Tag>
                 <span className="num mt-1 block text-[13px] text-ink-mute">累计 ¥{formatAmount(plan.totalInvested)}</span>
+                {plan.status !== 'cancelled' && <span className="mt-2 flex justify-end gap-2">
+                  <Button size="sm" variant="secondary" onClick={() => openPlanAction(plan, plan.status === 'active' ? 'paused' : 'active')}>{plan.status === 'active' ? '暂停' : '恢复'}</Button>
+                  <Button size="sm" variant="secondary" onClick={() => openPlanAction(plan, 'cancelled')}>取消计划</Button>
+                </span>}
               </span>
             </div>
           ))}
@@ -138,13 +168,24 @@ export function InvestPage() {
         </div>
       </Card>
 
-      <p className="text-[12px] leading-relaxed text-ink-mute">基金投资有风险，过往业绩不代表未来表现。自动扣款暂未开放。</p>
+      <p className="text-[12px] leading-relaxed text-ink-mute">基金投资有风险，过往业绩不代表未来表现。当前仅保存和管理计划，自动扣款暂未开放；计划日期不代表已预约执行，不扣款或冻结资金。</p>
+
+      <Modal open={Boolean(planAction)} onClose={() => { if (!busy) { setPlanAction(null); setPassword('') } }} closeDisabled={busy}
+        title={planAction?.status === 'cancelled' ? '取消定投计划' : planAction?.status === 'paused' ? '暂停定投计划' : '恢复定投计划'}
+        footer={<><Button block variant="secondary" disabled={busy} onClick={() => { setPlanAction(null); setPassword('') }}>返回</Button><Button block variant="primary" loading={busy} onClick={() => void submitPlanAction()}>确认{planAction?.status === 'cancelled' ? '取消计划' : planAction?.status === 'paused' ? '暂停' : '恢复'}</Button></>}>
+        {planAction && <div className="flex flex-col gap-4">
+          <p className="text-[15px] text-ink">{planAction.plan.productName} · {planAction.plan.cycle} ¥{formatAmount(planAction.plan.amount)}</p>
+          <p className="text-[13px] text-ink-mute">{planAction.status === 'cancelled' ? '取消后不可恢复，已有投资历史保留；不会赎回或退款。' : '仅修改保存的计划状态，当前自动扣款尚未开放。恢复时重新核对测评与产品条件。'}</p>
+          {planAction.status === 'active' && <PinInput label="支付密码" value={password} onChange={setPassword} />}
+          {formError && <p role="alert" className="text-[13px] text-coral">{formError}</p>}
+        </div>}
+      </Modal>
 
       <Modal
         open={Boolean(target)}
         onClose={() => { if (!busy) setTarget(null) }}
         title={target ? `定投 · ${target.name}` : '定投'}
-        description="保存产品、金额与周期。"
+        description="保存产品、金额与周期，不扣款、不创建自动执行任务。"
         closeDisabled={busy}
         footer={
           <>
@@ -181,6 +222,7 @@ export function InvestPage() {
             <p className="mt-4 text-[18px] font-semibold text-ink">{result.productName}</p>
             <p className="num mt-2 text-[13px] text-ink-mute">{result.cycle}定投 ¥{formatAmount(result.amount)}</p>
             <p className="mt-1 text-[12px] text-ink-mute">计划日期 {formatDate(result.nextRunAt)}</p>
+            <p className="mt-2 text-[12px] text-ink-mute">仅保存计划，自动扣款尚未开放。</p>
           </div>
         )}
       </Modal>

@@ -191,6 +191,7 @@ export function createHttpApi(): BankApi {
     updateCashSweep: (req) => patch(routes.cashManagementSweep(), req),
     getInvestments: () => request(routes.investments()),
     createInvestPlan: (req) => post(routes.investPlan(), req),
+    updateInvestPlan: (id, req) => patch(routes.investPlanStatus(id), req),
     getInsurance: () => request(routes.insurance()),
     enrollInsurance: (req) => post(routes.insuranceEnroll(), req),
   }

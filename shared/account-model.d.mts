@@ -6,5 +6,5 @@ export function requireCurrencyBalance(db: Profile, id: string, currency?: strin
 export function normalizeFundingAccount(db: Profile): void
 export function validateRoundup(db: Profile, update: Partial<SavingsRoundupRule>): SavingsRoundupRule
 export function internalExchange(tx: TransactionRecord): boolean
-export function spendingStatistics(db: Profile, month: string, labels: Record<string,string>): SpendingAnalysis
-export function cashFlowStatistics(db: Profile, days: number): CashFlow
+export function spendingStatistics(db: Profile, month: string | undefined, labels: Record<string,string>, now?: number): SpendingAnalysis
+export function cashFlowStatistics(db: Profile, days: number, now?: number): CashFlow

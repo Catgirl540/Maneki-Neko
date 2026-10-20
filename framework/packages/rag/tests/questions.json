@@ -388,5 +388,17 @@
     "query": "申请银行卡会再开户吗，卡片是不是单独存钱",
     "source": "kb-accounts#relations",
     "critical": true
-  }
+  },
+  { "query": "比较两款理财产品的风险期限和费率", "source": "kb-wealth#compare", "critical": true },
+  { "query": "产品对比会自动申购或者保证收益吗", "source": "kb-wealth#compare", "critical": true },
+  { "query": "查看未来七天的续费清单，有没有同名扣款合约", "source": "kb-analysis#renewals", "critical": true },
+  { "query": "续费清单是不是已经设置了自动提醒", "source": "kb-analysis#renewals", "critical": true },
+  { "query": "保存定投后是不是就会自动扣款", "source": "kb-wealth#invest-plan", "critical": true },
+  { "query": "定投计划暂停恢复和取消需要什么确认", "source": "kb-wealth#invest-plan", "critical": true },
+  { "query": "服务异常固定引导能查余额或者转账吗", "source": "kb-assistant#static-guidance", "critical": true },
+  { "query": "固定客服话术给出页面入口就是业务成功了吗", "source": "kb-assistant#static-guidance", "critical": true },
+  { "query": "重复扣款和金额突增候选能认定欺诈吗", "source": "kb-analysis#transaction-review", "critical": true },
+  { "query": "查指定月份的支出环比，上月没花钱有基数吗", "source": "kb-analysis#spending", "critical": true },
+  { "query": "本月支出与上月全月相比是等天数环比吗", "source": "kb-analysis#spending", "critical": true },
+  { "query": "撤回美元在途转账会释放其他指令冻结吗", "source": "kb-transfers#recall", "critical": true }
 ]

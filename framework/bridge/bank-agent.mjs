@@ -6,6 +6,10 @@ import { bankError } from './bank-error.mjs'
 export { bankError } from './bank-error.mjs'
 import { prepareTransfer, refreshTransfer, fullAccount, fpsIdentifier } from './transfer-agent.mjs'
 import { summarizeRiskAssessment } from './wealth-risk.mjs'
+import { compareWealthProducts } from './wealth-compare.mjs'
+import { analyzeAutoDebits, validateReminderDays } from './autodebit-analysis.mjs'
+import { validateInvestPlan } from '../../shared/invest-plan.mjs'
+import { reviewTransactions, validateReviewLimit } from './transaction-review.mjs'
 const enc = encodeURIComponent
 const text = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw bankError(`缺少${label}`)
@@ -19,9 +23,11 @@ const money = (cents, currency = 'CNY') => `${currency} ${(cents / 100).toFixed(
 const stable = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v)
 const digest = value => createHash('sha256').update(stable(value)).digest('hex')
 const field = (label, value, emphasis = false) => ({ label, value: String(value), ...(emphasis ? { emphasis: true } : {}) })
-const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'])
-const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer', 'bank_request_human_support', 'bank_reply_support_ticket'])
-const routineQueries = new Set(['bank_get_balance', 'bank_list_transactions', 'bank_get_transaction_detail', 'bank_list_banks', 'bank_list_payees', 'bank_list_cards', 'bank_card_products', 'bank_list_autodebits', 'bank_get_spending', 'bank_get_cashflow', 'bank_list_support_tickets', 'bank_get_support_ticket'])
+const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card', 'bank_create_invest_plan'])
+const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer', 'bank_request_human_support', 'bank_reply_support_ticket', 'bank_update_invest_plan'])
+const routineQueries = new Set(['bank_get_balance', 'bank_list_transactions', 'bank_get_transaction_detail', 'bank_list_banks', 'bank_list_payees', 'bank_list_cards', 'bank_card_products', 'bank_list_autodebits', 'bank_analyze_autodebits', 'bank_get_spending', 'bank_get_cashflow', 'bank_list_support_tickets', 'bank_get_support_ticket', 'bank_wealth_quote', 'bank_wealth_compare'])
+routineQueries.add('bank_list_investments')
+routineQueries.add('bank_review_transactions')
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -43,10 +49,10 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname))) throw bankError('银行服务必须使用 HTTPS 或本机回环地址')
   const grants = new Map()
   const key = (sessionId, callId) => `${sessionId}\0${callId}`
-  async function call(token, path, body, method = body === undefined ? 'GET' : 'POST') {
+  async function call(token, path, body, method = body === undefined ? 'GET' : 'POST', idempotencyKey) {
     let response
     try {
-      response = await fetch(new URL(path, base), { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(12_000) })
+      response = await fetch(new URL(path, base), { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(idempotencyKey ? { 'idempotency-key': idempotencyKey } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(12_000) })
     } catch { throw bankError('无法连接银行服务，请稍后重试', 503, 'BANK_UNREACHABLE') }
     let data
     try { data = await response.json() } catch { throw bankError('银行接口返回了无效响应', 502) }
@@ -133,6 +139,15 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         fields = [field('账户', `${account.label} · ${account.currency}`), field('查询条数', limit), field('关键词', a.keyword || '全部')]
         break
       }
+      case 'bank_review_transactions': {
+        const limit = validateReviewLimit(a.limit)
+        const account = await get(`/api/accounts/${enc(text(a.accountId, '账户编号'))}`)
+        if (!['CNY', 'USD', 'HKD'].includes(account.currency)) throw bankError('账户币种数据不完整', 502)
+        path = `/api/accounts/${enc(account.id)}/transactions?page=1&size=${limit}`
+        preview = { reviewAccount: { id: account.id, currency: account.currency } }
+        fields = [field('账户币种', account.currency), field('样本上限', limit), field('核查内容', '同商户同金额 5 分钟重复候选、相对先前样本的金额突增'), field('范围', '银行返回的第一页样本；不代表完整月报或年度报告，不自动锁卡或退款')]
+        break
+      }
       case 'bank_get_transaction_detail':
         path = `/api/transactions/${enc(text(a.transactionId, '交易编号'))}`
         await get(path)
@@ -168,18 +183,65 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       }
       case 'bank_recall_transfer': {
         const tx = await get(`/api/transactions/${enc(text(a.transactionId, '交易编号'))}`)
-        if (tx.status !== 'pending' || tx.pendingReason !== 'inflight' || Date.parse(tx.holdUntil) <= Date.now() || !Number.isFinite(Date.parse(tx.holdUntil))) throw bankError('该交易已不能撤回，请查看最新交易状态', 409)
+        if (tx.direction !== 'out' || tx.category !== 'transfer' || tx.status !== 'pending' || tx.pendingReason !== 'inflight' || Date.parse(tx.holdUntil) <= Date.now() || !Number.isFinite(Date.parse(tx.holdUntil))) throw bankError('该交易已不能撤回，请查看最新交易状态', 409)
+        const account = await get(`/api/accounts/${enc(text(tx.accountId, '交易资金账户'))}`)
+        const frozen = tx.heldFrozenAmount ?? tx.amount
+        if (!['CNY', 'USD', 'HKD'].includes(account.currency) || (tx.detail?.settleCurrency !== undefined && tx.detail.settleCurrency !== account.currency)
+            || !Number.isSafeInteger(tx.amount) || tx.amount <= 0 || !Number.isSafeInteger(frozen) || frozen < tx.amount) throw bankError('在途冻结金额或币种数据不一致，请核对银行交易详情', 502)
         path = `/api/transfers/${enc(tx.id)}/recall`
         body = {}
-        preview = { recallState: digest(tx) }
+        preview = { recallState: digest(tx), recallAccount: { id: account.id, currency: account.currency } }
         submitBefore = Date.parse(tx.holdUntil)
-        fields = [field('操作', '撤回在途转账', true), field('交易编号', tx.id), field('金额', money(Math.abs(tx.amount), tx.detail.settleCurrency)), field('收款人', tx.counterparty || tx.title || '请核对交易详情'), field('在途截止', tx.holdUntil), field('影响', '解除本笔在途冻结；以银行撤回结果为准')]
+        fields = [field('操作', '撤回在途转账', true), field('交易编号', tx.id), field('转账本金', money(tx.amount, account.currency)), field('本笔冻结合计', money(frozen, account.currency), true),
+          field('费用冻结', tx.heldFrozenAmount === undefined ? '历史指令只记录本金冻结，未记录额外费用冻结' : money(frozen - tx.amount, account.currency)),
+          field('收款人', tx.counterparty || tx.title || '请核对交易详情'), field('在途截止', tx.holdUntil), field('影响', '仅解除本笔在对应币种的冻结，其他在途指令不变；未执行扣款，不是退款。以银行撤回结果为准')]
         break
       }
       case 'bank_wealth_quote':
         path = a.productCode ? `/api/wealth/products/${enc(text(a.productCode, '产品代码'))}` : '/api/wealth/products'
         fields = [field('产品', a.productCode || '可用产品列表'), field('说明', '业绩比较基准不构成收益承诺')]
         break
+      case 'bank_list_investments':
+        path = '/api/wealth/investments'
+        fields = [field('查询内容', '本人定投计划、状态与定投专用产品目录'), field('说明', '计划保存不代表已扣款或将自动执行')]
+        break
+      case 'bank_create_invest_plan': {
+        const investments = await get('/api/wealth/investments')
+        if (investments.executionMode !== 'plan-only') throw bankError('暂无法确认定投执行模式，请在银行页面核对', 409)
+        const product = investments.products.find(p => p.code === text(a.productCode, '定投产品代码'))
+        const overview = await get('/api/wealth/overview')
+        validateInvestPlan(product, overview.risk, overview.account.opened, a.amountCents, a.cycle)
+        const account = await get(`/api/accounts/${enc(text(a.accountId, '资金账户编号'))}`)
+        if (account.currency !== 'CNY') throw bankError('定投计划仅支持人民币资金账户')
+        path = '/api/wealth/investments/plan'
+        body = { productCode: product.code, accountId: account.id, amount: amount(a.amountCents), cycle: a.cycle }
+        preview = { investProduct: digest(product) }
+        fields = [field('操作', '保存定投计划（不扣款）', true), field('产品', `${product.name} · ${product.code}`), field('风险', product.risk), field('每期金额', money(body.amount)), field('周期', body.cycle), field('资金账户', `${account.label} · 尾号 ${account.accountNo.slice(-4)}`), field('执行范围', '仅保存计划，自动扣款尚未开放；不创建定时任务、不承诺收益')]
+        break
+      }
+      case 'bank_update_invest_plan': {
+        if (!['active', 'paused', 'cancelled'].includes(a.status)) throw bankError('定投状态必须为 active、paused 或 cancelled')
+        const investments = await get('/api/wealth/investments')
+        if (investments.executionMode !== 'plan-only') throw bankError('暂无法确认定投执行模式，请在银行页面核对', 409)
+        const plan = investments.plans.find(p => p.id === text(a.planId, '定投计划编号'))
+        if (!plan) throw bankError('定投计划不存在或不属于当前客户', 404)
+        if (plan.status === 'cancelled' && a.status !== 'cancelled') throw bankError('已取消的定投计划不能恢复', 409)
+        path = `/api/wealth/investments/plan/${enc(plan.id)}`
+        method = 'PATCH'
+        body = { status: a.status, expectedRevision: plan.revision ?? 0 }
+        preview = { investPlan: digest(plan) }
+        fields = [field('计划', `${plan.productName} · ${plan.id}`), field('每期金额', money(plan.amount)), field('周期', plan.cycle), field('当前状态', plan.status), field('操作', { active: '恢复已保存计划', paused: '暂停计划', cancelled: '取消计划（不可恢复）' }[a.status], true), field('说明', '保留已有投资历史，不赎回、不退款；当前自动扣款尚未开放')]
+        break
+      }
+      case 'bank_wealth_compare': {
+        const first = text(a.firstProductCode, '第一个产品代码'), second = text(a.secondProductCode, '第二个产品代码')
+        if (first === second) throw bankError('请选择两个不同的理财产品')
+        if (first.length > 80 || second.length > 80) throw bankError('产品代码过长')
+        if (a.amountCents !== undefined) amount(a.amountCents)
+        path = '/api/wealth/products'
+        fields = [field('比较产品', `${first} / ${second}`), field('比较金额', a.amountCents === undefined ? '仅比较产品，不估算金额费用' : money(a.amountCents)), field('说明', '比较银行实时产品及风险状态，不代表投资决定或申购授权')]
+        break
+      }
       case 'bank_wealth_subscribe': {
         const product = await get(`/api/wealth/products/${enc(text(a.productCode, '产品代码'))}`)
         const requirements = await get('/api/agent/wealth/requirements')
@@ -270,6 +332,12 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         path = '/api/autodebits'
         fields = [field('查询内容', '本人已签约自动扣款、金额、周期与启用状态')]
         break
+      case 'bank_analyze_autodebits': {
+        const days = validateReminderDays(a.days)
+        path = '/api/autodebits'
+        fields = [field('查询内容', '本人合约续费清单、过去日期与同名项目核对'), field('日期范围', `北京时间起 ${days} 个自然日（含今天）`), field('说明', '仅下一次扣款记录，不展开周期，不创建后台提醒或停用合约')]
+        break
+      }
       case 'bank_set_autodebit': {
         const item = (await get('/api/autodebits')).find(d => d.id === text(a.autoDebitId, '自动扣款编号'))
         if (!item) throw bankError('扣款计划不存在或不属于当前账户', 404)
@@ -308,7 +376,7 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
     if (submitBefore) challenge = { ...challenge, expiresAt: Math.min(challenge.expiresAt, submitBefore) }
     if (!Number.isFinite(challenge.expiresAt) || challenge.expiresAt <= Date.now()) throw bankError('确认已过期')
     if (entry.stopping || activity?.cancelled || entry.activity !== activity) throw bankError('本轮已停止', 409)
-    const verification = passwordTools.has(challenge.toolName) ? 'payment-password' : undefined
+    const verification = passwordTools.has(challenge.toolName) || (challenge.toolName === 'bank_update_invest_plan' && a.status === 'active') ? 'payment-password' : undefined
     const prepared = { challenge: { ...challenge, arguments: undefined, fields, verification, ...(riskAcknowledgementText ? { riskAcknowledgementText } : {}), consequence: challenge.toolName === 'bank_request_human_support' ? '确认后创建工单，可在助手 → 人工工单查看回复；不保证即时受理。' : challenge.toolName === 'bank_reply_support_ticket' ? '确认后将以上留言发送给人工客服。' : verification ? '确认并验证后提交银行服务；操作结果以银行回执为准。' : writable.has(challenge.toolName) ? '确认后提交银行服务，操作结果以银行回执为准。' : '查询结果会显示在对话中。' }, fingerprint: digest(a), path, body, method, preview, activity, ownerId: entry.ownerId, approved: false }
     const k = key(challenge.sessionId, challenge.callId)
     if (grants.has(k)) throw bankError('工具调用已存在确认', 409)
@@ -355,7 +423,9 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       }
       if (g.preview?.recallState) {
         const tx = await call(entry.bankToken, `/api/transactions/${enc(input.arguments.transactionId)}`)
-        if (digest(tx) !== g.preview.recallState || tx.status !== 'pending' || tx.pendingReason !== 'inflight' || Date.parse(tx.holdUntil) <= Date.now()) throw bankError('交易状态已变化，请重新确认', 409)
+        const account = await call(entry.bankToken, `/api/accounts/${enc(g.preview.recallAccount.id)}`)
+        if (digest(tx) !== g.preview.recallState || account.id !== g.preview.recallAccount.id || account.currency !== g.preview.recallAccount.currency
+            || tx.status !== 'pending' || tx.pendingReason !== 'inflight' || Date.parse(tx.holdUntil) <= Date.now() || !Number.isFinite(Date.parse(tx.holdUntil))) throw bankError('交易状态或币种已变化，请重新确认', 409)
       }
       if (input.toolName === 'bank_wealth_subscribe') {
         const product = await call(entry.bankToken, `/api/wealth/products/${enc(body.productCode)}`)
@@ -380,10 +450,34 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         const item = (await call(entry.bankToken, '/api/autodebits')).find(d => d.id === input.arguments.autoDebitId)
         if (!item || digest(item) !== g.preview.autoDebitState) throw bankError('签约项目已变化，请重新确认', 409)
       }
+      if (g.preview?.investProduct || g.preview?.investPlan) {
+        const investments = await call(entry.bankToken, '/api/wealth/investments')
+        if (investments.executionMode !== 'plan-only') throw bankError('定投执行模式已变化，请重新确认', 409)
+        const product = investments.products.find(p => p.code === body.productCode)
+        const plan = investments.plans.find(p => p.id === input.arguments.planId)
+        if (g.preview.investProduct && (!product || digest(product) !== g.preview.investProduct)) throw bankError('定投产品已变化，请重新确认', 409)
+        if (g.preview.investPlan && (!plan || digest(plan) !== g.preview.investPlan)) throw bankError('定投计划已变化，请重新确认', 409)
+      }
       // 停止可能与重新核价并发，真正提交前再核对一次。
       if (entry.stopping || g.activity?.cancelled || g.activity !== entry.activity) throw bankError('本轮已停止，未提交银行操作', 409)
       if (['bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
-      const data = await call(entry.bankToken, g.path, body, g.method)
+      const investmentWrite = ['bank_create_invest_plan', 'bank_update_invest_plan'].includes(input.toolName)
+      if (investmentWrite && g.challenge.verification) body = { ...body, paymentPassword: g.password }
+      const data = await call(entry.bankToken, g.path, body, g.method, investmentWrite ? `agent_${digest([input.sessionId, input.callId, input.toolName])}` : undefined)
+      if (input.toolName === 'bank_review_transactions') {
+        const account = await call(entry.bankToken, `/api/accounts/${enc(g.preview.reviewAccount.id)}`)
+        if (account.id !== g.preview.reviewAccount.id || account.currency !== g.preview.reviewAccount.currency) throw bankError('账户信息已变化，请重新查询', 409)
+        return { dataSource: 'http', result: reviewTransactions(account, data, input.arguments) }
+      }
+      if (['bank_list_investments', 'bank_create_invest_plan', 'bank_update_invest_plan'].includes(input.toolName)) {
+        if (investmentWrite) publish(input.sessionId, { type: 'bank-updated' })
+        return { dataSource: 'http', result: data, notice: '当前定投仅保存和管理计划，自动扣款尚未开放；保存或恢复不代表已投资、已扣款或已安排自动执行。取消保留历史，不赎回或退款。' }
+      }
+      if (input.toolName === 'bank_analyze_autodebits') return { dataSource: 'http', result: analyzeAutoDebits(data, input.arguments) }
+      if (input.toolName === 'bank_wealth_compare') {
+        const overview = await call(entry.bankToken, '/api/wealth/overview')
+        return { dataSource: 'http', result: compareWealthProducts(data, overview, input.arguments) }
+      }
       if (input.toolName === 'bank_reveal_card_secret') {
         const value = input.arguments.field === 'cvv' ? data.cvv : data.pan
         publish(input.sessionId, { type: 'card-secret', cardId: input.arguments.cardId, field: input.arguments.field, value, expiresAt: Date.now() + Math.min(60, Math.max(1, Number(data.revealSeconds) || 30)) * 1000 })

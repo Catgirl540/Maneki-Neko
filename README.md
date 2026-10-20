@@ -465,6 +465,7 @@ GET    /api/wealth/cash-management          活钱余额 / 7 日年化 / 自动�
 PATCH  /api/wealth/cash-management/sweep    设置活期保留额与自动转入
 GET    /api/wealth/investments              持有市值 / 定投计划 / 可投产品
 POST   /api/wealth/investments/plan         新建定投计划
+PATCH  /api/wealth/investments/plan/:id     暂停、恢复或取消本人计划（仅管理，自动扣款未开放）
 GET    /api/wealth/insurance                保单 / 可投保产品
 POST   /api/wealth/insurance/enroll         投保
 
@@ -614,7 +615,8 @@ node tools/check-watermark.mjs   # 校验水印在 5 条路由上都真的看得
   敏感操作走「展示 → 确认 → 验身份」（见 `framework/design/P5-CONSENT.md`）。
   只在 agent 服务没起来时**回落到固定话术**（关键词规则）——所以断网或没起服务时
   它看起来像一个普通的问答客服，那是回落路径，不是全部能力
-- 消费分析的月份参数已打通接口，UI 暂只展示当月
+  固定引导会明确说明没有实时查询或执行业务，不给出当前余额、利率、确认阈值或到账承诺，页面入口也不是成功回执
+- 消费分析支持月份与 CNY/USD/HKD 切换，统一北京时间；环比基数是所选月的上一个完整月，无基数时不显示虚假的 0% 变化
 - 交易详情页的「提供建议」只给反馈提示，没有落库；「下载电子回单」在演示环境走浏览器原生打印
   （`getReceipt()` 的 `url` 为 null 时就退回打印，在打印对话框里选「另存为 PDF」）
   （在打印对话框里选「另存为 PDF」即可导出），没有服务端生成 PDF 的能力

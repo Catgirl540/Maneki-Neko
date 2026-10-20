@@ -3,7 +3,62 @@ import { test } from 'node:test'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { ACCOUNT_OPENING_PLEDGE } from './lib/account-opening.mjs'
+import { nextInvestDate } from '../shared/invest-plan.mjs'
 import { fixture, ok, login, register, transfer, account, reconcile, financialState, testOptions, routes } from './testing/http-fixture.mjs'
+
+test('investment plans preserve funds, isolate customers, deduplicate retries and enforce versioned lifecycle', { ...testOptions, timeout: 120000 }, async t => {
+  const app = await fixture()
+  t.after(() => app.close())
+  const owner = await login(app, '13800138000'), other = await login(app, '13600136000')
+  const overview = () => app.call('/api/wealth/investments', { token: owner.token }).then(ok)
+  const body = { productCode: 'BOND-A', accountId: owner.accounts[0].id, amount: 10000, cycle: '每周', paymentPassword: '888888' }
+  const create = (value = body, key) => app.call('/api/wealth/investments/plan', { method: 'POST', token: owner.token, body: value, key })
+  const funds = async () => { const state = await financialState(app); return { accounts: state.accounts, counts: state.counts.filter(([table]) => table !== 'bank_idempotency') } }
+  const baseline = await funds(), before = await overview()
+  assert.equal(before.executionMode, 'plan-only')
+  assert.equal((await create()).body.code, 'WEALTH_PREREQUISITE')
+  await app.editCustomer(owner.user.id, profile => {
+    profile.wealthAccount.opened = true
+    profile.riskAssessment = { done: true, level: 'C3', score: 50, assessedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 86400000).toISOString() }
+  })
+  for (const value of [{ ...body, accountId: other.accounts[0].id }, { ...body, cycle: '每年' }, { ...body, amount: 0.5 }, { ...body, productCode: 'missing' }, { ...body, paymentPassword: '000000' }]) assert.notEqual((await create(value)).status, 200)
+  assert.equal((await overview()).plans.length, before.plans.length)
+  const key = `invest-${randomUUID()}`
+  const [first, retry] = await Promise.all([create(body, key), create(body, key)])
+  const plan = ok(first)
+  assert.deepEqual(retry, first)
+  assert.equal(plan.nextRunAt, nextInvestDate('每周', Date.parse(plan.createdAt)))
+  assert.equal(plan.revision, 0)
+  assert.equal((await overview()).plans.length, before.plans.length + 1)
+  assert.equal((await create({ ...body, amount: 20000 }, key)).body.code, 'IDEMPOTENCY_CONFLICT')
+  const path = `/api/wealth/investments/plan/${plan.id}`
+  const patch = (value, token = owner.token, key) => app.call(path, { method: 'PATCH', token, body: value, key })
+  assert.equal((await patch({ status: 'paused', expectedRevision: 0 }, other.token)).status, 404)
+  assert.equal((await patch({ status: 'paused', expectedRevision: 0, amount: 1 })).body.code, 'INVALID_PLAN_STATUS')
+  const paused = ok(await patch({ status: 'paused', expectedRevision: 0 }))
+  assert.equal(paused.status, 'paused'); assert.equal(paused.revision, 1)
+  assert.equal((await patch({ status: 'active', expectedRevision: 0, paymentPassword: '888888' })).body.code, 'INVEST_PLAN_CHANGED')
+  assert.equal((await patch({ status: 'active', expectedRevision: 1 })).body.code, 'INVALID_PAY_PASSWORD')
+  await app.editCustomer(owner.user.id, profile => { profile.riskAssessment.expiresAt = '2020-01-01T00:00:00Z' })
+  assert.equal((await patch({ status: 'active', expectedRevision: 1, paymentPassword: '888888' })).body.code, 'WEALTH_PREREQUISITE')
+  await app.editCustomer(owner.user.id, profile => { profile.riskAssessment.expiresAt = new Date(Date.now() + 86400000).toISOString() })
+  const resumed = ok(await patch({ status: 'active', expectedRevision: 1, paymentPassword: '888888' }))
+  assert.equal(resumed.revision, 2); assert.equal(resumed.status, 'active')
+  const cancelKey = `cancel-${randomUUID()}`, cancellation = { status: 'cancelled', expectedRevision: 2 }
+  const cancelled = await patch(cancellation, owner.token, cancelKey)
+  assert.equal(ok(cancelled).status, 'cancelled')
+  assert.deepEqual(await patch(cancellation, owner.token, cancelKey), cancelled)
+  assert.equal((await patch({ status: 'active', expectedRevision: 3, paymentPassword: '888888' })).body.code, 'INVALID_PLAN_TRANSITION')
+  const another = ok(await create({ ...body, cycle: '每两周' }))
+  const races = await Promise.all(['paused', 'cancelled'].map(status => app.call(`/api/wealth/investments/plan/${another.id}`, { method: 'PATCH', token: owner.token, body: { status, expectedRevision: 0 } })))
+  assert.equal(races.filter(response => response.status === 200).length, 1)
+  assert.equal(races.filter(response => response.body.code === 'INVEST_PLAN_CHANGED').length, 1)
+  const persisted = (await overview()).plans.find(row => row.id === plan.id)
+  assert.equal(persisted.status, 'cancelled'); assert.equal(persisted.executedRuns, 0); assert.equal(persisted.totalInvested, 0)
+  assert(!ok(await app.call('/api/wealth/investments', { token: other.token })).plans.some(row => row.id === plan.id))
+  assert.deepEqual(await funds(), baseline)
+  await reconcile(app)
+})
 
 test('bank HTTP transactions and security preserve customer funds and balanced accounting', { ...testOptions, timeout: 180000 }, async t => {
   const app = await fixture()
@@ -24,6 +79,40 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
     assert.equal(attempt.status, 404)
     assert.deepEqual(await financialState(app), previous)
     await reconcile(app)
+  })
+
+  await t.test('statistics expose Shanghai scope, separate currencies and real empty customer results without fund changes', async () => {
+    const before = await financialState(app)
+    assert.equal((await app.call('/api/analysis/spending')).status, 401)
+    const spending = ok(await app.call('/api/analysis/spending', { token: sender.token }))
+    const month = new Date(Date.parse(spending.asOf) + 8 * 3600000).toISOString().slice(0, 7)
+    assert.equal(spending.timeZone, 'Asia/Shanghai'); assert.equal(spending.month, month)
+    assert.equal(spending.periodStatus, 'partial')
+    for (const currency of ['CNY', 'USD', 'HKD']) {
+      const result = spending.byCurrency[currency]
+      assert.equal(result.currency, currency); assert.equal(result.month, month)
+      assert.equal(result.total, result.categories.reduce((sum, row) => sum + row.amount, 0))
+      assert.equal(result.total, result.trend.at(-1).amount)
+      assert.equal(result.trend.at(-1).month, month)
+      assert.equal(result.monthOverMonthComparable, result.previousTotal > 0)
+    }
+    const historical = ok(await app.call('/api/analysis/spending?month=2025-12', { token: sender.token }))
+    assert.equal(historical.previousMonth, '2025-11'); assert.equal(historical.trend.at(-1).month, '2025-12')
+    const empty = ok(await app.call('/api/analysis/spending', { token: limited.token }))
+    assert.equal(empty.total, 0); assert.equal(empty.previousTotal, 0); assert.equal(empty.monthOverMonthComparable, false)
+    for (const days of [7, 30]) {
+      const cash = ok(await app.call(`/api/analysis/cashflow?days=${days}`, { token: sender.token }))
+      assert.equal(cash.timeZone, 'Asia/Shanghai'); assert.equal(cash.days, days)
+      assert.equal(cash.points.at(-1).date, new Date(Date.parse(cash.asOf) + 8 * 3600000).toISOString().slice(0, 10))
+      for (const row of Object.values(cash.byCurrency)) {
+        assert.equal(row.points.length, days)
+        assert.equal(row.totalIncome, row.points.reduce((sum, point) => sum + point.income, 0))
+        assert.equal(row.totalExpense, row.points.reduce((sum, point) => sum + point.expense, 0))
+      }
+    }
+    assert.equal((await app.call('/api/analysis/spending?month=2026-13', { token: sender.token })).status, 400)
+    assert.equal((await app.call('/api/analysis/cashflow?days=0', { token: sender.token })).status, 400)
+    assert.deepEqual(await financialState(app), before)
   })
 
   await t.test('cross-customer internal transfer conserves funds and posts both histories', async () => {
@@ -437,7 +526,7 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
   await t.test('every legacy financial contract route refuses live demo reads and writes', async () => {
     const safe = new Set(['login','register','logout','profile','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
     const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','identityOcr','identityLiveness','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll'])
-    const patches = new Set(['cardSettings','autoDebit','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep'])
+    const patches = new Set(['cardSettings','autoDebit','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     for (const [name, build] of Object.entries(routes)) {
       if (safe.has(name)) continue
       const method = posts.has(name) ? 'POST' : patches.has(name) ? 'PATCH' : 'GET'

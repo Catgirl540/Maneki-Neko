@@ -23,9 +23,14 @@
       - bank_reply_support_ticket
       - bank_get_balance
       - bank_list_transactions
+      - bank_review_transactions
       - bank_get_transaction_detail
       - bank_transfer
       - bank_wealth_quote
+      - bank_wealth_compare
+      - bank_list_investments
+      - bank_create_invest_plan
+      - bank_update_invest_plan
       - bank_wealth_subscribe
       - bank_wealth_redeem
       - bank_reveal_card_secret
@@ -42,6 +47,7 @@
       - bank_apply_card
       - bank_replace_card
       - bank_list_autodebits
+      - bank_analyze_autodebits
       - bank_set_autodebit
       - bank_get_spending
       - bank_get_cashflow

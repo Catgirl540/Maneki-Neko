@@ -1,5 +1,7 @@
 # 本地启动（Node.js 24 + PostgreSQL 16）
 
+2026-10-20 隔夜成果、演示入口和测试范围见 [交付说明](docs/overnight-20261020-delivery.md)，逐批调试记录见 [进展文档](docs/overnight-20261020.md)。本批代码的提交以 Git 历史为准；尚未部署服务器，公网页面不能用于核对本批结果。
+
 客户端版本见 [CLIENTS.md](CLIENTS.md)，账户关系见 [单资金账户约束](docs/product/account-model.md)。当前网页在 `app/`，员工端在 `staff/`，安卓新版为 Flutter `mobile/`。以下从仓库根目录运行，示例使用 PowerShell。
 
 ## 1. 安装依赖
@@ -63,6 +65,8 @@ bash framework/scripts/bootstrap.sh
 微信、企业微信入口见 [IM 接入说明](docs/api/im-agent.md)。在已有银行与 AI 会话配置基础上，设置银行 HTTPS `LUCKYCAT_IM_PUBLIC_URL`，运行 `npm --prefix framework run start:im`，打开 `/agent-api/im` 由运维人员扫码连接机器人。客户独立绑定本人银行账户，业务确认继续在银行页面完成。
 
 ## 5. 验证整合
+
+本机安装 Docker Desktop 后，可直接执行 `node tools/local-test-env.mjs integration`。脚本创建或复用专用 `maneki-local-tests-pg16` 容器，仅监听 `127.0.0.1:55432`，准备下述四个可丢弃测试库并运行整合门禁；不连接远程库、不修改其他 Docker 容器。随机测试密码保存在忽略目录 `.generated/local-postgres/`，不输出连接串。`setup` 仅准备环境，`server` 运行全部后端测试，`agent` 单独运行真实 Harness 的本地银行与模型协议回归。
 
 按 [后端验证说明](server/README.md#验证) 准备四个专用可丢弃 PostgreSQL 测试库；禁止使用客户库。完成上述框架构建后：
 

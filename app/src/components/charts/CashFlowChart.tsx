@@ -1,6 +1,6 @@
 import { useId, useState, type KeyboardEvent, type PointerEvent } from 'react'
-import type { CashFlowPoint } from '@/api/types'
-import { formatAmount } from '@/lib/format'
+import type { CashFlowPoint, Currency } from '@/api/types'
+import { formatCurrency } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { ChartTooltip, TooltipRow } from './ChartTooltip'
 
@@ -68,7 +68,7 @@ const fullLabel = (date: string) => {
  * 现金流面积图：收入（金）与支出（蓝）双序列叠加。
  * 鼠标进入即出竖线 + 数据点标记 + 当日浮层；左右方向键也能逐日查看。
  */
-export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE }: { points: CashFlowPoint[]; maxTicks?: number }) {
+export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE, currency = 'CNY' }: { points: CashFlowPoint[]; maxTicks?: number; currency?: Currency }) {
   const [active, setActive] = useState<number | null>(null)
   const uid = useId().replace(/:/g, '')
 
@@ -139,7 +139,7 @@ export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE }: { points: 
           style={{ height: H }}
           tabIndex={0}
           role="group"
-          aria-label={`现金流图，共 ${count} 天。可用左右方向键逐日查看。`}
+          aria-label={`${currency} 现金流图，共 ${count} 天。可用左右方向键逐日查看。`}
           onPointerMove={pick}
           onPointerDown={pick}
           onPointerLeave={() => setActive(null)}
@@ -223,7 +223,7 @@ export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE }: { points: 
                     key={s.key}
                     color={s.color}
                     label={s.label}
-                    value={`¥${formatAmount(activePoint[s.key])}`}
+                    value={formatCurrency(activePoint[s.key], currency)}
                   />
                 ))}
               </div>
@@ -231,8 +231,8 @@ export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE }: { points: 
                 <TooltipRow
                   color="var(--color-chart-neutral)"
                   label="净额"
-                  value={`${activePoint.income - activePoint.expense < 0 ? '-' : '+'}¥${formatAmount(
-                    Math.abs(activePoint.income - activePoint.expense),
+                  value={`${activePoint.income - activePoint.expense < 0 ? '-' : '+'}${formatCurrency(
+                    Math.abs(activePoint.income - activePoint.expense), currency,
                   )}`}
                 />
               </div>
@@ -241,7 +241,7 @@ export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE }: { points: 
 
           <span className="sr-only" aria-live="polite">
             {activePoint
-              ? `${fullLabel(activePoint.date)}，收入 ${formatAmount(activePoint.income)} 元，支出 ${formatAmount(activePoint.expense)} 元`
+              ? `${fullLabel(activePoint.date)}，收入 ${formatCurrency(activePoint.income, currency)}，支出 ${formatCurrency(activePoint.expense, currency)}`
               : ''}
           </span>
         </div>
@@ -270,9 +270,11 @@ export function CashFlowChart({ points, maxTicks = MAX_TICKS_DENSE }: { points: 
 export function CashFlowLegend({
   totalIncome,
   totalExpense,
+  currency = 'CNY',
 }: {
   totalIncome: number
   totalExpense: number
+  currency?: Currency
 }) {
   return (
     <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[13px]">
@@ -281,7 +283,7 @@ export function CashFlowLegend({
           <span className="size-2.5 rounded-chip" style={{ backgroundColor: s.color }} />
           <span className="text-ink-soft">{s.label}</span>
           <span className="num font-medium text-ink">
-            ¥{formatAmount(s.key === 'income' ? totalIncome : totalExpense)}
+            {formatCurrency(s.key === 'income' ? totalIncome : totalExpense, currency)}
           </span>
         </li>
       ))}

@@ -1,6 +1,6 @@
-import type { Cents } from '@/api/types'
+import type { Cents, Currency } from '@/api/types'
 import { cn } from '@/lib/cn'
-import { formatMoney } from '@/lib/format'
+import { formatCurrency } from '@/lib/format'
 
 export interface DonutSegment {
   key: string
@@ -25,6 +25,7 @@ export function Donut({
   centerValue,
   activeKey = null,
   onActiveChange,
+  currency = 'CNY',
 }: {
   segments: DonutSegment[]
   size?: number
@@ -33,6 +34,7 @@ export function Donut({
   centerValue?: string
   activeKey?: string | null
   onActiveChange?: (key: string | null) => void
+  currency?: Currency
 }) {
   // 留出 3px 余量：高亮时描边会加粗，不至于画到画布外
   const radius = (size - thickness - 6) / 2
@@ -104,7 +106,7 @@ export function Donut({
             <>
               <span className="text-[12px] leading-none text-ink-mute">{active.label}</span>
               <span className="num mt-1 text-[16px] leading-none font-semibold text-ink">
-                {formatMoney(active.amount)}
+                {formatCurrency(active.amount, currency)}
               </span>
               <span className="mt-1 text-[11px] leading-none text-ink-mute">
                 占比 {(active.ratio * 100).toFixed(1)}%
@@ -128,10 +130,12 @@ export function DonutLegend({
   segments,
   activeKey = null,
   onActiveChange,
+  currency = 'CNY',
 }: {
   segments: DonutSegment[]
   activeKey?: string | null
   onActiveChange?: (key: string | null) => void
+  currency?: Currency
 }) {
   return (
     <ul className="flex flex-col gap-1" onPointerLeave={() => onActiveChange?.(null)}>
@@ -149,7 +153,7 @@ export function DonutLegend({
             style={{ backgroundColor: seg.color }}
           />
           <span className="text-ink-soft">{seg.label}</span>
-          <span className="num ml-auto font-medium text-ink">{formatMoney(seg.amount)}</span>
+          <span className="num ml-auto font-medium text-ink">{formatCurrency(seg.amount, currency)}</span>
         </li>
       ))}
     </ul>

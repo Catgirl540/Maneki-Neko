@@ -33,6 +33,8 @@
 | 错误 | 非 2xx 返回 `{ message, code }`；客户端统一抛 `ApiError(status, code)` |
 | 敏感操作 | 保留「展示信息 → 用户确认 → 身份验证（支付密码 / 人脸 / 短信）→ 执行」四步；前端守卫不替代后端鉴权 |
 
+备用 `POST /api/support/chat` 返回 `canned=true` 时只提供固定页面引导；没有调用模型、实时查询金融数据或执行业务，不代表余额/当前利率查询、转账到账、锁卡、停用签约或人工工单受理。实现由 `shared/support-guidance.mjs` 供后端与浏览器模拟共用；真实助手通道仍按确认/验密及银行回执办理。
+
 ### 通用错误码
 
 | code | HTTP | 含义 |
@@ -122,6 +124,8 @@
 | 安全中心 | `GET /api/security/overview`、`PATCH /api/security/rules/:id`、`POST /api/security/password`、`POST /api/security/payment-password`、`POST /api/security/verify` | 已实现 |
 | 智能客服 | `GET /api/support/messages`、`POST /api/support/chat` | 已实现 |
 
+自动扣款字段、Agent 续费清单的自然日范围、金额口径和限制见 [autodebits.md](./autodebits.md)。
+
 ### 6 工资与备用金
 
 | 方法 | 路径 | 说明 | 状态 |
@@ -151,6 +155,7 @@
 | PATCH | `/api/wealth/cash-management/sweep` | 设置活期保留额 | 已实现 |
 | GET | `/api/wealth/investments` | 持有市值 / 定投计划 / 可投产品 | 已实现 |
 | POST | `/api/wealth/investments/plan` | 新建定投计划 | 已实现 |
+| PATCH | `/api/wealth/investments/plan/:id` | 暂停 / 恢复 / 取消本人定投计划；版本检查 | 已实现（仅管理计划，自动扣款未开放） |
 | GET | `/api/wealth/insurance` | 保单 / 可投保产品 | 已实现 |
 | POST | `/api/wealth/insurance/enroll` | 投保 | 已实现 |
 

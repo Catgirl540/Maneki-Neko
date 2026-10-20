@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+import { resolve, basename } from 'node:path'
 import { generateKnowledge, writeKnowledge, outputPath, frameworkRoot } from '../../../scripts/build-knowledge.mjs'
 import { apply, loadCorpus, chunkDocuments, rankHits, boundHits } from '../lib/index.js'
 
@@ -14,7 +14,8 @@ const source = h => `${h.chunk.documentId}#${h.chunk.sectionId}`
 test('知识源确定生成，八篇完整问答、稳定章节 ID、路由及版本保留', () => {
   assert.deepEqual(generateKnowledge(), corpus)
   assert.equal(corpus.documents.length, 8)
-  assert.equal(chunks.length, 43)
+  const expectedSections = corpus.documents.flatMap(document => document.sections.map(section => `${document.id}#${section.id}`))
+  assert.deepEqual(chunks.map(chunk => source({ chunk })), expectedSections, '每篇实际知识章节都必须完整切块，不能因新增问答漏块或复用旧固定数量')
   assert(chunks.every(c => c.sectionId && c.routes.length && c.version === corpus.version))
   assert(chunks.every(c => Array.from(c.text).length <= 450))
   for (const c of chunks) {
@@ -108,5 +109,5 @@ test('超长问答失败而非丢失限制；标题与关键词也能用于检�
   assert.throws(() => chunkDocuments([{ id: 'a', text: 'x', sections: [{ id: 'q', title: '问题', text: '长'.repeat(900) }] }]), /超出块长/)
   const tagged = chunkDocuments([{ id: 'a', text: '简短答案', title: '费用', tags: ['专属查询词'] }])
   assert.equal(rankHits({ query: '专属查询词', chunks: tagged, topK: 3, minScore: .34 })[0].chunk.documentId, 'a')
-  assert(frameworkRoot.endsWith('/framework'))
+  assert.equal(basename(frameworkRoot), 'framework')
 })

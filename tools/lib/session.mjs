@@ -91,26 +91,20 @@ export async function login(page, base, options = {}) {
    * 那时候 `page.url()` 仍然是 `/dashboard`，据此判断会得出"已经登录了"的
    * 错误结论，于是整个登录流程被跳过（实测踩到：登录页一直在，登录从没发生）。
    */
-  /*
-   * 用**占位符**定位，不用 `getByLabel`。
-   *
-   * 原因：`Field` 组件把 `trailing` 也渲染在 `<label>` 里面，而 Playwright 的
-   * `getByLabel` 是按"被这个 label 关联的控件"匹配的——于是密码框里那个"显示密码"
-   * 眼睛按钮也会命中 `getByLabel('密码')`（实测命中 2 个）。占位符是唯一的，不受这个影响。
-   * 对真实用户没有影响：眼睛按钮有自己的 `aria-label`，名字是对的。
-   */
-  const phoneInput = page.getByPlaceholder('请输入 11 位手机号')
+  // Use current semantic labels and autocomplete; placeholder copy is not an auth signal.
+  const phoneInput = page.getByRole('textbox', { name: '手机号', exact: true })
   const needsLogin = await phoneInput.waitFor({ state: 'visible', timeout: 8_000 })
     .then(() => true).catch(() => false)
 
   if (!needsLogin) {
+    if (new URL(page.url()).pathname === '/login') throw new Error('当前仍在登录页，但未找到手机号表单，不能判定已登录')
     // 已经是登录状态，把它挪到目标页就好
     if (new URL(page.url()).pathname !== to && to !== '/login') await gotoInApp(page, to)
     return
   }
 
   await phoneInput.fill(phone)
-  await page.getByPlaceholder('请输入密码').fill(password)
+  await page.locator('input[autocomplete="current-password"]').fill(password)
 
   // 获取验证码。按钮在手机号不足 11 位时是禁用的，所以必须在填完之后再点。
   await page.getByRole('button', { name: '获取验证码' }).click()
@@ -118,11 +112,19 @@ export async function login(page, base, options = {}) {
   // 验证码**从页面上读**，不猜：演示后端会把它回传并显示出来。
   // 猜一个写死的码，在改动面前会静默失效。
   const hint = page.getByText(/演示环境验证码[：:]\s*\d{6}/)
-  await hint.waitFor({ state: 'visible', timeout: 10_000 })
+  try { await hint.waitFor({ state: 'visible', timeout: 10_000 }) }
+  catch (error) {
+    const message = await page.locator('#login-error').innerText().catch(() => '')
+    if (!/一分钟后/.test(message)) throw error
+    // An API fixture may have just logged in the same synthetic customer. Respect resend cooldown once.
+    await page.waitForTimeout(60_000)
+    await page.getByRole('button', { name: '获取验证码' }).click()
+    await hint.waitFor({ state: 'visible', timeout: 10_000 })
+  }
   const code = /\d{6}/.exec(await hint.innerText())?.[0]
   if (code === undefined) throw new Error('拿不到演示验证码')
 
-  await page.getByPlaceholder('请输入 6 位验证码').fill(code)
+  await page.getByRole('textbox', { name: '短信验证码', exact: true }).fill(code)
   await page.getByRole('button', { name: '登入' }).click()
 
   // 用**地址**判断登录成功，不用"按钮消失"：失败时按钮也还在，页面会停住

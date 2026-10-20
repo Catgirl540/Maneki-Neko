@@ -698,6 +698,9 @@ export interface CashFlowPoint {
 }
 
 export interface CashFlow {
+  timeZone?: 'Asia/Shanghai'
+  asOf?: string
+  ignoredDates?: { invalidDate: number; futureDate: number }
   currency?: Currency
   byCurrency?: Partial<Record<Currency, Omit<CashFlow, 'byCurrency'>>>
   days: number
@@ -707,6 +710,13 @@ export interface CashFlow {
 }
 
 export interface SpendingAnalysis {
+  timeZone?: 'Asia/Shanghai'
+  asOf?: string
+  ignoredDates?: { invalidDate: number; futureDate: number }
+  periodStatus?: 'complete' | 'partial' | 'future'
+  previousMonth?: string
+  previousTotal?: Cents
+  monthOverMonthComparable?: boolean
   currency?: Currency
   byCurrency?: Partial<Record<Currency, Omit<SpendingAnalysis, 'byCurrency'>>>
   month: string
@@ -796,7 +806,7 @@ export interface HumanSupportRequest {
 
 export interface SupportReply {
   message: SupportMessage
-  /** 是否为固定话术（MVP 阶段无真实模型） */
+  /** 是否为固定引导通道；没有实时银行查询或业务执行 */
   canned: boolean
 }
 /* ==========================================================================
@@ -1594,11 +1604,15 @@ export interface InvestPlan {
   nextRunAt: string
   executedRuns: number
   totalInvested: Cents
-  status: 'active' | 'paused'
+  status: 'active' | 'paused' | 'cancelled'
+  revision?: number
+  updatedAt?: string
   createdAt: string
 }
 
 export interface InvestmentsOverview {
+  /** 当前仅保存计划，没有自动扣款执行器 */
+  executionMode?: 'plan-only'
   holding: Cents
   totalReturn: Cents
   plans: InvestPlan[]
@@ -1612,6 +1626,13 @@ export interface InvestPlanRequest {
   accountId: string
   /** 6 位数字支付密码 */
   paymentPassword: string
+}
+
+export interface InvestPlanUpdate {
+  status: 'active' | 'paused' | 'cancelled'
+  expectedRevision: number
+  /** 恢复计划时必填，暂停/取消不需要 */
+  paymentPassword?: string
 }
 
 export interface InsuranceProduct {

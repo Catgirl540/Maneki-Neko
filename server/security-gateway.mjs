@@ -3,14 +3,14 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 
 const digest = value => createHash('sha256').update(value).digest('hex')
 const fail = (message, status, code) => { throw Object.assign(new Error(message), { status, code }) }
-const IDEMPOTENT_METHODS = new Set(['submitTransfer', 'recallTransfer', 'submitExchange', 'subscribeWealth', 'redeemWealth', 'applyLoan', 'repayLoan', 'deposit', 'openCard', 'replaceCard'])
+const IDEMPOTENT_METHODS = new Set(['submitTransfer', 'recallTransfer', 'submitExchange', 'subscribeWealth', 'redeemWealth', 'applyLoan', 'repayLoan', 'deposit', 'openCard', 'replaceCard', 'createInvestPlan', 'updateInvestPlan'])
 // These operations currently have sandbox implementations only. Live processing must
 // be routed to an approved partner adapter, never fall through to the local simulator.
 const PARTNER_OPERATIONS = new Set([
   'submitTransfer', 'recallTransfer', 'submitExchange', 'subscribeWealth', 'redeemWealth',
   'openCard', 'replaceCard', 'createVirtualCard', 'activateOverdraft', 'applyLoan',
   'repayLoan', 'convertToInstallment', 'repayInstallment', 'updateCashSweep',
-  'createInvestPlan', 'enrollInsurance', 'subscribeMembership', 'cancelMembership',
+  'createInvestPlan', 'updateInvestPlan', 'enrollInsurance', 'subscribeMembership', 'cancelMembership',
   'registerFps', 'deposit', 'buyInsurance', 'claimInviteReward', 'setCardLock',
   'updateCardSettings', 'revealCardSecrets', 'setAutoDebitEnabled', 'updateSavingsRoundup',
 ])

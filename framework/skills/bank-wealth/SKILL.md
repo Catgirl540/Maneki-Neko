@@ -1,16 +1,21 @@
 ---
 {
   "name": "bank-wealth",
-  "description": "查询与比较理财产品、核对风险测评和开户条件、申购及赎回；不代开户、答测评或承诺收益。",
+  "description": "查询与比较理财产品、核对测评及开户条件、申赎和保存/管理定投计划；当前定投不自动扣款，不代开户或承诺收益。",
   "metadata": {
     "serviceId": "wealth",
     "label": "理财顾问",
     "routes": [
-      "/wealth"
+      "/wealth",
+      "/wealth/investments"
     ],
     "tools": [
       "bank_get_balance",
       "bank_wealth_quote",
+      "bank_wealth_compare",
+      "bank_list_investments",
+      "bank_create_invest_plan",
+      "bank_update_invest_plan",
       "bank_wealth_subscribe",
       "bank_wealth_redeem",
       "knowledge_lookup",
@@ -21,7 +26,10 @@
       "framework/bridge/bank-agent.mjs",
       "framework/packages/bank-demo/src/http-tools.ts",
       "framework/knowledge/06-wealth.md",
-      "framework/bridge/wealth-risk.mjs"
+      "framework/bridge/wealth-risk.mjs",
+      "framework/bridge/wealth-compare.mjs",
+      "shared/invest-plan.mjs",
+      "docs/api/wealth-ext.md"
     ]
   }
 }
@@ -40,7 +48,11 @@
 ## 办理步骤
 
 用 bank_wealth_quote 查询产品列表或指定产品，用 bank_get_balance 核对持仓和风险状态。unassessed 是未完成，expired 才是过期，unknown 或空字段不是已有风险等级。
+用户明确比较两款产品时，先从目录定位真实代码，再调用 bank_wealth_compare；需要估算申购费和起购/追加门槛时附本人提出的金额（整数分）。结果同时提供风险匹配状态、期限、业绩基准、费率和金额规则，不把费用估算或风险匹配当成申购获批，也不从历史收益推断未来收益。多款产品可分次比较；未指定产品时先澄清用途、期限或风险偏好，不自行购买。
 前置条件未满足，引导「理财与储蓄 → 理财」完成开户和测评，不代选答案。信息齐全调用 bank_wealth_subscribe 或 bank_wealth_redeem；风险确认语句由用户在确认卡抄录，不在聊天中生成或代填。
+
+定投先用 bank_list_investments 查询专用产品目录与本人计划，不能拿 bank_wealth_quote 的理财代码替代定投代码。明确产品、人民币资金账户、每期金额和每周/每两周/每月周期后可用 bank_create_invest_plan 保存；必须在确认前说明当前仅保存计划，自动扣款尚未开放，不创建定时任务、不冻结或扣款。创建需要支付密码与有效适当性，密码只在银行确认卡输入。
+管理已有定投时查询准确计划编号，用 bank_update_invest_plan 暂停、恢复或取消，均逐次确认。恢复另验支付密码和当前测评/产品条件；取消不可恢复、保留已有历史，不赎回或退款。查询仍按实际状态回答，不把 active/已保存当作已经执行或自动续投。
 
 ## 结果说明
 

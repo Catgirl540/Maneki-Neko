@@ -1,4 +1,6 @@
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../../../shared/account-model.mjs'
+import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../../../shared/invest-plan.mjs'
+import { supportGuidance } from '../../../../shared/support-guidance.mjs'
 /* ==========================================================================
    Mock BankApi —— 纯前端模拟后端
    特性：人为网络延迟、真实的业务校验（余额不足 / 大额二次确认 / 风控）、
@@ -128,7 +130,6 @@ import {
   forgetProfilePhone,
   activateDb,
   makeReferenceNo,
-  monthKey,
   nextId,
   persist,
   toTransactionListItem,
@@ -395,69 +396,6 @@ function applyBalance(accountId: string, delta: Cents, save = true): void {
 
 /* ---------------------------------------------------------------- 智能客服 */
 
-const CANNED_RULES: { match: RegExp; text: string; actions?: { label: string; to: string }[] }[] = [
-  {
-    match: /fps|转数快|跨境支付通|手机号转账|邮箱转账|电邮转账/i,
-    text: '转数快 / 跨境支付通支持四种汇款方式：收款账户、手机号、电邮、FPS ID。用手机号、电邮或 FPS ID 时，姓名不用你填 —— 系统会到转数快登记册查出收款人登记姓名，在「信息确认」一步给你核对。跨境转账（如从内地汇到香港）无论用哪种方式都要选收款银行，因为款项需要路由到该行。免手续费、实时到账。',
-    actions: [{ label: '去转账', to: '/transfer' }],
-  },
-  {
-    match: /转账|汇款|打钱/,
-    text: '转账有两种通道：① 银行账户转账 —— 选收款银行 + 填收款账号，境内实时到账免手续费，境外按 0.1% 计费（最低 ¥50.00）；② 转数快 / 跨境支付通 —— 用收款账户、手机号、电邮或 FPS ID，免手续费、实时到账，跨境需指定收款银行。单笔超过 ¥5,000.00 会触发二次确认。',
-    actions: [{ label: '去转账', to: '/transfer' }],
-  },
-  {
-    match: /余额|多少钱|账户/,
-    text: '你的储蓄账户当前可用余额已同步到「总览」。转账、银行卡和理财资金往来都使用这个主账户。',
-    actions: [{ label: '查看总览', to: '/' }],
-  },
-  {
-    match: /锁卡|冻结|丢卡|挂失/,
-    text: '丢卡请立刻锁卡：进入「银行卡」，在卡片上点击「立即锁卡」，所有交易会即时拦截。卡片找回后可随时解锁，无需换卡。',
-    actions: [{ label: '去锁卡', to: '/cards' }],
-  },
-  {
-    match: /换卡|补卡|卡坏/,
-    text: '换卡在「银行卡」页面发起，新卡会在 3 个工作日内寄出。换卡期间旧卡立即失效，卡号会变更，已绑定的自动扣款需要重新签约。',
-    actions: [{ label: '去换卡', to: '/cards' }],
-  },
-  {
-    match: /密码|忘.*密码|重置/,
-    text: '密码可以在「安全中心」重置：需要先通过短信或人脸完成身份认证，再设置新密码。',
-    actions: [{ label: '去安全中心', to: '/security' }],
-  },
-  {
-    match: /限额|额度/,
-    text: '借记卡默认单日限额 ¥50,000.00，可以在「银行卡 → 限额设置」里调整。调高限额需要身份认证。',
-    actions: [{ label: '调整限额', to: '/cards' }],
-  },
-  {
-    match: /境外|海外|出国|香港/,
-    text: '境外转账支持汇丰银行（香港）等收款行，到账时间约 1 个工作日。同时需要在「银行卡」里打开境外交易开关，否则刷卡会被拦截。',
-    actions: [{ label: '打开境外交易', to: '/cards' }],
-  },
-  {
-    match: /消费|花销|花了多少|账单/,
-    text: '「消费分析」按分类统计了本月支出，并给出近 6 个月的走势，可以按分类筛选流水。',
-    actions: [{ label: '查看消费分析', to: '/analysis' }],
-  },
-  {
-    match: /扣款|自动|订阅|会员/,
-    text: '「消费分析 → 自动扣款」列出了所有周期性扣款，可以随时关停。关停后已签约的商户不会再次扣款。',
-    actions: [{ label: '管理自动扣款', to: '/analysis' }],
-  },
-  {
-    match: /利率|利息|存款/,
-    text: '当前活期年化 0.30%，储蓄账户 1.55%，定期存款 2.10%。利息按日计提、按季结息。',
-    actions: [{ label: '查看账户', to: '/' }],
-  },
-  {
-    match: /人工|客服|投诉/,
-    text: '可点击助手页的“转人工”提交问题，随后在“人工工单”查看回复。',
-    actions: [],
-  },
-]
-
 const humanTickets = new Map<string, SupportTicketDetail[]>()
 const humanRequests = new Map<string, string>()
 const humanOwner = () => loadDb().user.id
@@ -469,15 +407,11 @@ const humanTicket = (id: string) => {
 }
 
 function cannedReply(text: string): SupportReply {
-  const rule = CANNED_RULES.find((r) => r.match.test(text))
   const message: SupportMessage = {
     id: nextId('msg'),
     role: 'agent',
     createdAt: new Date().toISOString(),
-    text:
-      rule?.text ??
-      '我是招财猫银行的智能客服（MVP 演示版，回答为固定话术）。你可以问我：怎么转账、怎么锁卡、密码怎么重置、本月花了多少、自动扣款在哪里管理。',
-    actions: rule?.actions,
+    ...supportGuidance(text),
   }
   return { message, canned: true }
 }
@@ -1931,7 +1865,7 @@ export function createMockApi(options?: {
       }
     },
 
-    async getSpending(month?: string): Promise<SpendingAnalysis> { return spendingStatistics(loadDb(), month ?? monthKey(), CATEGORY_LABEL) },
+    async getSpending(month?: string): Promise<SpendingAnalysis> { return spendingStatistics(loadDb(), month, CATEGORY_LABEL) },
     async getCashFlow(days = 7): Promise<CashFlow> { return cashFlowStatistics(loadDb(), days) },
     async listAutoDebits(): Promise<AutoDebit[]> {
       await delay(160)
@@ -2580,7 +2514,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
 
     async getInvestments(): Promise<InvestmentsOverview> {
       await delay(220)
-      return loadDb().investments
+      return { ...loadDb().investments, executionMode: 'plan-only' }
     },
 
     async createInvestPlan(req): Promise<InvestPlan> {
@@ -2588,16 +2522,9 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       const db = loadDb()
       const account = requireCurrencyBalance(db, req.accountId)
       const risk = withDerivedRisk(db)
-      if (!db.wealthAccount.opened || !risk.done || risk.expired || risk.level === null) throw new ApiError('请先开立理财账户并完成有效风险测评', 400, 'WEALTH_PREREQUISITE')
-      if (!['每周', '每两周', '每月'].includes(req.cycle)) throw new ApiError('请选择每月 1–28 日的周期', 400, 'INVALID_CYCLE')
       const product = db.investments.products.find((p) => p.code === req.productCode)
-      if (!product) throw new ApiError('投资产品不存在', 404, 'PRODUCT_NOT_FOUND')
-      if (!Number.isSafeInteger(req.amount) || req.amount <= 0) throw new ApiError('金额必须是正的安全整数分', 400, 'INVALID_AMOUNT')
-      if (req.amount < product.minAmount) {
-        throw new ApiError(`该产品起投金额为 ¥${formatAmount(product.minAmount)}`, 400, 'INVALID_AMOUNT')
-      }
+      validateInvestPlan(product, risk, db.wealthAccount.opened, req.amount, req.cycle)
       verifyPayPassword(req.paymentPassword)
-      if ((product.risk === 'medium' && !['C3','C4','C5'].includes(risk.level)) || (product.risk === 'high' && !['C4','C5'].includes(risk.level))) throw new ApiError('风险承受能力不匹配', 400, 'RISK_MISMATCH')
       const plan: InvestPlan = {
         accountId: account.id,
         id: nextId('ip'),
@@ -2605,15 +2532,31 @@ async getSecurityOverview(): Promise<SecurityOverview> {
         productName: product.name,
         amount: req.amount,
         cycle: req.cycle,
-        nextRunAt: nextPaydayFrom(8),
+        nextRunAt: nextInvestDate(req.cycle),
         executedRuns: 0,
         totalInvested: 0,
         status: 'active',
+        revision: 0,
         createdAt: new Date().toISOString(),
       }
       db.investments.plans.unshift(plan)
       persist()
       return plan
+    },
+    async updateInvestPlan(id, req): Promise<InvestPlan> {
+      await delay(300)
+      const db = loadDb()
+      const plan = db.investments.plans.find(p => p.id === id)
+      const next = transitionInvestPlan(plan, req)
+      if (req.status === 'active') {
+        requireCurrencyBalance(db, plan!.accountId ?? db.accounts[0]?.id)
+        const product = db.investments.products.find(p => p.code === plan!.productCode)
+        validateInvestPlan(product, withDerivedRisk(db), db.wealthAccount.opened, plan!.amount, /^每月 \d+ 日$/.test(plan!.cycle) ? '每月' : plan!.cycle)
+        verifyPayPassword(req.paymentPassword ?? '')
+      }
+      Object.assign(plan!, next)
+      persist()
+      return plan!
     },
 
     async getInsurance(): Promise<InsuranceOverview> {

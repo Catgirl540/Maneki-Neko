@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { mkdtemp, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve, sep, basename } from 'node:path'
 import { createStaffAuth, makeWriteAudit } from './staff-api.mjs'
 import { hashPassword } from './passwords.mjs'
 import { createOpsTerminal } from './ops-terminal.mjs'
@@ -68,10 +68,10 @@ async function fixture({ enabled = true, password = PASSWORD, idleMs } = {}) {
     assert.equal(response.headers.get('x-accel-buffering'), 'no')
     const reader = response.body.getReader(), decoder = new TextDecoder()
     let buffer = '', text = '', cursor = after
-    async function until(pattern) {
+    async function until(pattern, after = 0) {
       const timeout = setTimeout(() => controller.abort(), 5000)
       try {
-        while (!pattern.test(text)) {
+        while (!pattern.test(text.slice(after))) {
           const value = await reader.read(); if (value.done) throw new Error('stream ended before expected output')
           buffer += decoder.decode(value.value, { stream: true })
           let end
@@ -84,11 +84,19 @@ async function fixture({ enabled = true, password = PASSWORD, idleMs } = {}) {
           }
         }
         return text
+      } catch (error) {
+        if (controller.signal.aborted) throw new Error(`PTY output timed out waiting for ${pattern}; last output: ${JSON.stringify(text.slice(-2000))}`, { cause: error })
+        throw error
       } finally { clearTimeout(timeout) }
     }
-    return { reader, controller, until, cursor: () => cursor, close: async () => { controller.abort(); await reader.cancel().catch(() => {}) } }
+    return { reader, controller, until, length: () => text.length, cursor: () => cursor, close: async () => { controller.abort(); await reader.cancel().catch(() => {}) } }
   }
-  return { root, db, auth, ops, call, stream, close: async () => { terminal.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); db.close(); await rm(root, { recursive: true, force: true }) } }
+  return { root, db, auth, ops, call, stream, close: async () => {
+    terminal.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); db.close()
+    assert(resolve(root).startsWith(resolve(tmpdir()) + sep) && basename(root).startsWith('bank-terminal-test-'), 'Refusing unexpected fixture cleanup target')
+    // ConPTY releases its working-directory handle asynchronously after kill().
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  } }
 }
 
 const ptySkip = process.getuid?.() === 0 ? 'PTY backend deliberately refuses root' : false
@@ -122,19 +130,25 @@ test('real PTYs: independent tabs, ANSI output, resize, Ctrl+C, reconnect and ow
     assert.equal((await f.call(`/${id1}/input`, 'POST', { data: 'echo forbidden\r' }, otherToken)).status, 404)
     assert.deepEqual((await f.call('', 'GET', undefined, otherToken)).body, [])
     one = await f.stream(id1); two = await f.stream(id2)
-    await f.call(`/${id1}/input`, 'POST', { data: 'cd tab-one\rprintf "\\033[32m%s%s\\033[0m\\n" "__TAB_" "ONE__"\rpwd\r' })
+    const powershell = process.platform === 'win32'
+    await f.call(`/${id1}/input`, 'POST', { data: powershell
+      ? 'Set-Location -LiteralPath tab-one\r[Console]::WriteLine("$([char]27)[32m" + "__TAB_" + "ONE__" + "$([char]27)[0m")\r(Get-Location).Path\r'
+      : 'cd tab-one\rprintf "\\033[32m%s%s\\033[0m\\n" "__TAB_" "ONE__"\rpwd\r' })
     const firstText = await one.until(/__TAB_ONE__/); assert.match(firstText, /\x1b\[32m/)
-    await one.until(new RegExp(f.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '/tab-one'))
-    await f.call(`/${id2}/input`, 'POST', { data: 'printf "%s%s\\n" "__TAB_" "TWO__"\rpwd\r' })
+    await one.until(new RegExp(join(f.root, 'tab-one').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+    await f.call(`/${id2}/input`, 'POST', { data: powershell ? '[Console]::WriteLine("__TAB_" + "TWO__")\r(Get-Location).Path\r' : 'printf "%s%s\\n" "__TAB_" "TWO__"\rpwd\r' })
     const secondText = await two.until(/__TAB_TWO__/); assert(!secondText.includes('__TAB_ONE__'))
     await f.call(`/${id2}/resize`, 'POST', { cols: 100, rows: 32 })
-    await f.call(`/${id2}/input`, 'POST', { data: 'stty size\r' }); await two.until(/32 100/)
-    await f.call(`/${id2}/input`, 'POST', { data: 'sleep 20\r' })
-    await new Promise(resolve => setTimeout(resolve, 100))
+    await f.call(`/${id2}/input`, 'POST', { data: powershell ? '[Console]::WriteLine("size_" + [Console]::WindowHeight + " " + [Console]::WindowWidth)\r' : 'stty size\r' }); await two.until(powershell ? /size_32 100/ : /32 100/)
+    await f.call(`/${id2}/input`, 'POST', { data: powershell ? '[Console]::WriteLine("__SLEEP_" + "START__"); Start-Sleep -Seconds 20\r' : 'printf "%s%s\\n" "__SLEEP_" "START__"; sleep 20\r' })
+    await two.until(/__SLEEP_START__/)
+    const beforeInterrupt = two.length()
     await f.call(`/${id2}/input`, 'POST', { data: '\x03' })
-    await f.call(`/${id2}/input`, 'POST', { data: 'printf "%s%s\\n" "__INTERRUPT_" "OK__"\r' }); await two.until(/__INTERRUPT_OK__/)
+    // ConPTY handles Ctrl+C asynchronously and discards input queued before the new prompt.
+    if (powershell) await two.until(/PS [^\r\n]*> /, beforeInterrupt)
+    await f.call(`/${id2}/input`, 'POST', { data: powershell ? '[Console]::WriteLine("__INTERRUPT_" + "OK__")\r' : 'printf "%s%s\\n" "__INTERRUPT_" "OK__"\r' }); await two.until(/__INTERRUPT_OK__/)
     const cursor = one.cursor(); await one.close()
-    await f.call(`/${id1}/input`, 'POST', { data: 'printf "%s%s\\n" "__RESUME_" "OK__"\r' })
+    await f.call(`/${id1}/input`, 'POST', { data: powershell ? '[Console]::WriteLine("__RESUME_" + "OK__")\r' : 'printf "%s%s\\n" "__RESUME_" "OK__"\r' })
     resumed = await f.stream(id1, f.ops, cursor); const replay = await resumed.until(/__RESUME_OK__/); assert(!replay.includes('__TAB_ONE__'))
     assert.equal((await f.call(`/${id1}/input`, 'POST', { data: 'x'.repeat(20_000) })).status, 400)
     assert.equal((await f.call(`/${id1}/events?after=-1`)).status, 400)
