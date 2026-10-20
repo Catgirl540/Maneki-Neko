@@ -95,8 +95,8 @@ try {
   }
   async function pin(dialog) { for (let i = 1; i <= 6; i++) await dialog.getByLabel(`支付密码第 ${i} 位`, { exact: true }).fill('8') }
 
-  await visit('/exchange', '多币种与划转')
-  assert.equal(await page.getByRole('navigation', { name: '桌面主导航' }).getByRole('link', { name: '账户', exact: true }).getAttribute('aria-current'), 'page')
+  await visit('/exchange', '多币种换汇')
+  assert.equal(await page.getByRole('navigation', { name: '桌面主导航' }).getByRole('link', { name: '多币种换汇', exact: true }).getAttribute('aria-current'), 'page')
   const input = page.getByLabel('换汇金额', { exact: true })
   for (const invalid of ['1.2.3', '-100', '12abc']) {
     await input.fill(invalid); await page.getByRole('button', { name: '获取报价', exact: true }).click()
@@ -131,7 +131,7 @@ try {
   console.log('PASS 换汇旧请求丢弃、报价变化重新确认、提交绑定已确认报价 ID、提交期间禁止关闭，账户导航正确')
 
   ttl = 1
-  await visit('/exchange', '多币种与划转')
+  await visit('/exchange', '多币种换汇')
   await input.fill('100'); await page.getByRole('button', { name: '获取报价', exact: true }).click()
   await page.getByRole('button', { name: '确认换汇', exact: true }).click()
   await dialog.getByRole('button', { name: '重新获取报价', exact: true }).waitFor()
@@ -233,7 +233,7 @@ try {
   assert(membershipText.includes('扣费与权益暂未开放'))
   console.log('PASS 取消续费状态与套餐记录不伪装为实际扣款')
 
-  const views = [['/exchange','多币种与划转'],['/security/identity','身份认证'],['/cashflow','工资与备用金'],
+  const views = [['/exchange','多币种换汇'],['/security/identity','身份认证'],['/cashflow','工资与备用金'],
     ['/wealth/cash-management','现金管理'],['/credit','借款与分期'],['/wealth/investments','投资与定投'],
     ['/dashboard/savings','存钱计划'],['/security/membership','会员与订阅']]
   for (const width of [320, 390, 1440]) {

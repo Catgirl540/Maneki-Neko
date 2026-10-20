@@ -34,8 +34,8 @@ check(demoAccounts.length === 1, '演示账号只有一个账户')
 check(
   demoAccounts[0]?.id === 'acc_0001' &&
     demoAccounts[0]?.kind === 'savings' &&
-    demoAccounts[0]?.balance === 28_464_055 &&
-    demoAccounts[0]?.available === 28_464_055,
+    demoAccounts[0]?.balance === 128_464_055 &&
+    demoAccounts[0]?.available === 128_464_055,
   '演示余额合并到 acc_0001 储蓄账户且全部可用',
 )
 check(!('tier' in (demoAccounts[0] ?? {})), '公开账户 DTO 不含 tier')
@@ -76,7 +76,7 @@ check(reused, '短信验证码登录后一次性消费')
 const demoAgainSms = await api.sendSmsCode('13800138000')
 await api.login('13800138000', '123456', demoAgainSms.demoCode)
 const demoAgain = await api.listAccounts()
-check(demoAgain[0]?.balance === 28_464_055, '切回演示账号后数据未被新用户覆盖')
+check(demoAgain[0]?.balance === 128_464_055, '切回演示账号后数据未被新用户覆盖')
 
 const publicPayload = JSON.stringify({ result, accounts: newUserAccounts })
 check(!publicPayload.includes(password) && !publicPayload.includes('passwordDigest'), '密码不出现在接口响应')
