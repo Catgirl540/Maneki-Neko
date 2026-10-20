@@ -1,6 +1,6 @@
 {
   "date": "2026-10-20",
-  "status": "deployed-awaiting-wechat-reauthentication",
+  "status": "deployed-and-real-wechat-test-acknowledged",
   "portal": "https://bank.waveflow.men/agent-api/im",
   "server": "15.235.241.158",
   "revision": "e9f2c9e5c4965fc97aed2a35b774a2614e6aaa23",
@@ -45,26 +45,46 @@
     "ownedLegacyBindingsUpgraded": 1,
     "demoBackupAndPostdeployReconciliation": "passed",
     "temporaryRuntimeDebuggerClosed": true,
-    "postdeploySqliteOnlineBackupAndEncryptedBindingSnapshot": true
+    "postdeploySqliteOnlineBackupAndEncryptedBindingSnapshot": true,
+    "sameProviderPrivateOwnerVerifiedBeforeMigration": true,
+    "bindingMigrationExplicitlyAuthorized": true,
+    "migratedRecipientBotConnected": true,
+    "postMigrationSixServicesActive": true,
+    "postMigrationOtherFivePidsUnchanged": true,
+    "postMigrationDemoReconciliation": "passed",
+    "nativeOutboundLedgerTestMessageCount": 1,
+    "postMigrationSqliteOnlineBackupAndEncryptedBindingSnapshot": true
   },
   "realConnectionTest": {
     "authorizedByUser": true,
     "recipient": "user-specified existing bank binding, phone ending 8277",
-    "reminderId": "rem-d0c9e3b9-3aff-4039-85ae-37f4721636f4",
-    "scheduledAt": "2026-10-20T10:26:34+08:00",
+    "reminderId": "rem-3642d3e7-5e57-46a7-a880-90d84fcc66fb",
+    "scheduledAt": "2026-10-20T10:48:26+08:00",
     "maximumMessages": 1,
     "bankDataQueried": false,
     "financialOperations": false,
-    "lastVerifiedStatus": "scheduled",
-    "channelAcknowledged": false,
-    "blocker": {
+    "lastVerifiedStatus": "sent",
+    "channelAcknowledged": true,
+    "reauthQrGenerated": true,
+    "reauthQrExpiresAt": "2026-10-20T10:42:54.635+08:00",
+    "lastCheckedAt": "2026-10-20T10:48:59+08:00",
+    "originalTest": {
+      "reminderId": "rem-d0c9e3b9-3aff-4039-85ae-37f4721636f4",
+      "status": "failed",
+      "errorCode": "BOT_OFFLINE",
+      "preflightChecks": 20,
+      "sentAt": null,
+      "deliveryNeverStarted": true
+    },
+    "sentAt": "2026-10-20T10:48:39.065+08:00",
+    "deliveryAttempts": 1,
+    "recipientReadConfirmed": false,
+    "reauthenticationCompleted": true,
+    "resolvedBlocker": {
       "code": "stale-token",
       "providerCode": "-14",
       "meaning": "Existing WeChat bot credentials expired; original owner must scan again"
-    },
-    "reauthQrGenerated": true,
-    "reauthQrExpiresAt": "2026-10-20T10:36:39+08:00",
-    "lastCheckedAt": "2026-10-20T10:34:04+08:00"
+    }
   },
   "limits": [
     "One-shot WeChat text reminders only; no recurring or WeCom reminder scheduling.",
@@ -74,6 +94,16 @@
     "No paid model invocation was required for reminder delivery verification.",
     "Reminder stores require separate protected SQLite backups; no periodic reminder backup timer added.",
     "Do not delete initial release: preserved session/IM paths still live there.",
-    "Bank login tokens are in memory; restart requires one fresh bank connection for banking queries, not for previously confirmed text reminders."
-  ]
+    "Bank login tokens are in memory; restart requires one fresh bank connection for banking queries, not for previously confirmed text reminders.",
+    "Old expired robot configuration is retained; the migrated recipient uses the connected new robot. Aggregate IM status may show degraded until unused old configuration is reviewed separately."
+  ],
+  "bindingMigration": {
+    "explicitUserAuthorization": true,
+    "scope": "only user-specified bank customer, phone ending 8277",
+    "sameProviderOwnerAndPrivateRecipientVerified": true,
+    "originalRouteOwnershipRetired": true,
+    "otherCustomersUnchanged": true,
+    "bankLoginRestored": false,
+    "beforeSnapshot": "im-before-reauth-relink.tar.gz"
+  }
 }
