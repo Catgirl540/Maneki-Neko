@@ -1,0 +1,42 @@
+# Separate, local, single-user DSH Web workbench. Never mount in luckycat.
+- id: personal-workbench
+  config:
+    home: @WORKBENCH_PRIVATE_HOME@
+    dataDir: @WORKBENCH_DATA@
+    reminderScanIntervalMs: 30000
+- id: sandbox-policy
+  config:
+    mode: read-only
+    workspaceRoot: @WORKBENCH_WORKSPACE@
+- id: session-log-deepseek
+  disabled: true
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: deepseek-llm-api-extensions
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: llm-deepseek
+  disabled: true
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: mcp-resources
+  disabled: true

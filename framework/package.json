@@ -8,6 +8,10 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
+    "workbench:setup": "node scripts/setup-workbench.mjs",
+    "workbench:start": "node scripts/start-workbench.mjs",
+    "test:workbench": "node scripts/check-workbench.mjs",
+    "test:reminders": "node --test bridge/bank-reminders.test.mjs bridge/bank-reminder-agent.test.mjs",
     "bootstrap:customer": "node scripts/bootstrap-customer.mjs",
     "start:im": "node scripts/start-im.mjs",
     "start:im:local": "node scripts/start-im-local.mjs",
@@ -32,11 +36,21 @@
     "test:skills:e2e": "node ../tools/check-agent-skills.mjs"
   },
   "dependencies": {
+    "@dely0/dsh-personal-workbench": "1.17.0",
     "@deepseek-ai/dsh": "0.2.1-rc.2",
     "@xmanrui/dsh-im": "5.1.0",
     "js-yaml": "^4.3.2",
     "node-pty": "^1.2.0-beta.15",
     "ws": "^8.21.3"
+  },
+  "overrides": {
+    "@dely0/dsh-personal-workbench": {
+      "@deepseek-ai/dsh-commands": "0.2.1-rc.2",
+      "@deepseek-ai/dsh-host-webserver": "0.2.1-rc.2",
+      "@deepseek-ai/dsh-scope": "0.2.1-rc.2",
+      "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
+      "@deepseek-ai/dsh-tools": "0.2.1-rc.2"
+    }
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",

@@ -3,6 +3,19 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes, randomUUID } f
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 
+// Existing encrypted, bank-verified ownership remains valid across upgrades.
+// This metadata migration never restores an in-memory bank login or a grant.
+export async function migrateImBindingRevisions(store) {
+  const eligible = route => route.ownerId && route.sessionId && !route.bindingRevision
+    && route.channel === 'weixin' && typeof route.key === 'string' && route.key.startsWith('p2p:')
+  if (!Object.values(store.snapshot().routes).some(eligible)) return 0
+  return store.update(draft => {
+    let count = 0
+    for (const route of Object.values(draft.routes)) if (eligible(route)) { route.bindingRevision = randomUUID(); count++ }
+    return count
+  })
+}
+
 export async function openImStore(path, encodedKey) {
   const source = Buffer.from(encodedKey ?? '', 'base64')
   if (source.length !== 32 || source.toString('base64') !== encodedKey) throw Error('IM requires a canonical Base64 32-byte AI session data key')

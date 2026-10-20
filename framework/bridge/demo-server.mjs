@@ -73,10 +73,11 @@ import { OPS_NATIVE_TOOLS } from '../packages/ops-native/src/names.mjs'
 import { createEventPolling } from './event-polling.mjs'
 import { createAssistantStream } from './assistant-stream.mjs'
 import { openSessionStore, legacyContext } from './session-store.mjs'
-import { openImStore } from './im-store.mjs'
+import { openImStore, migrateImBindingRevisions } from './im-store.mjs'
 import { createImBank } from './im-bank.mjs'
 import { createImChannels } from './im-channels.mjs'
 import { createImHttp } from './im-http.mjs'
+import { createBankReminders } from './bank-reminders.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const STAFF_MODE = process.env.LUCKYCAT_AUDIENCE === 'staff'
@@ -365,7 +366,7 @@ const pendingConsents = new Map()
 /** 每个会话的 SSE 订阅者：sessionId → Set<res>。 */
 const streams = new Map()
 const eventPolling = createEventPolling()
-let imBank, imChannels, imHttp
+let imBank, imChannels, imHttp, imReminders
 
 /** 把一条 SSE 事件推给某个会话的所有订阅者。 */
 let persistenceFailureLogged = false
@@ -470,7 +471,7 @@ const sessionNamespace = OPS_MODE ? 'ops' : STAFF_MODE ? 'staff' : 'customer'
 if (process.env.LUCKYCAT_SESSION_NAMESPACE && process.env.LUCKYCAT_SESSION_NAMESPACE !== sessionNamespace) throw new Error('Session namespace must match this bridge audience')
 const sessionStore = HTTP_BANK ? await openSessionStore(process.env.LUCKYCAT_SESSION_DATABASE_URL, { namespace: sessionNamespace }) : null
 if (sessionStore) for (const entry of await sessionStore.interrupted()) sessions.set(entry.id, entry)
-const bankAgent = HTTP_BANK ? (STAFF_MODE ? createStaffAgent : createBankAgent)({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish, ...(OPS_MODE ? { opsOnly: true, nativeTools: OPS_NATIVE_TOOLS } : {}) }) : null
+const bankAgent = HTTP_BANK ? (STAFF_MODE ? createStaffAgent : createBankAgent)({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish, reminders: () => imReminders, ...(OPS_MODE ? { opsOnly: true, nativeTools: OPS_NATIVE_TOOLS } : {}) }) : null
 const opsGate = OPS_MODE ? createOpsGate({ bankAgent, sessions, publish, review: createClefReviewer(), workspaceRoot: OPS_WORKSPACE, auditPath: join(SESSION_DIR, 'native-audit.jsonl') }) : null
 for (const entry of sessions.values()) {
   if (entry.interrupted) {
@@ -1469,6 +1470,7 @@ if (!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
   if (!HTTP_BANK) throw Error('IM requires the authenticated bank HTTP mode')
   const directory = join(SESSION_DIR, 'im')
   const store = await openImStore(join(directory, 'bank-bindings.enc.json'), process.env.LUCKYCAT_IM_DATA_KEY ?? process.env.LUCKYCAT_SESSION_DATA_KEY)
+  if (process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') await migrateImBindingRevisions(store)
   imBank = createImBank({
     store, publicUrl: process.env.LUCKYCAT_IM_PUBLIC_URL ?? `http://127.0.0.1:${PORT}`,
     createSession: identity => createWebSession(identity), current: id => bankAgent.current(id), cancel: stopSession,
@@ -1481,10 +1483,15 @@ if (!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
       return turn
     },
     deliver: (route, text) => imChannels.deliver(route, text),
+    onBindingChange: id => imReminders?.invalidateRoute(id),
   })
   imChannels = await createImChannels({ directory, credentials: store.credentials, harness: imBank.harness })
-  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080' })
+  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', reminders: () => imReminders })
   await imChannels.initialize()
+  if (process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') {
+    imReminders = await createBankReminders({ directory: join(SESSION_DIR, 'bank-workbench'), routes: () => imBank.reminderRoutes(), ready: route => imChannels.reminderReady(route), deliver: (route, text, options) => imChannels.deliver(route, text, options) })
+    imReminders.start()
+  }
 }
 
 server.listen(PORT, '127.0.0.1', () => {
@@ -1516,6 +1523,7 @@ async function shutdown() {
   streams.clear()
   server.close()
   try {
+    await imReminders?.close()
     await imBank?.close()
     if (harness !== undefined) await harness.close()
     await Promise.allSettled(activeTurns)

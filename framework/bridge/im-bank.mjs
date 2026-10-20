@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 const fail = (message, status = 400) => Object.assign(new Error(message), { status })
 const label = route => `${route.channel === 'weixin' ? '微信' : '企业微信'}私聊 · ${route.key.slice(-4)}`
 
-export function createImBank({ store, publicUrl, createSession, current, run, cancel, deliver, clock = Date.now, timeoutMs = 600_000 }) {
+export function createImBank({ store, publicUrl, createSession, current, run, cancel, deliver, onBindingChange = () => {}, clock = Date.now, timeoutMs = 600_000 }) {
   const base = new URL(publicUrl)
   if (base.username || base.password || base.search || base.hash || !['https:', 'http:'].includes(base.protocol)
       || (base.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw Error('LUCKYCAT_IM_PUBLIC_URL must use HTTPS (HTTP is only allowed on loopback)')
@@ -115,6 +115,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
   }
   return {
     harness, observe,
+    reminderRoutes() { return Object.fromEntries(Object.entries(store.snapshot().routes).filter(([id]) => !claiming.has(id))) },
     async authorizeQuery(challenge, approve) {
       const route = active.get(challenge.sessionId)?.route
       if (!route || !isLiveRoute(route)) return false
@@ -138,6 +139,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
       if (route.ownerId && route.ownerId !== identity.user.id) throw fail('此 IM 身份已绑定其他银行账户，请先由原账户解除', 409)
       if (claiming.has(routeId)) throw fail('正在绑定此 IM 身份，请稍后重试', 409)
       claiming.add(routeId)
+      onBindingChange(routeId)
       pairings.delete(code) // Single consumption, before any asynchronous bank operation.
       try {
         if (route.sessionId) await cancel(route.sessionId)
@@ -146,7 +148,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
         await store.update(draft => {
           const latest = draft.routes[routeId]
           if (!latest || (latest.ownerId && latest.ownerId !== identity.user.id)) throw fail('此 IM 身份已更改，请重新连接', 409)
-          Object.assign(latest, { ownerId: identity.user.id, sessionId })
+          Object.assign(latest, { ownerId: identity.user.id, sessionId, bindingRevision: randomUUID() })
         })
         live.add(routeId)
         return { id: routeId, sessionId, label: label(route) }
@@ -158,6 +160,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
       if (!route || route.ownerId !== ownerId) throw fail('连接不存在', 404)
       if (claiming.has(id)) throw fail('此连接正在更新，请稍后重试', 409)
       claiming.add(id)
+      onBindingChange(id)
       try {
         live.delete(id)
         for (const [code, pending] of pairings) if (pending.routeId === id) pairings.delete(code)
@@ -169,6 +172,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
       const routes = Object.values(store.snapshot().routes).filter(route => route.channel === channel && route.botId === botId)
       if (routes.some(route => claiming.has(route.id))) throw fail('机器人有连接正在更新，请稍后重试', 409)
       for (const route of routes) claiming.add(route.id)
+      for (const route of routes) onBindingChange(route.id)
       try {
         for (const route of routes) { live.delete(route.id); if (route.sessionId) await cancel(route.sessionId) }
         for (const [code, pending] of pairings) if (routes.some(route => route.id === pending.routeId)) pairings.delete(code)

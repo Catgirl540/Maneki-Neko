@@ -21,6 +21,9 @@
       "bank_list_autodebits",
       "bank_analyze_autodebits",
       "bank_set_autodebit",
+      "bank_list_im_reminders",
+      "bank_create_im_reminder",
+      "bank_cancel_im_reminder",
       "knowledge_lookup",
       "ask_user_question"
     ],
@@ -41,6 +44,8 @@
 查询某笔消费、整月支出、收支变化或扣款合约时使用；用户说“这笔不对”先定位交易，不先认定盗刷。
 
 ## 必要信息
+
+用户明确要求微信日程提醒时，确定内容、具体日期、北京时间和本人接收私聊。bank_list_im_reminders 查询现有记录与连接；bank_create_im_reminder 必须经过独立确认卡，不需要支付密码。到期仅发送用户确认的文字，不读取余额或执行扣款。时间不明确先补问，不能从“看看理财”自行建立提醒。scheduled 仅表示已保存，sent 表示微信接口已确认而非用户已读，unknown 不可自动重发，须先核实。取消先查实际编号，bank_cancel_im_reminder 仅能取消尚未发送的提醒，也要确认。
 
 确定账户与时间范围。月度分析接受 YYYY-MM；现金流工具支持最近 7 或 30 天。交易和合约需查询所得编号，不能从商户名或尾号猜编号。
 

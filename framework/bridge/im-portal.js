@@ -4,6 +4,8 @@ let token = '', admin = false, sessionId = '', cursor = '0', pollTimer, provisio
 const messages = new Map()
 const smsCooldowns = new Map()
 let smsBusy = false, smsTimer
+let reminderDraft
+const reminderTime = value => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(new Date(value))
 function renderSmsButton() {
   clearTimeout(smsTimer)
   const left = Math.max(0, Math.ceil(((smsCooldowns.get($('identity').value.trim()) ?? 0) - Date.now()) / 1000))
@@ -36,6 +38,7 @@ function logout() {
   $('password').value = ''; $('sms-code').value = ''; $('bot-secret').value = ''; $('pending').replaceChildren(); $('provisioning').replaceChildren()
   $('sms-hint').textContent = ''; $('sms-hint').hidden = true
   $('messages').replaceChildren(); $('bindings').replaceChildren(); $('bots').replaceChildren(); $('pair-preview').textContent = ''; $('claim-button').hidden = true
+  reminderDraft = undefined; $('reminder-list').replaceChildren(); $('reminder-binding').replaceChildren(); $('reminder-title').value = ''; $('reminder-time').value = ''; $('reminder-status').textContent = ''; $('reminder-confirm').hidden = true
   if (connectionTest) { $('login-panel').hidden = true; notice('管理页面已锁定。请通过本地启动入口重新打开，不需要银行账号。') }
 }
 function mode(value) { admin = value; logout(); $('login-title').textContent = admin ? '运维人员登录' : '登录银行账户'; $('identity-label').textContent = admin ? '员工账号' : '手机号'; $('sms-fields').hidden = admin; notice() }
@@ -116,7 +119,61 @@ async function refreshBindings() {
   const selected = bindings.find(item => item.sessionId === sessionId)
   if (selected?.connected) await selectSession(selected)
   else if (sessionId) { $('session-panel').hidden = true; notice('请回到原 IM 私聊获取绑定链接并重新连接。') }
+  await refreshReminders()
 }
+async function refreshReminders() {
+  if (!token || admin) return
+  let data
+  try { data = await request('/im/reminders') }
+  catch (error) {
+    $('reminder-status').textContent = [503, 404].includes(error.status) ? '此服务尚未启用微信提醒。' : error.message
+    $('reminder-form').hidden = true; $('reminder-confirm').hidden = true; $('reminder-list').replaceChildren()
+    return
+  }
+  const previous = $('reminder-binding').value
+  $('reminder-binding').replaceChildren()
+  for (const binding of data.bindings) { const option = element('option', binding.label, $('reminder-binding')); option.value = binding.id }
+  if (data.bindings.some(b => b.id === previous)) $('reminder-binding').value = previous
+  $('reminder-form').hidden = !data.bindings.length
+  $('reminder-status').textContent = data.bindings.length ? '已启用，显示最近 100 条提醒。保存不代表已发送，已提交微信不代表已读。' : '请先在上方重新绑定本人微信私聊，再刷新提醒。'
+  if (!$('reminder-time').value) $('reminder-time').value = new Date(Date.now() + 120000 + 8 * 3600000).toISOString().slice(0, 16)
+  $('reminder-list').replaceChildren()
+  const labels = { scheduled: '等待投递', sending: '正在投递，无法撤回', sent: '已提交微信（不代表已读）', cancelled: '已取消', suppressed: '绑定变化，停止投递', expired: '超时超过 24 小时，停止投递', failed: '机器人持续离线，未发送', unknown: '投递未确认，不会自动重发；请先核实微信消息' }
+  for (const reminder of data.reminders) {
+    const row = element('div', undefined, $('reminder-list')); row.className = 'card'
+    element('p', reminder.title, row)
+    element('p', `${reminderTime(reminder.dueAt)}（北京时间） · ${labels[reminder.status] ?? reminder.status}`, row)
+    element('small', `编号：${reminder.id}`, row)
+    if (reminder.errorCode === 'BOT_OFFLINE' && reminder.status === 'scheduled') element('p', '机器人离线，正在等待恢复；尚未发送。', row)
+    if (reminder.status === 'scheduled') {
+      const confirm = element('div', undefined, row); confirm.hidden = true
+      element('p', '确认取消这条未发送的微信提醒？此操作不取消银行交易或商户订阅。', confirm)
+      button('确认取消提醒', async () => { await request(`/im/reminders/${encodeURIComponent(reminder.id)}`, { confirmed: true, requestId: crypto.randomUUID() }, 'DELETE'); await refreshReminders() }, confirm, 'danger')
+      button('保留提醒', () => { confirm.hidden = true }, confirm, 'secondary')
+      button('取消提醒', () => { confirm.hidden = false }, row, 'secondary')
+    }
+  }
+}
+$('reminder-refresh').onclick = () => task($('reminder-refresh'), refreshReminders)
+$('reminder-form').oninput = () => { reminderDraft = undefined; $('reminder-confirm').hidden = true }
+$('reminder-form').onsubmit = event => {
+  event.preventDefault()
+  try {
+    const title = $('reminder-title').value.trim(), bindingId = $('reminder-binding').value, local = $('reminder-time').value
+    if (!title || /[\x00-\x1f\x7f]/.test(title) || !bindingId || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) throw Error('请填写接收微信、单行提醒内容和北京时间。')
+    reminderDraft = { title, bindingId, dueAt: local + ':00+08:00', requestId: crypto.randomUUID(), confirmed: true }
+    $('reminder-preview').textContent = `提醒：${title}\n时间：${reminderTime(reminderDraft.dueAt)}（北京时间）\n接收：${$('reminder-binding').selectedOptions[0].textContent}\n仅发送本条提醒，不查询账户或执行交易；解绑后旧提醒停止。`
+    $('reminder-confirm').hidden = false; notice()
+  } catch (error) { notice(error.message) }
+}
+$('reminder-back').onclick = () => { reminderDraft = undefined; $('reminder-confirm').hidden = true }
+$('reminder-submit').onclick = () => task($('reminder-submit'), async () => {
+  if (!reminderDraft) throw Error('请先核对提醒信息。')
+  const result = await request('/im/reminders', reminderDraft)
+  reminderDraft = undefined; $('reminder-confirm').hidden = true; $('reminder-title').value = ''
+  notice(`提醒已保存，等待到期投递。编号：${result.id}；保存不代表已发送。`)
+  await refreshReminders()
+})
 async function selectSession(binding) {
   clearTimeout(pollTimer)
   sessionId = binding.sessionId; cursor = '0'; pendingId = ''; messages.clear(); $('messages').replaceChildren(); $('pending').replaceChildren()

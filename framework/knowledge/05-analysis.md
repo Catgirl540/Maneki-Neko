@@ -1,9 +1,9 @@
 ---
 id: "kb-analysis"
-title: "收支分析与自动扣款"
+title: "收支分析、自动扣款与微信日程提醒"
 navigation: "账户"
 routes: ["/analysis/statistics", "/analysis/autodebits"]
-keywords: ["消费分析", "收支分析", "现金流", "自动扣款"]
+keywords: ["消费分析", "收支分析", "现金流", "自动扣款", "微信提醒", "日程提醒"]
 sources: ["app/src/pages/AnalysisPage.tsx", "app/src/pages/AutoDebitsPage.tsx", "app/src/api/mock/index.ts", "server/lib/categorize.mjs", "framework/bridge/bank-agent.mjs", "framework/bridge/autodebit-analysis.mjs", "framework/bridge/transaction-review.mjs"]
 ---
 
@@ -34,3 +34,9 @@ sources: ["app/src/pages/AnalysisPage.tsx", "app/src/pages/AutoDebitsPage.tsx", 
 同商户同金额 5 分钟内的成功消费列为重复候选；对同商户先前 90 天内、至少 3 个不同北京时间日期的记录计算中位数，当前金额至少 100 个币种单位且达到中位数 3 倍时列为突增候选。附实际交易编号和历史依据，不认定欺诈或重复收费。仅纳入餐饮、购物、住房、交通、订阅成功支出；转账、工资、其他分类、收入、处理中/失败及无效或未来日期不纳入。
 
 “没有候选”不等于安全，候选也不是实际订阅合同。可按交易编号进一步查看回单、核对商户或请求人工协助；这项查询不执行锁卡、退款、取消订阅或报案。
+
+## 如何设置微信日程提醒？ {#im-reminders}
+
+先登录银行的 IM 连接页并绑定本人的微信私聊，在“微信日程提醒”选择接收连接、填写文字和北京时间，预览后确认。也可明确告诉助手要提醒什么、哪天几点；时间不明确时先补问，用提醒连接列表选择本人私聊，再核对创建确认卡。创建和取消都须明确确认，无需支付密码，查询提醒列表可在有效 IM 会话中直接办理。
+
+当前只支持一次性文字提醒，最早 15 秒后、最远 365 天。续费清单、定投或普通对话不会自动创建提醒；提醒不代扣、不转账、不申购。服务重启保留任务，但解绑或更换绑定使旧提醒失效；重新登录的银行会话与提醒授权分开。显示“已发送”仅表示渠道接口确认，不等于用户已读；“投递未确认”不会自动重发，不能说已送达。可查询并取消仍在等待的任务；已经投递或进入终态的消息不能撤回。暂不支持每周/每月重复提醒、自动读取外部日历或按续费合约自动排程。

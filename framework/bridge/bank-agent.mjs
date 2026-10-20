@@ -28,6 +28,9 @@ const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_c
 const routineQueries = new Set(['bank_get_balance', 'bank_list_transactions', 'bank_get_transaction_detail', 'bank_list_banks', 'bank_list_payees', 'bank_list_cards', 'bank_card_products', 'bank_list_autodebits', 'bank_analyze_autodebits', 'bank_get_spending', 'bank_get_cashflow', 'bank_list_support_tickets', 'bank_get_support_ticket', 'bank_wealth_quote', 'bank_wealth_compare'])
 routineQueries.add('bank_list_investments')
 routineQueries.add('bank_review_transactions')
+routineQueries.add('bank_list_im_reminders')
+writable.add('bank_create_im_reminder')
+writable.add('bank_cancel_im_reminder')
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -44,7 +47,7 @@ const addressOf = a => {
 const addressFields = address => [field('收件人', address.recipient), field('联系电话', address.phone), field('寄送地址', `${address.region} ${address.city} ${address.detail}`), field('邮政编码', address.postalCode || '未填写')]
 
 
-export function createBankAgent({ baseUrl, sessions, publish }) {
+export function createBankAgent({ baseUrl, sessions, publish, reminders = () => undefined }) {
   const base = new URL(baseUrl)
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname))) throw bankError('银行服务必须使用 HTTPS 或本机回环地址')
   const grants = new Map()
@@ -94,6 +97,17 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       return card
     }
     switch (challenge.toolName) {
+      case 'bank_list_im_reminders':
+      case 'bank_create_im_reminder':
+      case 'bank_cancel_im_reminder': {
+        const service = reminders()
+        if (!service) throw bankError('微信提醒尚未启用，请到银行 IM 页面检查连接', 503)
+        const operation = challenge.toolName === 'bank_list_im_reminders' ? 'list' : challenge.toolName === 'bank_create_im_reminder' ? 'create' : 'cancel'
+        const prepared = service.prepare(entry.ownerId, operation, a, challenge.sessionId)
+        preview = { reminder: prepared }
+        fields = operation === 'list' ? [field('查询内容', '本人微信提醒与接收连接')] : [field('操作', operation === 'create' ? '创建微信日程提醒' : '取消未发送提醒', true), field('提醒内容', prepared.title), field('时间（北京时间）', new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(new Date(prepared.dueAt))), field('接收私聊', prepared.label ?? '原提醒的本人微信'), field('业务边界', '仅投递本条提醒，不查询账户、不自动扣款或交易；解绑后停止未发送提醒')]
+        break
+      }
       case 'bank_request_human_support': {
         const reason = text(a.reason, '问题描述')
         if (reason.length > 500) throw bankError('问题描述不超过 500 字')
@@ -378,6 +392,7 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
     if (entry.stopping || activity?.cancelled || entry.activity !== activity) throw bankError('本轮已停止', 409)
     const verification = passwordTools.has(challenge.toolName) || (challenge.toolName === 'bank_update_invest_plan' && a.status === 'active') ? 'payment-password' : undefined
     const prepared = { challenge: { ...challenge, arguments: undefined, fields, verification, ...(riskAcknowledgementText ? { riskAcknowledgementText } : {}), consequence: challenge.toolName === 'bank_request_human_support' ? '确认后创建工单，可在助手 → 人工工单查看回复；不保证即时受理。' : challenge.toolName === 'bank_reply_support_ticket' ? '确认后将以上留言发送给人工客服。' : verification ? '确认并验证后提交银行服务；操作结果以银行回执为准。' : writable.has(challenge.toolName) ? '确认后提交银行服务，操作结果以银行回执为准。' : '查询结果会显示在对话中。' }, fingerprint: digest(a), path, body, method, preview, activity, ownerId: entry.ownerId, approved: false }
+    if (preview?.reminder && writable.has(challenge.toolName)) prepared.challenge.consequence = '确认后仅创建或取消微信提醒，不查询账户或执行资金操作。'
     const k = key(challenge.sessionId, challenge.callId)
     if (grants.has(k)) throw bankError('工具调用已存在确认', 409)
     const ttl = Math.min(challenge.expiresAt - Date.now(), 180_000)
@@ -463,6 +478,11 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       if (['bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
       const investmentWrite = ['bank_create_invest_plan', 'bank_update_invest_plan'].includes(input.toolName)
       if (investmentWrite && g.challenge.verification) body = { ...body, paymentPassword: g.password }
+      if (g.preview?.reminder) {
+        const service = reminders()
+        if (!service) throw bankError('提醒服务不可用', 503)
+        return { dataSource: 'personal-workbench', result: service.execute(entry.ownerId, g.preview.reminder, `agent_${digest([input.sessionId, input.callId, input.toolName])}`) }
+      }
       const data = await call(entry.bankToken, g.path, body, g.method, investmentWrite ? `agent_${digest([input.sessionId, input.callId, input.toolName])}` : undefined)
       if (input.toolName === 'bank_review_transactions') {
         const account = await call(entry.bankToken, `/api/accounts/${enc(g.preview.reviewAccount.id)}`)

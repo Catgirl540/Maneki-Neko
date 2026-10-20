@@ -61,7 +61,8 @@ export async function createImChannels({ directory, credentials, harness, vendor
     bindWecom: body => controllers.wecom.bindCredentials({ botId: body.botId, secret: body.secret }),
     reconnect: (channel, id) => controller(channel).reconnectBot(id),
     remove: (channel, id) => controller(channel).deleteBot(id),
-    deliver: (route, text) => controller(route.channel).sendProactiveText(route.botId, { kind: 'user', route: route.channel === 'weixin' ? { toUserId: route.key.slice(4) } : { chatId: route.key.slice(7) } }, text),
+    deliver: (route, text, options) => controller(route.channel).sendProactiveText(route.botId, { kind: 'user', route: route.channel === 'weixin' ? { toUserId: route.key.slice(4) } : { chatId: route.key.slice(7) } }, text, options),
+    reminderReady: route => route.channel === 'weixin' && controllers.weixin.status().bots.some(item => item.botId === route.botId && item.connected),
     close: () => Promise.allSettled(Object.values(controllers).map(item => item.close())),
   }
 }

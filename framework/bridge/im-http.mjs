@@ -4,7 +4,7 @@ const files = new Map([
   ['/agent-api/im', ['im-portal.html', 'text/html']],
   ['/agent-api/im/portal.js', ['im-portal.js', 'text/javascript']],
 ])
-export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, authorizeAdmin, connectionTestStatus }) {
+export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, authorizeAdmin, connectionTestStatus, reminders = () => undefined }) {
   const attempts = new Map()
   async function bankRequest(path, { authorization, body } = {}) {
     const response = await fetchImpl(new URL(path, bankUrl), { method: body ? 'POST' : 'GET', redirect: 'error', headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(12_000) })
@@ -78,7 +78,23 @@ export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, autho
       }
       if (!identity) return false // The normal Bridge authenticates all remaining routes.
       let result
-      if (pathname === '/agent-api/im/preview' && req.method === 'POST') result = bank.preview((await readJson(req, 8192)).code)
+      if (pathname === '/agent-api/im/reminders' || /^\/agent-api\/im\/reminders\/rem-[\w-]+$/.test(pathname)) {
+        const service = reminders()
+        if (!service) throw Object.assign(Error('微信提醒尚未启用'), { status: 503 })
+        if (pathname === '/agent-api/im/reminders' && req.method === 'GET') result = service.list(identity.user.id)
+        else {
+          const body = await readJson(req, 8192)
+          if (body.confirmed !== true) throw Object.assign(Error('请先核对并确认提醒操作'), { status: 400 })
+          if (pathname === '/agent-api/im/reminders' && req.method === 'POST') {
+            const prepared = service.prepare(identity.user.id, 'create', { title: body.title, dueAt: body.dueAt, bindingId: body.bindingId })
+            result = service.execute(identity.user.id, prepared, body.requestId)
+          } else if (req.method === 'DELETE' && pathname !== '/agent-api/im/reminders') {
+            const prepared = service.prepare(identity.user.id, 'cancel', { reminderId: pathname.split('/').at(-1) })
+            result = service.execute(identity.user.id, prepared, body.requestId)
+          } else throw Object.assign(Error('请求方式不支持'), { status: 405 })
+        }
+      }
+      else if (pathname === '/agent-api/im/preview' && req.method === 'POST') result = bank.preview((await readJson(req, 8192)).code)
       else if (pathname === '/agent-api/im/claim' && req.method === 'POST') result = await bank.claim((await readJson(req, 8192)).code, identity)
       else if (pathname === '/agent-api/im/bindings' && req.method === 'GET') result = bank.list(identity.user.id)
       else if (/^\/agent-api\/im\/bindings\/im-[\w-]+$/.test(pathname) && req.method === 'DELETE') { await bank.revoke(pathname.split('/').at(-1), identity.user.id); result = { ok: true } }
