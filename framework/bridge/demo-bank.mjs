@@ -126,6 +126,7 @@ const ROUTES = [
   ['POST', 'savingsGoals', 'createSavingsGoal', (id, b) => [b]],
   ['PATCH', 'savingsGoal', 'updateSavingsGoal', (id, b) => [id, b]],
   ['DELETE', 'savingsGoal', 'deleteSavingsGoal', (id) => [id]],
+  ['POST', 'savingsGoalSweep', 'setSavingsSweep', (id, b) => [id, b]],
   ['PATCH', 'savingsRoundup', 'updateSavingsRoundup', (id, b) => [b]],
   ['POST', 'virtualCard', 'createVirtualCard', (id, b) => [id, b]],
 
@@ -154,6 +155,8 @@ const ROUTES = [
   ['PATCH', 'cashManagementSweep', 'updateCashSweep', (id, b) => [b]],
   ['GET', 'investments', 'getInvestments', () => []],
   ['POST', 'investPlan', 'createInvestPlan', (id, b) => [b]],
+  ['POST', 'investPlanPause', 'pauseInvestPlan', (id) => [id]],
+  ['POST', 'investPlanTerminate', 'terminateInvestPlan', (id) => [id]],
   ['GET', 'insurance', 'getInsurance', () => []],
   ['POST', 'insuranceEnroll', 'enrollInsurance', (id, b) => [b]],
 ]

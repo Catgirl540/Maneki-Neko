@@ -1907,7 +1907,7 @@ export function createMockApi(options?: {
       await delay(160)
       return loadDb().autoDebits
     },
-async setAutoDebitEnabled(id, enabled) {
+    async setAutoDebitEnabled(id, enabled) {
       await delay(220)
       const item = loadDb().autoDebits.find((a) => a.id === id)
       if (!item) throw new ApiError('扣款计划不存在', 404, 'AUTODEBIT_NOT_FOUND')
@@ -1915,7 +1915,7 @@ async setAutoDebitEnabled(id, enabled) {
       persist()
       return item
     },
-async getSecurityOverview(): Promise<SecurityOverview> {
+    async getSecurityOverview(): Promise<SecurityOverview> {
       await delay(200)
       return withDerivedSecurity()
     },
@@ -2273,6 +2273,26 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       persist()
     },
 
+    /** 设置或取消某个目标的自动归集。 */
+    async setSavingsSweep(id, req): Promise<SavingsGoal> {
+      await delay(260)
+      const db = loadDb()
+      const goal = db.savings.goals.find((g) => g.id === id)
+      if (!goal) throw new ApiError('存钱目标不存在', 404, 'GOAL_NOT_FOUND')
+      if (!req.enabled) {
+        goal.sweep = null
+        persist()
+        return goal
+      }
+      if (!Number.isSafeInteger(req.amount) || (req.amount ?? 0) <= 0) throw new ApiError('归集金额必须是正的安全整数分', 400, 'INVALID_AMOUNT')
+      if (!req.cycle || !req.cycle.trim()) throw new ApiError('请选择归集周期', 400, 'INVALID_CYCLE')
+      if (!req.accountId) throw new ApiError('请选择扣款账户', 400, 'INVALID_ACCOUNT')
+      requireCurrencyBalance(db, req.accountId)
+      goal.sweep = { amount: req.amount as number, cycle: req.cycle.trim(), accountId: req.accountId }
+      persist()
+      return goal
+    },
+
     async updateSavingsRoundup(req) { const db = loadDb(); db.savings.roundup = validateRoundup(db, req); persist(); return db.savings.roundup },
     async createVirtualCard(id, req): Promise<VirtualCard> {
       await delay(560)
@@ -2599,6 +2619,37 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       return plan
     },
 
+    /**
+     * 暂停定投计划。
+     * 状态机与 `challenge/bridge/invest-executor.mjs` 保持一致：仅 active 可暂停。
+     */
+    async pauseInvestPlan(id): Promise<InvestPlan> {
+      await delay(240)
+      const db = loadDb()
+      const plan = db.investments.plans.find((p) => p.id === id)
+      if (!plan) throw new ApiError('定投计划不存在', 404, 'PLAN_NOT_FOUND')
+      if (plan.status !== 'active') throw new ApiError(`状态「${plan.status === 'paused' ? '已暂停' : '已终止'}」不可暂停`, 409, 'CONFLICT')
+      plan.status = 'paused'
+      persist()
+      return plan
+    },
+
+    /**
+     * 终止定投计划。终态，不可恢复。
+     * 状态机与 `challenge/bridge/invest-executor.mjs` 保持一致。
+     */
+    async terminateInvestPlan(id): Promise<InvestPlan> {
+      await delay(240)
+      const db = loadDb()
+      const plan = db.investments.plans.find((p) => p.id === id)
+      if (!plan) throw new ApiError('定投计划不存在', 404, 'PLAN_NOT_FOUND')
+      if (plan.status === 'terminated') throw new ApiError('计划已终止', 409, 'CONFLICT')
+      plan.status = 'terminated'
+      plan.terminatedAt = new Date().toISOString()
+      persist()
+      return plan
+    },
+
     async getInsurance(): Promise<InsuranceOverview> {
       await delay(220)
       return loadDb().insurance
@@ -2611,6 +2662,13 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       if (!product) throw new ApiError('保险产品不存在', 404, 'PRODUCT_NOT_FOUND')
       if (!req.insuredName.trim()) throw new ApiError('请填写被保人姓名', 400, 'VALIDATION_ERROR')
       verifyPayPassword(req.paymentPassword)
+      // 健康告知：3 项既往症任一为「是」→ 拒绝投保并转人工。
+      // 放在密码校验之后，保证「密码缺失/错误」仍优先报 INVALID_PAY_PASSWORD（见 check-issue-fixes）。
+      const answers = String(req.healthAnswers ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+      if (answers.length !== 3) throw new ApiError('健康告知须回答 3 个问题', 400, 'HEALTH_DISCLOSURE_INCOMPLETE')
+      if (answers.some((v) => v === 'yes' || v === '是' || v === 'true')) {
+        throw new ApiError('健康告知中存在异常项，无法在线投保，请转人工客服咨询。', 400, 'HEALTH_DECLINED')
+      }
       const account = settlementAccount(db)
       if (product.premiumPerYear > account.available) {
         throw new ApiError('可用余额不足', 400, 'INSUFFICIENT_BALANCE')

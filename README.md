@@ -442,6 +442,7 @@ GET    /api/savings/overview        存钱计划总览（目标 / 凑整规则 /
 POST   /api/savings/goals           新建储蓄目标
 PATCH  /api/savings/goals/:id       修改储蓄目标
 DELETE /api/savings/goals/:id       删除储蓄目标
+POST   /api/savings/goals/:id/sweep 设置目标自动归集（enabled=false 时取消）
 PATCH  /api/savings/roundup         配置消费凑整转存规则
 
 GET    /api/invitations             邀请码 / 好友进度 / 奖励
@@ -465,8 +466,10 @@ GET    /api/wealth/cash-management          活钱余额 / 7 日年化 / 自动�
 PATCH  /api/wealth/cash-management/sweep    设置活期保留额与自动转入
 GET    /api/wealth/investments              持有市值 / 定投计划 / 可投产品
 POST   /api/wealth/investments/plan         新建定投计划
+POST   /api/wealth/investments/plan/:id/pause     暂停定投计划（仅执行中可暂停）
+POST   /api/wealth/investments/plan/:id/terminate 终止定投计划（终态，不可恢复）
 GET    /api/wealth/insurance                保单 / 可投保产品
-POST   /api/wealth/insurance/enroll         投保
+POST   /api/wealth/insurance/enroll         投保（健康告知任一异常拒绝并转人工）
 
 GET    /api/wealth/products                 理财产品列表
 GET    /api/wealth/products/:code            产品详情（净值/费率/穿透前后资产）

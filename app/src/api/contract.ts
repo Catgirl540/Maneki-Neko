@@ -68,6 +68,7 @@ import type {
   SavingsGoalRequest,
   SavingsGoalUpdate,
   SavingsRuleUpdate,
+  SavingsSweepRequest,
   SavingsRoundupRule,
   VirtualCardRequest,
   VirtualCard,
@@ -171,6 +172,7 @@ export const routes = {
   savingsOverview: () => '/api/savings/overview',
   savingsGoals: () => '/api/savings/goals',
   savingsGoal: (id: string) => `/api/savings/goals/${id}`,
+  savingsGoalSweep: (id: string) => `/api/savings/goals/${id}/sweep`,
   savingsRoundup: () => '/api/savings/roundup',
   virtualCard: (id: string) => `/api/cards/${id}/virtual`,
 
@@ -198,6 +200,8 @@ export const routes = {
   cashManagementSweep: () => '/api/wealth/cash-management/sweep',
   investments: () => '/api/wealth/investments',
   investPlan: () => '/api/wealth/investments/plan',
+  investPlanPause: (id: string) => `/api/wealth/investments/plan/${id}/pause`,
+  investPlanTerminate: (id: string) => `/api/wealth/investments/plan/${id}/terminate`,
   insurance: () => '/api/wealth/insurance',
   insuranceEnroll: () => '/api/wealth/insurance/enroll',
 } as const
@@ -332,6 +336,8 @@ export interface BankApi {
   createSavingsGoal(req: SavingsGoalRequest): Promise<SavingsGoal>
   updateSavingsGoal(id: string, req: SavingsGoalUpdate): Promise<SavingsGoal>
   deleteSavingsGoal(id: string): Promise<void>
+  /** 设置或取消某个目标的自动归集 */
+  setSavingsSweep(id: string, req: SavingsSweepRequest): Promise<SavingsGoal>
   updateSavingsRoundup(req: SavingsRuleUpdate): Promise<SavingsRoundupRule>
   /** 卡详情生成动态一次性卡号 */
   createVirtualCard(id: string, req: VirtualCardRequest): Promise<VirtualCard>
@@ -361,6 +367,10 @@ export interface BankApi {
   updateCashSweep(req: CashSweepUpdate): Promise<CashManagement>
   getInvestments(): Promise<InvestmentsOverview>
   createInvestPlan(req: InvestPlanRequest): Promise<InvestPlan>
+  /** 暂停定投计划（仅 active 可暂停） */
+  pauseInvestPlan(id: string): Promise<InvestPlan>
+  /** 终止定投计划（终态，不可恢复） */
+  terminateInvestPlan(id: string): Promise<InvestPlan>
   getInsurance(): Promise<InsuranceOverview>
   enrollInsurance(req: InsuranceEnrollRequest): Promise<InsurancePolicy>
 }
