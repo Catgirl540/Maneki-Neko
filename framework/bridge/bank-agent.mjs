@@ -6,6 +6,7 @@ import { bankError } from './bank-error.mjs'
 export { bankError } from './bank-error.mjs'
 import { prepareTransfer, refreshTransfer, fullAccount, fpsIdentifier } from './transfer-agent.mjs'
 import { summarizeRiskAssessment } from './wealth-risk.mjs'
+import { challengePrepare, challengeExecuteBefore, challengeExecuteAfter, challengePasswordTools, challengeWritable } from '../../challenge/bridge/tools.mjs'
 const enc = encodeURIComponent
 const text = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw bankError(`缺少${label}`)
@@ -19,8 +20,8 @@ const money = (cents, currency = 'CNY') => `${currency} ${(cents / 100).toFixed(
 const stable = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v)
 const digest = value => createHash('sha256').update(stable(value)).digest('hex')
 const field = (label, value, emphasis = false) => ({ label, value: String(value), ...(emphasis ? { emphasis: true } : {}) })
-const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'])
-const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer', 'bank_request_human_support', 'bank_reply_support_ticket'])
+const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card', ...challengePasswordTools])
+const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer', 'bank_request_human_support', 'bank_reply_support_ticket', ...challengeWritable])
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -302,7 +303,12 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
         fields = [field('卡片', `${card.productName} · 尾号 ${card.last4}`), field('查看内容', a.field === 'cvv' ? 'CVV' : '完整卡号')]
         break
       }
-      default: throw bankError('未支持的银行工具', 400)
+      default: {
+        const result = await challengePrepare(challenge, { get, post, bankError, field, text, amount, money })
+        if (!result) throw bankError('未支持的银行工具', 400)
+        ;({ path, body, fields, preview, method } = result)
+        break
+      }
     }
     if (submitBefore) challenge = { ...challenge, expiresAt: Math.min(challenge.expiresAt, submitBefore) }
     if (!Number.isFinite(challenge.expiresAt) || challenge.expiresAt <= Date.now()) throw bankError('确认已过期')
@@ -382,7 +388,9 @@ export function createBankAgent({ baseUrl, sessions, publish }) {
       // 停止可能与重新核价并发，真正提交前再核对一次。
       if (entry.stopping || g.activity?.cancelled || g.activity !== entry.activity) throw bankError('本轮已停止，未提交银行操作', 409)
       if (['bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
+      await challengeExecuteBefore(input, g, { call, entry })
       const data = await call(entry.bankToken, g.path, body, g.method)
+      await challengeExecuteAfter(input, g, data)
       if (input.toolName === 'bank_reveal_card_secret') {
         const value = input.arguments.field === 'cvv' ? data.cvv : data.pan
         publish(input.sessionId, { type: 'card-secret', cardId: input.arguments.cardId, field: input.arguments.field, value, expiresAt: Date.now() + Math.min(60, Math.max(1, Number(data.revealSeconds) || 30)) * 1000 })

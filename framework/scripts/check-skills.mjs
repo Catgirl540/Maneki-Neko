@@ -17,7 +17,10 @@ const array = (value, label) => {
 
 export function validateSkills({ skillsRoot = resolve(frameworkRoot, 'skills'), sourceRoot = repoRoot } = {}) {
   const source = path => readFileSync(resolve(sourceRoot, path), 'utf8')
-  const bankTools = [...source('framework/packages/bank-demo/src/http-tools.ts').matchAll(/\{ name: '(bank_[a-z_]+)'/g)].map(m => m[1])
+  const bankTools = [
+    ...source('framework/packages/bank-demo/src/http-tools.ts').matchAll(/\bname: '(bank_[a-z_]+)'/g),
+    ...source('framework/packages/bank-demo/src/challenge-tools.ts').matchAll(/\bname: '(bank_[a-z_]+)'/g),
+  ].map(m => m[1])
   const tools = new Set([...bankTools, 'knowledge_lookup', 'ask_user_question'])
   const ui = [...source('app/src/components/layout/services.ts').matchAll(/\{ id: '([^']+)', label: '([^']+)'/g)].map(m => ({ id: m[1], label: m[2] }))
   const routes = new Set([...source('app/src/App.tsx').matchAll(/<Route path="([^"]+)"/g)].map(m => m[1]))
@@ -36,7 +39,7 @@ export function validateSkills({ skillsRoot = resolve(frameworkRoot, 'skills'), 
     const raw = readFileSync(path, 'utf8')
     const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(raw)
     if (!match) throw Error(`${skillName}: 缺少 YAML 头部`)
-    const header = yaml.load(match[1]), content = match[2].trim(), meta = header?.metadata
+    const header = yaml.load(match[1]), content = match[2].trim().replace(/\r\n/g, '\n'), meta = header?.metadata
     if (header?.name !== skillName || !nonempty(header.description) || header.description.length > 180) throw Error(`${skillName}: name/description 缺失、不一致或过长`)
     if (!meta || meta.serviceId !== serviceId || meta.label !== ui.find(item => item.id === serviceId).label) throw Error(`${skillName}: metadata 与网页入口不一致`)
     for (const key of ['routes', 'tools', 'sources']) array(meta[key], `${skillName}.${key}`)

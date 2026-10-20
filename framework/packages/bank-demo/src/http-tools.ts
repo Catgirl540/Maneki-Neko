@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, validateArgs, type ParameterSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SensitiveOperationSpec } from '@luckycat/dsh-consent/types'
+import { CHALLENGE_TOOL_DEFINITIONS } from './challenge-tools.ts'
 
 const str = (description: string, required = false) => ({ type: 'string' as const, description, ...(required ? { required: true as const } : {}) })
 const num = (description: string, required = false) => ({ type: 'number' as const, description, ...(required ? { required: true as const } : {}) })
@@ -37,6 +38,7 @@ const definitions: { name: string; kind: string; description: string; parameters
   { name: 'bank_get_spending', kind: '查询消费分析', description: 'Query authoritative monthly spending totals, categories and trends. Never sum recent transaction rows as a complete month. Values are cents. Historical month-over-month/trend fields follow bank page semantics and are not necessarily relative to the selected month. Confirm first.', parameters: { month: str('YYYY-MM; omit for current month.') } },
   { name: 'bank_get_cashflow', kind: '查询现金流', description: 'Query authoritative cash flow for last 7 or 30 days, including daily amounts and totals in cents. Do not label it as only settled transactions; use bank returned scope. Confirm first.', parameters: { days: num('7 or 30, default 7.') } },
   { name: 'bank_reveal_card_secret', kind: '查看卡安全信息', verification: 'payment-password' as const, description: 'Show a sensitive field of an owned card in a temporary secure browser dialog after confirmation and payment-password verification. The model receives no full card number or CVV. Use cardId returned by bank_get_balance.', parameters: { cardId: str('Explicit owned card ID.', true), field: str('card-number or cvv.', true) } },
+  ...CHALLENGE_TOOL_DEFINITIONS,
 ]
 
 export const HTTP_OPERATIONS: readonly SensitiveOperationSpec[] = definitions.map(tool => ({

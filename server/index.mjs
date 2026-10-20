@@ -15,6 +15,21 @@ import { openBankDatabase } from './database.mjs'
 import { createStaffApi, ensureStaffSchema, getTransferReviewCents } from './staff-api.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+
+/** 读 JSON 请求体。仿 /api/auth/payment-password/verify 的做法。 */
+async function readJsonBody(req, maxBytes = 65_536) {
+  let size = 0
+  const chunks = []
+  for await (const chunk of req) {
+    size += chunk.length
+    if (size > maxBytes) throw Object.assign(new Error('请求体过大'), { status: 413 })
+    chunks.push(chunk)
+  }
+  if (chunks.length === 0) return {}
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) }
+  catch { throw Object.assign(new Error('请求体不是合法 JSON'), { status: 400 }) }
+}
+
 const host = process.env.BANK_HOST ?? '127.0.0.1'
 const port = Number(process.env.BANK_PORT ?? 8080)
 const database = await openBankDatabase()
@@ -118,6 +133,168 @@ async function handleRequest(req, res) {
     }
     if (url.pathname === '/api/agent/wealth/requirements' && req.method === 'GET') {
       const value = await bank.wealthRequirements(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    // ── 赛题工程：定时动作 ──────────────────────────────────────
+    if (url.pathname === '/api/agent/challenge/payee/resolve' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const value = await bank.challengeResolvePayee(req, String(body.query ?? ''))
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/agent/challenge/scheduled' && req.method === 'GET') {
+      const value = await bank.challengeListScheduled(req, {})
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/agent/challenge/scheduled' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const value = await bank.challengeCreateScheduled(req, {
+        kind: body.kind ?? 'transfer',
+        title: String(body.title ?? ''),
+        runAt: String(body.runAt ?? ''),
+        payload: body.transfer ?? {},
+        createdBy: { tool: 'bank_schedule_transfer' },
+      })
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname.startsWith('/api/agent/challenge/scheduled/') && url.pathname.endsWith('/cancel') && req.method === 'POST') {
+      const actionId = decodeURIComponent(url.pathname.slice('/api/agent/challenge/scheduled/'.length, -'/cancel'.length))
+      const body = await readJsonBody(req)
+      const value = await bank.challengeCancelScheduled(req, actionId, String(body.reason ?? '用户取消'))
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/agent/challenge/wealth/compare' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const codes = Array.isArray(body.productCodes) ? body.productCodes : undefined
+      const value = await bank.challengeCompareWealth(req, codes)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    // ── 赛题工程：定投计划 ──────────────────────────────────────
+    if (url.pathname === '/api/agent/challenge/invest/plans' && req.method === 'GET') {
+      const value = await bank.challengeListInvestPlans(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/agent/challenge/invest/plans' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const value = await bank.challengeCreateInvestPlan(req, {
+        productCode: String(body.productCode ?? ''),
+        amount: Number(body.amountCents ?? 0),
+        cycle: String(body.cycle ?? ''),
+        accountId: String(body.accountId ?? ''),
+        paymentPassword: String(body.paymentPassword ?? ''),
+      })
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname.match(/^\/api\/agent\/challenge\/invest\/plans\/[^/]+\/pause$/) && req.method === 'POST') {
+      const planId = decodeURIComponent(url.pathname.split('/').slice(-2)[0])
+      const value = await bank.challengePauseInvestPlan(req, planId)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname.match(/^\/api\/agent\/challenge\/invest\/plans\/[^/]+\/terminate$/) && req.method === 'POST') {
+      const planId = decodeURIComponent(url.pathname.split('/').slice(-2)[0])
+      const value = await bank.challengeTerminateInvestPlan(req, planId)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    // ── 赛题工程：存钱目标 ──────────────────────────────────────
+    if (url.pathname === '/api/agent/challenge/savings/goals' && req.method === 'GET') {
+      const value = await bank.challengeListSavingsGoals(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/agent/challenge/savings/goals' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const value = await bank.challengeCreateSavingsGoal(req, {
+        name: String(body.name ?? ''),
+        targetAmount: Number(body.targetAmountCents ?? 0),
+        ...(body.deadline ? { deadline: String(body.deadline) } : {}),
+      })
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname.match(/^\/api\/agent\/challenge\/savings\/goals\/[^/]+$/) && req.method === 'POST') {
+      const goalId = decodeURIComponent(url.pathname.split('/').pop())
+      const body = await readJsonBody(req)
+      const params = {}
+      if (body.name) params.name = String(body.name)
+      if (body.targetAmountCents !== undefined) params.targetAmount = Number(body.targetAmountCents)
+      if (body.deadline !== undefined) params.deadline = body.deadline === null ? null : String(body.deadline)
+      const value = await bank.challengeUpdateSavingsGoal(req, goalId, params)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname.match(/^\/api\/agent\/challenge\/savings\/goals\/[^/]+\/delete$/) && req.method === 'POST') {
+      const goalId = decodeURIComponent(url.pathname.split('/').slice(-2)[0])
+      const value = await bank.challengeDeleteSavingsGoal(req, goalId)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname.match(/^\/api\/agent\/challenge\/savings\/goals\/[^/]+\/sweep$/) && req.method === 'POST') {
+      const goalId = decodeURIComponent(url.pathname.split('/').slice(-2)[0])
+      const body = await readJsonBody(req)
+      const value = await bank.challengeSetSavingsSweep(req, goalId, {
+        enabled: body.enabled === true || String(body.enabled) === 'true',
+        amountCents: Number(body.amountCents ?? 0),
+        cycle: String(body.cycle ?? ''),
+        accountId: String(body.accountId ?? ''),
+      })
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    // ── 赛题工程：现金管理 ──────────────────────────────────────
+    if (url.pathname === '/api/agent/challenge/cash/management' && req.method === 'GET') {
+      const value = await bank.challengeGetCashManagement(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/agent/challenge/cash/sweep' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const value = await bank.challengeUpdateCashSweep(req, {
+        enabled: body.enabled === true || String(body.enabled) === 'true',
+        ...(body.thresholdCents !== undefined ? { threshold: Number(body.thresholdCents) } : {}),
+      })
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    // ── 赛题工程：保险 ──────────────────────────────────────────
+    if (url.pathname === '/api/agent/challenge/insurance' && req.method === 'GET') {
+      const value = await bank.challengeGetInsurance(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
+    if (url.pathname === '/api/agent/challenge/insurance/enroll' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const value = await bank.challengeEnrollInsurance(req, {
+        productId: String(body.productId ?? ''),
+        insuredName: String(body.insuredName ?? ''),
+        paymentPassword: String(body.paymentPassword ?? ''),
+      })
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
       res.end(JSON.stringify(value))
       return

@@ -1,6 +1,10 @@
 // HTTP adapter for server-owned banking business rules. All mutations are committed as a single unit.
 import { randomUUID } from 'node:crypto'
 import { maskPhone } from './lib/format.mjs'
+import { resolvePayee, disambiguationHint } from '../challenge/bridge/payee-resolve.mjs'
+import { compareWealthProducts } from '../challenge/bridge/wealth-compare.mjs'
+import { createScheduledApi } from '../challenge/mock/scheduled-api.mjs'
+import { ensureChallengeState } from '../challenge/mock/state.mjs'
 
 /** Deterministic sandbox status tags; no inferred risk score or credit decision. */
 function riskTagsFor(profile) {
@@ -278,6 +282,13 @@ export async function createBankApi({
   const api = createBankBusinessApi(
     { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security },
   )
+  // 赛题工程：定时动作底座（scheduled-action）。资金走 submitTransfer 业务路，
+  // 重放时**不带** reviewThreshold —— 用户在创建时已确认过一次，执行时不再进审单窗口。
+  const scheduledApi = createScheduledApi({
+    loadDb: dbModule.loadDb,
+    persist: dbModule.persist,
+    createBankBusinessApi,
+  })
   // reviewThreshold 允许是函数：mock 内部每笔转账现读，员工端改完立刻生效。
   const patterns = compilePatterns(routes)
   // mock 原本是单标签页内存对象。HTTP 桥接会同时服务多个用户，
@@ -473,6 +484,214 @@ export async function createBankApi({
       await activateRequestProfile(req, "profile")
       return { riskAcknowledgementText: mockModule.RISK_ACKNOWLEDGEMENT }
     }),
+
+    /* ── 赛题工程：定时动作（Agent 专用能力，不进 ROUTES 表）───────── */
+
+    /** 解析收款人（别名/人名/手机号/备注）。只读。 */
+    challengeResolvePayee(req, query) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入收款人检索'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        const profile = dbModule.loadDb()
+        const challengeState = ensureChallengeState(profile)
+        const candidates = resolvePayee({
+          query,
+          aliases: challengeState.payeeAliases,
+          payees: profile.payees,
+          transactions: profile.transactions,
+        })
+        return { candidates, hint: disambiguationHint(candidates) }
+      })
+    },
+
+    /** 创建定时动作。 */
+    challengeCreateScheduled(req, params) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入定时执行能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return scheduledApi.create(params)
+      })
+    },
+
+    /** 列出定时动作。 */
+    challengeListScheduled(req, filter) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入定时查询能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return scheduledApi.list(filter)
+      })
+    },
+
+    /** 取消定时动作（仅 pending 可取消）。 */
+    challengeCancelScheduled(req, actionId, reason) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入定时取消能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return scheduledApi.cancel(actionId, reason)
+      })
+    },
+
+    /** 理财产品结构化对比（只读，不构成投资建议）。 */
+    challengeCompareWealth(req, productCodes) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入产品对比能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        const products = await api.listWealthProducts()
+        return compareWealthProducts(products, productCodes)
+      })
+    },
+
+    /* ── 赛题工程：定投计划（Agent 专用能力）─────────────────── */
+
+    /** 查询定投计划列表。 */
+    challengeListInvestPlans(req) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入定投查询能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        const db = dbModule.loadDb()
+        return { plans: db.investments.plans, holding: db.investments.holding, totalReturn: db.investments.totalReturn }
+      })
+    },
+
+    /** 创建定投计划（需支付密码，由 challengeExecuteBefore 注入 body）。 */
+    challengeCreateInvestPlan(req, params) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入定投创建能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return api.createInvestPlan(params)
+      })
+    },
+
+    /** 暂停定投计划。 */
+    challengePauseInvestPlan(req, planId) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入定投暂停能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        const db = dbModule.loadDb()
+        const plan = db.investments.plans.find((p) => p.id === planId)
+        if (!plan) throw Object.assign(new Error('定投计划不存在'), { status: 404, code: 'NOT_FOUND' })
+        const { pauseInvestPlan } = await import('../challenge/bridge/invest-executor.mjs')
+        const idx = db.investments.plans.indexOf(plan)
+        db.investments.plans[idx] = pauseInvestPlan(plan)
+        dbModule.persist()
+        return db.investments.plans[idx]
+      })
+    },
+
+    /** 终止定投计划（不可恢复）。 */
+    challengeTerminateInvestPlan(req, planId) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入定投终止能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        const db = dbModule.loadDb()
+        const plan = db.investments.plans.find((p) => p.id === planId)
+        if (!plan) throw Object.assign(new Error('定投计划不存在'), { status: 404, code: 'NOT_FOUND' })
+        const { terminateInvestPlan } = await import('../challenge/bridge/invest-executor.mjs')
+        const idx = db.investments.plans.indexOf(plan)
+        db.investments.plans[idx] = terminateInvestPlan(plan)
+        dbModule.persist()
+        return db.investments.plans[idx]
+      })
+    },
+
+    /* ── 赛题工程：存钱目标（Agent 专用能力）─────────────────── */
+
+    /** 查询存钱目标列表。 */
+    challengeListSavingsGoals(req) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入存钱目标查询'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        const db = dbModule.loadDb()
+        return { goals: db.savings.goals, totalSaved: db.savings.totalSaved ?? 0, roundup: db.savings.roundup }
+      })
+    },
+
+    /** 创建存钱目标。 */
+    challengeCreateSavingsGoal(req, params) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入存钱目标创建'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return api.createSavingsGoal(params)
+      })
+    },
+
+    /** 修改存钱目标。 */
+    challengeUpdateSavingsGoal(req, goalId, params) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入存钱目标修改'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return api.updateSavingsGoal(goalId, params)
+      })
+    },
+
+    /** 删除存钱目标。 */
+    challengeDeleteSavingsGoal(req, goalId) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入存钱目标删除'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        await api.deleteSavingsGoal(goalId)
+        return { ok: true }
+      })
+    },
+
+    /** 设置自动归集开关。 */
+    challengeSetSavingsSweep(req, goalId, params) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入归集设置'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        const db = dbModule.loadDb()
+        const goal = db.savings.goals.find((g) => g.id === goalId)
+        if (!goal) throw Object.assign(new Error('存钱目标不存在'), { status: 404, code: 'NOT_FOUND' })
+        if (params.enabled === true) {
+          if (!Number.isSafeInteger(params.amountCents) || params.amountCents <= 0) throw Object.assign(new Error('归集金额必须是正整数分'), { status: 400, code: 'INVALID_AMOUNT' })
+          goal.sweep = { amount: params.amountCents, cycle: String(params.cycle ?? ''), accountId: String(params.accountId ?? '') }
+        } else {
+          goal.sweep = null
+        }
+        dbModule.persist()
+        return goal
+      })
+    },
+
+    /* ── 赛题工程：现金管理（Agent 专用能力）─────────────────── */
+
+    /** 查询现金管理状态。 */
+    challengeGetCashManagement(req) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入现金管理查询'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return api.getCashManagement()
+      })
+    },
+
+    /** 设置现金归集开关与保留额。 */
+    challengeUpdateCashSweep(req, params) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入现金归集设置'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return api.updateCashSweep(params)
+      })
+    },
+
+    /* ── 赛题工程：保险（Agent 专用能力）──────────────────────── */
+
+    /** 查询保险产品与保单。 */
+    challengeGetInsurance(req) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入保险查询'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return api.getInsurance()
+      })
+    },
+
+    /** 投保（健康告知拦截在 challengePrepare 层完成）。 */
+    challengeEnrollInsurance(req, params) {
+      return exclusive(async () => {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入保险投保'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        await activateRequestProfile(req, 'profile')
+        return api.enrollInsurance(params)
+      })
+    },
     verifyPaymentPassword: (req, password) => exclusive(async () => {
       await activateRequestProfile(req, "profile")
       mockModule.verifyPayPassword(password)
@@ -553,6 +772,23 @@ export async function createBankApi({
           // 清算单只改状态、不动资金，也没有员工端窗口要关，
           // 所以不进 closed —— 别让 onHoldClosed 误以为是拦截窗口了结。
           mockSettleClearing()
+          // 赛题工程：到点的定时动作执行（定时转账等）。
+          // 单条失败 try/catch 隔离，不阻塞其他档案的扫账。
+          try { await scheduledApi.runDue() } catch (e) { console.warn(`[bank-api] 定时动作执行异常：${e?.message ?? e}`) }
+          // 赛题工程：到点的定投计划自动执行。
+          try {
+            const { isInvestDue, advanceInvestPlan } = await import('../challenge/bridge/invest-executor.mjs')
+            const db = dbModule.loadDb()
+            let changed = false
+            for (let i = 0; i < db.investments.plans.length; i++) {
+              const plan = db.investments.plans[i]
+              if (!isInvestDue(plan)) continue
+              db.investments.plans[i] = advanceInvestPlan(plan)
+              db.investments.holding += plan.amount
+              changed = true
+            }
+            if (changed) dbModule.persist()
+          } catch (e) { console.warn(`[bank-api] 定投执行异常：${e?.message ?? e}`) }
         }
         activateDb(before)
         if (onHoldClosed) {
