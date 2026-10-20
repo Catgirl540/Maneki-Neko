@@ -293,6 +293,8 @@ async function handleRequest(req, res) {
       const value = await bank.challengeEnrollInsurance(req, {
         productId: String(body.productId ?? ''),
         insuredName: String(body.insuredName ?? ''),
+        // 健康告知 3 项答案，逗号分隔；mock 层会二次校验（任一为「是」拒绝投保）
+        healthAnswers: String(body.healthAnswers ?? ''),
         paymentPassword: String(body.paymentPassword ?? ''),
       })
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })

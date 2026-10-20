@@ -1,7 +1,7 @@
 ---
 id: "kb-insurance"
 title: "保险产品、健康告知与投保"
-navigation: "保险保障"
+navigation: "理财"
 routes: ["/wealth/insurance"]
 keywords: ["保险", "投保", "健康告知", "保单", "重疾", "医疗"]
 sources: ["app/src/pages/InsurancePage.tsx", "server/domain/index.mjs", "framework/packages/bank-demo/src/http-tools.ts"]

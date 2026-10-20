@@ -355,6 +355,11 @@ export async function challengeExecuteBefore(input, g, hooks) {
     await hooks.call(hooks.entry.bankToken, '/api/auth/payment-password/verify', { paymentPassword: g.password })
     Object.assign(g.body, { paymentPassword: g.password })
   }
+  if (input.toolName === 'bank_enroll_insurance' && g.password) {
+    // 同上：enroll 也需要支付密码。approve() 已验一次，这里再验并注入 body。
+    await hooks.call(hooks.entry.bankToken, '/api/auth/payment-password/verify', { paymentPassword: g.password })
+    Object.assign(g.body, { paymentPassword: g.password })
+  }
 }
 
 /**
