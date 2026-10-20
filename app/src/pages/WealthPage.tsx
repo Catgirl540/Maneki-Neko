@@ -82,7 +82,7 @@ export function WealthPage() {
     <div className="flex flex-col gap-7">
       <header className="float-up flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">理财与储蓄</h1>
-        <div className="flex flex-wrap gap-2"><Link className="service-link" to="/dashboard/savings">存钱计划</Link><Link className="service-link" to="/wealth/cash-management">现金管理</Link><Link className="service-link" to="/wealth/investments">投资与定投</Link></div>
+        <div className="flex flex-wrap gap-2"><Link className="service-link" to="/dashboard/savings">存钱计划</Link><Link className="service-link" to="/wealth/cash-management">现金管理</Link><Link className="service-link" to="/wealth/investments">投资与定投</Link><Link className="service-link" to="/wealth/insurance">保险保障</Link></div>
       </header>
 
       {/* 风险揭示：监管要求在醒目位置提示 */}

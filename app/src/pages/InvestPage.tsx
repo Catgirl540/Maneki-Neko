@@ -27,6 +27,17 @@ const CYCLES = [
   { value: '每月', label: '每月' },
 ]
 
+const STATUS_LABEL: Record<InvestPlan['status'], string> = {
+  active: '执行中',
+  paused: '已暂停',
+  terminated: '已终止',
+}
+const STATUS_TONE: Record<InvestPlan['status'], 'gold' | 'neutral' | 'coral'> = {
+  active: 'gold',
+  paused: 'neutral',
+  terminated: 'coral',
+}
+
 export function InvestPage() {
   const toast = useToast()
   const investments = useAsync<InvestmentsOverview>(() => api.getInvestments(), [])
@@ -71,6 +82,21 @@ export function InvestPage() {
     }
   }
 
+  async function changePlanStatus(plan: InvestPlan, next: 'paused' | 'terminated') {
+    if (busy) return
+    setBusy(true)
+    try {
+      if (next === 'paused') await api.pauseInvestPlan(plan.id)
+      else await api.terminateInvestPlan(plan.id)
+      investments.reload()
+      toast.show(next === 'paused' ? '定投计划已暂停' : '定投计划已终止', 'success')
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : '操作失败，请稍后重试', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (!investments.data || !accounts.data) {
     const error = investments.error ?? accounts.error
     return error ? <DataUnavailable message={error} onRetry={() => { investments.reload(); accounts.reload() }} /> : <DataLoading />
@@ -101,11 +127,23 @@ export function InvestPage() {
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-medium text-ink">{plan.productName}</span>
                 <span className="mt-0.5 block text-[13px] text-ink-mute">{plan.cycle}定投 ¥{formatAmount(plan.amount)} · 已投 {plan.executedRuns} 次</span>
-                <span className="mt-0.5 block text-[12px] text-ink-mute">计划日期 {formatDate(plan.nextRunAt)}</span>
+                <span className="mt-0.5 block text-[12px] text-ink-mute">
+                  {plan.status === 'terminated' && plan.terminatedAt
+                    ? `已于 ${formatDate(plan.terminatedAt)} 终止`
+                    : `计划日期 ${formatDate(plan.nextRunAt)}`}
+                </span>
               </span>
-              <span className="shrink-0 text-right">
-                <Tag tone={plan.status === 'active' ? 'gold' : 'neutral'}>{plan.status === 'active' ? '已保存' : '已暂停'}</Tag>
-                <span className="num mt-1 block text-[13px] text-ink-mute">累计 ¥{formatAmount(plan.totalInvested)}</span>
+              <span className="flex shrink-0 flex-col items-end gap-2">
+                <Tag tone={STATUS_TONE[plan.status]}>{STATUS_LABEL[plan.status]}</Tag>
+                <span className="num text-[13px] text-ink-mute">累计 ¥{formatAmount(plan.totalInvested)}</span>
+                {plan.status !== 'terminated' && (
+                  <span className="flex gap-2">
+                    {plan.status === 'active' && (
+                      <Button size="sm" variant="secondary" disabled={busy} onClick={() => void changePlanStatus(plan, 'paused')}>暂停</Button>
+                    )}
+                    <Button size="sm" variant="secondary" disabled={busy} onClick={() => void changePlanStatus(plan, 'terminated')}>终止</Button>
+                  </span>
+                )}
               </span>
             </div>
           ))}
@@ -138,7 +176,7 @@ export function InvestPage() {
         </div>
       </Card>
 
-      <p className="text-[12px] leading-relaxed text-ink-mute">基金投资有风险，过往业绩不代表未来表现。自动扣款暂未开放。</p>
+      <p className="text-[12px] leading-relaxed text-ink-mute">基金投资有风险，过往业绩不代表未来表现。定投按设定周期自动扣款，可随时暂停或终止。</p>
 
       <Modal
         open={Boolean(target)}

@@ -13,11 +13,26 @@ import { formatAmount, formatDate } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
 import { useToast } from '@/components/ui/toast-context'
 
+/** 健康告知 3 问：任一为「是」→ 拒绝在线投保并引导转人工（与 challenge 侧同一口径）。 */
+const HEALTH_QUESTIONS = [
+  { key: 'hospital', label: '近 5 年是否曾因疾病或意外住院、手术？' },
+  { key: 'chronic', label: '是否曾被医生诊断高血压、糖尿病等慢性疾病？' },
+  { key: 'tumor', label: '是否曾被诊断恶性肿瘤、结节或相关占位性病变？' },
+] as const
+
+const DISCLAIMER_SUMMARY =
+  '投保前请仔细阅读保险条款。犹豫期后退保可能产生损失。本产品不保证续保。既往症及条款列明的除外责任不在保障范围内。'
+const WAITING_PERIOD_SUMMARY =
+  '重疾险 90 天 / 医疗险 30 天 / 意外险 0 天，具体以条款为准。等待期内出险不承担赔付责任。'
+
+type HealthAnswer = 'yes' | 'no' | null
+
 export function InsurancePage() {
   const toast = useToast()
   const insurance = useAsync<InsuranceOverview>(() => api.getInsurance(), [])
   const [target, setTarget] = useState<InsuranceProduct | null>(null)
   const [insuredName, setInsuredName] = useState('')
+  const [health, setHealth] = useState<HealthAnswer[]>([null, null, null])
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -26,18 +41,29 @@ export function InsurancePage() {
   function openEnroll(product: InsuranceProduct) {
     setTarget(product)
     setInsuredName('')
+    setHealth([null, null, null])
     setPassword('')
     setFormError(null)
   }
 
+  const healthDeclined = health.some((v) => v === 'yes')
+  const healthReady = health.every((v) => v !== null)
+
   async function submitEnroll() {
     if (!target) return
     if (!insuredName.trim()) return setFormError('请填写被保人姓名')
+    if (!healthReady) return setFormError('请完整回答健康告知 3 个问题')
+    if (healthDeclined) return setFormError('健康告知中存在异常项，无法在线投保，请转人工客服咨询。')
     if (password.length < 6) return setFormError('请输入 6 位支付密码')
     setBusy(true)
     setFormError(null)
     try {
-      const policy = await api.enrollInsurance({ productId: target.id, insuredName: insuredName.trim(), paymentPassword: password })
+      const policy = await api.enrollInsurance({
+        productId: target.id,
+        insuredName: insuredName.trim(),
+        healthAnswers: health.map((v) => v ?? 'no').join(','),
+        paymentPassword: password,
+      })
       insurance.reload()
       setTarget(null)
       setResult(policy)
@@ -134,10 +160,57 @@ export function InsurancePage() {
         {target && (
           <div className="flex flex-col gap-4">
             <Field label="被保人姓名" value={insuredName} onChange={(e) => { setInsuredName(e.target.value); setFormError(null) }} maxLength={20} />
+
+            <div>
+              <p className="mb-2 text-[13px] font-medium text-ink-soft">健康告知</p>
+              <div className="flex flex-col gap-2.5">
+                {HEALTH_QUESTIONS.map((q, i) => (
+                  <div key={q.key} className="rounded-field border border-line px-4 py-3">
+                    <p className="text-[13px] leading-relaxed text-ink">{q.label}</p>
+                    <div className="mt-2 flex gap-2">
+                      {(['no', 'yes'] as const).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          aria-pressed={health[i] === v}
+                          disabled={busy}
+                          onClick={() => {
+                            setHealth((prev) => prev.map((old, idx) => (idx === i ? v : old)))
+                            setFormError(null)
+                          }}
+                          className={`min-h-9 rounded-chip border px-4 text-[13px] font-medium transition-colors ${
+                            health[i] === v
+                              ? 'border-gold-wash bg-gold-wash text-gold-deep'
+                              : 'border-line bg-surface text-ink-soft hover:text-ink'
+                          }`}
+                        >
+                          {v === 'no' ? '否' : '是'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {healthDeclined && (
+                <p role="alert" className="mt-2 flex items-start gap-2 text-[12px] leading-relaxed text-coral">
+                  <AlertIcon size={15} className="mt-0.5 shrink-0" />
+                  健康告知中存在异常项，无法在线投保。可联系人工客服进一步核实。
+                </p>
+              )}
+            </div>
+
             <div className="rounded-field bg-sunk px-4 py-3.5 text-[13px]">
               <div className="flex justify-between"><span className="text-ink-soft">保额</span><span className="num text-ink">¥{formatAmount(target.coverage)}</span></div>
               <div className="mt-2 flex justify-between"><span className="text-ink-soft">年缴保费</span><span className="num text-ink">¥{formatAmount(target.premiumPerYear)}</span></div>
             </div>
+
+            <div className="rounded-field border border-line px-4 py-3 text-[12px] leading-relaxed text-ink-mute">
+              <p className="font-medium text-ink-soft">免责摘要</p>
+              <p className="mt-1">{DISCLAIMER_SUMMARY}</p>
+              <p className="mt-2 font-medium text-ink-soft">等待期</p>
+              <p className="mt-1">{WAITING_PERIOD_SUMMARY}</p>
+            </div>
+
             <PinInput label="支付密码" value={password} onChange={(next) => { setPassword(next); setFormError(null) }} error={formError && formError.includes('密码') ? formError : undefined} />
             {formError && (
               <p role="alert" className="flex items-start gap-2 text-[13px] text-coral"><AlertIcon size={16} className="mt-0.5 shrink-0" />{formError}</p>

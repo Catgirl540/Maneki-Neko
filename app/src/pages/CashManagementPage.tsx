@@ -82,7 +82,7 @@ export function CashManagementPage() {
           <Row
             icon={<BoltIcon size={18} />}
             title="活期自动转入"
-            description={`自动执行暂未开放`}
+            description={data.sweepEnabled ? `保留 ¥${formatAmount(data.sweepThreshold)}，超出部分自动转入活钱` : '开启后按保留金额自动转入活钱'}
             right={<Toggle label="自动转入活钱" checked={data.sweepEnabled} disabled={busy} onChange={(next) => void toggleSweep(next)} />}
           />
           <Row
