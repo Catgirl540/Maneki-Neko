@@ -1,0 +1,79 @@
+{
+  "date": "2026-10-20",
+  "status": "deployed-awaiting-wechat-reauthentication",
+  "portal": "https://bank.waveflow.men/agent-api/im",
+  "server": "15.235.241.158",
+  "revision": "e9f2c9e5c4965fc97aed2a35b774a2614e6aaa23",
+  "sourceRelease": "/srv/maneki-bank/releases/20261020-reminders-e9f2c9e",
+  "sourceOverlaySha256": "811ad6868a38ecb7fa3ce93679545d4d90422f067e6881272126a97a855621df",
+  "otherFiveServiceRevision": "df39575d4ffe64296a1a59557ec3da7bf0763036",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261020-df39575",
+  "service": "luckycat-agent-demo",
+  "bankEnvironment": "existing-isolated-demo",
+  "backupLocation": "/var/backups/maneki-reminders-e9f2c9e",
+  "workbenchVersion": "1.17.0",
+  "dshVersion": "0.2.1-rc.2",
+  "imVersion": "5.1.0",
+  "customerBankToolCount": 37,
+  "checks": {
+    "localReminderTests": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "localReminderBrowser": "ALL PASS",
+    "existingImBrowserTests": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "existingImUnitTests": {
+      "passed": 11,
+      "failed": 0,
+      "explicitModeSkipped": 2
+    },
+    "knowledgeTestsPassed": 29,
+    "knowledgeQuestionsTop3": "90/90",
+    "accountModelAssertions": "passed",
+    "serverReminderTests": "10/10",
+    "newPortalAndJavascriptMatchRelease": true,
+    "unauthenticatedReminderEndpoint": 401,
+    "sixServicesActive": true,
+    "otherFivePidsUnchanged": true,
+    "originalEnvironmentFilesPreserved": true,
+    "sessionPathAndImCredentialsPreserved": true,
+    "ownedLegacyBindingsUpgraded": 1,
+    "demoBackupAndPostdeployReconciliation": "passed",
+    "temporaryRuntimeDebuggerClosed": true,
+    "postdeploySqliteOnlineBackupAndEncryptedBindingSnapshot": true
+  },
+  "realConnectionTest": {
+    "authorizedByUser": true,
+    "recipient": "user-specified existing bank binding, phone ending 8277",
+    "reminderId": "rem-d0c9e3b9-3aff-4039-85ae-37f4721636f4",
+    "scheduledAt": "2026-10-20T10:26:34+08:00",
+    "maximumMessages": 1,
+    "bankDataQueried": false,
+    "financialOperations": false,
+    "lastVerifiedStatus": "scheduled",
+    "channelAcknowledged": false,
+    "blocker": {
+      "code": "stale-token",
+      "providerCode": "-14",
+      "meaning": "Existing WeChat bot credentials expired; original owner must scan again"
+    },
+    "reauthQrGenerated": true,
+    "reauthQrExpiresAt": "2026-10-20T10:36:39+08:00",
+    "lastCheckedAt": "2026-10-20T10:34:04+08:00"
+  },
+  "limits": [
+    "One-shot WeChat text reminders only; no recurring or WeCom reminder scheduling.",
+    "sent means channel API acknowledgement, not recipient read receipt.",
+    "Uncertain send outcomes never automatically retry; cannot guarantee end-to-end exactly once.",
+    "The official single-user workbench Web is not exposed publicly.",
+    "No paid model invocation was required for reminder delivery verification.",
+    "Reminder stores require separate protected SQLite backups; no periodic reminder backup timer added.",
+    "Do not delete initial release: preserved session/IM paths still live there.",
+    "Bank login tokens are in memory; restart requires one fresh bank connection for banking queries, not for previously confirmed text reminders."
+  ]
+}
