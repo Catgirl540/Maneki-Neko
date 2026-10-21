@@ -169,6 +169,8 @@ export function toTransactionListItem(rec) {
         category: rec.category,
         createdAt: rec.createdAt,
         status: rec.status,
+        // 后台分类中/失败要透传到列表，前端才能显示「正在分类」而不是干等
+        ...(rec.classificationState ? { classificationState: rec.classificationState } : {}),
         // 在途/清算中要透传到列表（清单 §9.2），前端才有得渲染倒计时
         ...(rec.pendingReason ? { pendingReason: rec.pendingReason } : {}),
         ...(rec.holdUntil ? { holdUntil: rec.holdUntil } : {}),

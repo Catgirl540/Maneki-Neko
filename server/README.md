@@ -29,7 +29,7 @@ node index.mjs
 
 ## 交易自动分类
 
-记账时对 `category === 'other'` 的支出流水调用 OpenRouter 决策模型（默认 `perplexity/pplx-decider-flash-v1.2`，`/api/alpha/decisions`）按对方户名、摘要、渠道与金额归入消费分类；`transfer`、`salary` 等明确赋值与 `businessType` 流水不参与。配置 `OPENROUTER_API_KEY` 即启用，可用 `BANK_CATEGORIZE_MODEL` 换模型；无密钥、超时或响应异常一律回落 `other`，不影响记账。相同流水要素有进程内缓存去重。浏览器 mock 不调用付费模型，行为不变。门禁：`node tools/check-categorize.mjs`（纯夹具）。
+记账时对 `category === 'other'` 的支出流水调用 OpenRouter 决策模型（`/api/alpha/decisions`）按对方户名、摘要、渠道与金额归入消费分类；`transfer`、`salary` 等明确赋值与 `businessType` 流水不参与。模型链默认 `perplexity/pplx-decider-flash-v1.2` → `respan/span-02`：每个模型最多重试 3 次，一个模型全部失败换下一个，全失败才回落 `other`。`BANK_CATEGORIZE_MODEL` 可用逗号指定首选模型（其后仍接默认回退）。无密钥、超时或响应异常不影响记账；失败结果不写缓存，下次同一商户会重新尝试。相同流水要素有进程内缓存去重。浏览器 mock 不调用付费模型，行为不变。模拟消费的分类在**后台**进行：流水先落 `other` 并标 `classificationState=pending`，分类完成后回写分类与状态（`done`/`failed`），进程重启会把未完成的接着分。门禁：`node tools/check-categorize.mjs`（纯夹具）。
 
 ## 验证
 

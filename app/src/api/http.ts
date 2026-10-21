@@ -131,6 +131,8 @@ export function createHttpApi(): BankApi {
     replaceCard: (id, req) => post(routes.cardReplace(id), req),
     revealCardSecrets: (id, paymentPassword) => post(routes.cardSecrets(id), { paymentPassword }),
     updateCardSettings: (id, body) => patch(routes.cardSettings(id), body),
+    spendOnCard: (id, req) => post(routes.cardSpend(id), req),
+    activateCard: (id, paymentPassword) => post(routes.cardActivate(id), { paymentPassword }),
 
     listWealthProducts: () => request(routes.wealthProducts()),
     getWealthProduct: (code) => request(routes.wealthProduct(code)),

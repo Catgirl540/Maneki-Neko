@@ -21,6 +21,7 @@ export const serviceGroups = [
     { to: '/accounts?flow=in', label: '收款与转入', Icon: WalletIcon },
     { to: '/exchange', label: '多币种换汇', Icon: GlobalIcon },
     { to: '/cards', label: '银行卡管理', Icon: CardIcon },
+    { to: '/spend', label: '模拟消费', Icon: CardIcon },
   ] },
   { title: '账单与资金', items: [
     { to: '/analysis', label: '账单与交易', Icon: ChartIcon },

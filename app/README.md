@@ -99,7 +99,8 @@ VITE_USE_MOCK=false npm --prefix app run dev
 - `/dashboard`：总览（登录后落地页）；`/assistant`：智能助手工作台；`/support` 兼容跳转到 `/assistant`。
 - `/transfer`：独立转账任务页，复用 `TransferForm` 的报价、收款人核验与支付确认。
 - `/accounts`：唯一账户的余额、各币种余额、近期交易；转入和转出弹窗仍可在此打开。
-- `/cards`：卡片列表、锁卡/换卡、交易设置、验证后查看安全信息。
+- `/cards`：卡片列表、锁卡/换卡、交易设置、验证后查看安全信息；待激活的卡可在此激活（需支付密码）。
+- `/spend`：模拟消费。预设国内常用平台（美团、淘宝、京东、拼多多、滴滴、瑞幸、星巴克、盒马、爱奇艺、中国移动、自如、猫眼），选卡填金额后由服务端从卡绑定账户扣款并落卡类流水。分类是后台任务：响应先回、流水先落 other 并标 `classificationState=pending`，页面显示「正在分类」并轮询交易详情，分类完成（或失败）后回填；账单行与交易详情同样显示分类状态。锁定/待激活/已换发的卡、关闭线上支付的卡不能消费，并受单笔上限、单日限额、线上渠道限额与商户类别限额约束。链接支持标记直接进入并预选平台：`/spend?merchant=meituan`（或 `#meituan`）。
 - `/analysis`、`/analysis/statistics`、`/analysis/autodebits`：流水、消费分析、自动扣款。
 - 账单页 `/analysis` 的筛选入口在分类 chips 那一行右侧（漏斗 + 已选条件数角标），点开是右侧抽屉（`components/ui/Drawer.tsx`），四组单选：收支、分类、时间范围、币种；底部「重置」恢复各组默认，「应用」写进 URL 并关闭。条件落在 search params（`direction` / `category` / `range` / `currency`，切换时清空 `page`），刷新可恢复；已选条件数只统计非默认项，全部默认时不显示角标。`range` 在请求时换算成本地自然日 `from`/`to`（近 7 天 = 今天与之前 6 天，含首尾），不能用 UTC 切片。币种组与上方币种 chips 指向同一资金账户下的余额分区（`account` 参数），点 chips 会清掉抽屉的币种条件，两者不互相矛盾；不因此新建账户。收支方向由后端过滤（`direction=in|out`），不在前端对当前页过滤，否则分页条数会错。导出流水套用同一组条件。规则集中在 `src/lib/billsFilter.ts`，浏览器夹具为 `tools/check-bills-filter-ui.mjs`。
 - 理财与储蓄采用五个子入口：`/wealth` 总览、`/wealth/products` 产品市场、`/wealth/holdings` 持仓、`/wealth/plans` 储蓄与计划、`/wealth/records` 交易记录。产品市场按类型、风险、开放条件和起购金额筛选，支持两款产品比较；未开通也能浏览，申购仍通过现有测评、身份核验、协议和支付确认。
@@ -151,7 +152,9 @@ node tools/check-http-frontend.mjs
 单弹窗转入、转出与撤销检查运行 `node tools/check-account-flows.mjs`；
 转账挂起与清算：`node --import ./tools/ts-resolve-hook.mjs tools/check-transfer-holds.mjs`；HTTP 全链路使用 `node tools/transfer-hold-smoke.mjs`，仅写临时数据库。
 结果与详情自动刷新检查运行 `node tools/check-transfer-status-ui.mjs`，覆盖到账、拦截、清算及查询失败恢复。
-收款字段与剪贴板检查运行 `node tools/check-receiving.mjs`。
+收款字段与剪贴板检查运行 `node tools/check-receiving.mjs`；
+模拟消费与卡激活（分类器接线、扣款守恒、限额与状态拒绝路径）运行
+`node --import ./tools/ts-resolve-hook.mjs tools/check-spend.mjs`。
 
 上述浏览器脚本需要可用的 Chromium，可通过 `CHROME_PATH` 指定；HTTP 脚本自行启动临时后端和数据库。
 涉及 Agent HTTP 链路的修改，配置 `BANK_HTTP_TEST_DATABASE_URL` 与 `LUCKYCAT_SESSION_TEST_DATABASE_URL` 两个专用可丢弃库后运行 `node tools/check-agent-http.mjs`；数据库命名、依赖及框架构建步骤见 `server/README.md`。检查使用真实 PostgreSQL、Harness 与本地模型协议夹具，不调用付费模型。

@@ -327,7 +327,7 @@ export function BillsPage() {
           {transactions.error && <div role="alert" className="py-4 text-[13px] text-coral"><p>{transactions.error}</p><Button size="sm" className="mt-3" onClick={transactions.reload}>重新加载流水</Button></div>}
 
           {visibleTransactions?.items.map((tx) => (
-            <TransactionRow key={tx.id} tx={tx} showAccount={CATEGORY_LABEL[tx.category]} />
+            <TransactionRow key={tx.id} tx={tx} showAccount={tx.classificationState === 'pending' ? `${CATEGORY_LABEL[tx.category]} · 正在分类` : CATEGORY_LABEL[tx.category]} />
           ))}
 
           {visibleTransactions?.items.length === 0 && (

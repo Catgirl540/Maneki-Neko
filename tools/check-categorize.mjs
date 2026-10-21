@@ -49,11 +49,27 @@ check(await catHttp.classify(tx) === 'other', '模型限流/错误响应回落 o
 /* ---------------- ② 记账接线：'other' 支出流水被自动分类 ---------------- */
 
 const storageShim = globalThis.window.localStorage
-const [{ createBankBusinessApi }, { resetDb }] = await Promise.all([
+const [{ createBankBusinessApi }, { resetDb, loadDb, persist }] = await Promise.all([
   import('../server/domain/index.mjs'),
   import('../server/domain/state.mjs'),
 ])
 resetDb()
+// 制卡费按会员档位减免：演示档案是白金（AUM ¥129 万），制卡费为 0 就没有可分类的流水。
+// 夹具把资产压到 ¥1,000 并降到普通会员（申卡时会重新评定，不压资产会被立刻升回白金），
+// 确保真的产生一笔「制卡工本费」支出。
+{
+  const seeded = loadDb()
+  seeded.assetSnapshots = []
+  for (const row of [seeded.accounts[0], ...(seeded.currencyBalances ?? [])]) {
+    row.balance = 100_000
+    row.available = 100_000
+  }
+  if (seeded.cashManagement) seeded.cashManagement.balance = 0
+  if (Array.isArray(seeded.holdings)) seeded.holdings = []
+  seeded.membership.tier = 'standard'
+  if (seeded.user) seeded.user.memberTier = 'standard'
+  persist()
+}
 const securityStub = {
   verifySms: async () => {},
   issueIdentityTicket: async (channel) => ({ ticket: `test.${channel}` }),

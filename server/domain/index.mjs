@@ -20,6 +20,7 @@ import { ledgerBalances, findBalance } from '../../shared/account-model.mjs';
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../shared/account-model.mjs'
 import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../shared/invest-plan.mjs'
 import { supportGuidance } from '../../shared/support-guidance.mjs'
+import { SPEND_MAX_CENTS, findSpendPlatform } from '../../shared/spend-platforms.mjs'
 import { hashPassword, verifyPassword, needsRehash } from '../passwords.mjs';
 import { randomInt } from 'node:crypto';
 // Server business rules with normalized SQL persistence; sandbox integrations are explicitly gated.
@@ -231,6 +232,61 @@ function newCardCvv() {
 }
 let txClassifier = null;
 /**
+ * 后台分类：记账与响应都不等分类器 —— 流水先以 other 落库并标 pending，
+ * 分类完成后回写 category 并把状态改成 done；全部模型重试失败标 failed（分类保持 other）。
+ * 分类器内部已按「每模型 3 次 × 模型链」重试，这里不再叠加。
+ */
+const classifying = new Map();
+function applyClassification(txId, category, failed) {
+    const db = loadDb();
+    const tx = db.transactions.find((row) => row.id === txId);
+    if (!tx)
+        return;
+    if (!failed && category)
+        tx.category = category;
+    tx.classificationState = failed ? 'failed' : 'done';
+    persist();
+}
+function scheduleClassification(txId, input) {
+    if (!txClassifier) {
+        applyClassification(txId, 'other', false);
+        return;
+    }
+    if (classifying.has(txId))
+        return;
+    const task = (async () => {
+        try {
+            const detail = typeof txClassifier.detailed === 'function'
+                ? await txClassifier.detailed(input)
+                : { category: await txClassifier(input), failed: false };
+            applyClassification(txId, detail.category, detail.failed === true);
+        }
+        catch {
+            applyClassification(txId, 'other', true);
+        }
+    })().finally(() => classifying.delete(txId));
+    classifying.set(txId, task);
+}
+/** 进程重启后接着分没分完的流水；分类器不可用时直接标 failed，不留永久「分类中」 */
+function resumePendingClassifications() {
+    const rows = loadDb().transactions.filter((row) => row.classificationState === 'pending');
+    for (const row of rows) {
+        if (!txClassifier) {
+            row.classificationState = 'failed';
+            continue;
+        }
+        scheduleClassification(row.id, {
+            counterparty: row.counterparty,
+            memo: row.memo,
+            direction: row.direction,
+            channel: row.detail?.channel,
+            amount: row.amount,
+            currency: row.detail?.settleCurrency,
+        });
+    }
+    persist();
+}
+/**
  * 追加一笔台账。渠道与支付方式由调用方显式给出 ——
  * 这样每笔新交易的凭证要素都是真的，而不是事后从分类里猜出来的。
  * 交易前后余额不落库：它们随账户余额变化，由 getTransaction 读取时回推。
@@ -247,7 +303,8 @@ async function pushTransaction(tx, detail, save = true, identity) {
         createdAt: identity?.createdAt ?? tx.createdAt,
         detail: { ...detail, referenceNo: identity?.referenceNo ?? makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
     };
-    if (txClassifier && created.category === 'other' && created.direction === 'out' && !created.businessType) {
+    if (txClassifier && created.category === 'other' && created.direction === 'out' && !created.businessType
+        && tx.classificationState !== 'pending') {
         try {
             const category = await txClassifier({
                 counterparty: created.counterparty,
@@ -400,6 +457,8 @@ export function createBankBusinessApi(options) {
     const security = options?.security;
     // 交易自动分类器（OpenRouter），未注入时全部保持调用方给的分类
     txClassifier = options?.classify ?? null;
+    // 重启恢复：把上次没分完的流水接着分（或标 failed），不让它们永远停在「分类中」
+    resumePendingClassifications();
     const thresholdSource = options?.reviewThreshold;
     const readThreshold = async () => typeof thresholdSource === 'function' ? await thresholdSource() : thresholdSource;
     const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000;
@@ -1237,6 +1296,23 @@ export function createBankBusinessApi(options) {
             persist();
             return card;
         },
+        /**
+         * 激活卡片：收到实体卡后启用（待激活 → 使用中）。
+         * 与真实银行一致，激活属于敏感操作，要验支付密码；已使用中/已锁定的卡不走这里。
+         */
+        async activateCard(id, paymentPassword) {
+            await delay(300);
+            const card = findCard(id);
+            // 先验身再看状态：反过来的话，密码不对的人也能从报错里探到卡状态
+            verifyPayPassword(paymentPassword);
+            if (card.status === 'replaced')
+                throw new ApiError('该卡已换卡，无法激活', 409, 'CARD_REPLACED');
+            if (card.status !== 'pending')
+                throw new ApiError('该卡已是使用中状态，无需激活', 409, 'CARD_ALREADY_ACTIVE');
+            card.status = 'active';
+            persist();
+            return card;
+        },
         async replaceCard(id, req) {
             await delay(650);
             const db = loadDb();
@@ -1322,6 +1398,94 @@ export function createBankBusinessApi(options) {
             Object.assign(card, patch);
             persist();
             return card;
+        },
+        /**
+         * 模拟消费：预设商户上刷卡，从卡绑定的资金账户扣款并落一笔卡类流水。
+         *
+         * 卡只是支付工具，钱在账户里 —— 扣的是 `card.accountId` 对应的币种分区，
+         * 不新建账户、不动其他币种。分类走与真实刷卡相同的分类器（先问再落库），
+         * 商户类别限额按分类取桶；分类器不可用时落 other。
+         */
+        async spendOnCard(id, input) {
+            await delay(320);
+            const db = loadDb();
+            const card = findCard(id);
+            if (card.status === 'locked')
+                throw new ApiError('卡片已锁定，请先解锁再消费', 409, 'CARD_LOCKED');
+            if (card.status === 'pending')
+                throw new ApiError('卡还在寄送途中，收到并激活后才能消费', 409, 'CARD_NOT_DELIVERED');
+            if (card.status === 'replaced')
+                throw new ApiError('这张卡已换发，旧卡不再消费', 409, 'CARD_REPLACED');
+            if (card.paymentEnabled === false)
+                throw new ApiError('该卡已关闭消费，请在卡片设置中开启', 409, 'CARD_PAYMENT_DISABLED');
+            if (!card.onlinePayment)
+                throw new ApiError('该卡已关闭线上支付，请先在卡片设置中开启', 409, 'CARD_ONLINE_PAYMENT_DISABLED');
+            const platform = findSpendPlatform(input?.platform);
+            if (!platform)
+                throw new ApiError('消费平台不存在', 404, 'SPEND_PLATFORM_NOT_FOUND');
+            const amount = input?.amount;
+            if (!Number.isSafeInteger(amount) || amount <= 0)
+                throw new ApiError('消费金额必须大于 0', 400, 'INVALID_AMOUNT');
+            if (amount > SPEND_MAX_CENTS)
+                throw new ApiError(`单笔模拟消费上限 ¥${formatAmount(SPEND_MAX_CENTS)}`, 400, 'LIMIT_EXCEEDED');
+            const balance = findBalance(db, card.accountId);
+            if (!balance)
+                throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND');
+            const onlineLimit = card.channelLimits?.online;
+            if (Number.isSafeInteger(onlineLimit) && amount > onlineLimit)
+                throw new ApiError(`超过本卡线上消费单笔限额 ¥${formatAmount(onlineLimit)}`, 409, 'CHANNEL_LIMIT_EXCEEDED');
+            // 分类是后台任务：写账时还不知道类别，商户类别限额按「其他」桶校验（不回溯）
+            const merchantLimit = card.merchantLimits?.other;
+            if (Number.isSafeInteger(merchantLimit) && amount > merchantLimit)
+                throw new ApiError(`超过本卡该商户类别的单笔限额 ¥${formatAmount(merchantLimit)}`, 409, 'MERCHANT_LIMIT_EXCEEDED');
+            const today = dayKey(new Date());
+            const usedToday = db.transactions
+                .filter((tx) => tx.detail?.cardId === card.id && tx.direction === 'out' && tx.status === 'success'
+                    && dayKey(new Date(tx.createdAt)) === today)
+                .reduce((sum, tx) => sum + tx.amount, 0);
+            if (usedToday + amount > card.dailyLimit)
+                throw new ApiError(`超过本卡单日限额 ¥${formatAmount(card.dailyLimit)}（今日已消费 ¥${formatAmount(usedToday)}）`, 409, 'DAILY_LIMIT_EXCEEDED');
+            if (balance.available < amount)
+                throw new ApiError('账户可用余额不足', 409, 'INSUFFICIENT_FUNDS');
+            applyBalance(card.accountId, -amount, false);
+            const classificationState = txClassifier ? 'pending' : 'done';
+            const transaction = await pushTransaction({
+                accountId: card.accountId,
+                direction: 'out',
+                amount,
+                signedAmount: -amount,
+                counterparty: platform.name,
+                memo: `${platform.name} 消费`,
+                category: 'other',
+                classificationState,
+                createdAt: new Date().toISOString(),
+                status: 'success',
+            }, {
+                channel: 'card',
+                paymentMethod: `${card.productName} 尾号 ${card.last4}`,
+                accountLabel: balance.label,
+                accountNo: balance.accountNo,
+                settleCurrency: balance.currency,
+                cardId: card.id,
+                merchantId: platform.merchantId,
+                merchantCountry: platform.country,
+                merchantCity: platform.city,
+                location: platform.location,
+                counterpartyBank: platform.counterpartyBank,
+                remark: `模拟消费 · ${platform.name}`,
+            }, false);
+            persist();
+            if (classificationState === 'pending') {
+                scheduleClassification(transaction.id, {
+                    counterparty: platform.name,
+                    memo: `${platform.name} 消费`,
+                    direction: 'out',
+                    channel: 'card',
+                    amount,
+                    currency: balance.currency,
+                });
+            }
+            return { transaction, category: 'other', classificationState, available: balance.available, currency: balance.currency };
         },
         /* ------------------------------------------------------------ 开户 */
         async sendSmsCode(phone) {
