@@ -7,25 +7,24 @@ import { SupportPage } from '@/pages/SupportPage'
 
 /** 助手与输入草稿跨业务页面保活；只有业务内容随路由切换。 */
 export function AppShell() {
-  const { pathname, search } = useLocation()
+  const { pathname } = useLocation()
   const navigate = useNavigate()
-  const home = pathname === '/dashboard' || pathname === '/support'
+  // 只有「智能客服与转人工」是助手工作台；账户总览是业务页，不被助手占位。
+  const home = pathname === '/support'
   const [serviceIds, setServiceIds] = useState<SmartServiceId[]>([])
   const [highlightTaskId, setHighlightTaskId] = useState<SmartServiceId>()
   const [focusRequest, setFocusRequest] = useState(0)
   const pageScroller = useRef<HTMLDivElement>(null)
   const service = serviceForPath(pathname)
   const services = home ? smartServices.filter(item => serviceIds.includes(item.id)) : service ? [service] : []
-  const flow = new URLSearchParams(search).get('flow')
   useEffect(() => {
     pageScroller.current?.scrollTo({ top: 0 })
-    if (home && (flow === 'in' || flow === 'out')) navigate({ pathname: '/accounts', search }, { replace: true })
-  }, [pathname, home, flow, search, navigate])
+  }, [pathname])
 
   function activate() {
     if (!home) {
       if (service) setServiceIds(ids => ids.includes(service.id) ? ids : [...ids, service.id])
-      navigate('/dashboard')
+      navigate('/support')
     }
   }
 

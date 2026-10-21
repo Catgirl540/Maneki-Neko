@@ -93,7 +93,7 @@ export default function App() {
                 }
               >
                 <Route element={<AccountLayout />}>
-                  <Route path="/dashboard" element={null} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/accounts" element={<DashboardPage />} />
                   <Route path="/cards" element={<CardsPage />} />
                   <Route path="/receiving" element={<Navigate to="/accounts?flow=in" replace />} />

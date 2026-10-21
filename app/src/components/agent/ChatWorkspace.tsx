@@ -51,6 +51,8 @@ export interface WorkbenchOptions {
   focusRequest: number
   onActivate: () => void
   onClearTask: (id: string) => void
+  /** 插在输入框上方的自定义区；给了就顶替「已选功能」那排 chips，避免同一批内容出现两遍。 */
+  composerTop?: ReactNode
 }
 
 export interface ChatWorkspaceProps extends AgentChatOptions {
@@ -513,7 +515,8 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             {docked && (activeBusy || agent.pending || agent.ask) && <button type="button" className="workbench-chat-alert" onClick={workbench?.onActivate}>
               {agent.pending ? '有一项操作需要确认' : agent.ask ? '助手需要补充信息' : '助手正在回复'}<span>返回对话 →</span>
             </button>}
-            {!!workbench?.tasks.length && <div className="workbench-intents" aria-label="已选择的功能">
+            {workbench?.composerTop}
+            {!workbench?.composerTop && !!workbench?.tasks.length && <div className="workbench-intents" aria-label="已选择的功能">
               {workbench.tasks.map(task => <div key={task.id} className="workbench-intent"><span>{task.label}</span>
                 {!docked && workbench.highlightTaskId === task.id && workbench.focusRequest > 0 && <span key={workbench.focusRequest} className="workbench-intent-burst" aria-hidden="true">
                   {Array.from({ length: 8 }, (_, index) => <i key={index} />)}

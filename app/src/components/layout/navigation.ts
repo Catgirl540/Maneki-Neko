@@ -1,7 +1,7 @@
 import { CardIcon, ChartIcon, GlobalIcon, LockIcon, PigIcon, ShieldIcon, TransferIcon, UserIcon, WalletIcon } from '@/components/ui/icons'
 
 export const navigationItems = [
-  { to: '/dashboard', label: '账户总览', Icon: WalletIcon, paths: ['/dashboard', '/support'] },
+  { to: '/dashboard', label: '账户总览', Icon: WalletIcon, paths: ['/dashboard'] },
   { to: '/transfer', label: '转账与支付', Icon: TransferIcon, paths: ['/transfer', '/receiving'] },
   { to: '/cards', label: '银行卡', Icon: CardIcon, paths: ['/cards'] },
   { to: '/analysis', label: '账单与交易', Icon: ChartIcon, paths: ['/analysis', '/transactions'] },
