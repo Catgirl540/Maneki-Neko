@@ -11,6 +11,7 @@
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
+import { mkdir, readFile } from 'node:fs/promises'
 import { createServer } from '../app/node_modules/vite/dist/node/index.js'
 import { chromium } from 'playwright-core'
 
@@ -30,7 +31,7 @@ const web = await createServer({
 
 const user = { id: 'fixture-user', name: '测试客户', phone: '13900139000', memberTier: 'standard', avatarInitial: '测' }
 /** 内存里的 IM 状态：绑定码 → 来源、绑定列表、提醒列表。 */
-const im = { codes: new Map(), bindings: [], reminders: [], disabled: false, truncated: false, nextReminder: 0, writes: [] }
+const im = { codes: new Map(), bindings: [], reminders: [], disabled: false, outage: false, truncated: false, nextReminder: 0, writes: [] }
 const issueCode = label => {
   const code = `fixture-code-${im.codes.size + 1}`
   im.codes.set(code, { label, expiresAt: Date.now() + 600_000 })
@@ -67,6 +68,7 @@ try {
     }
     const respond = (data, status = 200) =>
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
+    if (im.outage) return respond({ error: '会话持久化服务不可用，请稍后重试', code: 'SESSION_STORE_UNAVAILABLE' }, 503)
     if (method !== 'GET') im.writes.push({ method, path, body })
     if (im.disabled && path.startsWith('/reminders')) return respond({ error: '微信提醒尚未启用' }, 503)
     if (method === 'GET' && path === '/bindings') return respond(im.bindings)
@@ -143,6 +145,26 @@ try {
   assert(previewText.includes('（北京时间）'))
   assert(previewText.includes('还没有绑定 IM 私聊'))
   assert.equal(im.bindings.length, 0)
+  const management = page.getByRole('link', { name: '打开机器人扫码管理', exact: true })
+  assert.equal(await management.getAttribute('href'), '/agent-api/im?view=admin')
+  assert.equal(await management.getAttribute('target'), '_blank')
+  assert((await management.getAttribute('rel')).includes('noopener'))
+  await page.context().route(/\/agent-api\/im\?view=admin$/, async route => route.fulfill({
+    contentType: 'text/html', body: await readFile(path.join(root, 'framework/bridge/im-portal.html'), 'utf8'),
+  }))
+  await page.context().route(/\/agent-api\/im\/portal\.js$/, async route => route.fulfill({
+    contentType: 'text/javascript', body: await readFile(path.join(root, 'framework/bridge/im-portal.js'), 'utf8'),
+  }))
+  const popupReady = page.waitForEvent('popup')
+  await management.click()
+  const popup = await popupReady
+  await popup.getByRole('heading', { name: '运维人员登录', exact: true }).waitFor()
+  assert.equal(await popup.getByLabel('员工账号', { exact: true }).count(), 1)
+  assert.equal(await popup.evaluate(() => sessionStorage.getItem('luckycat.token')), null)
+  await popup.close()
+  console.log('PASS 首次接入入口新窗口直达真实扫码管理的运维登录，不传递银行令牌、不发起扫码或修改机器人')
+  await mkdir(path.join(root, '.generated/local-postgres'), { recursive: true })
+  await page.screenshot({ path: path.join(root, '.generated/local-postgres/im-entry-20261021.png') })
   console.log('PASS /reminders 渲染 IM 连接与提醒两块，侧栏一级入口高亮，hash 绑定码预填并自动核对来源')
 
   await page.getByRole('button', { name: '确认绑定到当前银行账户', exact: true }).click()
@@ -225,6 +247,19 @@ try {
   assert.equal(await page.getByRole('alert').count(), 0)
   assert((await page.locator('main').innerText()).includes('IM 连接'))
   console.log('PASS 提醒接口 503 时显示「提醒尚未启用」空态，不出现错误红条')
+
+  im.disabled = false; im.outage = true
+  await page.reload()
+  await page.getByText('IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。', { exact: true }).waitFor()
+  assert.equal(await page.getByText('IM 连接尚未启用', { exact: true }).count(), 0)
+  assert.equal(await page.getByText('提醒尚未启用', { exact: true }).count(), 0)
+  assert(await management.isVisible())
+  im.outage = false
+  await page.reload()
+  await page.getByRole('heading', { name: '私聊绑定', exact: true }).waitFor()
+  await page.getByText('还没有绑定 IM 私聊', { exact: true }).waitFor()
+  assert.equal(await page.getByText('IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。', { exact: true }).count(), 0)
+  console.log('PASS 会话库 503 显示服务故障，保留扫码入口，不谎报未启用；恢复后可重新加载')
 
   assert.deepEqual(errors, [])
   console.log('ALL PASS IM 连接页：绑定码核对/绑定、提醒创建/取消、解除绑定、未启用空态，无页面运行异常')

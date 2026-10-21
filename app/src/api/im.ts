@@ -22,6 +22,7 @@ import { AUTH_EXPIRED_EVENT, forgetSession, getAuthToken } from '@/lib/authToken
  */
 const AGENT_BASE = (import.meta.env.VITE_AGENT_URL ?? '/agent-api').trim().replace(/\/+$/, '')
 const IM_BASE = `${AGENT_BASE === '' ? '/agent-api' : AGENT_BASE}/im`
+export const imRobotManagementUrl = `${IM_BASE}?view=admin`
 const REQUEST_TIMEOUT_MS = 12_000
 
 /** 提醒的投递状态。语义见 `docs/api/im-reminders.md` 的「状态与恢复」。 */
@@ -90,12 +91,20 @@ export interface ImClaimResult {
 /** 带 HTTP 状态码的失败：页面要按 401/404/503 分别处理。 */
 export class ImError extends Error {
   readonly status: number
+  readonly code?: string
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message)
     this.name = 'ImError'
     this.status = status
+    this.code = code
   }
+}
+
+/** A database/network outage is not a disabled feature. */
+export function isImFeatureUnavailable(error: ImError | null): boolean {
+  return error !== null && (error.status === 404 || (error.status === 503
+    && error.code !== 'SESSION_STORE_UNAVAILABLE' && /尚未启用|未启用/.test(error.message)))
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -121,13 +130,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       }
     }
     if (!response.ok) {
-      const body = payload as { message?: string; error?: string } | null
+      const body = payload as { message?: string; error?: string; code?: string } | null
       // 这些路由全部需要登录态，401 一律按会话失效处理（与 `api/http.ts` 同口径）。
       if (response.status === 401 && token) {
         forgetSession()
         window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
       }
-      throw new ImError(body?.message ?? body?.error ?? `请求失败（${response.status}）`, response.status)
+      throw new ImError(body?.message ?? body?.error ?? `请求失败（${response.status}）`, response.status, body?.code)
     }
     return payload as T
   } catch (error) {

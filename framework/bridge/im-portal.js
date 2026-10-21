@@ -44,6 +44,7 @@ function logout() {
 function mode(value) { admin = value; logout(); $('login-title').textContent = admin ? '运维人员登录' : '登录银行账户'; $('identity-label').textContent = admin ? '员工账号' : '手机号'; $('sms-fields').hidden = admin; notice() }
 $('customer-tab').onclick = () => mode(false)
 $('admin-tab').onclick = () => mode(true)
+if (!connectionTest && new URLSearchParams(location.search).get('view') === 'admin') mode(true)
 $('logout-button').onclick = logout
 $('admin-logout-button').onclick = logout
 $('identity').addEventListener('input', () => { $('sms-code').value = ''; $('sms-hint').textContent = ''; $('sms-hint').hidden = true; renderSmsButton() })
