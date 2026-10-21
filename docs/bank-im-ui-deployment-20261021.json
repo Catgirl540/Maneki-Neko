@@ -1,0 +1,52 @@
+{
+  "date": "2026-10-21T17:36:45+08:00",
+  "url": "https://bank.waveflow.men/reminders",
+  "status": "deployed-and-verified",
+  "revision": "a6e71cfe8c5019997339b8ce7e40ca1cd18f1d8c",
+  "scope": "customer web static assets only",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261021-im-ui-a6e71cf",
+  "previousWebRelease": "/var/www/bank.waveflow.men/releases/20261021-inline-qr-49ee28e",
+  "unchangedBackendSource": "/srv/maneki-bank/releases/20261021-inline-qr-49ee28e",
+  "artifactSha256": "78997a2d9ccd01a10f88ed6babd20370af5c6c1dcb2ec9702160920a6190424f",
+  "backupLocation": "/var/backups/maneki-im-ui-a6e71cf",
+  "changes": [
+    "Bank theme, typography, linear icons and shared card/button components; page CSS is scoped to .im-page.",
+    "Inline WeChat QR and connection management appear side by side on wide desktops, stacked on narrower viewports.",
+    "Visible three-step guide and QR placeholder, scan status, expiry/retry and explicit account confirmation.",
+    "Manual pairing-code form is collapsed by default, keyboard accessible, and automatically opens for #code links.",
+    "Reminder editor and reminder history are separated, with explicit Beijing time and independent list refresh controls.",
+    "Existing customer authentication, account ownership, QR API and reminder confirmation semantics are unchanged."
+  ],
+  "checks": {
+    "productionFrontendBuild": "passed",
+    "accountModelMaintenanceDocs": "41 passed",
+    "localBrowserRegression": "ALL PASS",
+    "publishedRealAssetsWithFixtureApis": "ALL PASS",
+    "visualScreenshotsReviewed": ["initial", "QR pending", "reminder saved"],
+    "desktopWidthsWithoutHorizontalOverflow": [1024, 1280, 1440, 1920],
+    "keyboardManualFormToggle": "passed",
+    "hashCodeAutoExpandAndPreview": "passed",
+    "inlineQrVerificationAndExplicitBinding": "passed",
+    "qrCancellationExpiryAndRetry": "passed",
+    "reminderCreationCancellationAndUnbinding": "passed",
+    "disabledAndPersistenceFailureStates": "passed",
+    "frontendAssetHashesMatched": 71,
+    "publicRemindersEntry": 200,
+    "unauthenticatedBindings": 401,
+    "unauthenticatedReminders": 401,
+    "allSixServicePidsAndWorkingDirectoriesUnchanged": true,
+    "backendSourcePointerUnchanged": true,
+    "staffAndAndroidEntrypointsPreserved": true,
+    "bankOrAgentRestarted": false,
+    "customerDatabaseAccessed": false,
+    "realQrGeneratedForVerification": false,
+    "wechatMessageSentForVerification": false,
+    "paidModelCalled": false,
+    "financialOperationExecuted": false
+  },
+  "verificationLimits": [
+    "Browser tests load the published HTML/CSS/JS, but all bank, Agent and IM API requests are intercepted as isolated fixtures.",
+    "Actual WeChat scanning and message delivery were not repeated for this UI-only release.",
+    "This release changes the customer web interface, not backend runtime code or the separate staff interface."
+  ]
+}
