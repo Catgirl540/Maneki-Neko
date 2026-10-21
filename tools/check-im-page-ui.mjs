@@ -47,6 +47,13 @@ try {
   browser = await chromium.launch({ executablePath: process.env.CHROME_PATH, headless: true })
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
   page.setDefaultTimeout(12000)
+  async function capture(name, section) {
+    await page.locator('.business-scroll').evaluate((element, section) => {
+      const target = section ? document.querySelector(section) : null
+      element.scrollTop = target ? element.scrollTop + target.getBoundingClientRect().top - element.getBoundingClientRect().top : 0
+    }, section)
+    await page.screenshot({ path: path.join(root, `.generated/local-postgres/${name}-20261021.png`), animations: 'disabled' })
+  }
   page.on('pageerror', error => errors.push(error.message))
   await page.addInitScript(user => {
     sessionStorage.setItem('luckycat.token', JSON.stringify('fixture-token'))
@@ -144,6 +151,21 @@ try {
     }
   })
 
+  await mkdir(path.join(root, '.generated/local-postgres'), { recursive: true })
+  await page.goto(`${base}/reminders`)
+  await page.getByRole('heading', { name: '微信扫码连接', exact: true }).waitFor()
+  const manualToggle = page.getByRole('button', { name: '使用绑定码连接', exact: false })
+  assert.equal(await manualToggle.getAttribute('aria-expanded'), 'false')
+  assert.equal(await page.getByLabel('绑定码', { exact: true }).isVisible(), false)
+  assert(await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).isVisible())
+  assert.equal(im.qrStarts, 0)
+  await capture('im-ui-idle')
+  await manualToggle.press('Enter')
+  assert(await page.getByLabel('绑定码', { exact: true }).isVisible())
+  await manualToggle.press('Space')
+  assert.equal(await page.getByLabel('绑定码', { exact: true }).isVisible(), false)
+  console.log('PASS 首次进入突出扫码入口，绑定码默认折叠且可键盘操作，不自动创建二维码')
+
   const code = issueCode('微信私聊 · 8001')
   // 从微信里的链接打开：`#code=` 预填并自动核对。
   await page.goto(`${base}/reminders#code=${code}`)
@@ -156,6 +178,7 @@ try {
   )
   const codeInput = page.getByLabel('绑定码', { exact: true })
   assert.equal(await codeInput.inputValue(), code)
+  assert.equal(await manualToggle.getAttribute('aria-expanded'), 'true')
   await page.getByText('来源：微信私聊 · 8001', { exact: true }).waitFor()
   const previewText = await page.locator('main').innerText()
   assert(previewText.includes('有效至'))
@@ -169,8 +192,11 @@ try {
   assert((await image.getAttribute('src')).startsWith('data:image/png;base64,'))
   assert.equal(page.context().pages().length, 1)
   assert.equal(im.bindings.length, 0)
+  await manualToggle.click()
   await mkdir(path.join(root, '.generated/local-postgres'), { recursive: true })
-  await page.screenshot({ path: path.join(root, '.generated/local-postgres/weixin-inline-qr-20261021.png') })
+  await capture('weixin-inline-qr')
+  await manualToggle.click()
+  assert.equal(await codeInput.inputValue(), code)
   im.qr.status = 'needs_verification'
   await page.getByLabel('扫码验证码', { exact: true }).fill('123456')
   await page.getByRole('button', { name: '提交扫码验证码', exact: true }).click()
@@ -183,6 +209,7 @@ try {
   assert.equal(im.bindings.length, 1)
   assert.equal(im.writes.filter(w => w.path.endsWith('/confirm')).length, 1)
   assert.equal(im.writes.filter(w => w.path.startsWith('/admin/')).length, 0)
+  await capture('im-ui-bound')
   console.log('PASS 本页展示真实生成的夹具二维码：扫码验证码 → 手机确认 → 银行绑定确认；不跳转、不使用运维权限，不提前绑定')
   // Reset only the memory fixture before exercising the independent legacy binding-code flow.
   im.bindings = []
@@ -225,14 +252,16 @@ try {
   assert.match(created.dueAt, /\+08:00$/)
   assert.match(created.requestId, /^[0-9a-f-]{36}$/)
   console.log('PASS 核对后确认创建：请求带 confirmed/requestId 与东八区时间，列表显示「等待发送」')
+  await page.getByRole('heading', { name: '提醒', exact: true }).scrollIntoViewIfNeeded()
+  await capture('im-ui-reminder', '.im-reminders-card')
 
   // 机器人离线仍在等待：附注说明尚未发送；历史被截断时提示只显示最近 100 条。
-  for (const width of [1440, 1024]) {
+  for (const width of [1920, 1440, 1280, 1024]) {
     await page.setViewportSize({ width, height: 1100 })
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `/reminders 在 ${width}px 溢出`)
   }
   await page.setViewportSize({ width: 1440, height: 1100 })
-  console.log('PASS 1440/1024px 无横向溢出')
+  console.log('PASS 1920/1440/1280/1024px 无横向溢出')
 
   im.reminders[0].errorCode = 'BOT_OFFLINE'
   im.truncated = true

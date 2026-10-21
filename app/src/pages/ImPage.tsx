@@ -22,8 +22,9 @@ import { DataUnavailable } from '@/components/ui/DataUnavailable'
 import { Field } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
 import { EmptyState, Skeleton, Tag } from '@/components/ui/Segmented'
-import { AlertIcon, BellIcon } from '@/components/ui/icons'
+import { AlertIcon, BellIcon, ChatIcon, ChevronDownIcon, RefreshIcon, ShieldIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/toast-context'
+import '@/components/im/im-page.css'
 
 /** 后端只按北京时间发提醒，界面上的时间一律标出来，避免和本机时区混淆。 */
 const BEIJING = 'Asia/Shanghai'
@@ -143,6 +144,7 @@ export function ImPage() {
 
   /* ── 绑定码：核对 → 确认绑定 ──────────────────────────────────────── */
   const [code, setCode] = useState('')
+  const [manualOpen, setManualOpen] = useState(false)
   const [preview, setPreview] = useState<ImCodePreview | null>(null)
   const [codeError, setCodeError] = useState<string | null>(null)
   const [checking, setChecking] = useState(false)
@@ -200,6 +202,7 @@ export function ImPage() {
     const fromHash = new URLSearchParams(location.hash.replace(/^#/, '')).get('code')?.trim() ?? ''
     if (!fromHash) return
     autoChecked.current = true
+    setManualOpen(true)
     setCode(fromHash)
     void checkCode(fromHash)
     // checkCode 只读、无状态依赖，跑一次即可
@@ -311,34 +314,32 @@ export function ImPage() {
   const truncated = reminders?.truncated ?? reminders?.historyMayBeTruncated ?? false
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="im-page flex flex-col gap-6">
       <PageHeader
         title="IM 连接"
-        description="绑定本人微信/企微私聊，并按北京时间设置提醒；提醒只发消息，不查询账户、不执行交易。"
+        description="连接微信与企微，让银行查询与日程提醒触手可及。"
+        actions={<span className="im-account-note"><ShieldIcon size={16} />仅连接本人私聊</span>}
       />
-
-      <WeixinQrBinding onBound={async () => { await loadBindings(); await loadReminders() }} />
 
       {serviceUnavailable && <DataUnavailable
         message="IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。"
         onRetry={() => { void loadBindings(); void loadReminders() }}
       />}
 
-      <Card className="float-up">
+      <div className="im-connection-grid">
+      <WeixinQrBinding onBound={async () => { await loadBindings(); await loadReminders() }} />
+      <Card className="im-bindings-card float-up">
         <CardHeader
-          title="私聊绑定"
-          action={bindingCount > 0 ? <span className="text-[13px] text-ink-mute">共 {bindingCount} 个私聊</span> : undefined}
+          title={<span className="im-section-title"><span className="im-section-icon"><ChatIcon size={18} /></span>私聊绑定</span>}
+          action={<Button size="sm" variant="ghost" aria-label="刷新私聊绑定" loading={bindingsLoading} icon={<RefreshIcon size={15} />} onClick={() => { void loadBindings(); void loadReminders() }}>刷新</Button>}
         />
-        <p className="mt-3 text-[13px] leading-relaxed text-ink-soft">
-          绑定本人微信/企微私聊后，可在登录有效期内查询本人信息；转账等写操作仍需在银行页面单独确认。
-          登录密码、支付密码不在 IM 对话里填写。
-        </p>
-
-        <div className="mt-5 rounded-card border border-line bg-sunk/60 p-4 sm:p-5">
-          <p className="text-[14px] font-medium text-ink">绑定新的 IM 私聊</p>
-          <p className="mt-1 text-[12px] leading-relaxed text-ink-mute">
-            在微信里给机器人发送「绑定」，打开回复里的链接（带 #code=）会自动填好绑定码；绑定码十分钟有效，用完即失效。
-          </p>
+        <p className="im-description">仅展示当前账户绑定的私聊，连接状态一目了然。</p>
+        <div className="im-manual-binding">
+          <button type="button" className="im-manual-toggle" aria-expanded={manualOpen} aria-controls="im-manual-code" onClick={() => setManualOpen(value => !value)}>
+            <span><b>使用绑定码连接</b><small>已有微信机器人或连接企业微信</small></span><ChevronDownIcon size={17} className={manualOpen ? 'rotate-180' : ''} />
+          </button>
+          <div id="im-manual-code" hidden={!manualOpen} className="im-manual-content">
+          <p className="text-[12px] leading-relaxed text-ink-mute">在原私聊发送「绑定」，粘贴回复中的绑定码，或直接打开回复链接。绑定码十分钟有效，用后失效。</p>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="min-w-0 sm:flex-1">
               <Field
@@ -358,7 +359,7 @@ export function ImPage() {
               <p className="mt-1 text-[12px] text-ink-soft">
                 有效至 {beijingTime(preview.expiresAt)}（北京时间）。请确认这是您正在使用的 IM 私聊。
               </p>
-              <Button variant="primary" size="sm" className="mt-3" loading={claiming} onClick={() => void claim()}>
+              <Button variant="ink" size="sm" className="mt-3" loading={claiming} onClick={() => void claim()}>
                 确认绑定到当前银行账户
               </Button>
             </div>
@@ -368,9 +369,11 @@ export function ImPage() {
               <AlertIcon size={16} className="mt-0.5 shrink-0" />{codeError}
             </p>
           )}
+          </div>
         </div>
 
-        <div className="mt-5">
+        <div className="im-binding-list">
+          {!bindingsError && bindingList && <p className="im-list-label">我的连接 <span className="num">{bindingCount.toString().padStart(2, '0')}</span></p>}
           {bindingsLoading && !bindingList ? (
             <Skeleton className="h-16 w-full" />
           ) : imDisabled ? (
@@ -384,18 +387,15 @@ export function ImPage() {
               <Button size="sm" className="mt-3" onClick={() => void loadBindings()}>重新加载</Button>
             </div>
           ) : bindingCount === 0 ? (
-            <EmptyState
-              title="还没有绑定 IM 私聊"
-              description="在微信里给机器人发送「绑定」，打开回复里的链接即可回到这里完成绑定。"
-            />
+            <div className="im-compact-empty"><span className="im-empty-icon"><ChatIcon size={24} /></span><p>还没有绑定 IM 私聊</p><small>先在扫码区连接微信，已有绑定码也可直接填写。</small></div>
           ) : (
             <div className="divide-y divide-line">
               {bindingList?.map(binding => (
-                <div key={binding.id} className="flex flex-wrap items-center gap-3 py-4">
+                <div key={binding.id} className="im-binding-row">
                   <span className="grid size-10 shrink-0 place-items-center rounded-chip bg-gold-tint text-gold-deep">
-                    <BellIcon size={18} />
+                    <ChatIcon size={18} />
                   </span>
-                  <span className="min-w-0 flex-1 text-[15px] font-medium break-words text-ink">{binding.label}</span>
+                  <span className="min-w-0 flex-1"><span className="block text-[14px] font-medium break-words text-ink">{binding.label}</span><span className="mt-1 block text-[12px] text-ink-mute">仅当前银行账户可用</span></span>
                   <Tag tone={binding.connected ? 'gold' : 'neutral'}>
                     {binding.connected ? '已连接' : '请回到 IM 获取新绑定码'}
                   </Tag>
@@ -411,12 +411,16 @@ export function ImPage() {
             </div>
           )}
         </div>
+        <p className="im-binding-footnote">连接成功后，请先在微信 ClawBot 私聊发送一条消息，激活查询与提醒。</p>
       </Card>
+      </div>
 
-      <Card className="float-up" style={{ animationDelay: '70ms' }}>
+      <p className="im-security-note"><ShieldIcon size={16} />银行登录密码、支付密码仅在银行页面填写；资金操作仍需单独确认。</p>
+
+      <Card className="im-reminders-card float-up" style={{ animationDelay: '70ms' }}>
         <CardHeader
-          title="提醒"
-          action={<span className="text-[13px] text-ink-mute">按北京时间发送</span>}
+          title={<span className="im-section-title"><span className="im-section-icon"><BellIcon size={18} /></span>提醒</span>}
+          action={<span className="im-channel-label">北京时间 · UTC+8</span>}
         />
         {remindersDisabled ? (
           <EmptyState
@@ -432,11 +436,10 @@ export function ImPage() {
           </div>
         ) : reminders && (
           <>
-            <p className="mt-3 text-[12px] leading-relaxed text-ink-mute">
-              保存不代表已发送，已提交微信不代表已读；提醒只发送本条内容，不查询账户或执行交易，解绑后旧提醒停止。
-            </p>
-            {truncated && <p className="mt-2 text-[12px] text-ink-mute">仅显示最近 100 条提醒。</p>}
-
+            <p className="im-description">记下重要的事，在约定时间送达本人微信。</p>
+            <div className="im-reminders-layout">
+            <div className="im-reminder-editor">
+            <h3 className="im-subheading">新建提醒</h3>
             {available.length === 0 ? (
               <p className="mt-4 rounded-field border border-line bg-sunk/60 p-4 text-[13px] text-ink-soft">
                 请先在上方绑定本人微信私聊，再创建提醒。
@@ -453,7 +456,7 @@ export function ImPage() {
                   仅发送本条提醒，不查询账户或执行交易；解绑后旧提醒停止。
                 </p>
                 <div className="mt-3 flex flex-wrap gap-3">
-                  <Button variant="primary" size="sm" loading={creating} onClick={() => void submitReminder()}>确认创建</Button>
+                  <Button variant="ink" size="sm" loading={creating} onClick={() => void submitReminder()}>确认创建</Button>
                   <Button size="sm" variant="secondary" disabled={creating} onClick={() => setDraft(null)}>返回修改</Button>
                 </div>
               </div>
@@ -486,7 +489,7 @@ export function ImPage() {
                   hint="按北京时间填写，需在 15 秒后至未来 365 天内"
                 />
                 <div>
-                  <Button variant="primary" onClick={reviewReminder}>核对提醒</Button>
+                  <Button variant="ink" icon={<BellIcon size={16} />} onClick={reviewReminder}>核对提醒</Button>
                 </div>
               </div>
             )}
@@ -496,12 +499,13 @@ export function ImPage() {
               </p>
             )}
 
-            <div className="mt-5 divide-y divide-line">
+            </div>
+            <section className="im-reminder-history" aria-label="提醒记录">
+            <div className="im-history-heading"><h3 className="im-subheading">提醒记录</h3><Button size="sm" variant="ghost" aria-label="刷新提醒记录" loading={remindersLoading} icon={<RefreshIcon size={15} />} onClick={() => void loadReminders()}>刷新</Button></div>
+            {truncated && <p className="mt-2 text-[12px] text-ink-mute">仅显示最近 100 条提醒。</p>}
+            <div className="divide-y divide-line">
               {reminders.reminders.length === 0 ? (
-                <EmptyState
-                  title="还没有提醒"
-                  description="设置一条提醒后，会在约定时间发送到您绑定的微信私聊。"
-                />
+                <div className="im-compact-empty im-history-empty"><span className="im-empty-icon"><BellIcon size={25} /></span><p>还没有提醒</p><small>设置一条提醒，把重要的事交给微信记住。</small></div>
               ) : reminders.reminders.map(reminder => (
                 <div key={reminder.id} className="py-4">
                   <div className="flex flex-wrap items-center gap-3">
@@ -542,6 +546,9 @@ export function ImPage() {
                 </div>
               ))}
             </div>
+            </section>
+            </div>
+            <p className="im-reminder-footnote">保存不代表已发送，已提交微信不代表已读；提醒只发送本条内容，不查询账户或执行交易，解绑后旧提醒停止。</p>
           </>
         )}
       </Card>
