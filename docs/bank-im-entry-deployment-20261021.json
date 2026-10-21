@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-21T16:44:35.647443+08:00",
+  "url": "https://bank.waveflow.men/reminders",
+  "status": "deployed-and-verified",
+  "revision": "2468adf626f127b22e8c6b0932b868f35d09e60f",
+  "sourceRelease": "/srv/maneki-bank/releases/20261021-im-entry-2468adf",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261021-im-entry-2468adf",
+  "sourceBaseline": "/srv/maneki-bank/releases/20261021-e7d92de",
+  "previousSourcePointer": "/srv/maneki-bank/releases/20261020-reminders-e9f2c9e",
+  "previousWebRelease": "/var/www/bank.waveflow.men/releases/20261021-e7d92de",
+  "artifactSha256": "35353cf336694c3f05935c09e6640faac63af04556a708a631ff46775bfd12ca",
+  "backupLocation": "/var/backups/maneki-im-entry-20261021",
+  "rootCause": {
+    "apiError": "SESSION_STORE_UNAVAILABLE",
+    "databaseReachableDuringDiagnosis": true,
+    "databaseRestartedAt": "2026-10-21T14:26:40.964+08:00",
+    "customerAgentRetainedFailClosedSessionState": true,
+    "frontendPreviouslyMisclassifiedAll503AsDisabled": true
+  },
+  "changes": [
+    "Visible first-time setup guidance and robot management link on /reminders.",
+    "Management URL /agent-api/im?view=admin directly selects operations login.",
+    "Session-store outages show service unavailable instead of feature disabled.",
+    "Customer Agent restarted with original keys, configuration and stable state directories."
+  ],
+  "checks": {
+    "localFrontendBuild": "passed",
+    "localBrowserFixtureRegression": "ALL PASS",
+    "publishedBrowserEntryAndOpsLogin": "ALL PASS",
+    "frontendAssetHashesMatched": 70,
+    "customerAndDoctorToolPolicies": 37,
+    "publicRemindersEntry": 200,
+    "publicRobotManagementPortal": 200,
+    "unauthenticatedBindings": 401,
+    "unauthenticatedReminders": 401,
+    "unauthenticatedAdmin": 401,
+    "unauthenticatedAgentHealth": 401,
+    "sixServicesActive": true,
+    "otherFiveServicePidsAndDirectoriesUnchanged": true,
+    "originalEnvironmentHashesAndSessionPathPreserved": true,
+    "staffAndAndroidDownloadEntrypointsPreserved": true,
+    "paidModelCalled": false,
+    "realQrCreated": false,
+    "wechatMessageSentForVerification": false,
+    "financialOperationExecuted": false
+  },
+  "limits": [
+    "Robot provisioning remains restricted to operations accounts; a bank phone is not an operations login.",
+    "Existing in-memory bank IM logins require a fresh connection after customer Agent restart.",
+    "Database failure protection remains fail closed; this release does not add automatic recovery after future database outages.",
+    "Customer data and robot bindings were not migrated or reset."
+  ]
+}
