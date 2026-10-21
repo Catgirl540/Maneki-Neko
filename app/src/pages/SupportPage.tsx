@@ -28,17 +28,24 @@ export function SupportPage({ workbench, selectedServices = [], onSelectService,
     ...(ent?.dedicatedManager ? ['专属客户经理'] : []),
     ...(ent?.dedicatedAdvisor ? ['专属理财顾问'] : []),
   ]
+  // 功能预选器放在输入框上方，不放左侧竖条：竖条紧挨主导航，读起来像第二套导航。
+  // 不选也行——后端会按当前问题自动匹配并加载技能（service-skills.mjs）。
+  const picker = workbench && !workbench.docked ? (
+    <div className="service-picker" role="group" aria-label="要办的事">
+      <div className="service-picker-hint">
+        <span>要办的事（可选，不选则自动匹配）</span>
+        <button type="button" className="service-picker-clear" disabled={selectedServices.length === 0} onClick={onClearServices}>清空</button>
+      </div>
+      <div className="service-picker-row">
+        {smartServices.map(({ id, label, Icon }) => <button key={id} type="button" className="service-picker-chip"
+          aria-pressed={selectedServices.includes(id)} onClick={() => onSelectService?.(id)}>
+          <Icon size={15} strokeWidth={2} />{label}
+        </button>)}
+      </div>
+    </div>
+  ) : undefined
   return <div className={workbench ? `workbench-assistant ${workbench.docked ? 'is-docked' : ''}` : 'contents'}>
-    {workbench && !workbench.docked && <aside className="smart-services" aria-label="智能服务">
-      <h2>智能服务</h2>
-      <button type="button" className="smart-services-clear" aria-label="清除所有选择"
-        disabled={selectedServices.length === 0} onClick={onClearServices}>清除全部</button>
-      <div>{smartServices.map(({ id, label, Icon }) => <button key={id} type="button"
-        aria-pressed={selectedServices.includes(id)} onClick={() => onSelectService?.(id)}>
-        <span><Icon size={24} strokeWidth={2} /></span>{label}
-      </button>)}</div>
-    </aside>}
-    <ChatWorkspace key="workspace" workbench={workbench} memberBadges={memberBadges} listMessages={workbench ? listStaffNotices : undefined} fallback={workbench ? undefined : fallback} humanSupport={{
+    <ChatWorkspace key="workspace" workbench={picker && workbench ? { ...workbench, composerTop: picker } : workbench} memberBadges={memberBadges} listMessages={workbench ? listStaffNotices : undefined} fallback={workbench ? undefined : fallback} humanSupport={{
       request: items => { setItems(items); setGeneration(value => value + 1); setRequestOpen(true) },
       view: () => { setTicketId(undefined); setTicketsOpen(true) },
     }} />

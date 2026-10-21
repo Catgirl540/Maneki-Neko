@@ -316,6 +316,22 @@
       - bank_set_autodebit
       - bank_get_spending
       - bank_get_cashflow
+      - bank_resolve_payee
+      - bank_schedule_transfer
+      - bank_list_scheduled
+      - bank_cancel_scheduled
+      - bank_list_invest_plans
+      - bank_pause_invest_plan
+      - bank_terminate_invest_plan
+      - bank_list_savings_goals
+      - bank_create_savings_goal
+      - bank_update_savings_goal
+      - bank_delete_savings_goal
+      - bank_set_savings_sweep
+      - bank_get_cash_management
+      - bank_update_cash_sweep
+      - bank_get_insurance
+      - bank_enroll_insurance
     # 只写变量名；取值在运行时读取，绝不进配置。
     secretEnv:
       - OPENROUTER_API_KEY

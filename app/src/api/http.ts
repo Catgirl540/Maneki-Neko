@@ -171,6 +171,7 @@ export function createHttpApi(): BankApi {
     createSavingsGoal: (req) => post(routes.savingsGoals(), req),
     updateSavingsGoal: (id, req) => patch(routes.savingsGoal(id), req),
     deleteSavingsGoal: (id) => del<void>(routes.savingsGoal(id)),
+    setSavingsSweep: (id, req) => post(routes.savingsGoalSweep(id), req),
     updateSavingsRoundup: (req) => patch(routes.savingsRoundup(), req),
     createVirtualCard: (id, req) => post(routes.virtualCard(id), req),
 
@@ -196,6 +197,8 @@ export function createHttpApi(): BankApi {
     getInvestments: () => request(routes.investments()),
     createInvestPlan: (req) => post(routes.investPlan(), req),
     updateInvestPlan: (id, req) => patch(routes.investPlanStatus(id), req),
+    pauseInvestPlan: (id) => post(routes.investPlanPause(id)),
+    terminateInvestPlan: (id) => post(routes.investPlanTerminate(id)),
     getInsurance: () => request(routes.insurance()),
     enrollInsurance: (req) => post(routes.insuranceEnroll(), req),
   }

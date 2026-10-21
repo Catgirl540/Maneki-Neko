@@ -145,6 +145,25 @@ const TOOL_LABELS: Record<string, string> = {
   bank_set_autodebit: '管理自动扣款',
   bank_get_spending: '查询消费分析',
   bank_get_cashflow: '查询现金流',
+  // —— 赛题工程扩展：转账编排 / 理财对比 / 定投 / 存钱 / 现金管理 / 保险 ——
+  bank_resolve_payee: '查询收款人匹配',
+  bank_schedule_transfer: '创建定时转账',
+  bank_list_scheduled: '查询定时动作',
+  bank_cancel_scheduled: '取消定时动作',
+  bank_wealth_compare: '理财产品对比',
+  bank_list_invest_plans: '查询定投计划',
+  bank_create_invest_plan: '创建定投计划',
+  bank_pause_invest_plan: '暂停定投计划',
+  bank_terminate_invest_plan: '终止定投计划',
+  bank_list_savings_goals: '查询存钱目标',
+  bank_create_savings_goal: '新建存钱目标',
+  bank_update_savings_goal: '修改存钱目标',
+  bank_delete_savings_goal: '删除存钱目标',
+  bank_set_savings_sweep: '设置自动归集',
+  bank_get_cash_management: '查询现金管理',
+  bank_update_cash_sweep: '调整自动归集',
+  bank_get_insurance: '查询保险与保单',
+  bank_enroll_insurance: '投保',
   luckycat_ping: '框架自检',
 }
 
@@ -999,7 +1018,11 @@ function summarize(name: string, text: string, isError = false): string {
     if (name === 'bank_reveal_card_secret') return '已在临时窗口展示'
     if (name === 'bank_get_balance') return Array.isArray(parsed['accounts']) ? `已查询 ${parsed['accounts'].length} 个账户` : '已完成'
     const result = parsed['result']
-    if (Array.isArray(result)) return name === 'bank_wealth_quote' ? `${result.length} 个理财产品` : '已完成'
+    if (Array.isArray(result)) {
+      if (name === 'bank_wealth_quote') return `${result.length} 个理财产品`
+      if (name === 'bank_list_scheduled') return result.length ? `${result.length} 条定时动作` : '暂无定时动作'
+      return '已完成'
+    }
     if (result && typeof result === 'object') {
       parsed = result as Record<string, unknown>
       if (typeof parsed['referenceNo'] === 'string') return `回执号 ${parsed['referenceNo']}`
@@ -1043,6 +1066,67 @@ function summarize(name: string, text: string, isError = false): string {
     }
     case 'bank_reveal_card_secret':
       return '已返回占位值（非真实卡信息）'
+
+    // —— 赛题工程扩展 ——
+    case 'bank_resolve_payee': {
+      const candidates = parsed['candidates']
+      return Array.isArray(candidates)
+        ? (candidates.length ? `匹配到 ${candidates.length} 位收款人` : '没有匹配的收款人')
+        : '已完成'
+    }
+    case 'bank_schedule_transfer': {
+      const action = parsed['action'] as Record<string, unknown> | undefined
+      const title = action && typeof action['title'] === 'string' ? action['title'] : null
+      return title ? `已创建定时动作「${title}」` : '已创建定时动作'
+    }
+    case 'bank_list_scheduled': {
+      const rows = parsed['actions'] ?? parsed
+      return Array.isArray(rows) ? (rows.length ? `${rows.length} 条定时动作` : '暂无定时动作') : '已完成'
+    }
+    case 'bank_cancel_scheduled': {
+      const title = typeof parsed['title'] === 'string' ? parsed['title'] : null
+      return title ? `已取消「${title}」` : '已取消定时动作'
+    }
+    case 'bank_wealth_compare': {
+      const count = parsed['count']
+      return typeof count === 'number' ? `已对比 ${count} 个产品` : '已完成'
+    }
+    case 'bank_list_invest_plans': {
+      const plans = parsed['plans']
+      return Array.isArray(plans) ? (plans.length ? `${plans.length} 个定投计划` : '暂无定投计划') : '已完成'
+    }
+    case 'bank_create_invest_plan':
+    case 'bank_pause_invest_plan':
+    case 'bank_terminate_invest_plan': {
+      const productName = typeof parsed['productName'] === 'string' ? parsed['productName'] : null
+      const done = name === 'bank_create_invest_plan' ? '已创建定投' : name === 'bank_pause_invest_plan' ? '已暂停定投' : '已终止定投'
+      return productName ? `${done}「${productName}」` : done
+    }
+    case 'bank_list_savings_goals': {
+      const goals = parsed['goals']
+      return Array.isArray(goals) ? (goals.length ? `${goals.length} 个存钱目标` : '暂无存钱目标') : '已完成'
+    }
+    case 'bank_create_savings_goal':
+    case 'bank_update_savings_goal':
+    case 'bank_set_savings_sweep': {
+      const goalName = typeof parsed['name'] === 'string' ? parsed['name'] : null
+      const done = name === 'bank_create_savings_goal' ? '已创建目标' : name === 'bank_update_savings_goal' ? '已保存目标' : '已设置归集'
+      return goalName ? `${done}「${goalName}」` : done
+    }
+    case 'bank_delete_savings_goal':
+      return '已删除目标'
+    case 'bank_get_cash_management':
+      return '已查询现金管理'
+    case 'bank_update_cash_sweep':
+      return '已更新自动归集'
+    case 'bank_get_insurance': {
+      const policies = parsed['policies']
+      return Array.isArray(policies) ? `已查询 ${policies.length} 份保单` : '已完成'
+    }
+    case 'bank_enroll_insurance': {
+      const productName = typeof parsed['productName'] === 'string' ? parsed['productName'] : null
+      return productName ? `已投保「${productName}」` : '已投保'
+    }
     default:
       return '已完成'
   }

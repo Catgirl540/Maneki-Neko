@@ -29,6 +29,17 @@ const CYCLES = [
   { value: '每月', label: '每月' },
 ]
 
+const STATUS_LABEL: Record<InvestPlan['status'], string> = {
+  active: '已保存',
+  paused: '已暂停',
+  terminated: '已终止',
+}
+const STATUS_TONE: Record<InvestPlan['status'], 'gold' | 'neutral' | 'coral'> = {
+  active: 'gold',
+  paused: 'neutral',
+  terminated: 'coral',
+}
+
 export function InvestPage({ embedded = false }: { embedded?: boolean }) {
   const toast = useToast()
   const investments = useAsync<InvestmentsOverview>(() => api.getInvestments(), [])
@@ -99,7 +110,7 @@ export function InvestPage({ embedded = false }: { embedded?: boolean }) {
       investments.reload()
       setPlanAction(null)
       setPassword('')
-      toast.show(planAction.status === 'cancelled' ? '计划已取消，投资历史保留' : planAction.status === 'paused' ? '计划已暂停' : '计划已恢复保存，自动扣款尚未开放', 'success')
+      toast.show(planAction.status === 'terminated' ? '计划已终止，投资历史保留' : planAction.status === 'paused' ? '计划已暂停' : '计划已恢复保存，自动扣款尚未开放', 'success')
     } catch (err) {
       setPassword('')
       setFormError(err instanceof Error ? err.message : '更新失败，请稍后重试')
@@ -145,14 +156,18 @@ export function InvestPage({ embedded = false }: { embedded?: boolean }) {
               <span className="min-w-0 flex-1">
                 <span className="block text-[15px] font-medium text-ink">{plan.productName}</span>
                 <span className="mt-0.5 block text-[13px] text-ink-mute">{plan.cycle}定投 ¥{formatAmount(plan.amount)} · 已投 {plan.executedRuns} 次</span>
-                <span className="mt-0.5 block text-[12px] text-ink-mute">计划日期 {formatDate(plan.nextRunAt)}</span>
+                <span className="mt-0.5 block text-[12px] text-ink-mute">
+                  {plan.status === 'terminated' && plan.terminatedAt
+                    ? `已于 ${formatDate(plan.terminatedAt)} 终止`
+                    : `计划日期 ${formatDate(plan.nextRunAt)}`}
+                </span>
               </span>
               <span className="shrink-0 text-right">
-                <Tag tone={plan.status === 'active' ? 'gold' : 'neutral'}>{plan.status === 'active' ? '已保存' : plan.status === 'cancelled' ? '已取消' : '已暂停'}</Tag>
+                <Tag tone={STATUS_TONE[plan.status]}>{STATUS_LABEL[plan.status]}</Tag>
                 <span className="num mt-1 block text-[13px] text-ink-mute">累计 ¥{formatAmount(plan.totalInvested)}</span>
-                {plan.status !== 'cancelled' && <span className="mt-2 flex justify-end gap-2">
-                  <Button size="sm" variant="secondary" onClick={() => openPlanAction(plan, plan.status === 'active' ? 'paused' : 'active')}>{plan.status === 'active' ? '暂停' : '恢复'}</Button>
-                  <Button size="sm" variant="secondary" onClick={() => openPlanAction(plan, 'cancelled')}>取消计划</Button>
+                {plan.status !== 'terminated' && <span className="mt-2 flex justify-end gap-2">
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => openPlanAction(plan, plan.status === 'active' ? 'paused' : 'active')}>{plan.status === 'active' ? '暂停' : '恢复'}</Button>
+                  <Button size="sm" variant="secondary" disabled={busy} onClick={() => openPlanAction(plan, 'terminated')}>终止计划</Button>
                 </span>}
               </span>
             </div>
@@ -190,11 +205,11 @@ export function InvestPage({ embedded = false }: { embedded?: boolean }) {
       <p className="text-[12px] leading-relaxed text-ink-mute">基金投资有风险，过往业绩不代表未来表现。当前仅保存和管理计划，自动扣款暂未开放；计划日期不代表已预约执行，不扣款或冻结资金。</p>
 
       <Modal open={Boolean(planAction)} onClose={() => { if (!busy) { setPlanAction(null); setPassword('') } }} closeDisabled={busy}
-        title={planAction?.status === 'cancelled' ? '取消定投计划' : planAction?.status === 'paused' ? '暂停定投计划' : '恢复定投计划'}
-        footer={<><Button block variant="secondary" disabled={busy} onClick={() => { setPlanAction(null); setPassword('') }}>返回</Button><Button block variant="primary" loading={busy} onClick={() => void submitPlanAction()}>确认{planAction?.status === 'cancelled' ? '取消计划' : planAction?.status === 'paused' ? '暂停' : '恢复'}</Button></>}>
+        title={planAction?.status === 'terminated' ? '终止定投计划' : planAction?.status === 'paused' ? '暂停定投计划' : '恢复定投计划'}
+        footer={<><Button block variant="secondary" disabled={busy} onClick={() => { setPlanAction(null); setPassword('') }}>返回</Button><Button block variant="primary" loading={busy} onClick={() => void submitPlanAction()}>确认{planAction?.status === 'terminated' ? '终止计划' : planAction?.status === 'paused' ? '暂停' : '恢复'}</Button></>}>
         {planAction && <div className="flex flex-col gap-4">
           <p className="text-[15px] text-ink">{planAction.plan.productName} · {planAction.plan.cycle} ¥{formatAmount(planAction.plan.amount)}</p>
-          <p className="text-[13px] text-ink-mute">{planAction.status === 'cancelled' ? '取消后不可恢复，已有投资历史保留；不会赎回或退款。' : '仅修改保存的计划状态，当前自动扣款尚未开放。恢复时重新核对测评与产品条件。'}</p>
+          <p className="text-[13px] text-ink-mute">{planAction.status === 'terminated' ? '终止后不可恢复，已有投资历史保留；不会赎回或退款。' : '仅修改保存的计划状态，当前自动扣款尚未开放。恢复时重新核对测评与产品条件。'}</p>
           {planAction.status === 'active' && <PinInput label="支付密码" value={password} onChange={setPassword} />}
           {formError && <p role="alert" className="text-[13px] text-coral">{formError}</p>}
         </div>}

@@ -9,6 +9,7 @@ import { SupportPage } from '@/pages/SupportPage'
 export function AppShell() {
   const { pathname, search } = useLocation()
   const navigate = useNavigate()
+  // 只有「智能助手」是助手工作台；账户总览是业务页，不被助手占位。
   const home = pathname === '/assistant'
   const [serviceIds, setServiceIds] = useState<SmartServiceId[]>([])
   const [highlightTaskId, setHighlightTaskId] = useState<SmartServiceId>()
@@ -16,11 +17,9 @@ export function AppShell() {
   const pageScroller = useRef<HTMLDivElement>(null)
   const service = serviceForPath(pathname, search)
   const services = home ? smartServices.filter(item => serviceIds.includes(item.id)) : service ? [service] : []
-  const flow = new URLSearchParams(search).get('flow')
   useEffect(() => {
     pageScroller.current?.scrollTo({ top: 0 })
-    if (home && (flow === 'in' || flow === 'out')) navigate({ pathname: '/accounts', search }, { replace: true })
-  }, [pathname, home, flow, search, navigate])
+  }, [pathname])
 
   function activate() {
     if (!home) {

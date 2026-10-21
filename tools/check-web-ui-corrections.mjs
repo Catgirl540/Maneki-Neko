@@ -74,7 +74,9 @@ try {
       case '/api/cashflow/overdraft': return respond({ active: false, creditLimit: 100000, used: 0, available: 100000, apr: .05, activatedAt: null, interestNote: '' })
       case '/api/wealth/cash-management': return respond({ balance: 0, totalYield: 0, sevenDayYield: .02, accountId: 'a0', sweepEnabled: false, sweepThreshold: 10000, products: [] })
       case '/api/credit/overview': return respond({ creditLimit: 1000000, availableCredit: 1000000, products: [loanProduct], loans: [], installments: [], builder: { score: 700, level: '良好', streakMonths: 0, nextMilestone: '', tips: [] } })
-      case '/api/wealth/investments': return respond({ holding: 0, totalReturn: 0, plans: [], products: [investProduct] })
+      case '/api/wealth/investments': return respond({ executionMode: 'plan-only', holding: 0, totalReturn: 0, plans: [], products: [investProduct] })
+      // InvestPage 的「新建计划」按钮要过适当性门禁（validateInvestPlan），需给出已开户 + 有效测评。
+      case '/api/wealth/overview': return respond({ account: { opened: true }, totalValue: 0, totalPrincipal: 0, totalProfit: 0, yesterdayProfit: 0, holdings: [], risk: { status: 'valid', done: true, level: 'C3', score: 70, assessedAt: date, expiresAt: '2027-10-13T08:00:00.000Z', expired: false } })
       case '/api/savings/overview': {
         const overview = structuredClone({ totalSaved: 0, goals, roundup, streak: { days: 0, longestDays: 0, lastSavedAt: '', badges: [] }, rewards: [] })
         if (holdSavingsReload) { holdSavingsReload = false; await new Promise(r => { releaseSavingsReload = r }) }
@@ -166,7 +168,7 @@ try {
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '有效月薪' }).waitFor()
   assert(!writes.some(w => w.path === '/api/cashflow/salary'))
-  await visit('/wealth/cash-management', '现金管理')
+  await visit('/wealth/cash-management', '现金管理设置')
   await page.getByRole('button', { name: '修改', exact: true }).click()
   await page.getByLabel('活期保留金额', { exact: true }).fill('')
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click()
@@ -174,7 +176,7 @@ try {
   assert(!writes.some(w => w.path === '/api/wealth/cash-management/sweep'))
   console.log('PASS 工资和活钱设置不承诺自动执行，非法/空金额不发请求')
 
-  await visit('/dashboard/savings', '存钱计划')
+  await visit('/wealth/plans', '储蓄与计划')
   await page.getByRole('button', { name: '新建目标', exact: true }).first().click()
   await page.getByLabel('目标名称', { exact: true }).fill('旅行')
   await page.getByLabel('目标金额', { exact: true }).fill('9'.repeat(30))
@@ -218,9 +220,9 @@ try {
   await page.getByText('账户暂不可用', { exact: true }).waitFor()
   accountFailure = false
   await page.getByRole('button', { name: '重新加载', exact: true }).click()
-  await page.getByRole('heading', { name: '投资与定投', exact: true }).waitFor()
+  await page.getByRole('heading', { name: '储蓄与计划', exact: true }).waitFor()
   await page.getByRole('button', { name: '新建计划', exact: true }).click()
-  await page.getByLabel('每期金额', { exact: true }).fill('1.2.3')
+  await page.getByLabel('每期金额', { exact: true }).fill('1.234')
   await page.getByRole('button', { name: '确认创建', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '有效金额' }).waitFor()
   assert(!writes.some(w => w.path === '/api/wealth/investments/plan'))
@@ -252,8 +254,8 @@ try {
   console.log('PASS 会员中心展示等级/AUM 进度/权益/贵宾厅核销，旧订阅文案已移除')
 
   const views = [['/exchange','多币种换汇'],['/cashflow','工资与备用金'],
-    ['/wealth/cash-management','现金管理'],['/credit','借款与分期'],['/wealth/investments','投资与定投'],
-    ['/dashboard/savings','存钱计划'],['/security/membership','会员中心']]
+    ['/wealth/cash-management','现金管理设置'],['/credit','借款与分期'],['/wealth/plans?tab=invest','储蓄与计划'],
+    ['/wealth/plans','储蓄与计划'],['/security/membership','会员中心']]
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const [url, title] of views) {

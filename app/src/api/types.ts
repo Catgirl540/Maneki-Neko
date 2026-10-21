@@ -1190,6 +1190,17 @@ export interface SavingsSweep {
   accountId: string
 }
 
+/** 设置/取消目标自动归集 */
+export interface SavingsSweepRequest {
+  enabled: boolean
+  /** 每期归集金额（分）；enabled 为 true 时必填 */
+  amount?: Cents
+  /** 归集周期，如「每周」；enabled 为 true 时必填 */
+  cycle?: string
+  /** 扣款账户；enabled 为 true 时必填 */
+  accountId?: string
+}
+
 export interface SavingsGoal {
   id: string
   name: string
@@ -1601,10 +1612,14 @@ export interface InvestPlan {
   nextRunAt: string
   executedRuns: number
   totalInvested: Cents
-  status: 'active' | 'paused' | 'cancelled'
+  /** active 执行中 / paused 已暂停 / terminated 已终止（终态，不可恢复） */
+  status: 'active' | 'paused' | 'terminated'
+  /** 乐观并发版本号，每次状态变更 +1 */
   revision?: number
   updatedAt?: string
   createdAt: string
+  /** 终止时间；未终止时无此字段 */
+  terminatedAt?: string
 }
 
 export interface InvestmentsOverview {
@@ -1626,9 +1641,9 @@ export interface InvestPlanRequest {
 }
 
 export interface InvestPlanUpdate {
-  status: 'active' | 'paused' | 'cancelled'
+  status: 'active' | 'paused' | 'terminated'
   expectedRevision: number
-  /** 恢复计划时必填，暂停/取消不需要 */
+  /** 恢复计划时必填，暂停/终止不需要 */
   paymentPassword?: string
 }
 
@@ -1667,6 +1682,8 @@ export interface InsuranceOverview {
 export interface InsuranceEnrollRequest {
   productId: string
   insuredName: string
+  /** 健康告知 3 项答案，逗号分隔（既往住院/手术史、慢性病史、恶性肿瘤/结节史）。任一为「是」时拒绝投保 */
+  healthAnswers: string
   /** 6 位数字支付密码 */
   paymentPassword: string
 }

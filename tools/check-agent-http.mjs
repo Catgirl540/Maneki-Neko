@@ -220,7 +220,7 @@ try{
  const planId = createdPlan.result.id
  assert.equal((await invokeBankTool('fixture_plan_pause', 'bank_update_invest_plan', { planId, status: 'paused' })).result.status, 'paused')
  assert.equal((await invokeBankTool('fixture_plan_resume', 'bank_update_invest_plan', { planId, status: 'active' }, '888888')).result.status, 'active')
- assert.equal((await invokeBankTool('fixture_plan_cancel', 'bank_update_invest_plan', { planId, status: 'cancelled' })).result.status, 'cancelled')
+ assert.equal((await invokeBankTool('fixture_plan_cancel', 'bank_update_invest_plan', { planId, status: 'terminated' })).result.status, 'terminated')
  const plansAfter = (await api(bank, '/api/wealth/investments', a.token)).data.plans
  assert.equal(plansAfter.length, investmentBefore.plans.length + 1)
  assert.equal(plansAfter.find(plan => plan.id === planId).executedRuns, 0)
@@ -508,10 +508,10 @@ try{
    await fillPlanPin('8')
    await page.getByRole('button', { name: '确认恢复', exact: true }).click()
    await waitPlanStatus('active')
-   await planRow('暂停').getByRole('button', { name: '取消计划', exact: true }).click()
-   await page.getByText(/取消后不可恢复/).waitFor()
-   await page.getByRole('button', { name: '确认取消计划', exact: true }).click()
-   await waitPlanStatus('cancelled')
+   await planRow('暂停').getByRole('button', { name: '终止计划', exact: true }).click()
+   await page.getByText(/终止后不可恢复/).waitFor()
+   await page.getByRole('button', { name: '确认终止计划', exact: true }).click()
+   await waitPlanStatus('terminated')
    await page.getByRole('dialog').waitFor({ state: 'hidden' })
    assert.equal((await api(bank, '/api/accounts', a.token)).data[0].balance, uiBalanceBefore)
    assert.deepEqual(pageErrors, [])

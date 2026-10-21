@@ -27,12 +27,13 @@ export function nextInvestDate(cycle, now = Date.now()) {
 
 export function transitionInvestPlan(plan, request, now = Date.now()) {
   if (!plan) fail('定投计划不存在', 'INVEST_PLAN_NOT_FOUND', 404)
-  if (!request || Object.keys(request).some(key => !['status', 'expectedRevision', 'paymentPassword'].includes(key)) || !['active', 'paused', 'cancelled'].includes(request.status)) fail('定投状态参数无效', 'INVALID_PLAN_STATUS')
+  if (!request || Object.keys(request).some(key => !['status', 'expectedRevision', 'paymentPassword'].includes(key)) || !['active', 'paused', 'terminated'].includes(request.status)) fail('定投状态参数无效', 'INVALID_PLAN_STATUS')
   if (!Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0 || request.expectedRevision !== (plan.revision ?? 0)) fail('定投计划已变化，请重新查询确认', 'INVEST_PLAN_CHANGED', 409)
-  if (!['active', 'paused', 'cancelled'].includes(plan.status) || (plan.status === 'cancelled' && request.status !== 'cancelled')) fail('已取消或未知状态的计划不能恢复', 'INVALID_PLAN_TRANSITION', 409)
+  if (!['active', 'paused', 'terminated'].includes(plan.status) || (plan.status === 'terminated' && request.status !== 'terminated')) fail('已终止或未知状态的计划不能恢复', 'INVALID_PLAN_TRANSITION', 409)
   if (plan.status === request.status) return { ...plan }
   const revision = (plan.revision ?? 0) + 1
   if (!Number.isSafeInteger(revision)) fail('定投版本号无效', 'INVEST_PLAN_CHANGED', 409)
   return { ...plan, status: request.status, revision, updatedAt: new Date(now).toISOString(),
-    ...(request.status === 'active' ? { nextRunAt: nextInvestDate(plan.cycle, now) } : {}) }
+    ...(request.status === 'active' ? { nextRunAt: nextInvestDate(plan.cycle, now) } : {}),
+    ...(request.status === 'terminated' ? { terminatedAt: new Date(now).toISOString() } : {}) }
 }

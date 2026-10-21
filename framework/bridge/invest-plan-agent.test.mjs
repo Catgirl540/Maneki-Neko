@@ -60,7 +60,7 @@ test('investment tools require exact consent, passwords for create/resume, fresh
   investments.plans[0].revision++
   await assert.rejects(bank.execute(stale), /计划已变化/)
   assert.equal(calls.filter(call => call.method === 'PATCH').length, 0)
-  for (const status of ['paused', 'active', 'cancelled']) {
+  for (const status of ['paused', 'active', 'terminated']) {
     const change = challenge('bank_update_invest_plan', { planId: 'p1', status })
     const prepared = await bank.prepare(change)
     assert.equal(prepared.verification, status === 'active' ? 'payment-password' : undefined)
