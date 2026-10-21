@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -23,9 +24,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -49,12 +52,14 @@ fun TopBar(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onBack != null) {
+                // Icons.Chevron 是右箭头；返回键与设计稿一致旋转 180° 变左箭头
                 Icon(
                     Icons.Chevron,
                     contentDescription = "返回",
                     tint = Tokens.Ink2,
                     modifier = Modifier
                         .size(20.dp)
+                        .rotate(180f)
                         .clickable { onBack() },
                 )
                 Spacer(Modifier.size(8.dp))
@@ -232,7 +237,12 @@ fun KvCard(rows: List<Pair<String, String>>, modifier: Modifier = Modifier) {
 
 /** 设置开关行（自绘 switch，保持近黑配色）。 */
 @Composable
-fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+fun SwitchRow(
+    label: String,
+    checked: Boolean,
+    subtitle: String? = null,
+    onChange: (Boolean) -> Unit,
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -241,16 +251,32 @@ fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, fontSize = 13.sp, color = Tokens.Ink)
+        Column(Modifier.weight(1f)) {
+            Text(label, fontSize = 13.sp, color = Tokens.Ink)
+            if (subtitle != null) {
+                Spacer(Modifier.height(3.dp))
+                Text(subtitle, fontSize = 10.5.sp, color = Tokens.Muted)
+            }
+        }
+        val trackColor by androidx.compose.animation.animateColorAsState(
+            targetValue = if (checked) Tokens.Primary else Color(0xFFDFE6EE),
+            animationSpec = androidx.compose.animation.core.tween(200, easing = StandardOutSlowIn),
+            label = "sw-bg",
+        )
+        val thumbStart by androidx.compose.animation.core.animateDpAsState(
+            targetValue = if (checked) 20.dp else 2.dp,
+            animationSpec = androidx.compose.animation.core.tween(200, easing = StandardOutSlowIn),
+            label = "sw-thumb",
+        )
         Box(
             Modifier
                 .size(width = 42.dp, height = 24.dp)
                 .clip(CircleShape)
-                .background(if (checked) Tokens.Primary else Color(0xFFDFE6EE)),
+                .background(trackColor),
         ) {
             Box(
                 Modifier
-                    .padding(top = 2.dp, start = if (checked) 20.dp else 2.dp)
+                    .padding(top = 2.dp, start = thumbStart)
                     .size(20.dp)
                     .clip(CircleShape)
                     .background(Color.White)
@@ -315,5 +341,37 @@ fun PushScreen(
                 .padding(bottom = 16.dp),
             content = content,
         )
+    }
+}
+
+/** 表单页骨架：顶部返回栏 + 可滚动字段 + **贴底**主按钮（截图里 11/12/13 都是这样）。 */
+@Composable
+fun FormScaffold(
+    title: String,
+    onBack: () -> Unit,
+    actionLabel: String,
+    onAction: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Tokens.Page),
+    ) {
+        TopBar(title, onBack)
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            content = content,
+        )
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+        ) {
+            PrimaryButton(actionLabel, onAction)
+        }
     }
 }

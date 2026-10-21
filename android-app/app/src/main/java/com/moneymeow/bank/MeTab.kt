@@ -88,7 +88,7 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                 Column {
                     IconRow(Icons.Person, "个人资料") { onOpen("个人资料") }
                     Hairline()
-                    IconRow(Icons.Transfer, "安全中心") { onOpen("安全中心") }
+                    IconRow(Icons.Lock, "安全中心") { onOpen("安全中心") }
                     Hairline()
                     IconRow(Icons.Card, "银行卡管理", "2 张") { onOpen("银行卡") }
                     Hairline()
@@ -110,9 +110,9 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
             SectionHeader("其他")
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
                 Column {
-                    IconRow(Icons.Person, "帮助与客服") { onOpen("帮助与客服") }
+                    IconRow(Icons.Help, "帮助与客服") { onOpen("帮助与客服") }
                     Hairline()
-                    IconRow(Icons.Receipt, "关于招财猫银行") { onOpen("关于") }
+                    IconRow(Icons.Info, "关于招财猫银行") { onOpen("关于") }
                     Hairline()
                     IconRow(Icons.UpOut, "退出登录", danger = true) { onLogout() }
                 }

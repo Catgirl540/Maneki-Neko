@@ -12,12 +12,12 @@
 
 - **网页用户端**：`app/`。当前为 MONEY MEOW BANK 桌面工作台；维护说明见 [app/README.md](app/README.md)。
 - **网页设计依据**：[2026-10-15 导出稿](docs/design/exports/2026-10-15/zhaocai-cat-bank.html)。登录后落地 `/dashboard` 总览页；智能助手独立为 `/assistant`（`/support` 兼容跳转），拆分依据 [2026-10-20 草稿](docs/design/drafts/2026-10-20-overview-and-assistant.html)。已取消传统/智能双模式；后续以用户确认的页面调整为准。
-- **安卓客户端**：Flutter 工程 `mobile/`，特征为 `pubspec.yaml`、`lib/` 和 `mobile/android/`。它与原仓库根目录的 Kotlin `android/` 不是同一工程。
+- **安卓客户端**：Kotlin + Jetpack Compose 工程 `android-app/`（2026-10-21 起按用户要求新建，设计依据 `docs/design/mobile-ui/` 的 UI 树与截图）。特征为 `settings.gradle.kts`、`app/src/main/java/com/moneymeow/bank/`。历史 Flutter 工程仍在 `mobile/`，不再是当前安卓实现。
 - **工作人员端**：`staff/`，不属于此次归档范围。
 
-**本工作区已合入 Flutter 工程。** 2026-10-15 提交网页改版时同步合入 `origin/main` 的 `d6fa636`，包含 Flutter 新版、图标与银行卡修正、统一官网入口及员工留言。后续仍须核对远端最新提交；安卓修改在 `mobile/` 完成，不回到旧 Kotlin 工程。
+**当前安卓实现已转为 Kotlin（`android-app/`）。** 构建与运行见 [android-app/README.md](android-app/README.md)；不修改 `mobile/` 来交付安卓功能，也不使用归档的 Kotlin 工程。历史说明保留如下：本工作区曾合入 Flutter 工程。 2026-10-15 提交网页改版时同步合入 `origin/main` 的 `d6fa636`，包含 Flutter 新版、图标与银行卡修正、统一官网入口及员工留言。后续仍须核对远端最新提交；安卓修改在 `mobile/` 完成，不回到旧 Kotlin 工程。
 
-安卓安装包必须从目标 Flutter 工作区的 `mobile/build/app/outputs/flutter-apk/` 获取，并核对提交、版本、包名和签名；不能使用旧 `android/app/build/outputs/apk/` 下的文件。
+安卓安装包从 `android-app/app/build/outputs/apk/debug/app-debug.apk`（调试）获取并核对提交与版本；不再从 `mobile/build/app/outputs/flutter-apk/` 或旧 `android/app/build/outputs/apk/` 取包。
 
 ## 已归档版本
 

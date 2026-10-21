@@ -41,8 +41,10 @@ import androidx.compose.ui.unit.sp
 
 private val limitPresets = listOf("¥2,000", "¥5,000", "¥10,000", "¥50,000")
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit) {
+    var applyOpen by remember { mutableStateOf(false) }
     var locked by remember { mutableStateOf(false) }
     var online by remember { mutableStateOf(true) }
     var overseas by remember { mutableStateOf(false) }
@@ -86,7 +88,7 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
                         .clip(RoundedCornerShape(10.dp))
                         .background(Tokens.Surface)
                         .border(1.dp, Tokens.Border, RoundedCornerShape(10.dp))
-                        .clickable { onApply() },
+                        .clickable { applyOpen = true },
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -98,11 +100,26 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
             }
         }
 
-        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            listOf(0, 1, 2).forEach { index ->
+                Box(
+                    Modifier
+                        .padding(horizontal = 3.dp)
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(if (index == 0) Tokens.Ink2 else Tokens.Border)
+                )
+            }
+        }
         // 三个动作
         Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ActionTile(if (locked) "解锁卡片" else "立即锁卡", Icons.Transfer, Modifier.weight(1f)) { locked = !locked }
-            ActionTile("换卡", Icons.Transfer, Modifier.weight(1f)) { onApply() }
+            ActionTile(if (locked) "解锁卡片" else "立即锁卡", Icons.Lock, Modifier.weight(1f)) { locked = !locked }
+            ActionTile("换卡", Icons.Transfer, Modifier.weight(1f)) { applyOpen = true }
             ActionTile("寄送信息", Icons.Receipt, Modifier.weight(1f)) { onDelivery() }
         }
 
@@ -175,6 +192,63 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
                         }
                     }
                 }
+            }
+        }
+    }
+
+    if (applyOpen) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { applyOpen = false },
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(),
+            containerColor = Tokens.Surface,
+        ) {
+            Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
+                Text("申请新卡", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                Spacer(Modifier.height(12.dp))
+                KvRow("卡种", "招财猫白金卡")
+                KvRow("制卡费", "¥50.00 · 普通会员标准价")
+                KvRow("寄送", "顺丰到付 · 3–5 个工作日")
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Tokens.SurfaceWarm)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        "新卡与现有卡片同属一个资金账户，不新开户；收到后需签收并激活。",
+                        fontSize = 11.5.sp,
+                        color = Tokens.Ink2,
+                        lineHeight = 18.sp,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    repeat(6) { index ->
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .height(46.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Tokens.Surface)
+                                .border(1.dp, Tokens.Border, RoundedCornerShape(8.dp)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (index < 5) {
+                                Box(Modifier.size(7.dp).clip(CircleShape).background(Tokens.Ink))
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("请输入 6 位支付密码", fontSize = 11.sp, color = Tokens.Muted)
+                Spacer(Modifier.height(16.dp))
+                PrimaryButton("确认申请", {
+                    applyOpen = false
+                    onApply()
+                })
+                Spacer(Modifier.height(12.dp))
             }
         }
     }

@@ -1,6 +1,10 @@
 package com.moneymeow.bank
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +19,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,10 +66,19 @@ fun ProductDetailScreen(onBack: () -> Unit) {
                 Hairline()
                 Spacer(Modifier.height(12.dp))
                 Text("单位净值", fontSize = 11.sp, color = Tokens.Muted)
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text("1.0015", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-                    Spacer(Modifier.size(4.dp))
-                    Text("2026-10-20", fontSize = 11.sp, color = Tokens.Muted)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text("1.0015", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                        Spacer(Modifier.size(4.dp))
+                        Text("2026-10-20", fontSize = 11.sp, color = Tokens.Muted)
+                    }
+                    Sparkline(
+                        points = listOf(0.9f, 0.82f, 0.86f, 0.7f, 0.74f, 0.55f, 0.6f, 0.4f, 0.36f),
+                    )
                 }
             }
         }
@@ -155,8 +170,8 @@ private val capabilities = listOf(
     Capability("换汇助手", "汇率查询与换汇下单", Icons.Globe),
     Capability("储蓄规划", "存钱目标与定投计划", Icons.Pig),
     Capability("借款测算", "额度与分期测算", Icons.UpOut),
-    Capability("保险咨询", "保单与保障范围", Icons.Card),
-    Capability("安全助手", "密码、设备与风险提示", Icons.Transfer),
+    Capability("保险咨询", "保单与保障范围", Icons.Shield),
+    Capability("安全助手", "密码、设备与风险提示", Icons.Lock),
     Capability("智能客服", "常见问题与人工转接", Icons.Bell),
 )
 
@@ -174,6 +189,7 @@ fun AssistantScreen(onBack: () -> Unit) {
     var capsOpen by remember { mutableStateOf(false) }
     var historyOpen by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState()
+    val picked = remember { androidx.compose.runtime.mutableStateListOf("智能转账") }
 
     Column(
         Modifier
@@ -181,7 +197,67 @@ fun AssistantScreen(onBack: () -> Unit) {
             .background(Tokens.Page)
             .imePadding(),
     ) {
-        TopBar(title = "小招", onBack = onBack, action = "历史", onAction = { historyOpen = true })
+        Column(Modifier.background(Tokens.Surface)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .padding(horizontal = 12.dp),
+            ) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .align(Alignment.CenterStart)
+                        .clickable { onBack() },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.Chevron,
+                        contentDescription = "返回",
+                        tint = Tokens.Ink2,
+                        modifier = Modifier
+                            .size(20.dp)
+                            .rotate(180f),
+                    )
+                }
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .align(Alignment.Center)
+                        .clip(CircleShape)
+                        .background(Tokens.Surface)
+                        .border(1.dp, Tokens.Border, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(R.drawable.support_cat),
+                        contentDescription = null,
+                        modifier = Modifier.size(28.dp),
+                    )
+                }
+                Row(
+                    Modifier.align(Alignment.CenterEnd),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(36.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Compose, contentDescription = "新会话", tint = Tokens.Ink2, modifier = Modifier.size(20.dp))
+                    }
+                    Box(
+                        Modifier
+                            .size(36.dp)
+                            .clickable { historyOpen = true },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Hist, contentDescription = "历史会话", tint = Tokens.Ink2, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+            Hairline()
+        }
         LazyColumn(
             Modifier
                 .weight(1f)
@@ -189,7 +265,8 @@ fun AssistantScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item { Spacer(Modifier.height(6.dp)) }
-            items(conversation) { msg ->
+            items(conversation.size) { idx ->
+                val msg = conversation[idx]
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = if (msg.fromUser) Arrangement.End else Arrangement.Start,
@@ -203,13 +280,17 @@ fun AssistantScreen(onBack: () -> Unit) {
                                 .border(1.dp, Tokens.Border, CircleShape),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Person, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
+                            androidx.compose.foundation.Image(
+                                painter = androidx.compose.ui.res.painterResource(R.drawable.support_cat),
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                            )
                         }
                         Spacer(Modifier.size(8.dp))
                     }
                     Box(
                         Modifier
-                            .width(260.dp)
+                            .then(if (msg.fromUser) Modifier.widthIn(max = 260.dp) else Modifier.width(260.dp))
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (msg.fromUser) Tokens.Primary else Tokens.Surface)
                             .border(
@@ -225,6 +306,25 @@ fun AssistantScreen(onBack: () -> Unit) {
                             color = if (msg.fromUser) Color.White else Tokens.Ink,
                             lineHeight = 19.sp,
                         )
+                    }
+                }
+                if (idx == 0) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        Modifier.padding(start = 36.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf("查余额", "转账", "换汇报价", "本月支出").forEach { chip ->
+                            Box(
+                                Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(Tokens.Surface)
+                                    .border(1.dp, Tokens.Border, RoundedCornerShape(14.dp))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text(chip, fontSize = 12.sp, color = Tokens.Ink2)
+                            }
+                        }
                     }
                 }
             }
@@ -259,7 +359,7 @@ fun AssistantScreen(onBack: () -> Unit) {
                 Text("问点什么…", fontSize = 13.sp, color = Tokens.Muted)
             }
             Spacer(Modifier.size(8.dp))
-            Icon(Icons.Transfer, contentDescription = "语音", tint = Tokens.Ink2, modifier = Modifier.size(21.dp))
+            Icon(Icons.Mic, contentDescription = "语音", tint = Tokens.Ink2, modifier = Modifier.size(21.dp))
             Spacer(Modifier.size(8.dp))
             Box(
                 Modifier
@@ -268,7 +368,7 @@ fun AssistantScreen(onBack: () -> Unit) {
                     .background(Tokens.Primary),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Chevron, contentDescription = "发送", tint = Color.White, modifier = Modifier.size(16.dp))
+                Icon(Icons.Send, contentDescription = "发送", tint = Color.White, modifier = Modifier.size(16.dp))
             }
         }
     }
@@ -285,7 +385,7 @@ fun AssistantScreen(onBack: () -> Unit) {
                         .padding(14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Icon(Icons.Card, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(18.dp))
+                    Icon(Icons.ImageIcon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.size(10.dp))
                     Text("上传图片", fontSize = 13.sp, color = Tokens.Ink, modifier = Modifier.weight(1f))
                     Text("截图 / 账单 / 回单", fontSize = 10.5.sp, color = Tokens.Muted)
@@ -293,11 +393,19 @@ fun AssistantScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(14.dp))
                 Text("选择智能服务", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                 Spacer(Modifier.height(6.dp))
-                Column {
+                Box(
+                    Modifier
+                        .height(360.dp)
+                ) {
+                    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                     capabilities.forEach { cap ->
+                        val on = picked.contains(cap.label)
                         Row(
                             Modifier
                                 .fillMaxWidth()
+                                .clickable {
+                                    if (on) picked.remove(cap.label) else picked.add(cap.label)
+                                }
                                 .padding(vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -320,11 +428,41 @@ fun AssistantScreen(onBack: () -> Unit) {
                                 Modifier
                                     .size(20.dp)
                                     .clip(CircleShape)
-                                    .border(1.dp, Tokens.Border, CircleShape)
-                            )
+                                    .background(if (on) Tokens.Primary else Tokens.Surface)
+                                    .border(1.dp, if (on) Tokens.Primary else Tokens.Border, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (on) {
+                                    Text("✓", fontSize = 11.sp, color = Color.White)
+                                }
+                            }
                         }
                         Hairline()
                     }
+                    }
+                    // 上下边缘渐变（遮住滚动边界）
+                    Box(
+                        Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .height(22.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Tokens.Surface, Tokens.Surface.copy(alpha = 0f))
+                                )
+                            )
+                    )
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(26.dp)
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(Tokens.Surface.copy(alpha = 0f), Tokens.Surface)
+                                )
+                            )
+                    )
                 }
                 Spacer(Modifier.height(14.dp))
                 PrimaryButton("完成", { capsOpen = false })
@@ -333,30 +471,94 @@ fun AssistantScreen(onBack: () -> Unit) {
         }
     }
 
-    if (historyOpen) {
-        ModalBottomSheet(onDismissRequest = { historyOpen = false }, sheetState = sheetState, containerColor = Tokens.Surface) {
-            Column(Modifier.padding(horizontal = 18.dp)) {
-                Text("历史会话", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-                Spacer(Modifier.height(10.dp))
-                listOf(
-                    "本月支出明细" to "14:32",
-                    "转账限额调整" to "09:18",
-                    "给陈嘉禾转账" to "周二",
-                    "港币换汇汇率" to "周一",
-                ).forEach { (title, time) ->
+    // 历史会话：右侧抽屉，280ms 滑入（设计稿 51）
+    androidx.compose.animation.AnimatedVisibility(
+        visible = historyOpen,
+        enter = androidx.compose.animation.slideInHorizontally(
+            initialOffsetX = { it },
+            animationSpec = androidx.compose.animation.core.tween(280, easing = StandardOutSlowIn),
+        ) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)),
+        exit = androidx.compose.animation.slideOutHorizontally(
+            targetOffsetX = { it },
+            animationSpec = androidx.compose.animation.core.tween(280, easing = StandardOutSlowIn),
+        ) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(220)),
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.28f))
+                    .clickable { historyOpen = false }
+            )
+            Box(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
+                    .width(300.dp)
+                    .background(Tokens.Surface)
+            ) {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    Spacer(Modifier.height(16.dp))
                     Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
+                        Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(title, fontSize = 13.sp, color = Tokens.Ink)
-                        Text(time, fontSize = 11.sp, color = Tokens.Muted)
+                        Text("历史会话", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                        Text(
+                            "›",
+                            fontSize = 20.sp,
+                            color = Tokens.Ink2,
+                            modifier = Modifier.clickable { historyOpen = false },
+                        )
                     }
-                    Hairline()
+                    Spacer(Modifier.height(8.dp))
+                    listOf(
+                        "本月支出明细" to "14:32",
+                        "转账限额调整" to "09:18",
+                        "给陈嘉禾转账" to "周二",
+                        "港币换汇汇率" to "周一",
+                    ).forEach { (title, time) ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 13.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(title, fontSize = 13.sp, color = Tokens.Ink)
+                            Text(time, fontSize = 11.sp, color = Tokens.Muted)
+                        }
+                        Hairline()
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
             }
         }
+    }
+}
+
+/** 近 30 日净值走势的小折线（设计稿 47）。 */
+@Composable
+private fun Sparkline(points: List<Float>) {
+    androidx.compose.foundation.Canvas(
+        Modifier
+            .width(96.dp)
+            .height(34.dp)
+    ) {
+        val stepX = size.width / (points.size - 1)
+        val path = androidx.compose.ui.graphics.Path()
+        points.forEachIndexed { index, ratio ->
+            val x = stepX * index
+            val y = size.height * ratio
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(
+            path,
+            color = Tokens.Ink2,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = 1.6.dp.toPx(),
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                join = androidx.compose.ui.graphics.StrokeJoin.Round,
+            ),
+        )
     }
 }

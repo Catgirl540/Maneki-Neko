@@ -56,7 +56,7 @@ private data class Txn(
 )
 
 private val recent = listOf(
-    Txn("星巴克咖啡", "09:12 · 餐饮", "-38.00", false, Icons.Pig),
+    Txn("星巴克咖啡", "09:12 · 餐饮", "-38.00", false, Icons.Food),
     Txn("转入 · 他行卡", "08:40 · 转账", "+5,000.00", true, Icons.DownIn),
     Txn("地铁出行", "07:48 · 交通", "-6.00", false, Icons.Transfer),
     Txn("转出 · 陈嘉禾", "昨天 15:26 · 转账", "-500.00", false, Icons.UpOut),
@@ -65,6 +65,7 @@ private val recent = listOf(
 @Composable
 fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
     var balanceVisible by remember { mutableStateOf(true) }
+    var transferInOpen by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -72,18 +73,22 @@ fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(bottom = 12.dp),
     ) {
-        Greeting()
+        Greeting(onNotify = { onSwitchTab(3) })
         Spacer(Modifier.height(12.dp))
         AssetCard(balanceVisible) { balanceVisible = !balanceVisible }
         Spacer(Modifier.height(12.dp))
-        EntryGrid(onOpen, onSwitchTab)
+        EntryGrid(onOpen, onSwitchTab) { transferInOpen = true }
         Spacer(Modifier.height(4.dp))
         RecentTransactions(onOpen)
+    }
+
+    if (transferInOpen) {
+        TransferInSheet(onDismiss = { transferInOpen = false })
     }
 }
 
 @Composable
-private fun Greeting() {
+private fun Greeting(onNotify: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -100,10 +105,19 @@ private fun Greeting() {
                 .size(34.dp)
                 .clip(CircleShape)
                 .background(Tokens.Surface)
-                .border(1.dp, Tokens.Border, CircleShape),
+                .border(1.dp, Tokens.Border, CircleShape)
+                .clickable { onNotify() },
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Bell, contentDescription = "通知", tint = Tokens.Ink2, modifier = Modifier.size(17.dp))
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 6.dp)
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(Tokens.Coral)
+            )
         }
     }
 }
@@ -146,7 +160,7 @@ private fun AssetCard(visible: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-private fun EntryGrid(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
+private fun EntryGrid(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onTransferIn: () -> Unit) {
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(vertical = 8.dp)) {
             entries.chunked(4).forEach { row ->
@@ -157,6 +171,7 @@ private fun EntryGrid(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
                                 .weight(1f)
                                 .clickable {
                                     when (entry.label) {
+                                        "转入" -> onTransferIn()
                                         "理财" -> onSwitchTab(1)
                                         "更多" -> onOpen("更多服务")
                                         else -> onOpen(entry.label)
@@ -209,6 +224,7 @@ private fun RecentTransactions(onOpen: (String) -> Unit) {
                     Row(
                         Modifier
                             .fillMaxWidth()
+                            .clickable { onOpen("交易详情") }
                             .padding(vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

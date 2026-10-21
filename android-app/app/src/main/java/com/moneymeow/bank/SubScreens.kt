@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -29,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -80,7 +84,7 @@ private fun SmallAction(label: String, icon: androidx.compose.ui.graphics.vector
 }
 
 @Composable
-private fun EmptyNote(text: String) {
+internal fun EmptyNote(text: String) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -99,50 +103,54 @@ private fun EmptyNote(text: String) {
 
 @Composable
 fun ExchangeScreen(onBack: () -> Unit) {
-    PushScreen(title = "换汇", onBack = onBack) {
-        HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-            Column(Modifier.padding(14.dp)) {
-                Text("卖出", fontSize = 11.sp, color = Tokens.Muted)
-                Spacer(Modifier.height(5.dp))
-                Text("¥ 8,000.00", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-                Spacer(Modifier.height(7.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Tag("CNY")
-                    Spacer(Modifier.size(6.dp))
-                    Text("人民币活期 ··8821", fontSize = 12.sp, color = Tokens.Ink2, modifier = Modifier.weight(1f))
-                    Text("可用 ¥86,320.00", fontSize = 11.sp, color = Tokens.Muted)
+    FormScaffold(title = "换汇", onBack = onBack, actionLabel = "确认换汇", onAction = {}) {
+        Box(Modifier.fillMaxWidth()) {
+            HairlineCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("卖出", fontSize = 11.sp, color = Tokens.Muted)
+                    Spacer(Modifier.height(5.dp))
+                    Text("¥ 8,000.00", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Spacer(Modifier.height(7.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Tag("CNY")
+                        Spacer(Modifier.size(6.dp))
+                        Text("人民币活期 · ·8821", fontSize = 12.sp, color = Tokens.Ink2, modifier = Modifier.weight(1f))
+                        Text("可用 ¥86,320.00", fontSize = 11.sp, color = Tokens.Muted)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Text("买入", fontSize = 11.sp, color = Tokens.Muted)
+                    Spacer(Modifier.height(5.dp))
+                    Text("HK$ 8,720.00", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Spacer(Modifier.height(7.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Tag("HKD")
+                        Spacer(Modifier.size(6.dp))
+                        Text("港币活期", fontSize = 12.sp, color = Tokens.Ink2)
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Hairline()
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "参考汇率 1 CNY ≈ 1.0900 HKD，含点差 0.15%，以成交时为准。",
+                        fontSize = 11.sp,
+                        color = Tokens.Muted,
+                        lineHeight = 18.sp,
+                    )
                 }
-                Spacer(Modifier.height(16.dp))
-                Text("买入", fontSize = 11.sp, color = Tokens.Muted)
-                Spacer(Modifier.height(5.dp))
-                Text("HK$ 8,720.00", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink2)
-                Spacer(Modifier.height(7.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Tag("HKD")
-                    Spacer(Modifier.size(6.dp))
-                    Text("港币活期", fontSize = 12.sp, color = Tokens.Ink2)
-                }
-                Spacer(Modifier.height(14.dp))
-                Hairline()
-                Spacer(Modifier.height(10.dp))
-                Text("参考汇率 1 CNY ≈ 1.0900 HKD，含点差 0.15%，以成交时为准。", fontSize = 11.sp, color = Tokens.Muted, lineHeight = 18.sp)
+            }
+            Box(
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 16.dp)
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(Tokens.SurfaceWarm)
+                    .border(1.dp, Tokens.Border, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Transfer, contentDescription = "互换", tint = Tokens.Ink2, modifier = Modifier.size(16.dp).rotate(90f))
             }
         }
-        Spacer(Modifier.height(14.dp))
-        PrimaryButton("确认换汇", {}, Modifier.padding(horizontal = 14.dp))
-    }
-}
-
-@Composable
-private fun Tag(text: String) {
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(Tokens.SurfaceWarm)
-            .border(1.dp, Tokens.Border, RoundedCornerShape(6.dp))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-    ) {
-        Text(text, fontSize = 11.sp, color = Tokens.Ink2)
     }
 }
 
@@ -164,7 +172,7 @@ fun TxDetailScreen(onBack: () -> Unit) {
                     .background(Tokens.Primary),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Pig, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                Icon(Icons.Food, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
             }
             Spacer(Modifier.height(12.dp))
             Text("-¥38.00", fontSize = 24.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
@@ -321,7 +329,7 @@ fun PlansScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(12.dp))
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-                SwitchRow("消费凑整（凑整到 ¥10 · 单日上限 ¥50）", true) { }
+                SwitchRow("消费凑整", true, subtitle = "凑整到 ¥10 · 单日上限 ¥50") { }
             }
             Spacer(Modifier.height(14.dp))
             PrimaryButton("新建存钱目标", {}, Modifier.padding(horizontal = 14.dp))
@@ -339,12 +347,17 @@ fun PlansScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun GoalCard(name: String, deadline: String, saved: String, target: String, ratio: Float, sweep: String) {
+internal fun GoalCard(name: String, deadline: String, saved: String, target: String, ratio: Float, sweep: String) {
     HairlineCard {
         Column(Modifier.padding(14.dp)) {
-            Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-            Spacer(Modifier.height(3.dp))
-            Text(deadline, fontSize = 11.sp, color = Tokens.Muted)
+            Row(verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Spacer(Modifier.height(3.dp))
+                    Text(deadline, fontSize = 11.sp, color = Tokens.Muted)
+                }
+                Icon(Icons.Pig, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(16.dp))
+            }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
                 Text(saved, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
@@ -400,7 +413,7 @@ private fun PlanCard(name: String, freq: String, amount: String, next: String, t
 }
 
 @Composable
-private fun Metric(label: String, value: String) {
+internal fun Metric(label: String, value: String) {
     Column {
         Text(label, fontSize = 10.5.sp, color = Tokens.Muted)
         Spacer(Modifier.height(2.dp))
@@ -426,16 +439,16 @@ fun SecurityScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column {
-                SwitchRow("人脸识别登录", true) { }
+                SwitchRow("人脸识别登录", true, subtitle = "下次登录可用人脸代替密码") { }
                 Hairline()
-                SwitchRow("大额转账二次确认", true) { }
+                SwitchRow("大额转账二次确认", true, subtitle = "超过 ¥50,000 需再次验证") { }
             }
         }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SmallAction("修改登录密码", Icons.Transfer, Modifier.weight(1f)) { }
-            SmallAction("修改支付密码", Icons.Transfer, Modifier.weight(1f)) { }
-            SmallAction("设备管理", Icons.Person, Modifier.weight(1f)) { }
+            SmallAction("修改登录密码", Icons.Lock, Modifier.weight(1f)) { }
+            SmallAction("修改支付密码", Icons.Check, Modifier.weight(1f)) { }
+            SmallAction("设备管理", Icons.Phone, Modifier.weight(1f)) { }
         }
     }
 }
@@ -512,9 +525,9 @@ fun ImScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column {
-                SwitchRow("账户变动提醒", true) { }
+                SwitchRow("账户变动提醒", true, subtitle = "入账、转出、扣款成功时推送") { }
                 Hairline()
-                SwitchRow("提醒尚未启用", false) { }
+                SwitchRow("提醒尚未启用", false, subtitle = "桥接服务未开启时不推送") { }
             }
         }
     }
@@ -526,11 +539,11 @@ fun NotifySettingsScreen(onBack: () -> Unit) {
         Spacer(Modifier.height(4.dp))
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column {
-                SwitchRow("交易通知", true) { }
+                SwitchRow("交易通知", true, subtitle = "入账、转出、消费") { }
                 Hairline()
-                SwitchRow("安全提醒", true) { }
+                SwitchRow("安全提醒", true, subtitle = "新设备登录、密码变更") { }
                 Hairline()
-                SwitchRow("产品与活动", false) { }
+                SwitchRow("产品与活动", false, subtitle = "理财上新、会员权益") { }
             }
         }
     }
@@ -558,13 +571,24 @@ fun HelpScreen(onBack: () -> Unit) {
         SectionHeader("常见问题")
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column {
-                IconRow(Icons.Receipt, "转账多久到账") { }
-                Hairline()
-                IconRow(Icons.Receipt, "如何提高单日限额") { }
-                Hairline()
-                IconRow(Icons.Receipt, "忘记支付密码怎么办") { }
-                Hairline()
-                IconRow(Icons.Receipt, "理财赎回什么时候到账") { }
+                listOf(
+                    "转账多久到账",
+                    "如何提高单日限额",
+                    "忘记支付密码怎么办",
+                    "理财赎回什么时候到账",
+                ).forEachIndexed { index, question ->
+                    if (index > 0) Hairline()
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(question, fontSize = 13.sp, color = Tokens.Ink)
+                        Icon(Icons.Chevron, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(13.dp))
+                    }
+                }
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -589,5 +613,73 @@ fun AboutScreen(onBack: () -> Unit) {
             listOf("版本" to "v1.0.0", "服务条款" to "›", "隐私政策" to "›", "开源许可" to "›"),
             Modifier.padding(horizontal = 14.dp),
         )
+    }
+}
+
+/** 通用「已受理」结果页（申请 / 赎回等）：黑底白勾 + 结果卡 + 贴底按钮。 */
+@Composable
+fun DoneScreen(
+    title: String,
+    headline: String,
+    note: String,
+    rows: List<Pair<String, String>>,
+    actionLabel: String,
+    onBack: () -> Unit,
+    onAction: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(Tokens.Page),
+    ) {
+        TopBar(title, onBack)
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Box(
+                    Modifier
+                        .size(62.dp)
+                        .clip(CircleShape)
+                        .background(Tokens.Primary),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(Icons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                }
+                Spacer(Modifier.height(14.dp))
+                Text(headline, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                Spacer(Modifier.height(6.dp))
+                Text(note, fontSize = 12.5.sp, color = Tokens.Muted)
+            }
+            KvCard(rows, Modifier.padding(horizontal = 14.dp))
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+        ) {
+            PrimaryButton(actionLabel, onAction)
+        }
+    }
+}
+
+/** 币种小标签。 */
+@Composable
+private fun Tag(text: String) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Tokens.SurfaceWarm)
+            .border(1.dp, Tokens.Border, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+    ) {
+        Text(text, fontSize = 11.sp, color = Tokens.Ink2)
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -36,7 +37,7 @@ import androidx.compose.ui.unit.sp
 private data class Method(val label: String, val desc: String, val icon: ImageVector, val route: String)
 
 private val methods = listOf(
-    Method("手机号转账", "本行与他行账户，凭手机号直达", Icons.Person, "手机号转账"),
+    Method("手机号转账", "本行与他行账户，凭手机号直达", Icons.Phone, "手机号转账"),
     Method("银行卡号转账", "支持本行与他行储蓄卡", Icons.Card, "银行卡号转账"),
     Method("跨境支付通", "转数快（FPS）· 港币 / 离岸人民币", Icons.Globe, "跨境支付通"),
 )
@@ -139,39 +140,39 @@ fun TransferSelectScreen(onBack: () -> Unit, onPick: (String) -> Unit) {
 /** 三个渠道表单：字段不同，样式一致。 */
 @Composable
 fun TransferFormScreen(title: String, onBack: () -> Unit, onNext: () -> Unit) {
-    PushScreen(title = title, onBack = onBack) {
-        Column(
-            Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            when (title) {
-                "手机号转账" -> {
-                    Field("手机号", "138 0013 8000")
-                    Field("收款人姓名（选填）", "陈嘉禾")
-                }
-                "银行卡号转账" -> {
-                    Field("银行卡号", "6214 8300 0000 6633", hint = "招商银行 储蓄卡")
-                    Field("收款人姓名", "王思远")
-                    Field("收款银行", "招商银行")
-                }
-                else -> {
-                    Text("标识类型", fontSize = 11.sp, color = Tokens.Muted)
-                    var seg by remember { mutableStateOf(0) }
-                    SegTabs(listOf("手机号", "电邮", "FPS ID", "账户"), seg) { seg = it }
-                    Field("收款标识", "852 9123 4321", hint = "已登记 FPS 收款人 LAM HO**")
-                    Text("入账币种", fontSize = 11.sp, color = Tokens.Muted)
-                    var cur by remember { mutableStateOf(0) }
-                    SegTabs(listOf("港币 HKD", "离岸人民币", "澳门元 MOP"), cur) { cur = it }
-                }
+    FormScaffold(title = title, onBack = onBack, actionLabel = "下一步", onAction = onNext) {
+        when (title) {
+            "手机号转账" -> {
+                Field("收款人手机号", "请输入已登记的手机号", placeholder = true, hint = "本行与他行账户均可，凭已登记手机号直达收款账户")
+                Spacer(Modifier.height(14.dp))
+                Field("收款人姓名（选填）", "留空则由银行侧核对户名", placeholder = true)
+            }
+            "银行卡号转账" -> {
+                Field("银行卡号", "请输入卡号，自动识别发卡行", placeholder = true, hint = "识别结果：招商银行 储蓄卡")
+                Spacer(Modifier.height(14.dp))
+                Field("收款人姓名", "请输入收款人姓名", placeholder = true)
+                Spacer(Modifier.height(14.dp))
+                Field("收款银行", "招商银行")
+            }
+            else -> {
+                Text("收款标识类型", fontSize = 11.sp, color = Tokens.Muted)
+                Spacer(Modifier.height(6.dp))
+                var seg by remember { mutableStateOf(0) }
+                SegTabs(listOf("手机号", "电邮", "FPS ID", "账户"), seg) { seg = it }
+                Spacer(Modifier.height(14.dp))
+                Field("收款标识", "+852 · · · · · · · ·", hint = "解析结果：LAM HO** · 中银香港")
+                Spacer(Modifier.height(14.dp))
+                Text("入账币种", fontSize = 11.sp, color = Tokens.Muted)
+                Spacer(Modifier.height(6.dp))
+                var cur by remember { mutableStateOf(0) }
+                SegTabs(listOf("港币 HKD", "离岸人民币", "澳门元 MOP"), cur) { cur = it }
             }
         }
-        Spacer(Modifier.height(20.dp))
-        PrimaryButton("下一步", onNext, Modifier.padding(horizontal = 14.dp))
     }
 }
 
 @Composable
-private fun Field(label: String, value: String, hint: String? = null) {
+internal fun Field(label: String, value: String, hint: String? = null, placeholder: Boolean = false) {
     Column {
         Text(label, fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
         Box(
@@ -184,7 +185,7 @@ private fun Field(label: String, value: String, hint: String? = null) {
                 .padding(horizontal = 12.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
-            Text(value, fontSize = 14.sp, color = Tokens.Ink)
+            Text(value, fontSize = 14.sp, color = if (placeholder) Tokens.Muted else Tokens.Ink)
         }
         if (hint != null) {
             Text(hint, fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(top = 6.dp, start = 2.dp))
@@ -199,7 +200,7 @@ fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
     val sheetState = rememberModalBottomSheetState()
 
     PushScreen(title = "填写金额", onBack = onBack) {
-        HairlineCard(Modifier.padding(horizontal = 14.dp)) {
+        HairlineCard(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
@@ -236,7 +237,9 @@ fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
             Modifier.padding(horizontal = 14.dp),
         )
         Spacer(Modifier.height(12.dp))
-        Field("附言", "房租分摊")
+        Column(Modifier.padding(horizontal = 14.dp)) {
+            Field("附言", "房租分摊")
+        }
         Spacer(Modifier.height(18.dp))
         PrimaryButton("确认转出", { confirm = true }, Modifier.padding(horizontal = 14.dp))
     }
@@ -294,41 +297,39 @@ fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
 fun TransferResultScreen(onBack: () -> Unit, onHome: () -> Unit) {
     Column(
         Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .fillMaxSize()
+            .background(Tokens.Page),
     ) {
-        PushScreen(title = "转账结果", onBack = onBack) {
-            Column(
+        TopBar("转账结果", onBack)
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(120.dp))
+            Box(
                 Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
+                    .size(78.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFE7F5EC)),
+                contentAlignment = Alignment.Center,
             ) {
-                Box(
-                    Modifier
-                        .size(62.dp)
-                        .clip(CircleShape)
-                        .background(Tokens.Primary),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Chevron, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
-                }
-                Spacer(Modifier.height(14.dp))
-                Text("转账成功", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-                Spacer(Modifier.height(6.dp))
-                Text("¥500.00 已转给 陈嘉禾", fontSize = 12.5.sp, color = Tokens.Muted)
+                Icon(Icons.Check, contentDescription = null, tint = Color(0xFF1F9D6B), modifier = Modifier.size(32.dp))
             }
-            KvCard(
-                listOf(
-                    "收款人" to "陈嘉禾 ··8821",
-                    "转账金额" to "¥500.00",
-                    "手续费" to "¥0.00",
-                    "付款账户" to "人民币活期 ··8821",
-                ),
-                Modifier.padding(horizontal = 14.dp),
-            )
-            Spacer(Modifier.height(18.dp))
-            PrimaryButton("完成", onHome, Modifier.padding(horizontal = 14.dp))
+            Spacer(Modifier.height(22.dp))
+            Text("转账成功", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Spacer(Modifier.height(26.dp))
+            Text("¥500.00", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Spacer(Modifier.height(16.dp))
+            Text("陈嘉禾 · 招财猫银行 · ·8821 · 实时到账", fontSize = 12.sp, color = Tokens.Muted)
+        }
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+        ) {
+            PrimaryButton("完成", onHome)
         }
     }
 }

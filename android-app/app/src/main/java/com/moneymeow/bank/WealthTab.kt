@@ -1,6 +1,7 @@
 package com.moneymeow.bank
 
 import androidx.compose.foundation.background
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -75,9 +77,11 @@ private val records = listOf(
     WealthRecord("申购 · 招财猫沪深 300 指数增强", "申购", "2026-09-28 09:41 · 份额 12,000.00", "-¥13,000.00", false),
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit) {
+fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
+    var redeemOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         TabBar("理财")
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -90,17 +94,56 @@ fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit) {
                 .padding(bottom = 16.dp),
         ) {
             when (tab) {
-                0 -> WealthOverview(onOpenPlans)
+                0 -> WealthOverview(onOpenPlans) { tab = it }
                 1 -> WealthProducts(onOpenProduct)
-                2 -> WealthHoldings()
+                2 -> WealthHoldings { redeemOpen = true }
                 else -> WealthRecords()
             }
         }
     }
+
+
+    if (redeemOpen) {
+        androidx.compose.material3.ModalBottomSheet(
+            onDismissRequest = { redeemOpen = false },
+            sheetState = androidx.compose.material3.rememberModalBottomSheetState(),
+            containerColor = Tokens.Surface,
+        ) {
+            Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
+                Text("赎回 · 招财猫现金添利 A", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                Spacer(Modifier.height(12.dp))
+                KvRow("持有份额", "19,985.02")
+                KvRow("本次赎回", "19,985.02（全部）")
+                KvRow("预计到账", "T+1 个工作日")
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Tokens.SurfaceWarm)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        "赎回到账时间为回执文案，演示环境即时记账；份额与金额以确认结果为准。",
+                        fontSize = 11.5.sp,
+                        color = Tokens.Ink2,
+                        lineHeight = 18.sp,
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
+                PrimaryButton("确认赎回", {
+                    redeemOpen = false
+                    onRedeemed()
+                })
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+
 }
 
 @Composable
-private fun WealthOverview(onOpenPlans: () -> Unit) {
+private fun WealthOverview(onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -126,20 +169,20 @@ private fun WealthOverview(onOpenPlans: () -> Unit) {
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Chevron, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
+            Icon(Icons.Check, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
             Spacer(Modifier.size(8.dp))
             Text("风险测评 R3 · 有效至 2027-05-12", fontSize = 12.sp, color = Tokens.Ink2)
         }
     }
     Spacer(Modifier.height(10.dp))
     Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        QuickCard("产品市场", Icons.Pig, Modifier.weight(1f)) { }
-        QuickCard("我的持仓", Icons.Wealth, Modifier.weight(1f)) { }
+        QuickCard("产品市场", Icons.Pig, Modifier.weight(1f)) { onSwitch(1) }
+        QuickCard("我的持仓", Icons.Wealth, Modifier.weight(1f)) { onSwitch(2) }
     }
     Spacer(Modifier.height(10.dp))
     Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         QuickCard("储蓄与计划", Icons.Receipt, Modifier.weight(1f)) { onOpenPlans() }
-        QuickCard("交易记录", Icons.Transfer, Modifier.weight(1f)) { }
+        QuickCard("交易记录", Icons.Transfer, Modifier.weight(1f)) { onSwitch(3) }
     }
 }
 
@@ -259,7 +302,7 @@ fun RiskBadge(risk: String) {
 }
 
 @Composable
-private fun WealthHoldings() {
+private fun WealthHoldings(onRedeem: () -> Unit) {
     var chip by remember { mutableIntStateOf(0) }
     ChipRow(listOf("全部", "可赎回", "封闭期"), chip) { chip = it }
     Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -305,6 +348,7 @@ private fun WealthHoldings() {
                                 Modifier
                                     .clip(RoundedCornerShape(15.dp))
                                     .background(Tokens.Primary)
+                                    .clickable { onRedeem() }
                                     .padding(horizontal = 14.dp, vertical = 6.dp),
                             ) {
                                 Text("赎回", fontSize = 12.sp, color = Color.White)
