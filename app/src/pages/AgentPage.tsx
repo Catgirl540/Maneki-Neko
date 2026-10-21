@@ -35,9 +35,9 @@ export function AgentPage() {
         const payee = payees.find((item) => text.toLowerCase().includes(item.name.toLowerCase()))
         const amount = text.match(/(\d+(?:\.\d{1,2})?)\s*(?:元|块)/)
         if (!payee) {
-          add('agent', '请说出常用收款人的姓名和金额，例如“给陈嘉禾转 200 元”。陌生收款人可以到转账页手动填写。', { label: '查看转账', to: '/transfer' })
+          add('agent', '请说出历史收款人的姓名和金额，例如“给陈嘉禾转 200 元”。陌生收款人可以到转账页手动填写。', { label: '查看转账', to: '/transfer' })
         } else if (!amount || Number(amount[1]) <= 0) {
-          add('agent', '找到常用收款人' + payee.name + '。请补充金额，例如“给' + payee.name + '转 200 元”。')
+          add('agent', '找到历史收款人' + payee.name + '。请补充金额，例如“给' + payee.name + '转 200 元”。')
         } else {
           const query = new URLSearchParams({ agentPayee: payee.id, agentAmount: amount[1] })
           add('agent', '已识别收款人 ' + payee.name + ' 和金额 ¥' + Number(amount[1]).toFixed(2) + '。我会预填转账信息；请在转账页核对收款账户、手续费与到账金额后亲自确认付款。', { label: '核对转账', to: '/transfer?' + query.toString() })

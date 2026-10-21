@@ -34,7 +34,7 @@ export interface StaffLoginResult {
 
 export type TicketStatus = 'open' | 'processing' | 'waiting' | 'resolved' | 'suspended'
 export type TicketChannel = 'app' | 'im' | 'web'
-export type TicketPriority = 'normal' | 'high'
+export type TicketPriority = 'normal' | 'high' | 'vip'
 
 export interface TranscriptEntry {
   role: 'user' | 'assistant'

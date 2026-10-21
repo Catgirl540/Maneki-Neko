@@ -45,9 +45,9 @@ const browser = await chromium.launch({ executablePath })
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' })
 
 /** 官网首屏的标记文案。用它判断"这一页是不是官网"。 */
-const LANDING_MARK = '新形态银行'
+const LANDING_MARK = '把钱花在日子上'
 /** 总览页才有的东西。 */
-const DASHBOARD_MARK = '储蓄账户余额'
+const DASHBOARD_MARK = '总资产'
 
 const has = async (page, text) => (await page.locator('body').innerText()).includes(text)
 
@@ -126,7 +126,8 @@ try {
     bad('已登录的官网上没有「进入总览」入口——等于进了官网就出不去')
   } else {
     await enter.click()
-    await page.waitForTimeout(800)
+    // 总览页整页要等账户接口回来才渲染，固定 sleep 容易抢跑——等标记文本出现
+    await page.getByText(DASHBOARD_MARK, { exact: true }).first().waitFor({ timeout: 8000 }).catch(() => {})
     const path5 = new URL(page.url()).pathname
     if (path5 === '/dashboard' && await has(page, DASHBOARD_MARK)) {
       ok('点「进入总览」落到 `/dashboard` 并看到总览内容')
@@ -135,14 +136,14 @@ try {
     }
   }
 
-  /* ── 6. 侧栏「账户」指向新路径 ─────────────────────────────────────── */
-  const navHome = page.getByRole('link', { name: '账户', exact: true }).first()
+  /* ── 6. 侧栏「总览」指向 /dashboard ────────────────────────────────── */
+  const navHome = page.getByRole('link', { name: '总览', exact: true }).first()
   if (await navHome.count() === 0) {
-    bad('侧栏里找不到「账户」入口')
+    bad('侧栏里找不到「总览」入口')
   } else {
     const href = await navHome.getAttribute('href')
-    if (href === '/dashboard') ok('侧栏「账户」指向 `/dashboard`')
-    else bad('侧栏「账户」还指着旧路径', `href=${href}`)
+    if (href === '/dashboard') ok('侧栏「总览」指向 `/dashboard`')
+    else bad('侧栏「总览」还指着旧路径', `href=${href}`)
   }
 
   /* ── 7. 已登录访问登录页 → 去总览（不是停在官网）─────────────────────── */

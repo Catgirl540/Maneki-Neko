@@ -86,25 +86,31 @@ VITE_USE_MOCK=false npm --prefix app run dev
 **新增页面**：在 `src/pages/` 编写页面 → 在 `src/App.tsx` 注册路由 → 按需更新 `navigation.ts`。
 需要登录的页面放在 `RequireAuth` 包裹的路由组内；登录后的跳转统一由 `LoginRoute` 处理。
 
-本轮以 `docs/design/exports/2026-10-15/zhaocai-cat-bank.html` 为视觉依据，**仅验收桌面网页**。首页是单一智能工作台，没有传统/智能模式开关。
+本轮以 `docs/design/exports/2026-10-15/zhaocai-cat-bank.html` 为视觉依据，**仅验收桌面网页**。登录后落地 `/dashboard` 总览页，智能助手独立为 `/assistant`，拆分依据 `docs/design/drafts/2026-10-20-overview-and-assistant.html`；没有传统/智能模式开关。
 
-侧栏以「账户总览」和「账户与支付、账单与资金、理财与储蓄、个人与安全」四个分组组织业务，分组子项与 `/services` 共用 `navigation.ts` 中的目录。账户总览 `/dashboard` 展示助手与十个智能服务；资金信息在「账户与支付 → 账户资产」`/accounts`，个人资料从左下角进入。客服从首页「智能客服」进入，转人工与工单保留在聊天顶部，不再放进「个人与安全」或全部服务目录重复展示；`/support` 兼容路由保留。
+侧栏以「总览」「智能助手」「IM 连接」三个顶部入口和「账户与支付、账单与资金、理财与储蓄、个人与安全」四个分组组织业务，分组子项与 `/services` 共用 `navigation.ts` 中的目录；「IM 连接」是唯一不进分组的业务入口，避免同一目录出现两遍。总览 `/dashboard` 为登录后落地页，展示总资产（含人民币活期）、快捷操作、近 30 天现金流、待办、最近交易与本月消费分类，不内嵌助手聊天框；智能助手 `/assistant` 承载助手工作台与十个智能服务；资金信息在「账户与支付 → 账户资产」`/accounts`，个人资料从左下角进入。客服从助手页「智能客服」进入，转人工与工单保留在聊天顶部，不再放进「个人与安全」或全部服务目录重复展示；`/support` 兼容跳转到 `/assistant`。
 
-`AppShell.tsx` 始终挂载同一个 `SupportPage`，业务页只替换 `Outlet`，不得把助手放回各路由分别挂载，否则切页会丢失输入草稿、待发图片和正在接收的事件。`ChatWorkspace` 的可选 `workbench` 配置控制首页/底部输入栏展示；员工端使用独立 client 和身份，不传客户功能选择。选择智能服务不会自动发送消息；真正发送时用 `serviceIds` 提交本轮选择并回到首页，原始消息不加标题前缀。服务端按唯一映射加载完整技能，多选组合、清除后自动匹配；历史重发沿用原消息的选择快照。工具与支付确认沿用已有实现，维护见 [业务技能说明](../framework/design/SMART-SERVICE-SKILLS.md)。
+`AppShell.tsx` 始终挂载同一个 `SupportPage`，业务页只替换 `Outlet`，不得把助手放回各路由分别挂载，否则切页会丢失输入草稿、待发图片和正在接收的事件。`ChatWorkspace` 的可选 `workbench` 配置控制助手页/底部输入栏展示；员工端使用独立 client 和身份，不传客户功能选择。选择智能服务不会自动发送消息；真正发送时用 `serviceIds` 提交本轮选择并回到助手页，原始消息不加标题前缀。能力选择按会话隔离：新建对话会清空已选智能服务，需重新选择。服务端按唯一映射加载完整技能，多选组合、清除后自动匹配；历史重发沿用原消息的选择快照。工具与支付确认沿用已有实现，维护见 [业务技能说明](../framework/design/SMART-SERVICE-SKILLS.md)。
 
-首页保留「历史对话、新对话、转人工、人工工单」。人工工单是异步处理，组件位于 `src/components/support/HumanSupport.tsx`。独立 Agent 未接通时明确显示未连接，禁用助手发送，不以固定话术冒充智能回复；传统业务与手动转人工仍可使用。
+助手页保留「历史对话、新对话、转人工、人工工单」。人工工单是异步处理，组件位于 `src/components/support/HumanSupport.tsx`。独立 Agent 未接通时明确显示未连接，禁用助手发送，不以固定话术冒充智能回复；传统业务与手动转人工仍可使用。
 
 主要路径：
 
-- `/dashboard`：智能首页；`/support` 为同一智能首页的兼容地址。
+- `/dashboard`：总览（登录后落地页）；`/assistant`：智能助手工作台；`/support` 兼容跳转到 `/assistant`。
 - `/transfer`：独立转账任务页，复用 `TransferForm` 的报价、收款人核验与支付确认。
 - `/accounts`：唯一账户的余额、各币种余额、近期交易；转入和转出弹窗仍可在此打开。
 - `/cards`：卡片列表、锁卡/换卡、交易设置、验证后查看安全信息。
 - `/analysis`、`/analysis/statistics`、`/analysis/autodebits`：流水、消费分析、自动扣款。
-- `/wealth`：理财产品、风险测评与开户；存钱、现金管理、定投另有可见入口。
-- `/services`：完整功能目录，包括换汇、工资、借款、保险、身份、邀请、会员。
+- 账单页 `/analysis` 的筛选入口在分类 chips 那一行右侧（漏斗 + 已选条件数角标），点开是右侧抽屉（`components/ui/Drawer.tsx`），四组单选：收支、分类、时间范围、币种；底部「重置」恢复各组默认，「应用」写进 URL 并关闭。条件落在 search params（`direction` / `category` / `range` / `currency`，切换时清空 `page`），刷新可恢复；已选条件数只统计非默认项，全部默认时不显示角标。`range` 在请求时换算成本地自然日 `from`/`to`（近 7 天 = 今天与之前 6 天，含首尾），不能用 UTC 切片。币种组与上方币种 chips 指向同一资金账户下的余额分区（`account` 参数），点 chips 会清掉抽屉的币种条件，两者不互相矛盾；不因此新建账户。收支方向由后端过滤（`direction=in|out`），不在前端对当前页过滤，否则分页条数会错。导出流水套用同一组条件。规则集中在 `src/lib/billsFilter.ts`，浏览器夹具为 `tools/check-bills-filter-ui.mjs`。
+- 理财与储蓄采用五个子入口：`/wealth` 总览、`/wealth/products` 产品市场、`/wealth/holdings` 持仓、`/wealth/plans` 储蓄与计划、`/wealth/records` 交易记录。产品市场按类型、风险、开放条件和起购金额筛选，支持两款产品比较；未开通也能浏览，申购仍通过现有测评、身份核验、协议和支付确认。
+- `/wealth/plans` 管理存钱目标，`?tab=invest` 管理定投；旧 `/dashboard/savings`、`/wealth/investments` 分别兼容跳转。自动归集、活钱自动转入和定投均不能被表述为已安排执行。`/wealth/cash-management` 作为现金管理产品页的二级设置入口，保险移到「个人与安全」，旧 URL 保留。
+- `/wealth/records` 复用唯一资金账户的分页流水接口，按银行现行“申购 · ”或“赎回 · ”标题查询，展示的是相关资金记账，不是独立委托订单。无订单接口前不能拼造待确认金额、份额确认进度或赎回到账状态；详情沿用交易详情与回单。
+- `/reminders`：IM 连接，一页内含「私聊绑定」（绑定码核对、绑定列表、解除绑定）与「提醒」（创建、取消、状态）。
+- `/services`：完整功能目录，包括换汇、工资、借款、保险、邀请、会员中心。
 
-旧的 `/dashboard?flow=in|out` 兼容到 `/accounts?flow=in|out`；`/receiving` 兼容到 `/accounts?flow=in`。关闭弹窗会清除 `flow` 参数。原有银行接口、鉴权与金额单位不变。
+IM 连接页只做客户侧：IM 接口在桥接服务 `/agent-api/im`（`app/src/api/im.ts`），与银行共用同一个 Bearer 令牌；桥接服务未启用提醒时，页面显示「提醒尚未启用」而不是报错。绑定码来自微信私聊里机器人回复的链接（`#code=`），打开页面会预填并自动核对，确认后绑定码即被消费、不留在地址栏。机器人管理与 IM 会话面板（`#session=`）仍在原 `/agent-api/im` 门户，不放进网页端；提醒只发送消息，不查询账户、不执行交易。
+
+助手页（原 `/dashboard` 首页位置）上的 `?flow=in|out` 兼容到 `/accounts?flow=in|out`；`/receiving` 兼容到 `/accounts?flow=in`。关闭弹窗会清除 `flow` 参数。原有银行接口、鉴权与金额单位不变。
 
 品牌资源在 `src/assets/design/`，网页字标由 `WorkbenchBrand.tsx` 统一渲染。`support-cat.png` 是耳麦招手猫的静态形象；`support-cat-working.mp4` 是压缩后的圆形工作循环视频，仅在 Agent 处理请求时播放，并配有 WebP 首帧海报。空会话时静态客服形象位于欢迎语上方；发送消息后，同一头像平滑上移并缩小到顶部状态区，欢迎语淡出，处理期间播放工作视频，结束后恢复静态形象。新对话会平滑回到欢迎区；系统启用“减少动态效果”时使用静态头像并取消位置过渡。主题中的 `gold` 变量名为兼容旧业务组件而保留，实际颜色已为品牌紫；员工端使用独立主题文件。
 
@@ -217,6 +223,10 @@ npm --prefix app run build:server
 
 每位客户只有一个资金账户，多张银行卡绑定同一账户；每个卡组织（Visa / 银联）至多一张在用卡（使用中、锁定、寄送中占名额，已换发的历史卡不占）。`GET /api/accounts` 的 `currencyBalances` 保存各币种余额；币种分区 ID 用于兼容流水与换汇请求，不作为独立账户或卡账户展示。不同币种不能直接加总。
 
-会员等级（白银/黄金/铂金/钻石）按上月日均储蓄资产评定，规则与服务端共享在 `shared/membership.mjs`：制卡/换卡费年度减免、换汇点差折扣；日终资产快照随 `persist()` 落档，缺日按 0 计。档案 v21 将旧月费套餐收进 `membership.legacy` 只读保留，订阅接口已移除。
+会员中心（`/security/membership`）按新方案展示：四档普通 / 金卡 / 白金 / 钻石，门槛 ¥0 / ¥10 万 / ¥50 万 / ¥300 万；AUM = 资金账户折人民币余额 + 理财持仓市值 + 现金管理余额。规则与服务端共享在 `shared/membership.mjs`：`aumAssets` / `entitlements(tier)` / `evaluateMembership`（月度评定 + 连续 2 期降级缓冲）/ `applyRealtimeUpgrade`（升级即时）/ `redeemLoungePass`（贵宾厅核销）。日终快照随 `persist()` 落当日 AUM，缺日按 0 计。权益在业务生效点消费：境外转账费、客服工单优先级、理财优先购窗口、助手专属经理/顾问标识、贵宾厅核销；旧的两项权益（制卡/换卡费减免、换汇点差折扣）并存保留。付费订阅类型、接口与 `legacy` 字段已全部删除，`user.memberTier` 由 AUM 派生。
 
 银行档案 v20 将旧卡账户的同币种余额、可用余额及关联流水投影到同一资金账户，保留原回单、SQL 交易关联和旧账本行；外币使用 `currencyBalances`，换汇不再开户。PostgreSQL 中的 `bank_accounts` 兼容表保存内部币种及退役账本记录，不能用该表行数作为客户账户数。新增能力应覆盖 `tools/check-single-account.mjs`、`tools/check-card-limit.mjs`、`tools/check-membership.mjs` 和 `npm --prefix server run check:integration`，迁移不可用重置数据库代替。
+
+理财改版维护与验收：见 [理财中心说明](../docs/product/wealth-workspace.md)。规则回归运行 `node --import ./tools/ts-resolve-hook.mjs ./tools/check-wealth-workspace.mjs`（仓库根目录）。
+
+理财演示产品见 [虚构目录与实现边界](../docs/product/wealth-products.md)，普通申赎见 [理财接口](../docs/api/wealth.md)。修改目录后运行 `node --import ./tools/ts-resolve-hook.mjs ./tools/check-wealth-products.mjs` 校验双端与文档一致；不可将目录中的固定净值、费率、伪随机曲线或旧活钱配置描述成真实发行与行情。

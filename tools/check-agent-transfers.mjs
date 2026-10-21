@@ -39,11 +39,12 @@ export async function checkTransfers({ call, prepare, run, agent, accounts, a, b
   }
   const cross={fromAccountId:payer.id,amountCents:10000,payeeName:'测试收款人',payeeAccountNo:'123456789012',payeeBankCode:'004',payeeBankRegion:'HK',payeeCurrency:'USD'}
   const crossDraft=await prepareTransfer(cross,false,get,post)
-  assert.equal(crossDraft.body.confirmedQuote.fee,5000)
+  // 演示客户是白金会员：境外转账手续费减免，报价与成交均为 0
+  assert.equal(crossDraft.body.confirmedQuote.fee,0)
   const crossBefore=(await get(`/api/accounts/${payer.id}`)).balance
   const crossResult=(await run('bank_transfer',cross,'888888')).result
-  assert.equal(crossResult.fee,5000);assert.equal(crossResult.fx.toCurrency,'USD')
-  assert.equal((await get(`/api/accounts/${payer.id}`)).balance,crossBefore-15000)
+  assert.equal(crossResult.fee,0);assert.equal(crossResult.fx.toCurrency,'USD')
+  assert.equal((await get(`/api/accounts/${payer.id}`)).balance,crossBefore-10000)
   await assert.rejects(prepare('bank_recall_transfer',{transactionId:crossResult.transactionId}),/不能撤回/)
   // 直接请求银行绕过桥接，证明原子条件校验在实际冻结/扣款入口生效。
   const protectedBefore=await get(`/api/accounts/${payer.id}`)

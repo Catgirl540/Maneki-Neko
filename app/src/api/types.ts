@@ -15,7 +15,8 @@ export interface User {
   id: string
   name: string
   phone: string
-  memberLevel: string
+  /** 由 AUM 派生的会员等级；展示文案取 MEMBER_TIER_RULES[tier].label */
+  memberTier: MemberTier
   avatarInitial: string
 }
 
@@ -370,6 +371,8 @@ export interface FxQuote {
 
 export interface TransferQuote {
   fee: Cents
+  /** 境外转账费被会员权益减免（金卡+）；false / 缺省表示正常收费 */
+  feeWaived?: boolean
   /** 预计到账时间文案 */
   etaText: string
   /** 可转出的最大金额 */
@@ -503,12 +506,20 @@ export interface ExportDataset {
   rows: Record<string, string>[]
 }
 
+/**
+ * 导出条件：口径必须和列表接口一致，否则「按当前筛选导出」会导出一份
+ * 比屏幕上的列表更大的数据集，对账时看不出差异。
+ */
 export interface ExportQuery {
-  /** YYYY-MM-DD，留空表示不限 */
+  /** 本地日 YYYY-MM-DD（含当天），留空表示不限 */
   from?: string
   to?: string
   category?: TransactionCategory | 'all'
   keyword?: string
+  /** 多币种对账：按币种导出；与该记账分区币种不符时导出为空 */
+  currency?: Currency | 'all'
+  /** 收支方向：`all` 或省略表示不限 */
+  direction?: TransactionDirection | 'all'
 }
 
 /**
@@ -791,6 +802,8 @@ export interface SupportTicket {
   ticketId: string
   reason: string
   status: SupportTicketStatus
+  /** 会员 VIP 通道：金卡及以上工单优先处理 */
+  priority?: 'normal' | 'vip'
   createdAt: string
   updatedAt: string
 }
@@ -918,6 +931,10 @@ export interface WealthProduct {
   transactionFees: FeeItem[]
   navHistory: NavPoint[]
   topHoldings: AssetHolding[]
+  /** 会员优先申购窗口结束时间（ISO）；窗口内仅 priorityTier 及以上可申购 */
+  priorityOpenAt?: string
+  /** 优先申购所需最低会员等级，如 platinum */
+  priorityTier?: MemberTier
 }
 
 export interface WealthHolding {
@@ -1281,7 +1298,7 @@ export interface CardLimitPatch {
 }
 
 /* ==========================================================================
-   我的域扩展 —— 邀请与奖励 / 会员与订阅 / 身份认证
+   我的域扩展 —— 邀请与奖励 / 会员中心
    ========================================================================== */
 
 export interface InviteCode {
@@ -1316,35 +1333,14 @@ export interface InvitationsOverview {
   totalEarned: Cents
 }
 
-export interface MembershipPlan {
-  id: string
-  name: string
-  price: Cents
-  /** 计费周期说明，如「每月」 */
-  period: string
-  perks: string[]
-  highlight?: boolean
-}
-
-export interface MembershipSubscription {
-  planId: string
-  planName: string
-  status: 'active' | 'canceled' | 'none'
-  price: Cents
-  period: string
-  startedAt: string | null
-  /** 下次续费日；已取消为 null */
-  renewAt: string | null
-}
-
-/** 统一客户会员等级：白银开户即享，其余按上月日均储蓄资产评定 */
-export type MemberTier = 'silver' | 'gold' | 'platinum' | 'diamond'
+/** 会员等级：纯资产分层，由 AUM 派生，不提供付费订阅 */
+export type MemberTier = 'standard' | 'gold' | 'platinum' | 'diamond'
 
 /** 一次月度评定结果；缺快照的日子按 0 计入，只可能低估不会高估 */
 export interface MembershipEvaluation {
   /** 本次评定对应的月份 `YYYY-MM`（本月等级由它决定） */
   for: string
-  /** 上月日均储蓄资产（分） */
+  /** 上月日均 AUM（分）：储蓄 + 理财持仓 + 现金管理 */
   avgAssets: Cents
   /** 上月有日终快照的天数 */
   coveredDays: number
@@ -1353,67 +1349,68 @@ export interface MembershipEvaluation {
   evaluatedAt: string
 }
 
-/** 当年度可用权益额度与已用量 */
-export interface MembershipBenefits {
+/**
+ * 当前档位权益集合。业务函数只消费这一份，不在各接口里散写 if-else。
+ * 高等级含低等级全部权益。
+ */
+export interface Entitlements {
+  /** 境外转账手续费 ×0（金卡+） */
+  freeTransferFee: boolean
+  /** 境外汇款手续费减免（钻石） */
+  freeOverseasRemit: boolean
+  /** 客服工单 VIP 优先（金卡+） */
+  vipChannel: boolean
+  /** 生日礼遇：文档标「暂缓」，恒为 false */
+  birthdayGift: boolean
+  /** 专属客户经理（白金+） */
+  dedicatedManager: boolean
+  /** 专属理财顾问（钻石） */
+  dedicatedAdvisor: boolean
+  /** 理财优先购（白金+） */
+  wealthPriority: boolean
+  /** 机场 / 高铁贵宾厅年度额度 */
+  loungePassesPerYear: number
+  // —— 旧的两项已接通权益并存 ——
   /** 制卡/换卡费年度减免次数 */
   cardFeeWaiversPerYear: number
-  cardFeeWaiversUsed: number
-  /** 钻石档：减免含寄送费 */
+  /** 制卡费费率：1 原价 / 0.5 半价 / 0 全免 */
+  cardFeeRate: number
+  /** 减免是否含寄送费 */
   includeShipping: boolean
   /** 换汇点差系数：0.7 = 七折 */
   fxFeeRate: number
-  /** 规划中尚未开通的权益（不能展示为已享权益） */
-  plannedPerks: string[]
+}
+
+/** 贵宾厅年度额度与核销情况 */
+export interface LoungeQuota {
+  year: number
+  perYear: number
+  used: number
+  remaining: number
 }
 
 export interface MembershipOverview {
   tier: MemberTier
-  /** 等级中文名，如「黄金会员」 */
-  tierName: string
+  /** 等级中文名，如「白金会员」 */
+  tierLabel: string
+  /** 当前月均 AUM；尚无评定为 0 */
+  aum: Cents
+  /** 下一档；已是最高档为 null */
+  nextTier: MemberTier | null
+  /** 下一档 AUM 门槛；已是最高档为 null */
+  nextThreshold: Cents | null
+  /** 当前档生效权益文案（递进：含低档） */
+  benefits: string[]
+  entitlements: Entitlements
   /** 当前等级生效起点；无评定历史时为 null */
   since: string | null
   /** 最近一次月度评定；新客尚无快照时为 null */
   evaluation: MembershipEvaluation | null
-  /** 下次评定日（次月 1 日） */
-  nextEvaluationAt: string
-  /** 距下一档的日均资产差额；已是最高档为 null */
-  upgradeGap: Cents | null
-  /** 下一档名称；已是最高档为 null */
-  nextTierName: string | null
-  benefits: MembershipBenefits
+  /** 降级缓冲提示；不在缓冲期为 null */
+  downgradeWarning: string | null
+  lounge: LoungeQuota
   /** 评级与权益使用记录 */
   records: { id: string; label: string; amount: Cents; createdAt: string }[]
-  /** 旧月费套餐的只读历史；不再支持购买或续费 */
-  legacy?: { current: MembershipSubscription | null; plans: MembershipPlan[] }
-}
-
-/** 证件 OCR 识别结果（演示：服务端按登记资料回填） */
-export interface IdentityOcrResult {
-  holderName: string
-  idNumber: string
-  birthDate: string
-  expiryDate: string
-  address: string
-  confidence: number
-}
-
-export interface IdentityStep {
-  id: string
-  label: string
-  status: 'done' | 'active' | 'pending'
-  note: string
-  completedAt: string | null
-}
-
-export interface IdentityStatus {
-  level: 'none' | 'basic' | 'verified'
-  idType: string
-  maskedIdNumber: string
-  verifiedAt: string
-  livenessVerified: boolean
-  /** 开户验证进度：资料 → 核验 → 审核 → 发卡 */
-  steps: IdentityStep[]
-  ocr: IdentityOcrResult | null
 }
 
 /* ==========================================================================

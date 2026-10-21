@@ -59,3 +59,12 @@ archive/**/.kotlin/
 
 # 官网 APK 与元数据由 tools/package-android-download.mjs 生成，随构建产物发布
 /app/public/downloads/
+
+# 会话归档目录，不进仓库
+/.arch/
+
+# 新 Android 客户端（android-app/）本机构建产物与 SDK 配置
+android-app/local.properties
+android-app/**/build/
+android-app/.gradle/
+android-app/.kotlin/

@@ -1,0 +1,20 @@
+/* 开户页：演示证件采集。样式仅作用于此页。 */
+
+/*
+ * 扫描线：元素本身铺满取景框，背景在中线处留一条 4px 金线，
+ * 用 translateY(-50% ↔ 50%) 让这条线看上去从上到下扫过——
+ * 只动 transform，符合仓库的关键帧约束（check-motion）。
+ */
+.id-scan-line {
+  background: linear-gradient(to bottom,
+    transparent 0, transparent calc(50% - 2px),
+    #d4a017cc calc(50% - 2px), #d4a017cc calc(50% + 2px),
+    transparent calc(50% + 2px));
+  filter: drop-shadow(0 0 8px #d4a01766);
+  animation: id-scan-sweep 1.2s ease-in-out infinite alternate;
+}
+@keyframes id-scan-sweep {
+  from { transform: translateY(-50%); }
+  to { transform: translateY(50%); }
+}
+@media (prefers-reduced-motion: reduce) { .id-scan-line { animation: none; } }

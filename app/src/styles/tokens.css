@@ -33,6 +33,8 @@
   --color-ink-soft: #4e6078; /* 次级文字 */
   --color-ink-mute: #64748d; /* 辅助说明 / 占位符 */
   --color-ink-invert: #ffffff;
+  /* 近黑：主按钮与"已启用"的筛选入口（紫色只做选中/点缀，不当按钮底色） */
+  --color-ink-deep: #101826;
 
   /* —— 品牌紫：沿用旧语义名以避免影响业务组件 —— */
   --color-gold: #533afd;

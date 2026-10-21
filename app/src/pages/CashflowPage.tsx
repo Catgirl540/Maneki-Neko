@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
 import { Row, Toggle } from '@/components/ui/Toggle'
-import { Tag } from '@/components/ui/Segmented'
+import { Tag, EmptyState } from '@/components/ui/Segmented'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { AlertIcon, HistoryIcon, PencilIcon, PigIcon, WalletIcon } from '@/components/ui/icons'
 import { formatAmount, formatDate } from '@/lib/format'
+import { salaryPlanConfigured } from '@/lib/salary-plan'
 import { useAsync } from '@/lib/useAsync'
 import { parseAmountInput } from '@/lib/amountInput'
 import { useToast } from '@/components/ui/toast-context'
@@ -71,30 +72,41 @@ export function CashflowPage() {
   }
   const plan = salary.data
   const od = overdraft.data
+  const configured = salaryPlanConfigured(plan)
 
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">工资与备用金</h1>
 
       <Card className="float-up">
-        <CardHeader title="工资入账计划" action={<Button size="sm" icon={<PencilIcon size={15} />} onClick={() => openEdit(plan)}>修改</Button>} />
-        <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <p className="text-[13px] text-ink-soft">预计发薪</p>
-            <p className="num mt-1 text-[34px] leading-none font-bold text-ink">¥{formatAmount(plan.amount)}</p>
-            <p className="mt-2 text-[13px] text-ink-mute">{formatDate(plan.nextPayday)} · 每月 {plan.salaryDay} 日</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="grid size-12 place-items-center rounded-tile bg-gold-tint text-gold-deep">
-              <WalletIcon size={22} />
-            </span>
-            <div>
-              <p className="text-[13px] text-ink-soft">发薪单位</p>
-              <p className="text-[15px] font-medium text-ink">{plan.employer}</p>
+        <CardHeader title="工资入账计划" action={configured ? <Button size="sm" icon={<PencilIcon size={15} />} onClick={() => openEdit(plan)}>修改</Button> : undefined} />
+        {configured ? (
+          <>
+            <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+              <div>
+                <p className="text-[13px] text-ink-soft">预计发薪</p>
+                <p className="num mt-1 text-[34px] leading-none font-bold text-ink">¥{formatAmount(plan.amount)}</p>
+                <p className="mt-2 text-[13px] text-ink-mute">{formatDate(plan.nextPayday)} · 每月 {plan.salaryDay} 日</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="grid size-12 place-items-center rounded-tile bg-gold-tint text-gold-deep">
+                  <WalletIcon size={22} />
+                </span>
+                <div>
+                  <p className="text-[13px] text-ink-soft">发薪单位</p>
+                  <p className="text-[15px] font-medium text-ink">{plan.employer}</p>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-        <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">计划仅记录预计发薪信息，不触发工资入账。</p>
+            <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">计划仅记录预计发薪信息，不触发工资入账。</p>
+          </>
+        ) : (
+          <EmptyState
+            title="未设置工资计划"
+            description="设置发薪日与预计月薪后，这里展示下次发薪预测；计划仅作记录，不触发工资入账。"
+            action={<Button variant="primary" size="sm" onClick={() => openEdit(plan)}>设置计划</Button>}
+          />
+        )}
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '70ms' }}>
@@ -126,8 +138,11 @@ export function CashflowPage() {
 
       <Card className="float-up" style={{ animationDelay: '140ms' }}>
         <CardHeader title="发薪记录" action={<span className="text-[13px] text-ink-mute">{plan.history.length} 笔</span>} />
-        <div className="mt-3 divide-y divide-line">
-          {plan.history.map((record) => (
+        {plan.history.length === 0 ? (
+          <EmptyState title="暂无发薪记录" />
+        ) : (
+          <div className="mt-3 divide-y divide-line">
+            {plan.history.map((record) => (
             <div key={record.id} className="flex items-center gap-4 py-4">
               <span className="grid size-10 shrink-0 place-items-center rounded-chip bg-gold-tint text-gold-deep">
                 <HistoryIcon size={18} />
@@ -138,8 +153,9 @@ export function CashflowPage() {
               </span>
               <span className="num shrink-0 text-[15px] font-semibold text-ink">+¥{formatAmount(record.amount)}</span>
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
 
       <Modal

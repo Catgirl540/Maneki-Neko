@@ -11,23 +11,24 @@ import { BillsPage } from '@/pages/BillsPage'
 import { AutoDebitsPage } from '@/pages/AutoDebitsPage'
 import { CardsPage } from '@/pages/CardsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { OverviewPage } from '@/pages/OverviewPage'
 import { LandingPage } from '@/pages/LandingPage'
 import { DownloadPage } from '@/pages/DownloadPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { OpenAccountStandalone } from '@/pages/OpenAccountPage'
 import { SecurityPage } from '@/pages/SecurityPage'
-import { SavingsPage } from '@/pages/SavingsPage'
 import { InvitationsPage } from '@/pages/InvitationsPage'
 import { MembershipPage } from '@/pages/MembershipPage'
 import { ExchangePage } from '@/pages/ExchangePage'
-import { IdentityPage } from '@/pages/IdentityPage'
 import { CashflowPage } from '@/pages/CashflowPage'
+import { ImPage } from '@/pages/ImPage'
 import { CreditPage } from '@/pages/CreditPage'
 import { CashManagementPage } from '@/pages/CashManagementPage'
-import { InvestPage } from '@/pages/InvestPage'
 import { InsurancePage } from '@/pages/InsurancePage'
 import { TransactionDetailPage } from '@/pages/TransactionDetailPage'
 import { WealthPage } from '@/pages/WealthPage'
+import { WealthPlansPage } from '@/pages/WealthPlansPage'
+import { WealthRecordsPage } from '@/pages/WealthRecordsPage'
 import { TransferPage } from '@/pages/TransferPage'
 import { ServicesPage } from '@/pages/ServicesPage'
 import { SessionProvider, RequireAuth } from '@/store/session'
@@ -93,30 +94,35 @@ export default function App() {
                 }
               >
                 <Route element={<AccountLayout />}>
-                  <Route path="/dashboard" element={null} />
+                  <Route path="/dashboard" element={<OverviewPage />} />
                   <Route path="/accounts" element={<DashboardPage />} />
                   <Route path="/cards" element={<CardsPage />} />
                   <Route path="/receiving" element={<Navigate to="/accounts?flow=in" replace />} />
                   <Route path="/analysis" element={<BillsPage />} />
                   <Route path="/analysis/statistics" element={<AnalysisPage />} />
                   <Route path="/analysis/autodebits" element={<AutoDebitsPage />} />
-                  <Route path="/dashboard/savings" element={<SavingsPage />} />
+                  <Route path="/dashboard/savings" element={<Navigate to="/wealth/plans" replace />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
                 </Route>
                 <Route path="/transfer" element={<TransferPage />} />
                 <Route path="/services" element={<ServicesPage />} />
                 <Route path="/wealth" element={<WealthPage />} />
+                <Route path="/wealth/products" element={<WealthPage view="products" />} />
+                <Route path="/wealth/holdings" element={<WealthPage view="holdings" />} />
+                <Route path="/wealth/plans" element={<WealthPlansPage />} />
+                <Route path="/wealth/records" element={<WealthRecordsPage />} />
                 <Route path="/wealth/cash-management" element={<CashManagementPage />} />
-                <Route path="/wealth/investments" element={<InvestPage />} />
+                <Route path="/wealth/investments" element={<Navigate to="/wealth/plans?tab=invest" replace />} />
                 <Route path="/wealth/insurance" element={<InsurancePage />} />
                 <Route path="/exchange" element={<ExchangePage />} />
                 <Route path="/cashflow" element={<CashflowPage />} />
+                <Route path="/reminders" element={<ImPage />} />
                 <Route path="/credit" element={<CreditPage />} />
                 <Route path="/security" element={<SecurityPage />} />
-                <Route path="/security/identity" element={<IdentityPage />} />
                 <Route path="/security/invitations" element={<InvitationsPage />} />
                 <Route path="/security/membership" element={<MembershipPage />} />
-                <Route path="/support" element={null} />
+                <Route path="/assistant" element={null} />
+                <Route path="/support" element={<Navigate to="/assistant" replace />} />
               </Route>
               {/* 认不出的路径回官网，而不是回总览：没登录的人落到总览只会被再弹去登录页 */}
               <Route path="*" element={<Navigate to="/" replace />} />

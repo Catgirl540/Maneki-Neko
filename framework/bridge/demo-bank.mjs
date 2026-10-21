@@ -73,6 +73,7 @@ const ROUTES = [
   ['POST', 'fpsRegistration', 'registerFps', (id, b) => [b]],
   ['POST', 'cardBin', 'resolveCardBin', (id, b) => [b]],
   ['GET', 'payees', 'listPayees', () => []],
+  ['DELETE', 'payee', 'deletePayee', (id) => [id]],
   ['POST', 'fpsResolve', 'resolveFps', (id, b) => [b.idType, b.fpsId]],
   ['POST', 'transferQuote', 'quoteTransfer', (id, b) => [b]],
   ['POST', 'transferRecipient', 'resolveTransferRecipient', (id, b) => [b]],
@@ -129,12 +130,10 @@ const ROUTES = [
   ['PATCH', 'savingsRoundup', 'updateSavingsRoundup', (id, b) => [b]],
   ['POST', 'virtualCard', 'createVirtualCard', (id, b) => [id, b]],
 
-  // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
+  // —— 我的域扩展：邀请 / 会员 ——
   ['GET', 'invitations', 'getInvitations', () => []],
   ['GET', 'membership', 'getMembership', () => []],
-  ['GET', 'identityStatus', 'getIdentityStatus', () => []],
-  ['POST', 'identityOcr', 'runIdentityOcr', () => []],
-  ['POST', 'identityLiveness', 'runIdentityLiveness', () => []],
+  ['POST', 'membershipLoungePass', 'redeemLoungePass', () => []],
 
   // —— 工资与备用金 ——
   ['GET', 'salaryPlan', 'getSalaryPlan', () => []],
@@ -166,6 +165,15 @@ function transactionQuery(q) {
   if (category !== null && category !== 'all') out.category = category
   const keyword = q.get('keyword')
   if (keyword !== null) out.keyword = keyword
+  // 与 server/bank-api.mjs 的 transactionQuery 保持同一组筛选键。
+  const currency = q.get('currency')
+  if (currency !== null) out.currency = currency
+  const direction = q.get('direction')
+  if (direction !== null && direction !== 'all') out.direction = direction
+  for (const key of ['from', 'to']) {
+    const v = q.get(key)
+    if (v !== null && v !== '') out[key] = v
+  }
   return out
 }
 
@@ -175,8 +183,12 @@ function exportQuery(q) {
     const v = q.get(key)
     if (v !== null) out[key] = v
   }
+  const currency = q.get('currency')
+  if (currency !== null) out.currency = currency
   const category = q.get('category')
   if (category !== null && category !== 'all') out.category = category
+  const direction = q.get('direction')
+  if (direction !== null && direction !== 'all') out.direction = direction
   return out
 }
 

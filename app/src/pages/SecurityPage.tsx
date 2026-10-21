@@ -2,6 +2,7 @@ import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { SecurityOverview } from '@/api/types'
+import { MEMBER_TIER_RULES } from '../../../shared/membership.mjs'
 import { Button } from '@/components/ui/Button'
 import { useResetOnOpen } from '@/lib/usePresence'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -78,7 +79,7 @@ export function SecurityPage() {
         <CardHeader title="个人信息" />
         <div className="mt-4 flex items-center gap-4">
           <span className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold-wash text-[18px] font-semibold text-gold-deep">{user?.avatarInitial}</span>
-          <span><span className="block text-[18px] font-semibold text-ink">{user?.name}</span><span className="mt-1 block text-[13px] text-ink-mute">{user?.memberLevel}</span></span>
+          <span><span className="block text-[18px] font-semibold text-ink">{user?.name}</span><span className="mt-1 block text-[13px] text-ink-mute">{MEMBER_TIER_RULES[user?.memberTier ?? 'standard'].label}</span></span>
         </div>
       </Card>
 
@@ -168,16 +169,6 @@ export function SecurityPage() {
               }
             />
             <Row
-              icon={<ShieldIcon size={20} />}
-              title="身份认证"
-              description="证件识别、人脸核验与开户验证进度"
-              right={
-                <Link to="/security/identity" className="inline-flex min-h-10 items-center gap-1 text-[13px] text-gold-deep hover:underline">
-                  前往<ChevronRightIcon size={15} />
-                </Link>
-              }
-            />
-            <Row
               icon={<UsersIcon size={20} />}
               title="邀请与奖励"
               description="邀请好友，双方都得奖励"
@@ -189,8 +180,8 @@ export function SecurityPage() {
             />
             <Row
               icon={<SparkleIcon size={20} />}
-              title="会员等级"
-              description="等级评定、年度权益与使用记录"
+              title="会员中心"
+              description="等级评定、AUM 进度、年度权益与使用记录"
               right={
                 <Link to="/security/membership" className="inline-flex min-h-10 items-center gap-1 text-[13px] text-gold-deep hover:underline">
                   前往<ChevronRightIcon size={15} />
@@ -566,8 +557,8 @@ function PayPasswordModal({
  * 更换登录手机号。
  *
  * 手机号是找回密码与接收验证码的唯一凭证，换掉它等于换掉账户的钥匙 ——
- * 所以要求**人脸核身 + 新号短信验证**，而这两步恰好就是「身份认证」本该待的地方：
- * 它是敏感操作内部的一步，不是一个可以提前点掉的独立按钮。
+ * 所以要求**人脸核身 + 新号短信验证**——核身是敏感操作内部的一步，
+ * 不是一个可以提前点掉的独立按钮。
  */
 function PhoneModal({
   open,

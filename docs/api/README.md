@@ -65,8 +65,8 @@
 | PATCH | `/api/auth/phone` | 更换登录手机号（人脸 + 新号短信） | 已实现 |
 | GET | `/api/accounts` | 资金账户列表（多币种） | 已实现 |
 | GET | `/api/accounts/:id` | 单个账户 | 已实现 |
-| GET | `/api/accounts/:id/transactions` | 账户流水（分页；支持 `category` / `keyword` / `currency`；支出分类由服务端自动归类，见 [accounts.md](accounts.md)） | 已实现 |
-| GET | `/api/accounts/:id/transactions/export` | 流水导出数据集 | 已实现 |
+| GET | `/api/accounts/:id/transactions` | 账户流水（分页；支持 `category` / `keyword` / `currency` / `direction` / `from` / `to`；支出分类由服务端自动归类，见 [accounts.md](accounts.md)） | 已实现 |
+| GET | `/api/accounts/:id/transactions/export` | 流水导出数据集（与列表同口径的 `category` / `keyword` / `currency` / `direction` / `from` / `to`） | 已实现 |
 | GET | `/api/transactions/:id` | 单笔交易详情（凭证） | 已实现 |
 | GET | `/api/transactions/:id/receipt` | 电子回单文件 | 已实现 |
 | POST | `/api/accounts/:id/deposit` | 转入 | 已实现 |
@@ -107,10 +107,8 @@
 | 方法 | 路径 | 说明 | 状态 |
 | --- | --- | --- | --- |
 | GET | `/api/invitations` | 邀请码、好友进度、奖励 | 已实现 |
-| GET | `/api/membership` | 会员等级、月度评定与年度权益（旧套餐只读留在 `legacy`） | 已实现 |
-| GET | `/api/identity/status` | 身份认证状态与开户验证进度 | 已实现 |
-| POST | `/api/identity/ocr` | 证件 OCR 识别 | 已实现 |
-| POST | `/api/identity/liveness` | 人脸活体核验 | 已实现 |
+| GET | `/api/membership` | 会员中心：等级 / 月均 AUM / 权益 / 贵宾厅额度 | 已实现 |
+| POST | `/api/membership/lounge-pass` | 核销一次机场 / 高铁贵宾厅额度（年度次数） | 已实现 |
 
 详见 [profile.md](./profile.md)。
 
@@ -123,6 +121,8 @@
 | 财务分析 | `GET /api/analysis/spending`、`GET /api/analysis/cashflow`、`GET /api/autodebits`、`PATCH /api/autodebits/:id` | 已实现 |
 | 安全中心 | `GET /api/security/overview`、`PATCH /api/security/rules/:id`、`POST /api/security/password`、`POST /api/security/payment-password`、`POST /api/security/verify` | 已实现 |
 | 智能客服 | `GET /api/support/messages`、`POST /api/support/chat` | 已实现 |
+
+普通理财字段、申赎和实现限制见 [wealth.md](wealth.md)，虚构产品参数见 [理财产品目录](../product/wealth-products.md)。
 
 自动扣款字段、Agent 续费清单的自然日范围、金额口径和限制见 [autodebits.md](./autodebits.md)。
 
@@ -182,7 +182,7 @@ Agent 共用以上客户接口，提供 `bank_request_human_support`、`bank_lis
 
 ## 后端实现说明
 
-- 后端是**演示桥接**：`framework/bridge/demo-bank.mjs` 直接复用前端 mock 的业务逻辑（Node 运行时转译 TS），
-  数据落 SQLite（`server/data/bank.sqlite`）。因此「接口契约」一处定义，前端 mock 与服务端同源。
-- 桥接在启动时会断言路由表与 `BankApi` 双向对齐；新增接口若只改一处，服务会启动失败。
-- 会话：`server/index.mjs` 维护内存 `sessions`（Bearer token，默认 12 小时）；重启后需重新登录。
+- 当前入口 `server/index.mjs` 通过 `server/bank-api.mjs` 运行 `server/domain/` 业务，使用 PostgreSQL；`framework/bridge/demo-bank.mjs` 是历史独立演示入口，不能作为当前存储和部署依据。
+- 服务启动时校验后端路由与契约双向对齐；新增接口须同步核对客户端与服务端，不能只修改本说明。
+- 客户 Bearer 会话由 `server/customer-auth.mjs` 管理，令牌哈希持久化于 `customer_sessions`，默认有效期 12 小时；服务重启不会仅因内存清空而使未过期会话失效，撤销和到期以数据库状态为准。
+- 业务“已实现”指当前契约与演示/服务端路径存在，不表示合作银行、真实产品发行、行情或交易清算已接入。接入模式与不可用行为见 [后端维护说明](../../server/README.md)。

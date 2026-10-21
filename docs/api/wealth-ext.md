@@ -1,10 +1,12 @@
 # 理财扩展 · 现金管理 / 投资与定投 / 保险保障
 
+普通理财查询、资格与申赎见 [wealth.md](wealth.md)，全部虚构演示目录见 [理财产品目录](../product/wealth-products.md)。
+
 对应 `app/src/api/contract.ts` 的 `wealth/cash-management`、`wealth/investments`、`wealth/insurance` 接口。
 
 ## Agent 产品对比
 
-客户 Agent 新增只读工具 `bank_wealth_compare`，参数为 `firstProductCode`、`secondProductCode`（两个不同的真实目录代码）和可选正整数分 `amountCents`。复用已有产品列表及本人理财概览接口，不新增写接口。
+客户 Agent 新增只读工具 `bank_wealth_compare`，参数为 `firstProductCode`、`secondProductCode`（两个不同的当前目录代码）和可选正整数分 `amountCents`。复用已有产品列表及本人理财概览接口，不新增写接口。
 
 返回两款产品的风险、发行方、期限、开放性、业绩基准及依据、净值日期、起购/追加金额、经常性和一次性费率；本人测评保留 `unassessed/expired/valid/unknown` 的区别。提供金额时按当前申购费率和金额规则估算费用与门槛，风险匹配不代表余额充足或申购获批。未知/重复产品、非整数金额、缺失或非法产品费率/风险/基准直接报错，不捏造产品、推荐排名或收益。
 
@@ -12,7 +14,7 @@
 
 ## 现金管理（活钱）
 
-页面 `app/src/pages/CashManagementPage.tsx`。
+页面 `app/src/pages/CashManagementPage.tsx`，从「理财产品 → 现金管理」进入二级设置页；开关只保存规则，自动执行尚未开放。
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
@@ -22,7 +24,7 @@
 `CashManagement`：`{ balance, totalYield, sevenDayYield, accountId, sweepEnabled, sweepThreshold, products }`
 
 - `sevenDayYield`：7 日年化小数，如 `0.0219`。
-- `sweepThreshold`：活期保留金额（分），超出部分自动转入货币基金。
+- `sweepThreshold`：保存的活期保留金额（分）；当前没有超额资金自动转入执行器，不产生自动申购。
 - `products`：`CashManagementProduct[]`，`{ id, name, sevenDayYield, minAmount, flexible }`。
 
 `CashSweepUpdate` 字段全部可选：`enabled`、`threshold`、`accountId`。
@@ -30,7 +32,7 @@
 
 ## 投资与定投
 
-页面 `app/src/pages/InvestPage.tsx`。
+页面 `app/src/pages/InvestPage.tsx`，嵌入 `/wealth/plans?tab=invest`；旧 `/wealth/investments` 兼容跳转。
 
 | 方法 | 路径 | 请求 | 响应 |
 | --- | --- | --- | --- |
@@ -72,3 +74,9 @@ Agent 工具：`bank_list_investments` 查询专用目录和本人计划（有�
 `InsuranceEnrollRequest`：`{ productId, insuredName, paymentPassword? }`。
 投保：保费扣账 + 落一笔台账流水 + 增加总保额。
 错误：`PRODUCT_NOT_FOUND`、`VALIDATION_ERROR`（姓名为空）、`INSUFFICIENT_BALANCE`、`BAD_PAY_PASSWORD`。
+
+## 网页理财中心与记录口径
+
+五个入口：理财总览 `/wealth`、产品 `/wealth/products`、持仓 `/wealth/holdings`、储蓄与计划 `/wealth/plans`、交易记录 `/wealth/records`。保险仍保留 `/wealth/insurance`，导航移至「个人与安全」。
+
+本次页面整合不变更银行写接口。交易记录调用已有 `listTransactions`，本人唯一资金账户、分类 `other`、关键字分别为 `申购 · ` / `赎回 · `，服务端分页；页码与类型进入 URL，不把旧页缓存显示为新查询。它是资金记账列表，不是理财订单，不能从此接口推算待确认资金、订单阶段或份额；目前理财结算为 CNY，不混入外币合计。详见 [理财中心说明](../product/wealth-workspace.md)。

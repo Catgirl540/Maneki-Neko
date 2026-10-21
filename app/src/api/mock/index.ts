@@ -87,7 +87,6 @@ import type {
   SavingsOverview,
   SavingsGoal,
   VirtualCard,
-  IdentityOcrResult,
   SalaryPlan,
   OverdraftFacility,
   Loan,
@@ -117,11 +116,17 @@ import {
   PAY_PASSWORD_MAX_ATTEMPTS,
   cardFeeQuote,
   effectiveSpread,
+  entitlements,
   evaluateMembership,
+  applyRealtimeUpgrade,
   fxRateFor,
   membershipOverview,
   OCCUPYING_CARD_STATUSES,
   recordCardFeeWaiver,
+  redeemLoungePass,
+  transferFee,
+  transferFeeWaived,
+  wealthPriorityGate,
   loadDb,
   findProfileByPhone,
   findProfileByUserId,
@@ -166,9 +171,8 @@ const LARGE_TRANSFER: Cents = 500_000
 const BANK_SINGLE_LIMIT: Cents = 100_000_000
 /** FPS（转数快）未登记收款人单笔上限：¥600,000.00（同上，要留出阈值之上的空间） */
 const FPS_SINGLE_LIMIT: Cents = 60_000_000
-/** 境外转账费率 0.1%，最低 ¥50.00 */
-const OVERSEAS_RATE = 0.001
-const OVERSEAS_MIN_FEE: Cents = 5_000
+/** 历史收款人簿上限：每次转账成功都自动记账，超出后裁掉最久未用的 */
+const MAX_PAYEES = 50
 
 /**
  * 安全码在界面上可见的时长（秒）。
@@ -330,12 +334,13 @@ function oneOffFee(
  * 取不到时退回第一个账户只是**兜底**（老数据 / 账户被销户）：真实后端应当直接报错，
  * 这里静默退回是为了不让演示卡死；真接后端时这一条要改成抛 `SETTLEMENT_ACCOUNT_NOT_FOUND`。
  */
-/** 根据每月发薪日推算下一次发薪日（YYYY-MM-DD）。 */
+/** 根据每月发薪日推算下一次发薪日（YYYY-MM-DD）。按本地历法格式化：toISOString 是 UTC，东八区会落回前一日 */
 function nextPaydayFrom(day: number): string {
   const now = new Date()
   const candidate = new Date(now.getFullYear(), now.getMonth(), day)
   if (candidate.getTime() <= now.getTime()) candidate.setMonth(candidate.getMonth() + 1)
-  return candidate.toISOString().slice(0, 10)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${candidate.getFullYear()}-${pad(candidate.getMonth() + 1)}-${pad(candidate.getDate())}`
 }
 
 function settlementAccount(db: MockDb): Account { return requireCurrencyBalance(db, db.wealthAccount.settlementAccountId) }
@@ -639,7 +644,7 @@ export function createMockApi(options?: {
         id: `u_${Date.now()}`,
         name: req.holderName.trim(),
         phone,
-        memberLevel: '白银会员',
+        memberTier: 'standard',
         avatarInitial: req.holderName.trim().slice(0, 1),
       }
       next.passwordDigest = await passwordDigest(req.password)
@@ -691,10 +696,17 @@ export function createMockApi(options?: {
 
     async listTransactions(accountId, query: TransactionQuery = {}) {
       await delay(180)
-      const { page = 1, size = 8, category = 'all', keyword = '' } = query
+      const { page = 1, size = 8, category = 'all', keyword = '', direction = 'all', from, to } = query
       accountId = findAccount(accountId).id
       let rows = loadDb().transactions.filter((t) => t.accountId === accountId)
       if (category !== 'all') rows = rows.filter((t) => t.category === category)
+      // 收支方向在服务端过滤：只对当前页过滤会在分页下给出错误的条数和页数。
+      if (direction !== 'all') rows = rows.filter((t) => t.direction === direction)
+      // 时间范围按本地自然日闭区间，口径同导出（localDay 而不是 UTC 切片）。
+      if (from || to) rows = rows.filter((t) => {
+        const day = localDay(t.createdAt)
+        return (!from || day >= from) && (!to || day <= to)
+      })
       if (keyword.trim()) {
         const kw = keyword.trim().toLowerCase()
         rows = rows.filter(
@@ -748,13 +760,16 @@ export function createMockApi(options?: {
         account.balance,
       )
 
-      const { from, to, category = 'all', keyword = '' } = query
+      const { from, to, category = 'all', keyword = '', direction = 'all' } = query
       const kw = keyword.trim().toLowerCase()
-      const rows = ordered.filter((t) => {
+      // 币种口径同列表：记账分区币种对不上就是没有可导出的流水。
+      const currencyMismatch = !!query.currency && query.currency !== 'all' && account.currency !== query.currency
+      const rows = currencyMismatch ? [] : ordered.filter((t) => {
         const day = localDay(t.createdAt)
         if (from && day < from) return false
         if (to && day > to) return false
         if (category !== 'all' && t.category !== category) return false
+        if (direction !== 'all' && t.direction !== direction) return false
         if (
           kw &&
           !t.counterparty.toLowerCase().includes(kw) &&
@@ -899,6 +914,15 @@ export function createMockApi(options?: {
       return [...loadDb().payees].sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))
     },
 
+    async deletePayee(id): Promise<void> {
+      await delay(160)
+      const db = loadDb()
+      const index = db.payees.findIndex((p) => p.id === id)
+      if (index < 0) throw new ApiError('收款人不存在', 404, 'PAYEE_NOT_FOUND')
+      db.payees.splice(index, 1)
+      persist()
+    },
+
     async resolveFps(idType, fpsId): Promise<FpsResolveResult> {
       await delay(620)
       const value = (fpsId ?? '').replace(/\s/g, '')
@@ -945,11 +969,9 @@ export function createMockApi(options?: {
       const isFps = req.channel === 'fps'
       const singleLimit = isFps ? FPS_SINGLE_LIMIT : BANK_SINGLE_LIMIT
 
-      // FPS 走香港即时结算通道，免手续费
-      const fee =
-        !isFps && req.scope === 'overseas'
-          ? Math.max(Math.round(req.amount * OVERSEAS_RATE), OVERSEAS_MIN_FEE)
-          : 0
+      // FPS 走香港即时结算通道，免手续费；境外转账费按会员等级减免（金卡+）
+      const fee = transferFee(db, { amount: req.amount, scope: req.scope, isFps })
+      const feeWaived = transferFeeWaived(db, { scope: req.scope, isFps })
 
       const bank = findBank(db.banks, req.bankCode, req.bankRegion)
       const etaText = isFps
@@ -971,6 +993,7 @@ export function createMockApi(options?: {
       const requiresConfirm = req.amount >= LARGE_TRANSFER
       return {
         fee,
+        ...(feeWaived ? { feeWaived: true } : {}),
         etaText,
         maxAmount: Math.min(current.available, singleLimit),
         singleLimit,
@@ -1050,10 +1073,8 @@ export function createMockApi(options?: {
       }
 
       const singleLimit = isFps ? FPS_SINGLE_LIMIT : BANK_SINGLE_LIMIT
-      const fee =
-        !isFps && req.scope === 'overseas'
-          ? Math.max(Math.round(req.amount * OVERSEAS_RATE), OVERSEAS_MIN_FEE)
-          : 0
+      // 与 quoteTransfer 同一份会员口径：报价与提交的费用校验必须一致
+      const fee = transferFee(db, { amount: req.amount, scope: req.scope, isFps })
       const total = req.amount + fee
       const quotedFx = buildFxQuote(db, account.currency, req.payeeCurrency ?? account.currency, req.amount)
       assertTransferConfirmation(req, fee, account.currency, quotedFx, options?.acceptedQuote)
@@ -1334,6 +1355,9 @@ export function createMockApi(options?: {
             : { accountNo: (req.payeeAccountNo ?? '').replace(/\D/g, '') }),
         })
       }
+      // 收款人簿封顶：超出时裁掉最久未用的尾部
+      db.payees.sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))
+      db.payees.length = Math.min(db.payees.length, MAX_PAYEES)
       persist()
       return {
         transactionId: tx.id,
@@ -1704,6 +1728,10 @@ export function createMockApi(options?: {
         throw new ApiError(suitabilityMessage(risk.level, product.risk), 403, 'RISK_MISMATCH')
       }
 
+      // —— 会员优先购：热门产品窗口内仅白金及以上可申购，窗口结束全员开放 ——
+      const priorityGate = wealthPriorityGate(product, db.membership.tier)
+      if (priorityGate) throw new ApiError(priorityGate.message, 403, 'WEALTH_PRIORITY_WINDOW')
+
       // —— 风险确认语句必须完整抄录 ——（监管要求抄录，不是一个勾选框）
       if (req.riskAcknowledgement.trim() !== RISK_ACKNOWLEDGEMENT) {
         throw new ApiError(
@@ -2037,7 +2065,11 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       const previous = humanRequests.get(key)
       if (previous) return structuredClone(humanTicket(previous))
       const now = new Date().toISOString()
-      const row: SupportTicketDetail = { ticketId: nextId('T'), reason: redactSupportText(req.reason), status: 'open', createdAt: now, updatedAt: now, messages: [] }
+      const row: SupportTicketDetail = {
+        ticketId: nextId('T'), reason: redactSupportText(req.reason), status: 'open',
+        priority: entitlements(loadDb().membership.tier).vipChannel ? 'vip' : 'normal',
+        createdAt: now, updatedAt: now, messages: [],
+      }
       humanTickets.set(humanOwner(), [row, ...humanRows()]); humanRequests.set(key, row.ticketId)
       return structuredClone(row)
     },
@@ -2302,37 +2334,21 @@ async getSecurityOverview(): Promise<SecurityOverview> {
     async getMembership(): Promise<MembershipOverview> {
       await delay(180)
       const db = loadDb()
-      if (evaluateMembership(db)) persist()
+      let changed = evaluateMembership(db)
+      // 升级即时：读取会员信息时也按当前实时 AUM 检查一次，不等月度评定
+      if (applyRealtimeUpgrade(db, FX_MID_RATES)) changed = true
+      if (changed) persist()
       return membershipOverview(db, FX_MID_RATES)
     },
 
-    async getIdentityStatus() {
-      await delay(200)
-      return loadDb().identity
-    },
-
-    async runIdentityOcr(): Promise<IdentityOcrResult> {
-      await delay(760)
+    async redeemLoungePass(): Promise<MembershipOverview> {
+      await delay(220)
       const db = loadDb()
-      const result: IdentityOcrResult = {
-        holderName: db.user.name,
-        idNumber: '330106199203047234',
-        birthDate: '1992-03-04',
-        expiryDate: '2031-06-30',
-        address: '上海市浦东新区世纪大道 100 号',
-        confidence: 0.98,
+      if (!redeemLoungePass(db, Date.now())) {
+        throw new ApiError('本年度贵宾厅额度已用完', 409, 'LOUNGE_QUOTA_EXHAUSTED')
       }
-      db.identity.ocr = result
       persist()
-      return result
-    },
-
-    async runIdentityLiveness() {
-      await delay(640)
-      const db = loadDb()
-      db.identity.livenessVerified = true
-      persist()
-      return { verified: true, verifiedAt: new Date().toISOString() }
+      return membershipOverview(db, FX_MID_RATES)
     },
 
     /* -------------------------------------------------- 工资与备用金 */

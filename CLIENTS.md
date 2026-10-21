@@ -11,7 +11,7 @@
 ## 当前维护版本
 
 - **网页用户端**：`app/`。当前为 MONEY MEOW BANK 桌面工作台；维护说明见 [app/README.md](app/README.md)。
-- **网页设计依据**：[2026-10-15 导出稿](docs/design/exports/2026-10-15/zhaocai-cat-bank.html)。使用单一智能首页，已取消传统/智能双模式；后续以用户确认的页面调整为准。
+- **网页设计依据**：[2026-10-15 导出稿](docs/design/exports/2026-10-15/zhaocai-cat-bank.html)。登录后落地 `/dashboard` 总览页；智能助手独立为 `/assistant`（`/support` 兼容跳转），拆分依据 [2026-10-20 草稿](docs/design/drafts/2026-10-20-overview-and-assistant.html)。已取消传统/智能双模式；后续以用户确认的页面调整为准。
 - **安卓客户端**：Flutter 工程 `mobile/`，特征为 `pubspec.yaml`、`lib/` 和 `mobile/android/`。它与原仓库根目录的 Kotlin `android/` 不是同一工程。
 - **工作人员端**：`staff/`，不属于此次归档范围。
 

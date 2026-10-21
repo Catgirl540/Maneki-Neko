@@ -75,15 +75,26 @@ for (const [file, source] of lines) {
   })
 }
 
+/**
+ * `cubic-bezier(…)`/`steps(…)` 的参数里带逗号，先把它内部逗号换成空格再按 `,` 切，
+ * 否则 `cubic-bezier(.16,` 会被拆成半个 token 当成属性名/动画名（实测踩到）。
+ * 顺带把 `!important` 剥掉：`animation: none!important` 不该报"缺 keyframes"。
+ */
+function tokenizeShorthand(value) {
+  return value
+    .replace(/(cubic-bezier|steps)\(([^)]*)\)/g, (_m, fn, args) => `${fn}(${args.replace(/[,\s]+/g, '')})`)
+    .split(',')
+    .map(part => part.trim().split(/\s+/).filter(token => token !== ''))
+    .flat()
+    .map(token => token.replace(/!important$/i, ''))
+}
+
 /** 把 `animation:` 简写里的动画名挑出来（名字是那个既不是时间也不是关键字的词）。 */
 function namesInAnimationValue(value) {
   const TIME = /^[\d.]+m?s$/
   const COUNT = /^\d+$/ // 迭代次数（如 `ring-pulse … 2`），不是动画名
   const KEYWORD = /^(normal|reverse|alternate|alternate-reverse|none|forwards|backwards|both|infinite|running|paused|linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|steps?\(.*\)|cubic-bezier\(.*\))$/
-  return value
-    .split(',')
-    .map(part => part.trim().split(/\s+/).filter(token => token !== ''))
-    .flat()
+  return tokenizeShorthand(value)
     .filter(token => !TIME.test(token) && !COUNT.test(token) && !KEYWORD.test(token) && !token.startsWith('var('))
 }
 
@@ -131,18 +142,24 @@ const badProps = []
 for (const [, where] of defined) {
   const [file, lineText] = where.split(':')
   const source = lines.get(path.resolve(ROOT, '..', file)) ?? []
-  // 从 @keyframes 那一行往后扫到块结束：靠"缩进回到同级"判断。
   const start = Number(lineText) - 1
-  const indent = (source[start].match(/^\s*/) ?? [''])[0]
-  for (let i = start + 1; i < source.length; i += 1) {
-    const line = source[i]
-    if (line.trim() === '') continue
-    if (/^\s*\}/.test(line) && (line.match(/^\s*/) ?? [''])[0].length <= indent.length) break
-    // 关键帧体里只有两种行：`from/to/50% {` 选择器行，和 `prop: value;` 声明行。
-    if (/^\s*(from|to|[\d.]+%)\s*(\s*,\s*(from|to|[\d.]+%)\s*)*\{/.test(line)) continue
-    const decl = line.match(/^\s*([a-z-]+)\s*:/)
-    if (decl === null) continue
-    if (!COMPOSITOR_SAFE.has(decl[1])) badProps.push(`${where} 的 \`${decl[1]}\``)
+  /*
+   * 用大括号配平找块尾，别靠缩进——单行写法 `@keyframes x { 0% {…} 100% {…} }`
+   * 一行就开合完毕，缩进法会一直扫到文件尾，把后面的 `button:hover` 当成声明
+   * （实测踩到）。声明行的判定也要求 `值;` 中间不跨 `{`，伪类选择器自然落空。
+   */
+  let depth = 0
+  const scan = (line) => { for (const ch of line) { if (ch === '{') depth += 1; else if (ch === '}') depth -= 1 } }
+  const checkDecls = (text) => {
+    for (const decl of text.matchAll(/([a-z-]+)\s*:\s*[^;{}]*;/g)) {
+      if (!COMPOSITOR_SAFE.has(decl[1])) badProps.push(`${where} 的 \`${decl[1]}\``)
+    }
+  }
+  scan(source[start])
+  checkDecls(source[start].slice(source[start].indexOf('{') + 1))
+  for (let i = start + 1; i < source.length && depth > 0; i += 1) {
+    checkDecls(source[i])
+    scan(source[i])
   }
 }
 report(badProps.length === 0,
@@ -211,8 +228,11 @@ function blockNestingAt(text, at) {
  * （实测踩到）。属性表按字母序写。
  */
 const LAYOUT_TRANSITIONS_ALLOWED = new Map([
-  ['src/components/layout/Sidebar.tsx|padding,width', '侧栏收起/展开，面板宽度本来就是这件事本身'],
-  ['src/components/agent/ChatWorkspace.tsx|width', '历史对话抽屉展开，同上'],
+  ['src/components/agent/ChatWorkspace.tsx|width', '历史对话抽屉展开，宽度变化就是这件事本身'],
+  ['src/pages/MembershipPage.tsx|width', 'AUM 距下一档的进度条，条宽就是数据'],
+  ['src/styles/workbench.css|height', '助手在场区占位：在场态高、对话态收拢，尺寸即状态'],
+  ['src/styles/workbench.css|top', '在场头像从居中收到角落，位置即状态'],
+  ['src/styles/workbench.css|height,width', '在场媒体框随状态缩放，尺寸即状态'],
   ['src/pages/CreditPage.tsx|width', '信用额度使用比例，条宽就是数据'],
   ['src/pages/SavingsPage.tsx|width', '存钱目标完成比例，条宽就是数据'],
   ['src/pages/SecurityPage.tsx|width', '密码强度条，宽度就是数据'],
@@ -229,10 +249,7 @@ const LAYOUT_PROPS = new Set(['width', 'height', 'top', 'left', 'right', 'bottom
 function propertiesInTransitionValue(value) {
   const TIME = /^[\d.]+m?s$/
   const KEYWORD = /^(none|all|linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end|steps?\(.*\)|cubic-bezier\(.*\)|allow-discrete|normal)$/
-  return value
-    .split(',')
-    .map(part => part.trim().split(/\s+/).filter(token => token !== ''))
-    .flat()
+  return tokenizeShorthand(value)
     .filter(token => !TIME.test(token) && !KEYWORD.test(token) && !token.startsWith('var('))
 }
 

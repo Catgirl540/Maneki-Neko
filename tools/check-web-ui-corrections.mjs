@@ -9,21 +9,27 @@ Object.assign(process.env, { VITE_USE_MOCK: 'false', VITE_BASE_PATH: '/', VITE_A
 const web = await createServer({ root: path.join(root, 'app'), configFile: path.join(root, 'app/vite.config.ts'),
   logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false } })
 let browser
-const user = { id: 'fixture-user', name: '测试客户', phone: '13900139000', memberLevel: '普通会员', avatarInitial: '测' }
+const user = { id: 'fixture-user', name: '测试客户', phone: '13900139000', memberTier: 'platinum', avatarInitial: '测' }
 const date = '2026-10-13T08:00:00.000Z'
 const accounts = ['CNY', 'USD', 'HKD'].map((currency, i) => ({ id: `a${i}`, kind: 'savings', label: `${currency} 储蓄账户`,
   currency, accountNo: `882000000000000${i}`, balance: 1000000, available: 1000000, interestRate: 0, monthNetChange: 0 }))
 const loanProduct = { id: 'loan', name: '测试借款', description: '借款产品', minAmount: 10000, maxAmount: 1000000,
   minTermMonths: 3, maxTermMonths: 12, apr: .04, disbursement: '以办理结果为准', tags: [] }
 const investProduct = { id: 'fund', code: 'FUND', name: '测试基金', category: 'fund', nav: 1, risk: 'low', oneYearReturn: 0, minAmount: 10000 }
-const membership = { tier: 'gold', tierName: '黄金会员', since: date,
-  evaluation: { for: '2026-10', avgAssets: 1500000, coveredDays: 30, daysInMonth: 30, evaluatedAt: date },
-  nextEvaluationAt: '2026-11-01', upgradeGap: 8500000, nextTierName: '铂金会员',
-  benefits: { cardFeeWaiversPerYear: 1, cardFeeWaiversUsed: 0, includeShipping: false, fxFeeRate: 0.9, plannedPerks: ['刷卡消费返现', '储蓄余额加息收益'] },
-  records: [{ id: 'record', label: '会员评级：白银会员 → 黄金会员（2026-09 日均资产）', amount: 0, createdAt: date }],
-  legacy: { current: { planId: 'gold', planName: '金卡', status: 'canceled', price: 1900, period: '每月', startedAt: date, renewAt: null },
-    plans: [{ id: 'gold', name: '金卡', price: 1900, period: '每月', perks: [] }] } }
-let rate = .14, ttl = 30, accountFailure = false, showOcr = true, holdQuote = false, releaseQuote
+const membership = { tier: 'platinum', tierLabel: '白金会员', aum: 128000000,
+  nextTier: 'diamond', nextThreshold: 300000000,
+  benefits: ['基础银行服务', '境外转账手续费全免', '客服工单 VIP 优先处理', '专属客户经理', '理财产品优先申购',
+    '机场 / 高铁贵宾厅 2 次 / 年', '制卡 / 换卡费年度减免 1 次', '换汇点差 8 折', '生日礼遇（规划中）'],
+  entitlements: { freeTransferFee: true, freeOverseasRemit: false, vipChannel: true, birthdayGift: false,
+    dedicatedManager: true, dedicatedAdvisor: false, wealthPriority: true, loungePassesPerYear: 2,
+    cardFeeWaiversPerYear: 1, cardFeeRate: 0, includeShipping: false, fxFeeRate: 0.8 },
+  since: date,
+  evaluation: { for: '2026-10', avgAssets: 128000000, coveredDays: 30, daysInMonth: 30, evaluatedAt: date },
+  downgradeWarning: null,
+  lounge: { year: 2026, perYear: 2, used: 0, remaining: 2 },
+  records: [{ id: 'record', label: '会员升级：金卡会员 → 白金会员（实时 AUM 达标）', amount: 0, createdAt: date }] }
+let membershipState = structuredClone(membership)
+let rate = .14, ttl = 30, accountFailure = false, holdQuote = false, releaseQuote
 let roundup = { enabled: false, roundupTo: 100, dailyCap: 1000, accountId: 'a0', goalId: null }
 const goals = []
 let holdSavingsReload = false, releaseSavingsReload, holdRoundup = false, releaseRoundup, roundupFailure = false
@@ -64,8 +70,6 @@ try {
         return respond({ transactionId: 'exchange', referenceNo: 'FX-TEST', fromAccountId: body.fromAccountId, toAccountId: 'a1', createdAt: date,
           fx: { fromCurrency: 'CNY', toCurrency: body.toCurrency, fromAmount: body.amount, toAmount: Math.round(body.amount * rate), rate, spread: .002, quoteTtlSeconds: ttl, quotedAt: date } })
       }
-      case '/api/identity/status': return respond({ level: 'basic', idType: '居民身份证', maskedIdNumber: '330106199203047234',
-        verifiedAt: date, livenessVerified: false, steps: [], ocr: showOcr ? { holderName: user.name, idNumber: '330106199203047234', birthDate: '1992-03-04', expiryDate: '2031-06-30', address: '测试地址', confidence: .98 } : null })
       case '/api/cashflow/salary': return respond({ salaryDay: 8, amount: 100000, employer: '测试单位', accountId: 'a0', nextPayday: '2026-11-08', history: [] })
       case '/api/cashflow/overdraft': return respond({ active: false, creditLimit: 100000, used: 0, available: 100000, apr: .05, activatedAt: null, interestNote: '' })
       case '/api/wealth/cash-management': return respond({ balance: 0, totalYield: 0, sevenDayYield: .02, accountId: 'a0', sweepEnabled: false, sweepThreshold: 10000, products: [] })
@@ -89,7 +93,15 @@ try {
         if (roundupFailure) return respond({ message: '设置暂不可用' }, 503)
         roundup = { ...roundup, enabled: false }; return respond(roundup)
       }
-      case '/api/membership': return respond(membership)
+      case '/api/membership': return respond(membershipState)
+      case '/api/membership/lounge-pass': {
+        membershipState = {
+          ...membershipState,
+          lounge: { ...membershipState.lounge, used: membershipState.lounge.used + 1, remaining: Math.max(0, membershipState.lounge.remaining - 1) },
+          records: [{ id: 'lounge', label: '会员权益：机场/高铁贵宾厅 ×1', amount: 0, createdAt: date }, ...membershipState.records],
+        }
+        return respond(membershipState)
+      }
       default: return respond({ message: '测试未提供此接口' }, 404)
     }
   })
@@ -100,8 +112,8 @@ try {
   }
   async function pin(dialog) { for (let i = 1; i <= 6; i++) await dialog.getByLabel(`支付密码第 ${i} 位`, { exact: true }).fill('8') }
 
-  await visit('/exchange', '多币种与划转')
-  assert.equal(await page.getByRole('navigation', { name: '桌面主导航' }).getByRole('link', { name: '账户', exact: true }).getAttribute('aria-current'), 'page')
+  await visit('/exchange', '多币种换汇')
+  assert.equal(await page.getByRole('navigation', { name: '桌面主导航' }).getByRole('link', { name: '多币种换汇', exact: true }).getAttribute('aria-current'), 'page')
   const input = page.getByLabel('换汇金额', { exact: true })
   for (const invalid of ['1.2.3', '-100', '12abc']) {
     await input.fill(invalid); await page.getByRole('button', { name: '获取报价', exact: true }).click()
@@ -122,7 +134,7 @@ try {
   assert((await dialog.innerText()).includes('200.00'))
   await pin(dialog); rate = .15
   await dialog.getByRole('button', { name: '确认换汇', exact: true }).click()
-  await dialog.getByRole('alert').filter({ hasText: '参考报价已更新' }).waitFor()
+  await dialog.getByRole('alert').filter({ hasText: '参考报价已更新' }).first().waitFor()
   const confirmedQuoteId = quotes.at(-1).quoteId
   assert.equal(submitted.length, 0)
   assert.equal(await dialog.getByLabel('支付密码第 1 位', { exact: true }).inputValue(), '')
@@ -136,7 +148,7 @@ try {
   console.log('PASS 换汇旧请求丢弃、报价变化重新确认、提交绑定已确认报价 ID、提交期间禁止关闭，账户导航正确')
 
   ttl = 1
-  await visit('/exchange', '多币种与划转')
+  await visit('/exchange', '多币种换汇')
   await input.fill('100'); await page.getByRole('button', { name: '获取报价', exact: true }).click()
   await page.getByRole('button', { name: '确认换汇', exact: true }).click()
   await dialog.getByRole('button', { name: '重新获取报价', exact: true }).waitFor()
@@ -146,16 +158,6 @@ try {
   assert.equal(submitted.length, before)
   ttl = 30
   console.log('PASS 确认框过期可重新获取报价，过期不提交换汇')
-
-  await visit('/security/identity', '身份认证')
-  assert(!(await page.locator('body').innerText()).includes('330106199203047234'))
-  assert((await page.locator('main').innerText()).includes('330***********7234'))
-  assert(await page.getByRole('button', { name: '人脸核验暂未开放' }).isDisabled())
-  showOcr = false
-  await visit('/security/identity', '身份认证')
-  assert(await page.getByRole('button', { name: '证件识别暂未开放' }).isDisabled())
-  assert(!writes.some(w => w.path === '/api/identity/ocr' || w.path === '/api/identity/liveness'))
-  console.log('PASS 两处证件号均遮罩，未开放核验不发请求或伪报通过')
 
   await visit('/cashflow', '工资与备用金')
   assert(!(await page.locator('main').innerText()).includes('每月发薪自动入账'))
@@ -230,18 +232,28 @@ try {
   assert(!writes.some(w => w.path === '/api/credit/loans/apply'))
   console.log('PASS 定投账户加载失败可重试，定投/借款金额错误不发办理请求')
 
-  await visit('/security/membership', '会员等级')
+  await visit('/security/membership', '会员中心')
   const membershipText = await page.locator('main').innerText()
-  assert(membershipText.includes('黄金会员'))
-  assert(membershipText.includes('剩余 1 次 / 每年 1 次'))
-  assert(membershipText.includes('规划中'))
-  assert(membershipText.includes('旧月费套餐已停止办理'))
-  assert(!membershipText.includes('尚未开通付费会员'))
-  console.log('PASS 会员等级页展示评定结果、年度权益与旧套餐只读历史')
+  assert(membershipText.includes('白金会员'))
+  assert(membershipText.includes('距钻石会员还差'))
+  assert(membershipText.includes('¥172 万'))
+  assert(membershipText.includes('机场 / 高铁贵宾厅'))
+  assert(membershipText.includes('生日礼遇（规划中）'))
+  assert(membershipText.includes('专属客户经理'))
+  assert(membershipText.includes('核销一次'))
+  assert(!membershipText.includes('旧月费套餐已停止办理'))
+  assert(!membershipText.includes('历史订阅记录'))
+  await page.getByRole('button', { name: '核销一次', exact: true }).click()
+  await page.getByRole('dialog', { name: '核销贵宾厅额度', exact: true }).waitFor()
+  await page.getByRole('button', { name: '确认核销', exact: true }).click()
+  await page.getByText('已核销 1 次贵宾厅，剩余 1 次', { exact: true }).waitFor()
+  assert(writes.some(w => w.path === '/api/membership/lounge-pass'))
+  assert((await page.locator('main').innerText()).includes('次可用'))
+  console.log('PASS 会员中心展示等级/AUM 进度/权益/贵宾厅核销，旧订阅文案已移除')
 
-  const views = [['/exchange','多币种与划转'],['/security/identity','身份认证'],['/cashflow','工资与备用金'],
+  const views = [['/exchange','多币种换汇'],['/cashflow','工资与备用金'],
     ['/wealth/cash-management','现金管理'],['/credit','借款与分期'],['/wealth/investments','投资与定投'],
-    ['/dashboard/savings','存钱计划'],['/security/membership','会员等级']]
+    ['/dashboard/savings','存钱计划'],['/security/membership','会员中心']]
   for (const width of [320, 390, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
     for (const [url, title] of views) {

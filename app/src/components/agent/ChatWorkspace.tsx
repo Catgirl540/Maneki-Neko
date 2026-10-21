@@ -53,6 +53,8 @@ export interface WorkbenchOptions {
   focusRequest: number
   onActivate: () => void
   onClearTask: (id: string) => void
+  /** 新建对话时回调：能力选择按会话隔离，由外层清空已选智能服务。 */
+  onNewConversation?: () => void
 }
 
 export interface ChatWorkspaceProps extends AgentChatOptions {
@@ -60,6 +62,8 @@ export interface ChatWorkspaceProps extends AgentChatOptions {
   workbench?: WorkbenchOptions
   audience?: 'customer' | 'staff'
   humanSupport?: { request: (items: ChatItem[]) => void; view: () => void }
+  /** 会员专属服务标识（专属客户经理 / 理财顾问），由入口按 entitlements 传入 */
+  memberBadges?: string[]
   placeholder?: string
   /** 单独读取银行人工留言，不启用固定话术发送兜底。 */
   listMessages?: () => Promise<SupportMessage[]>
@@ -397,6 +401,9 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
             </span>
             </>}
             <span className="chat-connection shrink-0"><ModeTag status={agent.status} /></span>
+            {audience === 'customer' && props.memberBadges?.map((badge) => (
+              <Tag key={badge} tone="gold" className="h-8 px-3">{badge}</Tag>
+            ))}
             {(usingAgent || props.humanSupport) && (
               <span className="flex w-full flex-wrap items-center gap-0.5 border-t [&_button]:px-2 sm:gap-1 sm:[&_button]:px-3.5 border-line pt-3 sm:w-auto sm:border-0 sm:pt-0">
                 {usingAgent && <>
@@ -443,7 +450,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
                   icon={<RefreshIcon size={15} />}
                   disabled={agent.activeIsEmpty}
                   title={agent.activeIsEmpty ? '当前已经是一段空对话' : undefined}
-                  onClick={agent.create}
+                  onClick={() => { agent.create(); workbench?.onNewConversation?.() }}
                 >
                   新对话
                 </Button>

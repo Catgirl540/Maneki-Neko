@@ -6,7 +6,8 @@
     "serviceId": "savings",
     "label": "储蓄规划",
     "routes": [
-      "/dashboard/savings"
+      "/dashboard/savings",
+      "/wealth/plans"
     ],
     "tools": [
       "bank_get_balance",
@@ -43,4 +44,4 @@
 
 ## 能力限制
 
-不能代建、修改储蓄目标或开启自动存入，不能承诺存款利率；执行引导「账户资产 → 储蓄目标」。用户要求买理财时加载 bank-wealth，实际划款加载 bank-transfer。
+不能代建、修改储蓄目标或开启自动存入，不能承诺存款利率；执行引导「理财与储蓄 → 储蓄与计划 → 存钱目标」。用户要求买理财时加载 bank-wealth，实际划款加载 bank-transfer。

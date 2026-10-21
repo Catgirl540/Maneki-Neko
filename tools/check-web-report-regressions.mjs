@@ -8,7 +8,7 @@ const root = path.resolve(import.meta.dirname, '..')
 Object.assign(process.env, { VITE_USE_MOCK: 'false', VITE_BASE_PATH: '/', VITE_API_BASE_URL: '', VITE_AGENT_URL: '/agent-api' })
 const web = await createServer({ root: path.join(root, 'app'), configFile: path.join(root, 'app/vite.config.ts'),
   logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false, allowedHosts: ['web-report.test'] } })
-const user = { id: 'report-fixture', name: '测试客户', phone: '13900139000', memberLevel: '普通会员', avatarInitial: '测' }
+const user = { id: 'report-fixture', name: '测试客户', phone: '13900139000', memberTier: 'standard', avatarInitial: '测' }
 const account = { id: 'a0', kind: 'savings', label: '储蓄账户', currency: 'CNY', accountNo: '8820000000000000001', balance: 1000000, available: 1000000, interestRate: 0, monthNetChange: 0 }
 const receiving = { holder: user.name, accountNo: account.accountNo, accountLabel: account.label, bankName: '测试银行', bankRegion: 'CN', fpsMobile: user.phone, fpsId: '2046881' }
 const products = ['R1', 'R5'].map((risk, i) => ({ code: `P${i}`, name: `测试产品${i}`, issuer: '测试理财公司', category: 'fixed', risk, principalProtected: false,
@@ -57,6 +57,13 @@ try {
         case '/api/analysis/cashflow': return respond({ totalIncome: 0, totalExpense: 0, points: [] })
         case '/api/receiving': return respond(receiving)
         case '/api/cards': case '/api/payees': case '/api/banks': case '/api/wealth/risk/questions': case '/api/support/messages': return respond([])
+        case '/api/membership': return respond({ tier: 'standard', tierLabel: '普通会员', aum: 0,
+          nextTier: 'gold', nextThreshold: 10000000, benefits: ['基础银行服务'],
+          entitlements: { freeTransferFee: false, freeOverseasRemit: false, vipChannel: false, birthdayGift: false,
+            dedicatedManager: false, dedicatedAdvisor: false, wealthPriority: false, loungePassesPerYear: 0,
+            cardFeeWaiversPerYear: 0, cardFeeRate: 1, includeShipping: false, fxFeeRate: 1 },
+          since: null, evaluation: null, downgradeWarning: null,
+          lounge: { year: 2026, perYear: 0, used: 0, remaining: 0 }, records: [] })
         case '/api/transfers/quote': return respond({ fee: 0, singleLimit: 1000000, dailyLimit: 1000000, dailyUsed: 0, totalDebit: JSON.parse(request.postData()).amount, arrivalLabel: '测试报价' })
         case '/api/wealth/products': return respond(products)
         case '/api/wealth/overview': return respond({ account: { opened: false }, totalValue: 0, totalPrincipal: 0, totalProfit: 0, yesterdayProfit: 0, holdings: [], risk })
@@ -180,9 +187,9 @@ try {
 
   for (const [done, expired, expected] of [[false, true, '需先完成风险测评'], [true, true, '测评已过期，需重新评估'], [true, false, '超出你的风险承受能力']]) {
     risk = { ...risk, done, expired }
-    await visit('/wealth')
-    await page.getByRole('button').filter({ hasText: products[1].name }).getByText(expected, { exact: true }).waitFor()
-    if (done && !expired) await page.getByRole('button').filter({ hasText: products[0].name }).getByText('查看详情', { exact: true }).waitFor()
+    await visit('/wealth/products')
+    await page.getByRole('row').filter({ hasText: products[1].name }).getByText(expected, { exact: true }).waitFor()
+    if (done && !expired) await page.getByRole('row').filter({ hasText: products[0].name }).getByText('风险匹配', { exact: true }).waitFor()
     else assert.equal(await page.getByText('超出你的风险承受能力', { exact: true }).count(), 0)
   }
   console.log('PASS 未测评、已过期、超风险、风险匹配四种理财产品状态分开显示')

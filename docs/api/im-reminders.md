@@ -12,7 +12,7 @@
 
 ## 使用和接口
 
-登录 [银行 IM 页面](https://bank.waveflow.men/agent-api/im)，选择本人私聊，输入文字与北京时间，预览后明确确认。也可由 Agent 调用 `bank_list_im_reminders`、`bank_create_im_reminder`、`bank_cancel_im_reminder`；创建/取消必须经过已有的一次授权确认卡，不需要支付密码。列表在有效 IM 绑定中可走普通只读查询授权。
+登录网页端「IM 连接」页（`/reminders`）或原 [银行 IM 页面](https://bank.waveflow.men/agent-api/im)，选择本人私聊，输入文字与北京时间，预览后明确确认。也可由 Agent 调用 `bank_list_im_reminders`、`bank_create_im_reminder`、`bank_cancel_im_reminder`；创建/取消必须经过已有的一次授权确认卡，不需要支付密码。列表在有效 IM 绑定中可走普通只读查询授权。
 
 | 接口 | 行为 |
 | --- | --- |
@@ -39,4 +39,4 @@
 
 ## 验证
 
-`npm --prefix framework run test:reminders` 覆盖实际上游 SQLite、客户隔离、明确确认、参数绑定、幂等、取消、重启、旧绑定迁移、换绑抑制、离线和不确定投递。`node tools/check-im-reminders-ui.mjs` 配合 `CHROME_PATH` 验证真实浏览器预览/确认/取消、XSS 文字显示、一次夹具投递及退出清理。它们使用隔离数据与模拟渠道，不能证明真实微信送达；真实验收只向用户指定的现有私聊发送一条无资金操作的测试提醒，并单独记录渠道确认状态。
+`npm --prefix framework run test:reminders` 覆盖实际上游 SQLite、客户隔离、明确确认、参数绑定、幂等、取消、重启、旧绑定迁移、换绑抑制、离线和不确定投递。`node tools/check-im-reminders-ui.mjs` 配合 `CHROME_PATH` 验证真实浏览器预览/确认/取消、XSS 文字显示、一次夹具投递及退出清理；网页端 `/reminders` 另由 `node tools/check-im-page-ui.mjs` 用夹具接口验证绑定码核对与绑定、提醒创建与取消、解除绑定二次确认和未启用空态。它们使用隔离数据与模拟渠道，不能证明真实微信送达；真实验收只向用户指定的现有私聊发送一条无资金操作的测试提醒，并单独记录渠道确认状态。

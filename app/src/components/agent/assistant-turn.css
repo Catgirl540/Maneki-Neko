@@ -27,7 +27,7 @@
 .assistant-turn-retry:hover { border-color: var(--color-gold); color: var(--color-gold-deep); background: var(--color-gold-wash); }
 .assistant-turn-retry:focus-visible { outline: 2px solid var(--color-gold); outline-offset: 3px; }
 .assistant-turn-retry:disabled { opacity: .45; cursor: default; }
-@keyframes assistant-turn-pulse { 50% { opacity: .35; box-shadow: 0 0 0 4px var(--color-gold-wash); } }
+@keyframes assistant-turn-pulse { 50% { opacity: .35; transform: scale(1.35); } }
 @media (prefers-reduced-motion: reduce) {
   .assistant-turn-status.is-working .assistant-turn-dot { animation: none; }
   .assistant-turn-toggle, .assistant-turn-toggle svg, .assistant-turn-collapse, .assistant-turn-retry { transition: none; }

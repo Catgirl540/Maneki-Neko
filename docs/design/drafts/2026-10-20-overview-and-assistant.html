@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>总览与智能助手 · 设计草稿 · 招财猫银行</title>
+<style>
+:root{
+  --bg:#ffffff;--surface-warm:#f6f9fc;
+  --fg:#061b31;--fg-2:#273951;--muted:#64748d;
+  --border:#e5edf5;
+  --accent:#533afd;--accent-hover:#4434d4;--accent-active:#2e2b8c;--purple-soft:#b9b9f9;
+  --success:#15be53;--success-text:#108c3d;--success-surface:#e8f8ee;
+  --danger:#ea2261;--warn:#9b6829;--neutral-hover:#eaf0f5;
+  --r-sm:4px;--r-md:6px;--r-lg:8px;--r-pill:9999px;
+  --font:"sohne-var","Söhne","SF Pro Display",-apple-system,BlinkMacSystemFont,system-ui,"Helvetica Neue","Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;
+  --mono:"Source Code Pro",ui-monospace,"SF Mono","JetBrains Mono",Menlo,Monaco,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--surface-warm);color:var(--fg);font:400 14px/1.55 var(--font);-webkit-font-smoothing:antialiased}
+h1,h2,h3,p,ul,ol,figure,table{margin:0;padding:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit}
+symbol path,symbol rect,symbol circle,symbol line,symbol polyline{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.tnum{font-feature-settings:"tnum";font-variant-numeric:tabular-nums}
+.doc{max-width:1464px;margin:0 auto;padding:24px 32px 96px}
+
+/* ---------- document chrome ---------- */
+.toc{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:8px;margin:0 -32px;padding:10px 32px;background:color-mix(in srgb,var(--surface-warm) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);font-size:13px;color:var(--muted)}
+.toc b{color:var(--fg-2);font-weight:500;margin-right:6px}
+.toc a{padding:4px 10px;border-radius:var(--r-pill)}
+.toc a:hover{background:var(--neutral-hover);color:var(--fg)}
+.sheet{margin-top:32px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-lg);padding:36px 40px}
+.sheet-kicker{font:500 11px/1 var(--mono);letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
+.sheet h2{margin-top:10px;font-size:24px;font-weight:500;line-height:1.25}
+.sheet-sub{margin-top:8px;max-width:760px;color:var(--muted);font-size:13.5px;line-height:1.6}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border);border-radius:var(--r-pill);font-size:12px;color:var(--fg-2);background:var(--bg)}
+.badge.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 30%,var(--border));background:color-mix(in srgb,var(--warn) 6%,var(--bg))}
+.badge.acc{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 24%,var(--border));background:color-mix(in srgb,var(--accent) 5%,var(--bg))}
+.lede{margin-top:18px;max-width:820px;font-size:14px;color:var(--fg-2);line-height:1.7}
+.meta-row{display:flex;flex-wrap:wrap;gap:24px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);font-size:12.5px;color:var(--muted)}
+.meta-row b{color:var(--fg-2);font-weight:500;display:block;font-size:11px;letter-spacing:.08em;margin-bottom:2px}
+
+/* ---------- generic mock primitives ---------- */
+.demo-tag{font:500 10px/1.8 var(--mono);letter-spacing:.06em;color:var(--muted);border:1px dashed var(--border);border-radius:var(--r-sm);padding:0 6px;white-space:nowrap}
+.frame-tag{display:flex;align-items:center;gap:10px;margin:26px 0 10px;font-size:12.5px;color:var(--muted)}
+.frame-tag b{color:var(--fg-2);font-weight:500}
+.frame-wrap{overflow-x:auto;padding-bottom:6px}
+.frame{width:1280px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg);box-shadow:0 12px 32px -18px rgba(6,27,49,.18)}
+.chrome{height:38px;display:flex;align-items:center;gap:12px;padding:0 14px;background:var(--surface-warm);border-bottom:1px solid var(--border)}
+.chrome i{width:10px;height:10px;border-radius:50%;background:var(--border);flex:none}
+.chrome i:nth-child(1){background:#e4b7c8}.chrome i:nth-child(2){background:#e8d8ae}.chrome i:nth-child(3){background:#b8e3c6}
+.addr{flex:1;max-width:460px;margin:0 auto;height:24px;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r-pill);font-size:11px;color:var(--muted)}
+.app{display:grid;grid-template-columns:208px minmax(0,1fr);min-height:640px;text-align:left}
+
+/* mock sidebar */
+.side{border-right:1px solid var(--border);background:color-mix(in srgb,var(--bg) 62%,var(--surface-warm));padding:16px 10px 12px 14px;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:9px;margin:0 2px 20px}
+.mark{width:32px;height:32px;border-radius:9px;background:var(--fg);color:#fff;display:grid;place-items:center;font-size:15px;font-weight:600;flex:none}
+.brand-name{font-size:14.5px;font-weight:500;line-height:1.15}
+.brand-en{font:10px/1.2 var(--mono);letter-spacing:.08em;color:var(--muted);display:block;margin-top:1px}
+.mi{position:relative;display:flex;align-items:center;gap:10px;min-height:38px;padding:0 10px;border-radius:5px;font-size:12.5px;color:var(--fg-2)}
+.mi svg{width:16px;height:16px;color:var(--muted)}
+.mi:hover{background:var(--neutral-hover)}
+.mi.on{color:var(--fg);font-weight:500;background:color-mix(in srgb,var(--accent) 8%,var(--bg))}
+.mi.on svg{color:var(--accent)}
+.mi.on:before{content:"";position:absolute;left:-13px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--accent)}
+.mi .tag-new{margin-left:auto;font:600 9px/1.6 var(--mono);color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--bg));border-radius:var(--r-pill);padding:0 7px}
+.mi .chev{margin-left:auto;width:12px;height:12px;color:var(--muted)}
+.grp{margin-top:2px}
+.grp-label{padding:6px 10px 3px;font-size:10.5px;letter-spacing:.06em;color:var(--muted)}
+.side-sep{height:1px;background:var(--border);margin:12px 0 10px}
+.side-foot{margin-top:auto;border-top:1px solid var(--border);padding-top:10px;display:flex;align-items:center;gap:9px}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--fg);color:#fff;display:grid;place-items:center;font-size:12px;flex:none}
+.side-foot small{display:block;color:var(--muted);font-size:10.5px;line-height:1.2}
+.side-foot b{font-size:12px;font-weight:500;line-height:1.2}
+
+/* mock topbar */
+.mtop{height:56px;display:flex;align-items:center;gap:16px;padding:0 22px;border-bottom:1px solid var(--border);background:var(--bg)}
+.mtop .hello{font-size:15px;font-weight:500}
+.mtop .date{font-size:11.5px;color:var(--muted);margin-top:1px}
+.mtop-right{margin-left:auto;display:flex;align-items:center;gap:12px}
+.icobtn{position:relative;width:32px;height:32px;border-radius:50%;border:1px solid var(--border);display:grid;place-items:center;color:var(--fg-2)}
+.icobtn svg{width:15px;height:15px}
+.icobtn .dot{position:absolute;top:6px;right:7px;width:6px;height:6px;border-radius:50%;background:var(--danger);border:1.5px solid var(--bg)}
+
+/* mock main */
+.mmain{padding:20px 22px 26px;display:flex;flex-direction:column;gap:14px;background:var(--surface-warm);font-size:12.5px}
+.mrow{display:grid;gap:14px;align-items:stretch}
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px 18px}
+.card-h{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
+.card-h h4{font-size:13px;font-weight:500;margin:0}
+.card-h .note{font-size:10.5px;color:var(--muted)}
+.card-h .more{margin-left:auto;font-size:11.5px;color:var(--accent);display:flex;align-items:center;gap:3px}
+.card-h .more svg{width:11px;height:11px}
+.big-num{font-size:27px;font-weight:500;letter-spacing:-.01em;line-height:1.1}
+.delta{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--success-text);background:var(--success-surface);border-radius:var(--r-pill);padding:2px 8px;margin-left:8px;vertical-align:2px}
+.sub-note{font-size:10.5px;color:var(--muted);margin-top:8px;line-height:1.5}
+.spark{margin-top:10px}
+.legend{display:flex;gap:14px;font-size:10.5px;color:var(--muted)}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;vertical-align:0}
+.sum-row{display:flex;gap:22px;margin-top:10px;font-size:11px;color:var(--muted)}
+.sum-row b{display:block;font-size:13.5px;font-weight:500;margin-top:1px}
+.sum-row .in b{color:var(--success-text)}
+.sum-row .net b{color:var(--fg)}
+
+/* currency cards */
+.acct-line{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:11px;color:var(--muted)}
+.acct-line .no{font-family:var(--mono);font-size:11px;color:var(--fg-2)}
+.cur-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.cur-card{border:1px solid var(--border);border-radius:var(--r-md);padding:12px 14px;background:var(--bg)}
+.cur-top{display:flex;align-items:center;gap:7px;font-size:11px;color:var(--muted)}
+.cur-flag{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font-size:8.5px;font-weight:600;color:#fff;flex:none}
+.cur-amt{font-size:19px;font-weight:500;margin-top:6px}
+.cur-sub{font-size:10.5px;color:var(--muted);margin-top:3px}
+.cur-cny{font-size:11px;color:var(--fg-2);margin-top:6px}
+.fx-btn{margin-top:9px;height:26px;padding:0 12px;display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--bg);color:var(--accent);font-size:11px}
+.fx-btn svg{width:11px;height:11px}
+.fx-btn:hover{border-color:var(--purple-soft);background:color-mix(in srgb,var(--accent) 5%,var(--bg))}
+
+/* member strip */
+.tier{display:flex;align-items:center;gap:8px}
+.tier-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:var(--r-pill);background:var(--fg);color:#fff;font-size:11px;font-weight:500}
+.tier-badge svg{width:11px;height:11px}
+.tier-bar{position:relative;height:5px;border-radius:var(--r-pill);background:var(--neutral-hover);margin-top:12px;overflow:hidden}
+.tier-bar i{position:absolute;left:0;top:0;bottom:0;width:100%;border-radius:var(--r-pill);background:var(--accent)}
+.tier-marks{display:flex;justify-content:space-between;font-size:9.5px;color:var(--muted);margin-top:5px}
+
+/* category bars */
+.cat-row{display:grid;grid-template-columns:64px 1fr 92px;align-items:center;gap:10px;padding:5px 0;font-size:11.5px}
+.cat-bar{height:8px;border-radius:var(--r-pill);background:color-mix(in srgb,var(--accent) 78%,var(--bg))}
+.cat-bar.grey{background:#c2ccd8}
+.cat-amt{text-align:right;color:var(--fg-2)}
+
+/* quick actions + todo */
+.qa-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.qa{display:flex;align-items:center;gap:9px;min-height:44px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--r-md);font-size:12px;color:var(--fg-2)}
+.qa svg{width:15px;height:15px;color:var(--accent);flex:none}
+.qa:hover{border-color:var(--purple-soft);background:color-mix(in srgb,var(--accent) 4%,var(--bg))}
+.todo{display:flex;align-items:center;gap:9px;padding:8px 0;border-top:1px solid var(--border);font-size:12px}
+.todo:first-of-type{border-top:0}
+.todo .st{width:7px;height:7px;border-radius:50%;flex:none}
+.todo .st.w{background:var(--warn)}.todo .st.a{background:var(--accent)}.todo .st.g{background:var(--success)}
+.todo .tx{flex:1;color:var(--fg-2);line-height:1.4}
+.todo .lk{color:var(--accent);font-size:11px;white-space:nowrap;display:flex;align-items:center;gap:2px}
+.todo .lk svg{width:10px;height:10px}
+
+/* feed */
+.feed-day{padding:10px 0 2px;font-size:10.5px;color:var(--muted);letter-spacing:.04em}
+.tx-row{display:grid;grid-template-columns:34px minmax(0,1fr) auto auto 64px;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--border)}
+.tx-ic{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:500;color:var(--fg-2);background:var(--surface-warm);border:1px solid var(--border)}
+.tx-name{font-size:12.5px;font-weight:500;line-height:1.3}
+.tx-cat{font-size:10.5px;color:var(--muted);margin-top:1px}
+.tx-amt{font-size:12.5px;font-weight:500;text-align:right}
+.tx-amt.plus{color:var(--success-text)}
+.tx-amt small{display:block;font-size:9.5px;color:var(--muted);font-weight:400;margin-top:1px}
+.tx-tag{font-size:10px;color:var(--fg-2);border:1px solid var(--border);border-radius:var(--r-pill);padding:2px 8px;white-space:nowrap}
+.tx-stat{font-size:10.5px;text-align:right}
+.tx-stat.ok{color:var(--success-text)}
+.tx-stat.pend{color:var(--warn)}
+
+/* sheet1 IA compare */
+.ia-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}
+.ia-col-h{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+.ia-col-h h3{font-size:15px;font-weight:500}
+.ia-col-h span{font-size:11.5px;color:var(--muted)}
+.mini-side{width:252px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg);padding:12px 10px;font-size:12px}
+.mini-side .mi{min-height:32px;font-size:12px}
+.mini-side .grp-label{padding:8px 10px 2px}
+.ia-note{margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6}
+.diff-chip{font:600 9px/1.7 var(--mono);color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--bg));border-radius:var(--r-pill);padding:0 7px;margin-left:auto}
+
+table.spec{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:22px}
+table.spec th{text-align:left;font-size:11px;font-weight:500;color:var(--muted);letter-spacing:.04em;padding:8px 12px;border-bottom:1px solid var(--border)}
+table.spec td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:top;color:var(--fg-2);line-height:1.55}
+table.spec tr:last-child td{border-bottom:0}
+table.spec td:first-child{color:var(--fg);font-weight:500;white-space:nowrap}
+table.spec code{font-family:var(--mono);font-size:11px;background:var(--surface-warm);border-radius:var(--r-sm);padding:1px 5px}
+.arrow{color:var(--muted);padding:0 4px}
+
+.sync-list{margin-top:14px;display:grid;gap:6px;font-size:12.5px}
+.sync-list li{list-style:none;display:flex;gap:10px;align-items:baseline}
+.sync-list li:before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent);flex:none;transform:translateY(-2px)}
+.sync-list code{font-family:var(--mono);font-size:11px;background:var(--surface-warm);border-radius:var(--r-sm);padding:1px 5px;white-space:nowrap}
+.sync-list span{color:var(--muted);font-size:11.5px}
+
+/* sheet3 assistant layout */
+.a-main{display:grid;grid-template-columns:224px minmax(0,1fr) 248px;min-height:640px}
+.a-sessions{border-right:1px solid var(--border);background:var(--bg);padding:12px 10px;display:flex;flex-direction:column;gap:2px}
+.newchat{display:flex;align-items:center;justify-content:center;gap:6px;height:34px;border:1px solid var(--border);border-radius:var(--r-md);font-size:12px;color:var(--accent);margin-bottom:8px}
+.newchat svg{width:12px;height:12px}
+.sess-grp{padding:8px 10px 3px;font-size:10px;color:var(--muted);letter-spacing:.05em}
+.sess{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 10px;border-radius:var(--r-sm);font-size:12px;color:var(--fg-2)}
+.sess time{font-size:10px;color:var(--muted);flex:none}
+.sess:hover{background:var(--surface-warm)}
+.sess.on{background:color-mix(in srgb,var(--accent) 8%,var(--bg));color:var(--fg)}
+.a-chat{display:flex;flex-direction:column;min-width:0;background:var(--surface-warm)}
+.chat-head{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--border);background:var(--bg)}
+.chat-head b{font-size:13px;font-weight:500}
+.cap-badge{font-size:10.5px;color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,var(--bg));border-radius:var(--r-pill);padding:3px 10px}
+.chat-body{flex:1;padding:18px;display:flex;flex-direction:column;gap:14px;overflow:hidden}
+.msg{max-width:82%;font-size:12.5px;line-height:1.6}
+.msg.user{align-self:flex-end;background:var(--fg);color:#fff;border-radius:12px 12px 4px 12px;padding:9px 13px}
+.msg.bot{align-self:flex-start;display:flex;flex-direction:column;gap:8px}
+.bot-card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+.bot-card .lbl{font:600 9.5px/1 var(--mono);letter-spacing:.1em;color:var(--accent);display:flex;align-items:center;gap:6px}
+.bot-card .lbl i{width:6px;height:6px;border-radius:50%;background:var(--accent);display:inline-block}
+.quote-row{display:flex;gap:18px;margin-top:8px;font-size:11px;color:var(--muted)}
+.quote-row b{display:block;font-size:13px;color:var(--fg);font-weight:500;margin-top:1px}
+.know-card{background:var(--bg);border:1px dashed var(--border);border-radius:10px;padding:11px 14px;color:var(--fg-2)}
+.know-card .lbl{font:600 9.5px/1 var(--mono);letter-spacing:.1em;color:var(--muted)}
+.know-card p{margin-top:6px}
+.src-line{font-size:10.5px;color:var(--muted)}
+.src-line b{color:var(--fg-2);font-weight:500}
+.disc-line{font-size:10.5px;color:var(--warn);display:flex;gap:6px;align-items:flex-start}
+.disc-line svg{width:12px;height:12px;flex:none;margin-top:1px}
+.composer{margin:0 18px 16px;border:1px solid var(--border);border-radius:12px;background:var(--bg);padding:10px 12px 8px}
+.composer .ph{font-size:13px;color:var(--muted);padding:2px 0 8px}
+.composer-bar{display:flex;align-items:center;gap:8px}
+.composer-bar .mic{width:30px;height:30px;border:1px solid var(--border);border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.composer-bar .send{margin-left:auto;width:32px;height:32px;border-radius:50%;background:var(--accent);color:#fff;display:grid;place-items:center}
+.composer-bar svg{width:14px;height:14px}
+.a-caps{border-left:1px solid var(--border);background:var(--bg);padding:14px}
+.a-caps h5{font-size:12px;font-weight:500;margin:0 0 4px}
+.a-caps .why{font-size:10.5px;color:var(--muted);line-height:1.5;margin-bottom:12px}
+.cap-chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:var(--r-pill);padding:5px 11px;background:var(--bg)}
+.chip.on{color:var(--accent);border-color:var(--purple-soft);background:color-mix(in srgb,var(--accent) 8%,var(--bg));font-weight:500}
+.cap-note{margin-top:14px;font-size:10.5px;color:var(--muted);line-height:1.6;border-top:1px solid var(--border);padding-top:12px}
+
+.fig-notes{margin-top:14px;display:grid;gap:5px;font-size:11.5px;color:var(--muted);line-height:1.6;max-width:1280px}
+.fig-notes li{list-style:none;display:flex;gap:9px}
+.fig-notes li:before{content:"";width:4px;height:4px;border-radius:50%;background:var(--muted);flex:none;margin-top:8px}
+
+ol.qs{margin-top:14px;padding-left:20px;display:grid;gap:7px;font-size:13px;color:var(--fg-2);line-height:1.6}
+.doc-foot{margin-top:28px;text-align:center;font-size:11px;color:var(--muted)}
+
+@media (max-width:900px){
+  .doc{padding:16px 14px 64px}
+  .toc{margin:0 -14px;padding:10px 14px;overflow-x:auto}
+  .sheet{padding:24px 18px}
+  .ia-grid{grid-template-columns:1fr}
+}
+@media print{
+  body{background:#fff}
+  .toc{position:static;backdrop-filter:none}
+  .doc{max-width:none;padding:0 8mm}
+  .sheet{border:0;border-radius:0;padding:10mm 0;break-before:page;box-shadow:none}
+  .sheet:first-of-type{break-before:auto}
+  .frame{box-shadow:none;zoom:.6}
+  .frame-wrap{overflow:visible}
+  a{color:inherit}
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-5 4z"/><path d="M9 9.5h6M9 12.5h4"/></symbol>
+  <symbol id="i-pay" viewBox="0 0 24 24"><path d="M4 8h14M15 4l4 4-4 4M20 16H6M9 12l-4 4 4 4"/></symbol>
+  <symbol id="i-bill" viewBox="0 0 24 24"><path d="M6 3h12v18l-2-1.5L14 21l-2-1.5L10 21l-2-1.5L6 21z"/><path d="M9 8h6M9 12h6"/></symbol>
+  <symbol id="i-pig" viewBox="0 0 24 24"><circle cx="11" cy="13" r="7"/><path d="M17 9l3-1v5l-2.5 1M8 6V4h4v2M9 12h.01"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-5.5 8-5.5s6.5 1.5 8 5.5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 10a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2.5 2.5 0 0 0 4 0"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-7-5 16-3.5-6.5z"/><path d="M20 5l-8.5 9.5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-transfer" viewBox="0 0 24 24"><path d="M4 9h13M14 5l4 4-4 4M20 15H7M10 11l-4 4 4 4"/></symbol>
+  <symbol id="i-exchange" viewBox="0 0 24 24"><path d="M4 8a8 8 0 0 1 14-3M20 16a8 8 0 0 1-14 3"/><path d="M18 2v3h-3M6 22v-3h3"/></symbol>
+  <symbol id="i-in" viewBox="0 0 24 24"><path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/></symbol>
+  <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 14V4M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-diamond" viewBox="0 0 24 24"><path d="M7 4h10l4 5-9 11L3 9z"/><path d="M3 9h18M9.5 9L12 20l2.5-11"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4L2.5 20h19z"/><path d="M12 10v5M12 17.5h.01"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+</svg>
+
+<div class="doc">
+
+  <nav class="toc" aria-label="本文档目录">
+    <b>目录</b>
+    <a href="#sheet-0">0 头部</a>
+    <a href="#sheet-1">1 信息架构对照</a>
+    <a href="#sheet-2">2 总览页界面稿</a>
+    <a href="#sheet-3">3 智能助手页界面稿</a>
+    <a href="#sheet-4">4 设计说明</a>
+  </nav>
+
+  <!-- ============================== SHEET 0 ============================== -->
+  <section class="sheet" id="sheet-0">
+    <div class="sheet-kicker">Sheet 0 · 头部</div>
+    <h1 style="margin-top:10px;font-size:30px;font-weight:500">总览与智能助手 · 设计草稿</h1>
+    <div class="badges">
+      <span class="badge warn">草稿 · 未确认 · 未接入 app</span>
+      <span class="badge">2026-10-20</span>
+      <span class="badge">桌面网页端 · 1280</span>
+      <span class="badge acc">演示数据</span>
+    </div>
+    <p class="lede">本稿评审「总览」页取代 /dashboard 成为登录后落地页、智能助手独立为 /assistant 的信息架构与界面秩序，仅供设计评审，不接入 app 代码。画面数字均为演示数据；账户口径以一个储蓄资金账户、多币种余额分区、至多 Visa 与银联各一张为准。</p>
+    <div class="meta-row">
+      <div><b>视觉依据</b>docs/design/exports/2026-10-15/zhaocai-cat-bank.html 的 token 与字体栈</div>
+      <div><b>布局参考</b>Mercury（桌面布局基线）· Starling（交易 Feed 秩序）· Wise / Revolut（多币种余额与任务分组），仅借鉴信息架构，未引用其素材</div>
+      <div><b>范围</b>仅桌面网页；移动端不在本稿范围</div>
+    </div>
+  </section>
+
+  <!-- ============================== SHEET 1 ============================== -->
+  <section class="sheet" id="sheet-1">
+    <div class="sheet-kicker">Sheet 1 · 信息架构</div>
+    <h2>信息架构对照：现状 / 草稿</h2>
+    <p class="sheet-sub">左侧栏由「单一智能首页」拆为「总览 + 智能助手」两个入口；四个服务分组与全部服务保持不变，助手不再兼任首页。</p>
+
+    <div class="ia-grid">
+      <div>
+        <div class="ia-col-h"><h3>现状</h3><span>账户总览 = 智能助手工作台首页</span></div>
+        <div class="mini-side">
+          <div class="mi on"><svg><use href="#i-wallet"/></svg>账户总览<span class="diff-chip" style="color:var(--muted);background:var(--surface-warm)">助手首页</span></div>
+          <div class="grp"><div class="grp-label">账户与支付</div><div class="mi" style="padding-left:36px;color:var(--muted)">5 项服务 ▸</div></div>
+          <div class="grp"><div class="grp-label">账单与资金</div><div class="mi" style="padding-left:36px;color:var(--muted)">5 项服务 ▸</div></div>
+          <div class="grp"><div class="grp-label">理财与储蓄</div><div class="mi" style="padding-left:36px;color:var(--muted)">5 项服务 ▸</div></div>
+          <div class="grp"><div class="grp-label">个人与安全</div><div class="mi" style="padding-left:36px;color:var(--muted)">4 项服务 ▸</div></div>
+          <div class="side-sep"></div>
+          <div class="mi"><svg><use href="#i-grid"/></svg>全部服务</div>
+        </div>
+        <p class="ia-note">登录后落地 /dashboard 即助手工作台；/support 为其别名并高亮同一入口。用户看不到独立的资产总览。</p>
+      </div>
+      <div>
+        <div class="ia-col-h"><h3>草稿</h3><span>总览落地 + 助手独立入口</span></div>
+        <div class="mini-side">
+          <div class="mi on"><svg><use href="#i-wallet"/></svg>总览</div>
+          <div class="mi"><svg><use href="#i-chat"/></svg>智能助手<span class="tag-new">新</span></div>
+          <div class="grp"><div class="grp-label">账户与支付</div><div class="mi" style="padding-left:36px;color:var(--muted)">5 项服务 ▸</div></div>
+          <div class="grp"><div class="grp-label">账单与资金</div><div class="mi" style="padding-left:36px;color:var(--muted)">5 项服务 ▸</div></div>
+          <div class="grp"><div class="grp-label">理财与储蓄</div><div class="mi" style="padding-left:36px;color:var(--muted)">5 项服务 ▸</div></div>
+          <div class="grp"><div class="grp-label">个人与安全</div><div class="mi" style="padding-left:36px;color:var(--muted)">4 项服务 ▸</div></div>
+          <div class="side-sep"></div>
+          <div class="mi"><svg><use href="#i-grid"/></svg>全部服务</div>
+        </div>
+        <p class="ia-note">「总览」固定 /dashboard 为登录后落地页；「智能助手」为 /assistant 独立入口，条目带「新」徽标，上线一段时间后可摘除。</p>
+      </div>
+    </div>
+
+    <table class="spec" aria-label="路由变更表">
+      <tr><th style="width:140px">路由</th><th style="width:34%">现状</th><th style="width:34%">草稿</th><th>说明</th></tr>
+      <tr><td><code>/dashboard</code></td><td>智能助手工作台（登录后落地页）</td><td>总览（登录后落地页）</td><td>同一路由承载新页面，用户书签与肌肉记忆不变</td></tr>
+      <tr><td><code>/assistant</code></td><td>不存在</td><td>新增：智能助手独立页</td><td>承载现有助手工作台全部能力</td></tr>
+      <tr><td><code>/support</code></td><td>助手别名，高亮「账户总览」</td><td>重定向到 <code>/assistant</code></td><td>旧链接不丢，侧栏高亮改为「智能助手」</td></tr>
+      <tr><td>业务页 docked 助手面板</td><td>业务页右侧停靠，可唤起</td><td>保留不变</td><td>仍可从业务页唤起，不随本次拆分调整</td></tr>
+    </table>
+
+    <h3 style="margin-top:26px;font-size:14px;font-weight:500">需同步改动的位置<span style="font-weight:400;color:var(--muted);font-size:11.5px">（仅列出，本稿不修改这些文件）</span></h3>
+    <ul class="sync-list">
+      <li><code>app/src/components/layout/navigation.ts</code><span>navigationItems 顶部拆为「总览」「智能助手」两项；/support 从 paths 中移出</span></li>
+      <li><code>app/src/components/layout/Sidebar.tsx</code><span>顶部入口渲染为两条链接，「智能助手」挂新徽标</span></li>
+      <li><code>app/src/components/layout/AppShell.tsx</code><span>home / 助手工作台判定改指向 /assistant</span></li>
+      <li><code>app/src/App.tsx</code><span>新增 /assistant 路由；/support 改为重定向</span></li>
+      <li><code>CLIENTS.md</code> 与 <code>app/README.md</code><span>「单一智能首页」表述更新为「总览 + 独立助手」</span></li>
+    </ul>
+  </section>
+
+  <!-- ============================== SHEET 2 ============================== -->
+  <section class="sheet" id="sheet-2">
+    <div class="sheet-kicker">Sheet 2 · 总览页</div>
+    <h2>总览页界面稿（/dashboard · 桌面 1280）</h2>
+    <p class="sheet-sub">首版四个模块：资产与多币种余额、最近交易 Feed、现金流与消费趋势、快捷操作与待办。不内嵌助手聊天框；助手仅经侧栏独立入口出现。</p>
+
+    <div class="frame-tag"><b>图 2-1 · 总览 /dashboard</b><span>桌面 1280 · 侧栏高亮「总览」</span><span class="demo-tag">演示数据</span></div>
+    <div class="frame-wrap">
+    <figure class="frame">
+      <div class="chrome"><i></i><i></i><i></i><div class="addr"><svg width="10" height="10"><use href="#i-lock"/></svg>meow.bank/dashboard</div></div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><span class="mark">招</span><span><span class="brand-name">招财猫银行</span><span class="brand-en">MONEY MEOW BANK</span></span></div>
+          <div class="mi on"><svg><use href="#i-wallet"/></svg>总览</div>
+          <div class="mi"><svg><use href="#i-chat"/></svg>智能助手<span class="tag-new">新</span></div>
+          <div class="grp-label" style="margin-top:8px">账户与支付</div>
+          <div class="mi"><svg><use href="#i-pay"/></svg>账户与支付<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="mi"><svg><use href="#i-bill"/></svg>账单与资金<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="mi"><svg><use href="#i-pig"/></svg>理财与储蓄<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="mi"><svg><use href="#i-user"/></svg>个人与安全<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="side-sep"></div>
+          <div class="mi"><svg><use href="#i-grid"/></svg>全部服务</div>
+          <div class="side-foot"><span class="avatar">林</span><span><b>林晓</b><small>个人账户</small></span></div>
+        </aside>
+
+        <div>
+          <div class="mtop">
+            <div><div class="hello">下午好，林晓</div><div class="date">2026年10月20日 · 星期二</div></div>
+            <div class="mtop-right"><span class="icobtn"><svg><use href="#i-bell"/></svg><i class="dot"></i></span><span class="avatar">林</span></div>
+          </div>
+          <div class="mmain">
+
+            <!-- row 1: total assets + member tier -->
+            <div class="mrow" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr)">
+              <div class="card">
+                <div class="card-h"><h4>总资产</h4><span class="note">折人民币 · 储蓄资金账户</span><span class="more">资产明细<svg><use href="#i-arrow"/></svg></span></div>
+                <div class="tnum"><span class="big-num">¥1,284,640.55</span><span class="delta">较上月日均 +2.4%</span></div>
+                <svg class="spark" viewBox="0 0 520 84" width="100%" height="84" aria-label="近 30 天总资产走势">
+                  <line x1="0" y1="70" x2="520" y2="70" stroke="#e5edf5"/>
+                  <line x1="0" y1="40" x2="520" y2="40" stroke="#e5edf5" stroke-dasharray="3 4"/>
+                  <path d="M0,62 L20,58 L40,61 L60,53 L80,56 L100,49 L120,52 L140,45 L160,48 L180,41 L200,44 L220,37 L240,41 L260,33 L280,38 L300,31 L320,35 L340,28 L360,33 L380,27 L400,31 L420,25 L440,29 L460,21 L480,25 L500,17 L520,14" fill="none" stroke="#533afd" stroke-width="1.8" stroke-linejoin="round"/>
+                  <path d="M0,62 L20,58 L40,61 L60,53 L80,56 L100,49 L120,52 L140,45 L160,48 L180,41 L200,44 L220,37 L240,41 L260,33 L280,38 L300,31 L320,35 L340,28 L360,33 L380,27 L400,31 L420,25 L440,29 L460,21 L480,25 L500,17 L520,14 L520,84 L0,84 Z" fill="#533afd" opacity=".07" stroke="none"/>
+                  <circle cx="520" cy="14" r="2.6" fill="#533afd"/>
+                </svg>
+                <div class="sub-note">近 30 天走势 · 仅含储蓄资金账户，不含理财与授信</div>
+              </div>
+              <div class="card">
+                <div class="card-h"><h4>会员等级</h4><span class="more">等级说明<svg><use href="#i-arrow"/></svg></span></div>
+                <div class="tier"><span class="tier-badge"><svg><use href="#i-diamond"/></svg>钻石会员</span><span style="font-size:10.5px;color:var(--muted)">已达最高等级</span></div>
+                <div class="tier-bar"><i></i></div>
+                <div class="tier-marks"><span>白银</span><span>黄金</span><span>铂金</span><span style="color:var(--accent);font-weight:500">钻石</span></div>
+                <div class="sub-note">上月日均储蓄资产 <span class="tnum">¥1,246,300.00</span>，钻石门槛 <span class="tnum">¥500,000</span> 达标 · 评级仅含储蓄资金账户折人民币</div>
+              </div>
+            </div>
+
+            <!-- currency balances -->
+            <div class="card">
+              <div class="card-h"><h4>同一资金账户 · 币种余额</h4><span class="note">多币种为该账户内分区，不单独加总</span></div>
+              <div class="acct-line">资金账户 <span class="no">6222 **** 0001</span><span>·</span><span>余额按当前报价折算，仅供参考</span></div>
+              <div class="cur-grid">
+                <div class="cur-card">
+                  <div class="cur-top"><span class="cur-flag" style="background:#de2910">¥</span>人民币 CNY</div>
+                  <div class="cur-amt tnum">¥1,099,140.55</div>
+                  <div class="cur-sub tnum">可用 ¥1,097,140.55</div>
+                  <div class="cur-cny tnum">≈ ¥1,099,140.55</div>
+                  <span class="fx-btn"><svg><use href="#i-exchange"/></svg>换汇</span>
+                </div>
+                <div class="cur-card">
+                  <div class="cur-top"><span class="cur-flag" style="background:#3c3b6e">$</span>美元 USD</div>
+                  <div class="cur-amt tnum">$24,600.00</div>
+                  <div class="cur-sub tnum">可用 $24,600.00</div>
+                  <div class="cur-cny tnum">≈ ¥176,831.40</div>
+                  <span class="fx-btn"><svg><use href="#i-exchange"/></svg>换汇</span>
+                </div>
+                <div class="cur-card">
+                  <div class="cur-top"><span class="cur-flag" style="background:#ba0c2f">$</span>港币 HKD</div>
+                  <div class="cur-amt tnum">HK$9,400.00</div>
+                  <div class="cur-sub tnum">可用 HK$9,400.00</div>
+                  <div class="cur-cny tnum">≈ ¥8,668.60</div>
+                  <span class="fx-btn"><svg><use href="#i-exchange"/></svg>换汇</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- row 2 -->
+            <div class="mrow" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr)">
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <div class="card">
+                  <div class="card-h"><h4>近 30 天现金流</h4><span class="note">按北京时间自然日</span><span class="more">现金流详情<svg><use href="#i-arrow"/></svg></span></div>
+                  <div class="legend"><span><i style="background:var(--success)"></i>流入</span><span><i style="background:var(--fg-2)"></i>流出</span><span style="margin-left:auto">账户内换汇不计入收支</span></div>
+                  <svg viewBox="0 0 620 210" width="100%" height="210" style="margin-top:8px" aria-label="近 30 天流入流出折线">
+                    <line x1="0" y1="60" x2="620" y2="60" stroke="#eef3f8"/>
+                    <line x1="0" y1="115" x2="620" y2="115" stroke="#eef3f8"/>
+                    <line x1="0" y1="170" x2="620" y2="170" stroke="#eef3f8"/>
+                    <text x="4" y="206" font-size="10" fill="#64748d">09-21</text>
+                    <text x="296" y="206" font-size="10" fill="#64748d">10-05</text>
+                    <text x="588" y="206" font-size="10" fill="#64748d">10-20</text>
+                    <path d="M0,152 L31,122 L62,162 L93,136 L124,172 L155,112 L186,152 L217,166 L248,126 L279,156 L310,172 L341,142 L372,162 L403,122 L434,156 L465,132 L496,166 L527,146 L558,92 L589,158 L620,150" fill="none" stroke="#273951" stroke-width="1.6" stroke-linejoin="round" opacity=".85"/>
+                    <path d="M0,194 L31,191 L62,188 L93,194 L124,186 L155,190 L186,193 L217,184 L248,190 L279,188 L310,192 L341,184 L372,188 L403,182 L434,190 L465,186 L496,192 L527,184 L558,182 L589,64 L620,188" fill="none" stroke="#15be53" stroke-width="1.8" stroke-linejoin="round"/>
+                    <circle cx="589" cy="64" r="2.6" fill="#15be53"/>
+                  </svg>
+                  <div class="sum-row">
+                    <span class="in tnum">流入<b>¥34,560.00</b></span>
+                    <span class="tnum">流出<b>¥21,140.00</b></span>
+                    <span class="net tnum">净额<b style="color:var(--success-text)">+¥13,420.00</b></span>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-h"><h4>本月消费分类</h4><span class="more">消费分析<svg><use href="#i-arrow"/></svg></span></div>
+                  <div class="cat-row"><span>房租</span><div class="cat-bar" style="width:100%"></div><span class="cat-amt tnum">¥8,500.00</span></div>
+                  <div class="cat-row"><span>购物</span><div class="cat-bar" style="width:69%"></div><span class="cat-amt tnum">¥5,860.00</span></div>
+                  <div class="cat-row"><span>餐饮</span><div class="cat-bar" style="width:38%"></div><span class="cat-amt tnum">¥3,240.00</span></div>
+                  <div class="cat-row"><span>交通</span><div class="cat-bar" style="width:11%"></div><span class="cat-amt tnum">¥920.00</span></div>
+                  <div class="cat-row"><span>订阅</span><div class="cat-bar" style="width:2%;min-width:6px"></div><span class="cat-amt tnum">¥128.00</span></div>
+                  <div class="cat-row"><span>其他</span><div class="cat-bar grey" style="width:8%"></div><span class="cat-amt tnum">¥640.00</span></div>
+                  <div class="sub-note">分类由系统自动归类，仅供参考</div>
+                </div>
+              </div>
+
+              <div style="display:flex;flex-direction:column;gap:14px">
+                <div class="card">
+                  <div class="card-h"><h4>快捷操作</h4></div>
+                  <div class="qa-grid">
+                    <span class="qa"><svg><use href="#i-transfer"/></svg>转账</span>
+                    <span class="qa"><svg><use href="#i-exchange"/></svg>换汇</span>
+                    <span class="qa"><svg><use href="#i-in"/></svg>收款与转入</span>
+                    <span class="qa"><svg><use href="#i-card"/></svg>申请银行卡</span>
+                    <span class="qa" style="grid-column:1/-1"><svg><use href="#i-export"/></svg>账单导出</span>
+                  </div>
+                </div>
+                <div class="card" style="flex:1">
+                  <div class="card-h"><h4>待办</h4><span class="note">4 项</span></div>
+                  <div class="todo"><i class="st a"></i><span class="tx">未设置工资计划，设置后每月自动划转储蓄</span><span class="lk">去设置<svg><use href="#i-arrow"/></svg></span></div>
+                  <div class="todo"><i class="st w"></i><span class="tx">银联卡到期换卡已寄出，等待签收</span><span class="lk">查看物流<svg><use href="#i-arrow"/></svg></span></div>
+                  <div class="todo"><i class="st w"></i><span class="tx">1 笔在途转账可撤回至 18:42</span><span class="lk">去撤回<svg><use href="#i-arrow"/></svg></span></div>
+                  <div class="todo"><i class="st g"></i><span class="tx tnum">自动扣款 3 日内到期 ¥15.00（网易云音乐）</span><span class="lk">查看合约<svg><use href="#i-arrow"/></svg></span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- row 3: feed -->
+            <div class="card">
+              <div class="card-h"><h4>最近交易</h4><span class="note">跨币种分列，不直接加总</span><span class="more">查看全部<svg><use href="#i-arrow"/></svg></span></div>
+              <div class="feed-day">今天 · 10-20</div>
+              <div class="tx-row"><span class="tx-ic">星</span><span><span class="tx-name">星巴克（苏州中心店）</span><span class="tx-cat">餐饮 · CNY</span></span><span class="tx-tag">餐饮</span><span class="tx-amt tnum">−¥38.00</span><span class="tx-stat ok">已完成</span></div>
+              <div class="tx-row"><span class="tx-ic">地</span><span><span class="tx-name">地铁出行</span><span class="tx-cat">交通 · CNY</span></span><span class="tx-tag">交通</span><span class="tx-amt tnum">−¥6.00</span><span class="tx-stat ok">已完成</span></div>
+              <div class="feed-day">昨天 · 10-19</div>
+              <div class="tx-row"><span class="tx-ic" style="background:var(--success-surface);color:var(--success-text);border-color:transparent">工</span><span><span class="tx-name">工资入账 · 某科技有限公司</span><span class="tx-cat">工资 · CNY</span></span><span class="tx-tag">工资</span><span class="tx-amt plus tnum">+¥21,800.00</span><span class="tx-stat ok">已完成</span></div>
+              <div class="tx-row"><span class="tx-ic">网</span><span><span class="tx-name">网易云音乐</span><span class="tx-cat">订阅 · CNY · 自动扣款</span></span><span class="tx-tag">订阅</span><span class="tx-amt tnum">−¥15.00</span><span class="tx-stat ok">已完成</span></div>
+              <div class="feed-day">10-18</div>
+              <div class="tx-row"><span class="tx-ic">房</span><span><span class="tx-name">房租（10 月）</span><span class="tx-cat">房租 · CNY</span></span><span class="tx-tag">房租</span><span class="tx-amt tnum">−¥8,500.00</span><span class="tx-stat ok">已完成</span></div>
+              <div class="tx-row"><span class="tx-ic">转</span><span><span class="tx-name">转账给陈雨桐</span><span class="tx-cat">转账 · CNY · 在途可撤回至 18:42</span></span><span class="tx-tag">转账</span><span class="tx-amt tnum">−¥2,000.00</span><span class="tx-stat pend">处理中</span></div>
+              <div class="feed-day">10-17</div>
+              <div class="tx-row"><span class="tx-ic">换</span><span><span class="tx-name">USD 换入 · 账户内换汇</span><span class="tx-cat">换汇 · USD · 不计入支出</span></span><span class="tx-tag">换汇</span><span class="tx-amt plus tnum">+$150.00<small>卖出 CNY 侧见同日流水</small></span><span class="tx-stat ok">已完成</span></div>
+              <div class="tx-row"><span class="tx-ic">永</span><span><span class="tx-name">永辉超市</span><span class="tx-cat">购物 · CNY</span></span><span class="tx-tag">购物</span><span class="tx-amt tnum">−¥126.40</span><span class="tx-stat ok">已完成</span></div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </figure>
+    </div>
+    <ul class="fig-notes">
+      <li>三张币种卡是同一资金账户 6222 **** 0001 的余额分区，不是三个账户；账号全页只出现一次，卡号与账号不混用。</li>
+      <li>总资产与会员评级同口径：仅储蓄资金账户折人民币，不含理财与授信；不承诺收益，走势与评级数字均为演示数据。</li>
+      <li>交易 Feed 按日期分组，收入绿色加号、支出中性色减号，跨币种各列原币；账户内换汇标注「不计入支出」。</li>
+      <li>待办来自工资计划、银行卡状态、在途转账与自动扣款合约四类真实数据源，每条带状态点与跳转入口。</li>
+    </ul>
+  </section>
+
+  <!-- ============================== SHEET 3 ============================== -->
+  <section class="sheet" id="sheet-3">
+    <div class="sheet-kicker">Sheet 3 · 智能助手页</div>
+    <h2>智能助手页界面稿（/assistant · 桌面 1280）</h2>
+    <p class="sheet-sub">三栏布局：会话列表、对话区、本次会话能力。能力选择按会话隔离，回应「旧版能力选择跨会话保留并混答」的测试报告缺陷。</p>
+
+    <div class="frame-tag"><b>图 3-1 · 智能助手 /assistant</b><span>桌面 1280 · 侧栏高亮「智能助手」</span><span class="demo-tag">演示数据</span></div>
+    <div class="frame-wrap">
+    <figure class="frame">
+      <div class="chrome"><i></i><i></i><i></i><div class="addr"><svg width="10" height="10"><use href="#i-lock"/></svg>meow.bank/assistant</div></div>
+      <div class="app">
+        <aside class="side">
+          <div class="brand"><span class="mark">招</span><span><span class="brand-name">招财猫银行</span><span class="brand-en">MONEY MEOW BANK</span></span></div>
+          <div class="mi"><svg><use href="#i-wallet"/></svg>总览</div>
+          <div class="mi on"><svg><use href="#i-chat"/></svg>智能助手<span class="tag-new">新</span></div>
+          <div class="grp-label" style="margin-top:8px">账户与支付</div>
+          <div class="mi"><svg><use href="#i-pay"/></svg>账户与支付<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="mi"><svg><use href="#i-bill"/></svg>账单与资金<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="mi"><svg><use href="#i-pig"/></svg>理财与储蓄<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="mi"><svg><use href="#i-user"/></svg>个人与安全<svg class="chev"><use href="#i-chev"/></svg></div>
+          <div class="side-sep"></div>
+          <div class="mi"><svg><use href="#i-grid"/></svg>全部服务</div>
+          <div class="side-foot"><span class="avatar">林</span><span><b>林晓</b><small>个人账户</small></span></div>
+        </aside>
+
+        <div class="a-main">
+          <div class="a-sessions">
+            <span class="newchat"><svg><use href="#i-plus"/></svg>新建会话</span>
+            <div class="sess-grp">今日</div>
+            <div class="sess on"><span>本月换汇划算吗</span><time>14:32</time></div>
+            <div class="sess"><span>转账限额是多少</span><time>09:18</time></div>
+            <div class="sess-grp">更早</div>
+            <div class="sess"><span>工资计划怎么设</span><time>10-18</time></div>
+            <div class="sess"><span>上月账单小结</span><time>10-15</time></div>
+            <div class="sess"><span>钻石会员怎么保级</span><time>10-09</time></div>
+          </div>
+
+          <div class="a-chat">
+            <div class="chat-head"><b>本月换汇划算吗</b><span class="cap-badge">当前能力：换汇助手</span></div>
+            <div class="chat-body">
+              <div class="msg user">本月换汇划算吗？</div>
+              <div class="msg bot">
+                <div style="color:var(--fg-2)">本月 CNY→USD 报价处于近 30 天的中间水平，点差与上月持平。如果近期有美元支出计划，分批换入通常比一次性换入更能平滑报价波动。</div>
+                <div class="bot-card">
+                  <div class="lbl"><i></i>页面实时数据 · 页面事实</div>
+                  <div class="quote-row tnum">
+                    <span>当前报价 CNY→USD<b>0.1391</b></span>
+                    <span>点差（钻石会员减免后）<b>0.35%</b></span>
+                    <span>报价有效至<b>15:00</b></span>
+                  </div>
+                </div>
+                <div class="know-card">
+                  <div class="lbl">一般知识</div>
+                  <p>换汇是否划算取决于你的用途时点与持有周期。本行换汇在同一资金账户的币种分区之间记账，首次兑换仅初始化目标币种余额，不构成投资建议。</p>
+                </div>
+                <div class="src-line"><b>来源</b>：页面实时数据（报价） · 知识库（换汇机制） · 用户提供（本月目标）</div>
+                <div class="disc-line"><svg><use href="#i-warn"/></svg>助手不能代办转账；办理需在确认卡片中输入支付密码。</div>
+              </div>
+            </div>
+            <div class="composer">
+              <div class="ph">向助手提问…</div>
+              <div class="composer-bar"><span class="mic"><svg><use href="#i-mic"/></svg></span><span class="send"><svg><use href="#i-send"/></svg></span></div>
+            </div>
+          </div>
+
+          <aside class="a-caps">
+            <h5>本次会话能力</h5>
+            <div class="why">能力仅作用于当前会话；新建会话默认清空，不会带入上一会话。</div>
+            <div class="cap-chips">
+              <span class="chip">智能转账</span>
+              <span class="chip">理财顾问</span>
+              <span class="chip">账单分析</span>
+              <span class="chip">银行卡管家</span>
+              <span class="chip on">换汇助手</span>
+              <span class="chip">储蓄规划</span>
+              <span class="chip">借款测算</span>
+              <span class="chip">保险咨询</span>
+              <span class="chip">安全助手</span>
+              <span class="chip">智能客服</span>
+            </div>
+            <div class="cap-note">已选 1 项 · 切换会话或新建会话后需重新选择。业务页右侧停靠的助手面板保留不变，仍可从业务页唤起。</div>
+          </aside>
+        </div>
+      </div>
+    </figure>
+    </div>
+    <ul class="fig-notes">
+      <li>能力芯片与 app/src/components/layout/services.ts 的 smartServices 同名同序；当前会话已选高亮，未选灰显。</li>
+      <li>助手回答中「页面实时数据」与「一般知识」用不同卡片样式区分，报价类结论必须落在实时数据块内。</li>
+      <li>每条回答带来源标注（页面实时数据 / 知识库 / 用户提供）与「不能代办转账、需支付密码确认」免责。</li>
+      <li>业务页 docked 助手面板不在本页范围，保持不变。</li>
+    </ul>
+  </section>
+
+  <!-- ============================== SHEET 4 ============================== -->
+  <section class="sheet" id="sheet-4">
+    <div class="sheet-kicker">Sheet 4 · 设计说明</div>
+    <h2>模块映射与开放问题</h2>
+    <p class="sheet-sub">总览各模块借鉴的信息架构来源与对应数据接口；开放问题待用户确认后进入实现稿。</p>
+
+    <table class="spec" aria-label="模块映射表">
+      <tr><th style="width:170px">模块</th><th style="width:30%">借鉴的信息架构</th><th>对应招财猫数据来源 / 接口</th></tr>
+      <tr><td>总资产卡</td><td>Mercury 账户总览汇总（单账户、折本币）</td><td>资产快照与余额：<code>GET /api/accounts</code> 返回的 Account 折人民币合计</td></tr>
+      <tr><td>会员等级条</td><td>Wise / Revolut 任务与状态分组</td><td>会员评级：上月日均储蓄资产折人民币（白银 / 黄金 / 铂金 / 钻石）</td></tr>
+      <tr><td>币种余额卡</td><td>Wise / Revolut 多币种余额卡</td><td><code>getBalance</code> 币种分区（currencyBalances，共享同一 accountNo）</td></tr>
+      <tr><td>近 30 天现金流</td><td>Mercury 分析与流水关联</td><td>cashflow 统计接口（分币种记账，账户内换汇不计收支）</td></tr>
+      <tr><td>本月消费分类</td><td>Mercury 分类分析</td><td>spending 统计与系统自动分类（其他类固定灰显）</td></tr>
+      <tr><td>快捷操作</td><td>Wise / Revolut 快捷操作入口</td><td>转账 / 换汇 / 收款与转入 / 申请银行卡 / 账单导出的既有路由入口</td></tr>
+      <tr><td>待办列表</td><td>Revolut 任务状态分组</td><td>salary plan、cards（寄送 / 到期）、inflight 转账（可撤回窗口）、autodebits 合约</td></tr>
+      <tr><td>最近交易 Feed</td><td>Starling 交易 Feed 阅读秩序（日期分组、收支分色）</td><td><code>listTransactions</code>（跨币种各列原币）</td></tr>
+      <tr><td>智能助手三栏</td><td>现有助手工作台演化为独立页</td><td>会话与能力：<code>smartServices</code>（services.ts），能力按会话隔离</td></tr>
+    </table>
+
+    <h3 style="margin-top:28px;font-size:14px;font-weight:500">待用户确认的开放问题</h3>
+    <ol class="qs">
+      <li>总览是否需要在首版之后显示理财持仓摘要？当前口径严格只含储蓄资金账户。</li>
+      <li>会员等级条是否常驻总览首行，还是并入「个人与安全 · 会员等级」页内展示？</li>
+      <li>助手除侧栏独立入口外，是否需要在业务页保留悬浮唤起按钮（docked 面板本稿维持不变）？</li>
+      <li>现金流默认展示近 30 天，是否需要提供自然月切换与币种筛选？</li>
+      <li>移动端不在本稿范围，总览与助手的移动适配是否另出草稿评审？</li>
+    </ol>
+  </section>
+
+  <p class="doc-foot">总览与智能助手 · 设计草稿 · 2026-10-20 · 仅供评审，未接入 app · 单文件、无外链、无脚本 · 图中数字均为演示数据</p>
+</div>
+
+</body>
+</html>

@@ -7,16 +7,36 @@ import type { Transaction, TransactionCategory } from '@/api/types'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
+import { Drawer } from '@/components/ui/Drawer'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { TransactionRow } from '@/components/ui/TransactionRow'
 import { EmptyState, Segmented, Skeleton } from '@/components/ui/Segmented'
-import { CloseIcon, DownloadIcon, SearchIcon } from '@/components/ui/icons'
+import { CloseIcon, DownloadIcon, FilterIcon, SearchIcon } from '@/components/ui/icons'
 import { CATEGORY_LABEL } from '@/lib/categories'
+import {
+  CATEGORY_OPTIONS,
+  CURRENCY_OPTIONS,
+  DEFAULT_FILTER,
+  DIRECTION_OPTIONS,
+  FILTER_KEYS,
+  FILTER_PARAM_KEYS,
+  RANGE_OPTIONS,
+  countActive,
+  rangeBounds,
+  readFilter,
+  type BillsFilter,
+} from '@/lib/billsFilter'
 import { toCsv } from '@/lib/csv'
 import { downloadText } from '@/lib/download'
 import { useAsync } from '@/lib/useAsync'
+import { useResetOnOpen } from '@/lib/usePresence'
 import { useToast } from '@/components/ui/toast-context'
 
+/**
+ * 分类快捷 chips。口径与 `lib/categories.ts` 一致 —— 筛选抽屉里能选的 8 类
+ * 这里都得能选到，否则从抽屉选了「转账」而这一行没有任何项高亮，
+ * 同一组条件在两个控件上会显示成互相矛盾的状态。
+ */
 const FILTERS: { value: TransactionCategory | 'all'; label: string }[] = [
   { value: 'all', label: '全部' },
   { value: 'dining', label: '餐饮' },
@@ -24,8 +44,48 @@ const FILTERS: { value: TransactionCategory | 'all'; label: string }[] = [
   { value: 'housing', label: '房租' },
   { value: 'transport', label: '交通' },
   { value: 'subscription', label: '订阅' },
+  { value: 'transfer', label: '转账' },
+  { value: 'salary', label: '工资入账' },
+  { value: 'other', label: '其他' },
 ]
 const PAGE_SIZE = 6
+
+/** 抽屉里的一组单选 chips。用 `aria-pressed` 而不是 radiogroup：后者承诺方向键切换。 */
+function FilterGroup<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: { value: T; label: string }[]
+  value: T
+  onChange: (next: T) => void
+}) {
+  return (
+    <section className="border-t border-line py-4 first:border-t-0">
+      <h3 className="text-[13px] font-medium text-ink-soft">{label}</h3>
+      <div role="group" aria-label={label} className="mt-2.5 flex flex-wrap gap-2">
+        {options.map((option) => {
+          const active = option.value === value
+          return (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={active}
+              onClick={() => onChange(option.value)}
+              className={`min-h-9 rounded-chip border px-3 text-[13px] transition-colors ${active
+                ? 'border-gold bg-gold-wash font-medium text-gold-deep'
+                : 'border-line text-ink-soft hover:border-line-strong hover:text-ink'}`}
+            >
+              {option.label}
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
 
 export function BillsPage() {
   const toast = useToast()
@@ -34,8 +94,9 @@ export function BillsPage() {
   const keyword = searchParams.get('q') ?? ''
   const [keywordDraft, setKeywordDraft] = useState(keyword)
   const selectedAccountId = searchParams.get('account') ?? ''
-  const candidate = searchParams.get('category') ?? 'all'
-  const category = (FILTERS.some(item => item.value === candidate) ? candidate : 'all') as TransactionCategory | 'all'
+  const filter = readFilter(searchParams)
+  const { direction, category, range, currency } = filter
+  const activeCount = countActive(filter)
   const rawPage = Number(searchParams.get('page') ?? '1')
   const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1
   const setFilter = (key: string, value: string) => setSearchParams(previous => {
@@ -46,15 +107,44 @@ export function BillsPage() {
     return next
   }, { replace: true })
   const setKeyword = (value: string) => setFilter('q', value)
-  const setCategory = (value: TransactionCategory | 'all') => setFilter('category', value)
-  const setSelectedAccountId = (value: string) => setFilter('account', value)
+  const setCategory = (value: TransactionCategory | 'all') => setFilter(FILTER_KEYS.category, value)
+  /**
+   * 币种 chips 选的是**同一资金账户下的余额分区**（`account` 参数），不是新账户。
+   * 手动点分区等于明确"就看这个币种的账"，所以同时摘掉抽屉里的币种条件，
+   * 免得两个控件各说一套、把列表筛成空。
+   */
+  const setSelectedAccountId = (value: string) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous)
+    next.delete('page')
+    next.delete(FILTER_KEYS.currency)
+    if (value) next.set('account', value)
+    else next.delete('account')
+    return next
+  }, { replace: true })
   const account = useAsync(() => api.listAccounts(), [])
   const balances = currencyBalances(account.data ?? [])
-  const accountId = balances.find(row => row.id === selectedAccountId)?.id ?? balances[0]?.id
-  const queryKey = JSON.stringify([accountId, category, keyword, page])
+  // 抽屉里选了具体币种 → 直接用该币种的记账分区；否则沿用 chips 选的分区。
+  const currencyBalance = currency === 'all' ? undefined : balances.find(row => row.currency === currency)
+  const accountId = currencyBalance?.id ?? balances.find(row => row.id === selectedAccountId)?.id ?? balances[0]?.id
+  const bounds = rangeBounds(range)
+  const queryKey = JSON.stringify([accountId, category, keyword, page, direction, currency, bounds.from, bounds.to])
   const transactions = useAsync<{ items: Transaction[]; total: number; queryKey: string }>(
-    async () => ({ ...(accountId ? await api.listTransactions(accountId, { page, size: PAGE_SIZE, category, keyword }) : { items: [], total: 0 }), queryKey }),
-    [accountId, category, keyword, page],
+    async () => ({
+      ...(accountId
+        ? await api.listTransactions(accountId, {
+            page,
+            size: PAGE_SIZE,
+            category,
+            keyword,
+            direction,
+            currency,
+            from: bounds.from,
+            to: bounds.to,
+          })
+        : { items: [], total: 0 }),
+      queryKey,
+    }),
+    [accountId, category, keyword, page, direction, currency, bounds.from, bounds.to],
   )
   // 换页/筛选后不能将上一页的缓存显示为新页结果。
   const visibleTransactions = transactions.data?.queryKey === queryKey ? transactions.data : null
@@ -66,11 +156,47 @@ export function BillsPage() {
     return next
   })
 
+  // 抽屉里的改动先落在草稿上，按「应用」才写进 URL —— 否则每组点一下列表就重拉一次。
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [draft, setDraft] = useState<BillsFilter>(filter)
+  useResetOnOpen(filterOpen, () => setDraft(filter))
+  const applyFilter = () => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      next.delete('page')
+      for (const key of FILTER_PARAM_KEYS) {
+        const value = draft[key]
+        if (value && value !== 'all') next.set(key, value)
+        else next.delete(key)
+      }
+      return next
+    }, { replace: true })
+    setFilterOpen(false)
+  }
+  const clearAllFilters = () => {
+    setKeywordDraft('')
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous)
+      next.delete('q')
+      next.delete('page')
+      for (const key of FILTER_PARAM_KEYS) next.delete(key)
+      return next
+    }, { replace: true })
+  }
+
   async function exportCsv() {
     if (!accountId) return
     setExporting(true)
     try {
-      const dataset = await api.exportTransactions(accountId, { category, keyword })
+      // 导出必须套用同一组条件：屏幕上筛过的范围，导出的 CSV 里也得是这些行。
+      const dataset = await api.exportTransactions(accountId, {
+        category,
+        keyword,
+        direction,
+        currency,
+        from: bounds.from,
+        to: bounds.to,
+      })
       if (dataset.total === 0) {
         toast.show('当前筛选条件下没有可导出的流水', 'info')
         return
@@ -163,6 +289,29 @@ export function BillsPage() {
             )}
             <button type="submit" className="sr-only">搜索</button>
           </form>
+          <button
+            type="button"
+            onClick={() => setFilterOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={filterOpen}
+            className={`relative ml-auto inline-flex h-11 items-center gap-2 rounded-chip border px-3.5 text-[13px] font-medium transition-colors ${activeCount > 0
+              ? 'border-ink-deep bg-ink-deep text-ink-invert'
+              : 'border-line bg-surface text-ink-soft hover:border-line-strong hover:text-ink'}`}
+          >
+            <FilterIcon size={16} />
+            筛选
+            {activeCount > 0 && (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="num absolute -top-1.5 -right-1.5 grid min-w-[18px] place-items-center rounded-full bg-gold px-1 text-[11px] leading-[18px] font-semibold text-ink-invert"
+                >
+                  {activeCount}
+                </span>
+                <span className="sr-only">已选 {activeCount} 项</span>
+              </>
+            )}
+          </button>
         </div>
 
         <div className="mt-3 divide-y divide-line">
@@ -184,20 +333,13 @@ export function BillsPage() {
           {visibleTransactions?.items.length === 0 && (
             <EmptyState
               title={page > 1 ? '此页暂无流水' : '没有匹配的流水'}
-              description={page > 1 ? undefined : '换个分类或关键词再试试。'}
+              description={page > 1 ? undefined : '换个分类、关键词或筛选条件再试试。'}
               action={
                 <Button
                   size="sm"
                   onClick={() => {
                     if (page > 1) { setPage(1); return }
-                    setKeywordDraft('')
-                    setSearchParams(previous => {
-                      const next = new URLSearchParams(previous)
-                      next.delete('category')
-                      next.delete('q')
-                      next.delete('page')
-                      return next
-                    }, { replace: true })
+                    clearAllFilters()
                   }}
                 >
                   {page > 1 ? '回到第一页' : '清空筛选'}
@@ -216,6 +358,24 @@ export function BillsPage() {
           </nav>
         )}
       </Card>
+
+      <Drawer
+        open={filterOpen}
+        onClose={() => setFilterOpen(false)}
+        title="筛选"
+        description="同一资金账户下的流水，按条件缩小范围。"
+        footer={
+          <>
+            <Button block onClick={() => setDraft(DEFAULT_FILTER)}>重置</Button>
+            <Button block variant="ink" onClick={applyFilter}>应用</Button>
+          </>
+        }
+      >
+        <FilterGroup label="收支" options={DIRECTION_OPTIONS} value={draft.direction} onChange={(value) => setDraft(prev => ({ ...prev, direction: value }))} />
+        <FilterGroup label="分类" options={CATEGORY_OPTIONS} value={draft.category} onChange={(value) => setDraft(prev => ({ ...prev, category: value }))} />
+        <FilterGroup label="时间范围" options={RANGE_OPTIONS} value={draft.range} onChange={(value) => setDraft(prev => ({ ...prev, range: value }))} />
+        <FilterGroup label="币种" options={CURRENCY_OPTIONS} value={draft.currency} onChange={(value) => setDraft(prev => ({ ...prev, currency: value }))} />
+      </Drawer>
 
     </div>
   )

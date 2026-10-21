@@ -34,6 +34,10 @@ function internalRequest(amount) {
 
 resetDb()
 let account = loadDb().accounts[0]
+// 演示档案按 AUM 是白金（境外转账费全免）；本段要验证「本金 + 手续费一起预留」，
+// 先把档案落到普通档，手续费路径才会真的产生。
+loadDb().membership.tier = 'standard'
+loadDb().user.memberTier = 'standard'
 account.balance = account.available = 506_000
 persist()
 const held = await api.submitTransfer(request())

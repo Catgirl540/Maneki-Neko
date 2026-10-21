@@ -265,6 +265,13 @@ export const SlidersIcon = (p: IconProps) => (
   </Icon>
 )
 
+/** 漏斗：账单页的筛选抽屉入口 */
+export const FilterIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 5.5h16l-6.2 7.3v5.2L10.2 20v-7.2z" />
+  </Icon>
+)
+
 export const SparkleIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M12 3.5 13.7 9l5.5 1.8-5.5 1.9L12 18.3l-1.7-5.6L4.8 10.8 10.3 9z" />

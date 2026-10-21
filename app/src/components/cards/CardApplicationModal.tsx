@@ -325,7 +325,6 @@ export function CardApplicationModal({
           />
           <p className="mt-3 text-[12px] leading-relaxed text-ink-mute">
             支付密码用于扣款验证，与登录密码不同。连续输错 3 次会被锁定，需重新登录。
-            演示环境支付密码为 <span className="num text-ink-soft">888888</span>。
           </p>
         </section>
 

@@ -4,7 +4,8 @@
  * 规则（docs/product/cards-and-membership-proposal.md 已确认口径）：
  * - 每位客户每个卡组织（Visa / 银联）至多一张；active/locked/pending 占名额，replaced 不占。
  * - 换卡在同一笔操作里旧卡失效、新卡接替名额，不额外占名额。
- * - 演示档案为钻石会员：制卡/换卡费每年 2 次全免（含寄送费），第 3 次起按标价。
+ * - 演示档案当前按 AUM 评白金；本检查专门覆盖「钻石 2 次全免（含寄送）」路径，
+ *   所以把上月快照抬到钻石门槛（评定只读快照，不看当前余额）。
  */
 import assert from 'node:assert/strict'
 class MemoryStorage {
@@ -15,11 +16,15 @@ class MemoryStorage {
 }
 globalThis.window = { localStorage: new MemoryStorage(), sessionStorage: new MemoryStorage() }
 const { createMockApi } = await import('../app/src/api/mock/index.ts')
-const { loadDb, resetDb, CARD_PRODUCTS } = await import('../app/src/api/mock/db.ts')
+const { loadDb, resetDb, persist, CARD_PRODUCTS } = await import('../app/src/api/mock/db.ts')
 resetDb()
 const api = createMockApi()
 const sms = await api.sendSmsCode('13800138000')
 await api.login('13800138000', '123456', sms.demoCode)
+
+// 上月快照抬到钻石门槛（¥310 万）→ 首次评定落钻石，覆盖 2 次全免额度
+loadDb().assetSnapshots = loadDb().assetSnapshots.map((s) => ({ ...s, assets: 310_000_000 }))
+persist()
 
 const addr = { recipient: '林小满', phone: '13800138000', region: '上海市', city: '上海市', detail: '浦东新区世纪大道 100 号', postalCode: '200120' }
 const unionpay = CARD_PRODUCTS.find(p => p.network === 'unionpay')

@@ -141,9 +141,11 @@ export function TicketsPage() {
                 >
                   {TICKET_STATUS_LABEL[t.status]}
                 </span>
-                {t.priority === 'high' && (
+                {t.priority === 'vip' ? (
+                  <span className="ml-1 text-xs text-[var(--color-gold-deep)]">VIP</span>
+                ) : t.priority === 'high' ? (
                   <span className="ml-1 text-xs text-[var(--color-coral)]">急</span>
-                )}
+                ) : null}
               </td>
               <td className="font-mono text-xs">{t.ticketId}</td>
               <td>{t.customerName ?? t.customerId}</td>

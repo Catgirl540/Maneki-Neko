@@ -23,6 +23,7 @@ import { BankPicker } from '@/components/ui/BankPicker'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Field } from '@/components/ui/Field'
+import { Modal } from '@/components/ui/Modal'
 import { EmptyState, Segmented, Skeleton } from '@/components/ui/Segmented'
 import { AlertIcon, CheckIcon, UsersIcon } from '@/components/ui/icons'
 import {
@@ -43,6 +44,7 @@ import {
   CURRENCY_LABEL,
   formatAmount,
   formatCurrency,
+  formatDate,
   formatRate,
 } from '@/lib/format'
 import { parseAmountInput } from '@/lib/amountInput'
@@ -260,11 +262,18 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     [banks.data, activeBankCode, activeBankRegion],
   )
 
-  /** 常用收款人：按当前通道过滤 */
+  /** 历史收款人：按 lastUsedAt 排序，按当前通道过滤取前 4 */
   const quickPayees = useMemo(
     () => (payees.data ?? []).filter((p) => p.channel === channel).slice(0, 4),
     [payees.data, channel],
   )
+  /** 「全部」弹层里的完整列表：同一通道、不截断 */
+  const channelPayees = useMemo(
+    () => (payees.data ?? []).filter((p) => p.channel === channel),
+    [payees.data, channel],
+  )
+  const [payeesOpen, setPayeesOpen] = useState(false)
+  const [deletingPayeeId, setDeletingPayeeId] = useState<string | null>(null)
 
   const fee = quote?.fee ?? 0
   const total = amount + fee
@@ -414,6 +423,21 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
       setScope(p.scope)
       setAccountNo(formatBankAccount(p.accountNo ?? ''))
       setPayeeName(p.name)
+    }
+  }
+
+  /** 历史收款人管理：点行直接套用，行尾删除从收款人簿移除 */
+  async function removePayee(p: Payee) {
+    if (deletingPayeeId) return
+    setDeletingPayeeId(p.id)
+    try {
+      await api.deletePayee(p.id)
+      toast.show(`已删除收款人 ${p.name}`, 'info')
+      payees.reload()
+    } catch (error) {
+      toast.show(error instanceof Error ? error.message : '删除失败，请稍后重试', 'error')
+    } finally {
+      setDeletingPayeeId(null)
     }
   }
 
@@ -748,7 +772,16 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
           <Card className="float-up">
             {quickPayees.length > 0 && (
               <div className="mb-7">
-                <p className="mb-3 text-[13px] font-medium text-ink-soft">常用收款人</p>
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-[13px] font-medium text-ink-soft">历史收款人</p>
+                  <button
+                    type="button"
+                    onClick={() => setPayeesOpen(true)}
+                    className="text-[13px] font-medium text-gold-deep transition-colors hover:text-gold"
+                  >
+                    全部（{channelPayees.length}）
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-2.5">
                   {quickPayees.map((p) => (
                     <button
@@ -1298,7 +1331,49 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
         </Card>
       )}
 
-
+      <Modal
+        open={payeesOpen}
+        onClose={() => setPayeesOpen(false)}
+        title="历史收款人"
+        description="每次转账成功后自动记录，按最近使用排序；点选直接填入，也可以删除不再需要的。"
+        width="max-w-[520px]"
+      >
+        <div className="-mx-6 max-h-[420px] divide-y divide-line overflow-y-auto px-6">
+          {channelPayees.map((p) => (
+            <div key={p.id} className="flex items-center gap-3 py-3">
+              <button
+                type="button"
+                onClick={() => { applyPayee(p); setPayeesOpen(false) }}
+                className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:text-gold-deep"
+              >
+                <span className="grid size-9 shrink-0 place-items-center rounded-chip bg-sunk text-ink-mute">
+                  <UsersIcon size={16} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium text-ink">{p.name}</span>
+                  <span className="num mt-0.5 block truncate text-[12px] text-ink-mute">
+                    {p.bankName ? `${p.bankName} · ` : ''}{p.channel === 'fps'
+                      ? maskFpsValue(p.fpsMethod ?? 'mobile', (p.fpsMethod === 'account' ? p.accountNo : p.fpsId) ?? '')
+                      : maskBankAccount(p.accountNo ?? '')}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[11px] text-ink-mute">最近 {formatDate(p.lastUsedAt)}</span>
+              </button>
+              <button
+                type="button"
+                disabled={deletingPayeeId === p.id}
+                onClick={() => void removePayee(p)}
+                className="shrink-0 rounded-chip px-2 py-1 text-[12px] text-ink-mute transition-colors hover:bg-coral-wash hover:text-coral disabled:opacity-50"
+              >
+                {deletingPayeeId === p.id ? '删除中…' : '删除'}
+              </button>
+            </div>
+          ))}
+          {channelPayees.length === 0 && (
+            <p className="py-10 text-center text-[13px] text-ink-mute">当前通道还没有历史收款人。</p>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }

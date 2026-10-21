@@ -1,7 +1,9 @@
-import { CardIcon, ChartIcon, GlobalIcon, LockIcon, PigIcon, ShieldIcon, TransferIcon, UserIcon, WalletIcon } from '@/components/ui/icons'
+import { WEALTH_ROUTES } from '@/lib/wealth-workspace'
+import { CardIcon, ChartIcon, ChatIcon, GlobalIcon, LockIcon, PigIcon, ShieldIcon, TransferIcon, UserIcon, WalletIcon } from '@/components/ui/icons'
 
 export const navigationItems = [
-  { to: '/dashboard', label: '账户总览', Icon: WalletIcon, paths: ['/dashboard', '/support'] },
+  { to: '/dashboard', label: '总览', Icon: WalletIcon, paths: ['/dashboard'] },
+  { to: '/assistant', label: '智能助手', Icon: ChatIcon, paths: ['/assistant'] },
   { to: '/transfer', label: '转账与支付', Icon: TransferIcon, paths: ['/transfer', '/receiving'] },
   { to: '/cards', label: '银行卡', Icon: CardIcon, paths: ['/cards'] },
   { to: '/analysis', label: '账单与交易', Icon: ChartIcon, paths: ['/analysis', '/transactions'] },
@@ -27,23 +29,18 @@ export const serviceGroups = [
     { to: '/cashflow', label: '工资与备用金', Icon: WalletIcon },
     { to: '/credit', label: '借款与分期', Icon: WalletIcon },
   ] },
-  { title: '理财与储蓄', items: [
-    { to: '/wealth', label: '理财产品', Icon: ChartIcon },
-    { to: '/dashboard/savings', label: '存钱计划', Icon: PigIcon },
-    { to: '/wealth/cash-management', label: '现金管理', Icon: WalletIcon },
-    { to: '/wealth/investments', label: '投资与定投', Icon: ChartIcon },
-    { to: '/wealth/insurance', label: '保险保障', Icon: ShieldIcon },
-  ] },
+  { title: '理财与储蓄', items: WEALTH_ROUTES.map(item => ({ ...item, Icon: item.to === '/wealth/plans' ? PigIcon : ChartIcon })) },
   { title: '个人与安全', items: [
+    { to: '/wealth/insurance', label: '保险保障', Icon: ShieldIcon },
     { to: '/security', label: '安全设置', Icon: LockIcon },
-    { to: '/security/identity', label: '身份认证', Icon: UserIcon },
     { to: '/security/invitations', label: '邀请与奖励', Icon: UserIcon },
-    { to: '/security/membership', label: '会员等级', Icon: UserIcon },
+    { to: '/security/membership', label: '会员中心', Icon: UserIcon },
   ] },
 ]
 
 /** 精确查询参数优先，再匹配最长页面路径，避免总览与子页同时高亮。 */
 export function activeServiceTarget(pathname: string, search: string) {
+  if (pathname === '/wealth/cash-management') return '/wealth/products'
   const entries = serviceGroups.flatMap(group => group.items)
   const query = new URLSearchParams(search)
   return entries.filter(item => {

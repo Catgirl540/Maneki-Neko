@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { validateInvestPlan } from '../../../shared/invest-plan.mjs'
 import { api, ApiError } from '@/api'
 import type { Account, InvestPlan, InvestProduct, InvestmentsOverview } from '@/api/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -27,10 +29,11 @@ const CYCLES = [
   { value: '每月', label: '每月' },
 ]
 
-export function InvestPage() {
+export function InvestPage({ embedded = false }: { embedded?: boolean }) {
   const toast = useToast()
   const investments = useAsync<InvestmentsOverview>(() => api.getInvestments(), [])
   const accounts = useAsync<Account[]>(() => api.listAccounts(), [])
+  const eligibility = useAsync(() => api.getWealthOverview(), [])
   const [target, setTarget] = useState<InvestProduct | null>(null)
   const [planAction, setPlanAction] = useState<{ plan: InvestPlan; status: InvestPlan['status'] } | null>(null)
   const [amountText, setAmountText] = useState('')
@@ -42,7 +45,18 @@ export function InvestPage() {
 
   const account = useMemo(() => accounts.data?.find(account => account.currency === 'CNY') ?? null, [accounts.data])
 
+  function planBlockReason(product: InvestProduct): string | null {
+    if (eligibility.error) return '无法核验投资资格，请重试'
+    if (!eligibility.data) return '正在核验投资资格'
+    try {
+      validateInvestPlan(product, eligibility.data.risk, eligibility.data.account.opened, product.minAmount, '每月')
+      return null
+    } catch (error) { return error instanceof Error ? error.message : '当前不满足计划条件' }
+  }
+
   function openPlan(product: InvestProduct) {
+    const blocked = planBlockReason(product)
+    if (blocked) { toast.show(blocked, 'info'); return }
     setTarget(product)
     setAmountText(String(product.minAmount / 100))
     setCycle('每月')
@@ -52,6 +66,8 @@ export function InvestPage() {
 
   async function submitPlan() {
     if (!target || !account) return
+    const blocked = planBlockReason(target)
+    if (blocked) return setFormError(blocked)
     const amount = parseAmountInput(amountText)
     if (amount === null) return setFormError('请输入有效金额，最多两位小数')
     if (amount < target.minAmount) return setFormError(`该产品起投 ¥${formatAmount(target.minAmount)}`)
@@ -105,7 +121,9 @@ export function InvestPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">投资与定投</h1>
+      {!embedded && <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">投资与定投</h1>}
+      <p className="rounded-field border border-line bg-gold-tint px-4 py-3 text-[13px] text-ink-soft">当前仅保存和管理定投计划，自动扣款尚未开放。</p>
+      {eligibility.error ? <DataUnavailable message={eligibility.error} onRetry={eligibility.reload} /> : eligibility.data && (!eligibility.data.account.opened || !eligibility.data.risk.done || eligibility.data.risk.expired) && <div className="wealth-status"><span className="wealth-status-copy">创建或恢复定投前，请先开通理财并完成有效风险测评。</span><Link to="/wealth" className="text-[13px] text-gold-deep">去完成前置步骤 →</Link></div>}
 
       <Card className="float-up">
         <div className="flex flex-wrap items-end justify-between gap-6">
@@ -144,7 +162,7 @@ export function InvestPage() {
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '140ms' }}>
-        <CardHeader title="可投产品" />
+        <CardHeader title="定投产品目录" />
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           {data.products.map((product) => (
             <div key={product.id} className="flex flex-col rounded-tile border border-line bg-surface p-4">
@@ -161,7 +179,8 @@ export function InvestPage() {
                 <div className="flex justify-between"><dt>起投</dt><dd className="num text-ink">¥{formatAmount(product.minAmount)}</dd></div>
               </dl>
               <div className="mt-4">
-                <Button block variant="primary" size="sm" icon={<SparkleIcon size={15} />} disabled={!account} onClick={() => openPlan(product)}>新建计划</Button>
+                <Button block variant="primary" size="sm" icon={<SparkleIcon size={15} />} disabled={!account || Boolean(planBlockReason(product))} onClick={() => openPlan(product)}>新建计划</Button>
+                {planBlockReason(product) && <p className="mt-2 text-[12px] leading-relaxed text-ink-mute">{planBlockReason(product)}</p>}
               </div>
             </div>
           ))}
@@ -196,7 +215,7 @@ export function InvestPage() {
       >
         {target && (
           <div className="flex flex-col gap-4">
-            <Field label="每期金额" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} trailing={<span className="text-[13px] text-ink-mute">元</span>} hint={`起投 ¥${formatAmount(target.minAmount)}`} />
+            <Field label="每期金额" id="wealth-invest-amount" type="number" step="0.01" name="wealth-invest-amount" autoComplete="off" inputMode="decimal" value={amountText} onChange={(e) => setAmountText(e.target.value)} trailing={<span className="text-[13px] text-ink-mute">元</span>} hint={`起投 ¥${formatAmount(target.minAmount)}`} />
             <div>
               <p className="mb-2 text-[13px] font-medium text-ink-soft">定投周期</p>
               <Segmented disabled={busy} value={cycle} options={CYCLES} onChange={setCycle} />

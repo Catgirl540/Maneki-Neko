@@ -1,6 +1,8 @@
 /** Authenticated customer ↔ staff ticket channel. No shared employee/agent credential. */
 import { randomUUID, createHash } from 'node:crypto'
 import { redactSupportText } from '../shared/support.mjs'
+import { entitlements } from '../shared/membership.mjs'
+import { createDataCipher } from './database-crypto.mjs'
 const fail = (message, status = 400, code = 'INVALID_REQUEST') => Object.assign(new Error(message), { status, code })
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const stamp = () => new Date().toISOString()
@@ -11,6 +13,19 @@ const requiredText = (value, limit, name) => {
   return text
 }
 export async function createCustomerSupportApi({ db, auth }) {
+  // 会员等级存在加密域里；工单优先级按同一份 entitlements 规则派生。
+  const cipher = createDataCipher(':memory:')
+  async function customerPriority(ownerId) {
+    try {
+      const row = await db.prepare('SELECT payload_cipher FROM customer_membership_state WHERE owner_id = ?').get(ownerId)
+      if (!row) return 'normal'
+      const state = cipher.open(row.payload_cipher, `customer_membership_state:${ownerId}`)
+      return entitlements(state?.membership?.tier ?? 'standard').vipChannel ? 'vip' : 'normal'
+    } catch {
+      // 老档案没有会员域或密钥不可用：按普通工单处理，不影响转人工本身
+      return 'normal'
+    }
+  }
   if (process.env.BANK_AUTO_MIGRATE !== 'false') await db.exec(`CREATE TABLE IF NOT EXISTS customer_support_requests (
     owner_id TEXT NOT NULL, request_id TEXT NOT NULL, kind TEXT NOT NULL,
     ticket_id TEXT NOT NULL, result_id TEXT NOT NULL, payload_hash TEXT NOT NULL,
@@ -82,8 +97,9 @@ export async function createCustomerSupportApi({ db, auth }) {
       const safeTranscript = transcript.map(item => ({ role: item.role, text: redactSupportText(item.text) })).filter(item => item.text)
       const result = await mutation(ownerId, body, 'create', { reason, transcript: safeTranscript }, async () => {
         const id = `T_${randomUUID().replaceAll('-', '')}`, ts = stamp()
+        const priority = await customerPriority(ownerId)
         await db.prepare(`INSERT INTO tickets (id,customer_id,channel,reason,priority,status,assignee_id,created_by,agent_transcript,created_at,updated_at)
-          VALUES (?, ?, 'web', ?, 'normal', 'open', NULL, ?, ?, ?, ?)`).run(id, ownerId, reason, `customer:${ownerId}`, JSON.stringify(safeTranscript), ts, ts)
+          VALUES (?, ?, 'web', ?, ?, 'open', NULL, ?, ?, ?, ?)`).run(id, ownerId, reason, priority, `customer:${ownerId}`, JSON.stringify(safeTranscript), ts, ts)
         return { ticketId: id }
       })
       json(res, result.repeated ? 200 : 201, ticket(await owned(result.ticketId, ownerId))); return true

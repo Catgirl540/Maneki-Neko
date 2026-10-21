@@ -1,6 +1,6 @@
 # 存钱计划
 
-对应 `app/src/api/contract.ts` 的 `savings*` 接口，页面 `app/src/pages/SavingsPage.tsx`。
+对应 `app/src/api/contract.ts` 的 `savings*` 接口，页面 `app/src/pages/SavingsPage.tsx`，嵌入 `/wealth/plans` 的存钱目标页；旧 `/dashboard/savings` 兼容跳转。目标和凑整均保存计划数据，不新建资金账户，不将目标金额当作投资资产；自动归集尚未开放。
 
 ## 总览
 

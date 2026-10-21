@@ -29,6 +29,17 @@ export function formatMoney(cents: Cents, currency = '¥'): string {
 }
 
 /**
+ * 分 → 「¥128.5 万」。
+ *
+ * 会员 AUM / 门槛按产品文档用「万元」展示，保留到千位（0.1 万）。
+ * 整数万不补 `.0`，例如 ¥172 万。
+ */
+export function formatWan(cents: Cents): string {
+  const wan = Math.round((cents / 100 / 10_000) * 10) / 10
+  return `¥${wan.toLocaleString('zh-CN', { maximumFractionDigits: 1 })} 万`
+}
+
+/**
  * 分 → "+¥1,234.56" / "-¥1,234.56"。
  *
  * 与 `formatAmount(cents, { sign: true })` 的区别：那个给的是 "+1,234.56"（没币种）。

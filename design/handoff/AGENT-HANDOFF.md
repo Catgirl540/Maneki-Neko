@@ -1,36 +1,39 @@
 # 招财猫银行 · Agent 接手说明
 
-更新：2026-10-19。本次交接只整理文档，银行卡与会员新体系尚未实现、未部署。旧版交接中的 SQLite、裸 IP 发布和旧源码目录操作已退出当前流程；历史可通过 Git 查看。
+更新：2026-10-20。卡数量限制与会员制新方案均已在本地实现、未提交/未部署。旧版交接中的 SQLite、裸 IP 发布和旧源码目录操作已退出当前流程；历史可通过 Git 查看。
 
-**2026-10 进展：卡数量限制与统一会员等级已在本地实现并通过验收**（`tools/check-card-limit.mjs`、`tools/check-membership.mjs`、`check-single-account.mjs`、lint/build、服务端测试）。规则细节见 [银行卡与会员体系](../../docs/product/cards-and-membership-proposal.md)——该文已从草案转为现行规则说明。尚未提交到远端、未部署公网；存量客户档案的迁移按 `normalizeMembership`/档案迁移幂等执行，重复卡保留为历史记录不删除。
+**2026-10 进展：卡数量限制与会员制新方案已在本地实现并通过验收**（`tools/check-card-limit.mjs`、`tools/check-membership.mjs`、`check-single-account.mjs`、`check-registration.mjs`、lint/build、服务端测试）。会员规则细节见 [会员制规则设计](../../docs/product/membership-rules.md)（2026-10-20 用户定稿），卡数量限制见 [银行卡与会员体系](../../docs/product/cards-and-membership-proposal.md)（会员段落已标注历史）。尚未提交到远端、未部署公网；存量客户档案的迁移按 `normalizeMembership`/档案迁移幂等执行，重复卡保留为历史记录不删除。
 
 ## 1. 先读与当前任务
 
-先读根目录 `AGENTS.md`、[客户端版本](../../CLIENTS.md)、[账户模型](../../docs/product/account-model.md)，再读[银行卡与会员体系](../../docs/product/cards-and-membership-proposal.md)。
+先读根目录 `AGENTS.md`、[客户端版本](../../CLIENTS.md)、[账户模型](../../docs/product/account-model.md)，再读[会员制规则设计](../../docs/product/membership-rules.md)与[银行卡与会员体系](../../docs/product/cards-and-membership-proposal.md)。
 
-用户最新要求：**每位客户至多一张 Visa、一张银联，并设计类似 ZA 用户等级与微众会员的分级体系。** 用户随后确认统一客户会员等级并按建议稿门槛落地（白银开户即享、黄金日均 1 万、铂金 10 万、钻石 50 万），两部分均已实现。
+用户最新要求：**每位客户至多一张 Visa、一张银联；会员改为纯资产分层的新方案（删掉付费订阅）。** 2026-10-20 用户确认三条附加决策：旧的两项已接通权益（制卡/换卡费减免、换汇点差折扣）与新权益并存；AUM 按储蓄 + 理财持仓 + 现金管理全口径；新权益本轮全部落地（贵宾厅核销、理财优先购、VIP 工单优先、专属经理/顾问标识）。
 
 本轮开始时业务代码基线为已推送的 `main`，最新提交 `52b92ef`。本地目录 `/home/bigguga/文档/招财猫Bank`；仓库 `https://github.com/Catgirl540/Maneki-Neko`。接手先检查工作区及远端最新状态，不假定分支与服务器相同。
 
 ## 2. 已确认（均已实现）
 
 - Visa、银联各至多一张；使用中/锁定/寄送中占名额，replaced 不占；换卡原子接替名额；服务端强制（`CARD_NETWORK_LIMIT`，先于验密与收费）。
-- 统一客户会员等级四档：白银开户即享、黄金上月日均资产 ≥1 万、铂金 ≥10 万、钻石 ≥50 万；评级资产仅储蓄余额折人民币；北京时间日终快照、缺日按 0 计；惰性评定（读会员页/申卡/换汇触发）。
-- 权益：制卡/换卡费年度减免（黄金半价 1 次、铂金全免 1 次、钻石全免 2 次含寄送）+ 换汇点差折扣（9/8/7 折）；返现、加息为规划中不展示。
-- 旧月费套餐停止办理，收进 `membership.legacy` 只读；`subscribeMembership`/`cancelMembership` 接口与路由已移除。
+- 会员四档：普通（standard，开户即享，¥0）/ 金卡（≥ ¥10 万）/ 白金（≥ ¥50 万）/ 钻石（≥ ¥300 万），按**月均 AUM** 评定。
+- AUM = 资金账户折人民币余额（含外币按中间价）+ 理财持仓市值 + 现金管理余额；不含信用卡 / 授信额度。日终快照存当日 AUM，北京时间落档，缺日按 0 计。
+- 评定：每月 1 号按上月日均重算；**升级即时**（实时 AUM 达标当天升）；**降级连续 2 个评定周期不达标**才降（`belowPeriods` 缓冲）。惰性触发：会员中心 / 申卡 / 换汇等入口。
+- 权益统一由 `entitlements(tier)` 返回并在业务点消费：境外转账费减免（金卡+）、客服 VIP 工单（金卡+）、专属客户经理（白金+）、理财优先购窗口（白金+）、贵宾厅 2/6 次（白金/钻石）、专属理财顾问（钻石）、境外汇款手续费减免（钻石）；生日礼遇暂缓，字段保留但为 `false`。
+- 旧权益并存：制卡/换卡费年度减免（金卡半价 1 次、白金全免 1 次、钻石全免 2 次含寄送）+ 换汇点差折扣（9/8/7 折）。
+- 付费订阅彻底删除：`MembershipPlan`/`MembershipSubscription` 类型、订阅接口、`membership.legacy` 字段与 `user.memberLevel` 均已移除；`user.memberTier` 由 AUM 派生。
 - 存量重复卡保留为历史记录（replaced），不静默删除、作废或替用户换卡；阻止继续增发。
 - 一次性虚拟卡号派生自已占名额的实体卡，是临时凭证不额外占名额。
 
-待确认：规划中权益的结算方式与预算；卡面按等级区分的设计。
+待确认：生日礼遇的礼物形态（文档标「暂缓」）；卡面按等级区分的设计。
 
 ## 3. 实现位置
 
-- 共享规则：`shared/membership.mjs`（档位/评定/报价/快照），两侧各自注入自己的 `FX_MID_RATES`。
-- 服务端：`server/domain/index.mjs`（`openCard`/`replaceCard`/`getMembership`/换汇）、`server/domain/state.mjs`（种子、迁移、`persist` 记录快照）、`server/bank-api.mjs`（删两条订阅路由）、`server/database.mjs`（`assetSnapshots` 入 membership 域表）。
-- 网页 mock：`app/src/api/mock/{index,db}.ts` 镜像同一规则；`MOCK_SCHEMA` 升 21。
-- 页面：`MembershipPage`（会员等级）、`CardApplicationModal`（`held`/`feeQuote` 展示）、导航与安全中心文案。
-- 断言：`tools/check-card-limit.mjs`、`tools/check-membership.mjs`、`check-single-account.mjs`、`check-web-ui-corrections.mjs`。
-- 文档：`docs/api/cards.md`、`docs/api/profile.md`、`docs/api/README.md`、`framework/knowledge/03-cards.md`。
+- 共享规则：`shared/membership.mjs`（四档门槛 / `aumAssets` / `entitlements` / `evaluateMembership` 降级缓冲 / `applyRealtimeUpgrade` / `redeemLoungePass` / `transferFee` / 理财优先购闸门），两侧各自注入自己的 `FX_MID_RATES`。
+- 服务端：`server/domain/index.mjs`（`openCard`/`replaceCard`/`getMembership`/`redeemLoungePass`/转账费/理财优先购/工单优先级）、`server/domain/state.mjs`（种子、迁移、`persist` 记录 AUM 快照）、`server/bank-api.mjs`（`POST /api/membership/lounge-pass` 路由）、`server/support-api.mjs`（客户工单按会员等级写 `priority`）、`server/staff-api.mjs`（工单列表 VIP → 加急 → 普通，再按创建时间倒序）。
+- 网页 mock：`app/src/api/mock/{index,db}.ts` 镜像同一规则；`MOCK_SCHEMA` 仍为 21（会员结构在 `normalizeMembership` 内幂等修补）。
+- 页面：`MembershipPage`（会员中心：等级卡 + AUM 升级进度 + 权益 + 贵宾厅核销 + 等级对比 + 评定记录）、`WealthPage`（优先购徽标）、`SupportPage`/`ChatWorkspace`（专属客户经理 / 理财顾问标识）、`Sidebar`/`SecurityPage`（`memberTier` label）。
+- 断言：`tools/check-card-limit.mjs`、`tools/check-membership.mjs`、`check-single-account.mjs`、`check-registration.mjs`、`check-web-ui-corrections.mjs`、`check-transfer-holds.mjs`。
+- 文档：`docs/product/membership-rules.md`、`docs/product/cards-and-membership-proposal.md`、`docs/product/account-model.md`、`docs/api/profile.md`、`docs/api/README.md`、`framework/knowledge/03-cards.md`。
 - 注册新客户当前创建资金账户但不自动发卡；不要误将默认演示卡当作注册必须附送的卡。
 
 代码入口：

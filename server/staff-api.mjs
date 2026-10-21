@@ -547,7 +547,9 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
           where.push('created_by = ?')
           params.push(who.actorId)
         }
-        const sql = `SELECT * FROM tickets ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC LIMIT 100`
+        // 会员 VIP 工单优先，其次加急，同优先级按创建时间倒序
+        const sql = `SELECT * FROM tickets ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+          ORDER BY CASE priority WHEN 'vip' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, created_at DESC LIMIT 100`
         const rows = await db.prepare(sql).all(...params)
         await writeAudit({ actorId: who.actorId, action: 'ticket.list', result: 'ok' })
         const names = await readCustomerNames(db)

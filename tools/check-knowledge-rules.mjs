@@ -13,10 +13,15 @@ globalThis.window = { localStorage: new Storage(), sessionStorage: new Storage()
 const { createMockApi } = await import('../app/src/api/mock/index.ts')
 const { resetDb, loadDb, persist } = await import('../app/src/api/mock/db.ts')
 const { WEALTH_INVESTMENT_AGREEMENT, RISK_ACKNOWLEDGEMENT } = await import('../app/src/lib/wealth.ts')
+const { beijingMonth } = await import('../shared/membership.mjs')
 const corpus = JSON.parse(readFileSync(new URL('../framework/.generated/knowledge/corpus.json', import.meta.url)))
 const text = id => corpus.documents.flatMap(d => d.sections.map(s => ({ key: `${d.id}#${s.id}`, text: s.text }))).find(s => s.key === id).text
 const api = createMockApi()
 resetDb()
+// 本段验证跨境费率数学（千分之一、最低 50）；演示档案是白金（会员免收），
+// 先按普通档看基础费率，会员减免由 check-membership 单独覆盖。
+loadDb().membership.tier = 'standard'
+loadDb().user.memberTier = 'standard'
 const account = (await api.listAccounts())[0]
 assert.equal((await api.listAccounts()).length, 1)
 assert.match(text('kb-accounts#relations'), /只有一个储蓄资金账户/)
@@ -40,6 +45,11 @@ loadDb().accounts[0].balance = 1200; loadDb().accounts[0].available = 1200; pers
 assert.equal((await quote({})).maxAmount, 1200)
 console.log('PASS 境内/FPS 免费、跨境千分之一且最低50、通道限额/余额约束、四类预计到账')
 resetDb()
+// 制卡费减免由 check-card-limit / check-membership 覆盖；本段验证锁卡与换卡状态，
+// 按普通档看标价扣费（先把本月评定钉住，避免 openCard 惰性评定把等级升回白金）。
+loadDb().membership.tier = 'standard'
+loadDb().user.memberTier = 'standard'
+loadDb().membership.evaluation = { for: beijingMonth(), avgAssets: 0, coveredDays: 0, daysInMonth: 30, evaluatedAt: new Date().toISOString() }
 const db = loadDb(), card = (await api.listCards())[0]
 const before = (await api.listAccounts())[0].available
 await api.setCardLock(card.id, true)
@@ -48,6 +58,10 @@ assert.equal((await api.listAccounts())[0].available, before)
 await assert.rejects(api.updateCardSettings(card.id, { onlinePayment: true }), e => e.code === 'CARD_LOCKED')
 await api.setCardLock(card.id, false)
 assert.equal(card.status, 'active'); assert.equal(card.onlinePayment, false)
+// 锁卡/解锁的 persist 会按实时 AUM 触发即时升级；制卡费按标价验证前再落回普通档，
+// 并把余额降到金卡门槛以下，避免验密时的 persist 又按实时 AUM 升回白金。
+loadDb().membership.tier = 'standard'; loadDb().user.memberTier = 'standard'
+loadDb().accounts[0].balance = loadDb().accounts[0].available = 100_000
 const address = { recipient: '测试用户', phone: '13900139000', region: '上海市', city: '上海市', detail: '测试路一号101室', postalCode: '200000' }
 const product = (await api.listCardProducts())[0]
 const newCard = await api.openCard({ productCode: product.code, address, paymentPassword: '888888' })
@@ -89,3 +103,8 @@ assert.match(text('kb-wealth#subscribe'), /完整抄录/)
 assert.match(text('kb-wealth#risk'), /未完成测评不等于测评过期/)
 assert.match(text('kb-wealth#risk'), /个人状态必须以工具查询为准/)
 console.log('PASS 理财开户复用实名、测评前置/一年有效、过期禁止申购、风险确认抄录说明')
+
+assert.match(text('kb-wealth#demo-products'), /虚构的演示产品/)
+assert.match(text('kb-wealth#demo-products'), /内部演示口径/)
+assert.match(text('kb-wealth#holding-fees'), /尚未按持有天数分档/)
+console.log('PASS 虚构产品、行情/份额演示边界与持有期费率限制进入知识库')

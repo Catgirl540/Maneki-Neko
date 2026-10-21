@@ -65,6 +65,7 @@ export function RedeemModal({
     <Modal
       open
       onClose={onClose}
+      closeDisabled={submitting}
       width="max-w-[480px]"
       title={result ? '赎回已受理' : '赎回'}
       footer={
@@ -140,6 +141,12 @@ export function RedeemModal({
             <div className="min-w-0 flex-1">
               <Field
                 label="赎回份额"
+            id="wealth-redeem-shares"
+            type="number"
+            min="0"
+            step="any"
+            name="wealth-redeem-shares"
+            autoComplete="off"
                 value={sharesText}
                 inputMode="decimal"
                 onChange={(e) => setSharesText(e.target.value.replace(/[^\d.]/g, ''))}

@@ -38,7 +38,7 @@ PostgreSQL 档案 v20 保留退役账本行。旧分区 ID 和旧账号仍可解
 
 ## 流水（分页 / 筛选）
 
-`GET /api/accounts/:id/transactions?page=1&size=20&category=all&keyword=&currency=all`
+`GET /api/accounts/:id/transactions?page=1&size=20&category=all&keyword=&currency=all&direction=out&from=2026-10-01&to=2026-10-20`
 
 → `Paged<Transaction> = { items, page, size, total }`
 
@@ -47,7 +47,11 @@ PostgreSQL 档案 v20 保留退役账本行。旧分区 ID 和旧账号仍可解
 | `page` / `size` | 分页，`page` 从 1 开始 |
 | `category` | 交易分类，`all` 表示不限 |
 | `keyword` | 备注 / 对手方关键字 |
-| `currency` | **多币种对账**：按币种筛选，`all` 表示不限 |
+| `currency` | **多币种对账**：按币种筛选，`all` 表示不限；与请求分区的记账币种不符时返回空页 |
+| `direction` | 收支方向：`in` 收入 / `out` 支出 / `all`（或省略）不限；其他取值返回 400 `INVALID_DIRECTION` |
+| `from` / `to` | 本地自然日 `YYYY-MM-DD`，含首尾；省略表示不限；格式或日期非法返回 400 `INVALID_DATE` |
+
+筛选在服务端完成，`total` 与分页都按筛选后的集合计算——客户端不能只对当前页过滤，否则页数和总数会与筛选条件不符。`from`/`to` 按本地自然日比较，不是 UTC 日期切片。导出接口 `GET /api/accounts/:id/transactions/export` 接受同一组 `category` / `keyword` / `currency` / `direction` / `from` / `to`，保证「按当前筛选导出」与列表一致。
 
 `Transaction.category` 由服务端在记账时确定：`salary`、`transfer` 与带 `businessType` 的流水（如账户内换汇）按业务语义写死；其余支出流水经 OpenRouter 决策模型自动归类（见 [服务端说明](../../server/README.md#交易自动分类)），超时或响应无效时回落 `other`。客户端和助手都不能手动改分类，回落 `other` 不等于交易未发生。
 

@@ -76,6 +76,30 @@
     }
   }
 
+  /* 右侧抽屉：整块面板从右边缘推入。位移比 toast 大，
+     因为它是一整面墙在动，18px 会显得"没推出来"。 */
+  @keyframes drawer-in {
+    from {
+      opacity: 0.6;
+      transform: translateX(28px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes drawer-out {
+    from {
+      opacity: 1;
+      transform: none;
+    }
+    to {
+      opacity: 0.6;
+      transform: translateX(28px);
+    }
+  }
+
   /* 骨架屏的扫光：一条渐变横着扫过去 */
   @keyframes shimmer {
     from {
@@ -141,6 +165,15 @@
 
   .toast-out {
     animation: slide-out-right var(--duration-press) var(--ease-out-soft) both;
+  }
+
+  .drawer-in {
+    animation: drawer-in var(--duration-state) var(--ease-out-soft) both;
+  }
+
+  /* 退场用 --duration-press：和 Drawer.tsx 的 EXIT_MS 对齐 */
+  .drawer-out {
+    animation: drawer-out var(--duration-press) var(--ease-out-soft) both;
   }
 
   .nav-marker {

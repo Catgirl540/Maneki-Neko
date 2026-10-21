@@ -525,11 +525,12 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
   const before = await financialState(app)
   await t.test('every legacy financial contract route refuses live demo reads and writes', async () => {
     const safe = new Set(['login','register','logout','profile','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
-    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','identityOcr','identityLiveness','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll'])
+    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll'])
     const patches = new Set(['cardSettings','autoDebit','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
+    const deletes = new Set(['payee'])
     for (const [name, build] of Object.entries(routes)) {
       if (safe.has(name)) continue
-      const method = posts.has(name) ? 'POST' : patches.has(name) ? 'PATCH' : 'GET'
+      const method = posts.has(name) ? 'POST' : patches.has(name) ? 'PATCH' : deletes.has(name) ? 'DELETE' : 'GET'
       const result = await app.call(build(randomUUID()), { method, token, ...(method === 'GET' ? {} : { body: {} }) })
       assert.equal(result.status, 503, `${name} must refuse live legacy data`)
       assert.equal(result.body.code, 'BANK_NOT_CONNECTED', name)

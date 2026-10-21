@@ -50,6 +50,9 @@ const TICKET_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   resolved: [],
 }
 
+/** 工单排序：会员 VIP 优先，其次加急，普通最后 */
+const PRIORITY_RANK: Record<Ticket['priority'], number> = { vip: 0, high: 1, normal: 2 }
+
 function makeDemoTicket(): MockTicket {
   return {
     ticketId: 'T_demo0001',
@@ -254,7 +257,10 @@ export function createMockApi(): StaffApi {
       return ok<StaffUser>(session)
     },
 
-    listTickets: () => ok<Ticket[]>([...tickets.values()].map(({ messages: _m, ...t }) => t)),
+    // 会员 VIP 工单优先，其次加急，同优先级按创建时间倒序
+    listTickets: () => ok<Ticket[]>([...tickets.values()]
+      .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || b.createdAt.localeCompare(a.createdAt))
+      .map(({ messages: _m, ...t }) => t)),
     getTicket: (id) => {
       const t = tickets.get(id)
       if (!t) return Promise.reject(new ApiError('工单不存在', 404, 'NOT_FOUND'))

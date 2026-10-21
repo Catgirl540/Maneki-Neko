@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { WealthHeader } from '@/components/wealth/WealthHeader'
 import { api, ApiError } from '@/api'
 import type { CashManagement } from '@/api/types'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -33,7 +35,7 @@ export function CashManagementPage() {
     try {
       const updated = await api.updateCashSweep({ enabled: next })
       cash.setData(updated)
-      toast.show('自动转入设置已保存', 'success')
+      toast.show('规则已保存，自动执行尚未开放', 'success')
     } catch (err) {
       toast.show(err instanceof ApiError ? err.message : '操作失败，请稍后重试', 'error')
     } finally {
@@ -62,8 +64,9 @@ export function CashManagementPage() {
   const data = cash.data
 
   return (
-    <div className="flex flex-col gap-6">
-      <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">现金管理</h1>
+    <div className="wealth-workspace">
+      <WealthHeader title="现金管理设置" />
+      <Link to="/wealth/products?category=cash" className="text-[13px] text-gold-deep">← 返回现金管理产品</Link>
 
       <Card className="float-up">
         <div className="flex flex-wrap items-end justify-between gap-6">
@@ -77,12 +80,12 @@ export function CashManagementPage() {
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '70ms' }}>
-        <CardHeader title="自动转入设置" action={<Tag tone={data.sweepEnabled ? 'gold' : 'neutral'}>{data.sweepEnabled ? '已开启' : '未开启'}</Tag>} />
+        <CardHeader title="自动转入规则" action={<Tag tone="neutral">仅保存设置</Tag>} />
         <div className="mt-3 divide-y divide-line">
           <Row
             icon={<BoltIcon size={18} />}
-            title="活期自动转入"
-            description={`自动执行暂未开放`}
+            title="自动转入规则开关"
+            description="自动执行尚未开放，开关只保存规则"
             right={<Toggle label="自动转入活钱" checked={data.sweepEnabled} disabled={busy} onChange={(next) => void toggleSweep(next)} />}
           />
           <Row
@@ -91,25 +94,6 @@ export function CashManagementPage() {
             description={`已设置保留 ¥${formatAmount(data.sweepThreshold)}`}
             right={<Button size="sm" disabled={busy} onClick={() => openEdit(data)}>修改</Button>}
           />
-        </div>
-      </Card>
-
-      <Card className="float-up" style={{ animationDelay: '140ms' }}>
-        <CardHeader title="货币基金" />
-        <div className="mt-3 divide-y divide-line">
-          {data.products.map((product) => (
-            <div key={product.id} className="flex items-center gap-4 py-4">
-              <span className="grid size-10 shrink-0 place-items-center rounded-chip bg-gold-tint text-gold-deep"><PigIcon size={18} /></span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[15px] font-medium text-ink">{product.name}</span>
-                <span className="mt-0.5 block text-[13px] text-ink-mute">起投 ¥{formatAmount(product.minAmount)} · {product.flexible ? '随时可取' : '定期'}</span>
-              </span>
-              <span className="num shrink-0 text-right text-[15px] font-semibold text-ink">
-                {(product.sevenDayYield * 100).toFixed(2)}%
-                <span className="block text-[12px] font-normal text-ink-mute">7 日年化</span>
-              </span>
-            </div>
-          ))}
         </div>
       </Card>
 

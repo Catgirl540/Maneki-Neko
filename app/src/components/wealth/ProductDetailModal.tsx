@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
 import { Modal } from '@/components/ui/Modal'
 import { PinInput } from '@/components/ui/PinInput'
+import { Segmented } from '@/components/ui/Segmented'
 import { AlertIcon, CheckIcon } from '@/components/ui/icons'
 import { formatAmount, toCents } from '@/lib/format'
 import {
@@ -52,7 +53,9 @@ export function ProductDetailModal({
   onNeedAccount: () => void
 }) {
   const [view, setView] = useState<View>('detail')
+  const [detailSection, setDetailSection] = useState<'overview' | 'performance' | 'fees' | 'risk'>('overview')
   const [amountText, setAmountText] = useState('')
+  const [amountEditing, setAmountEditing] = useState(false)
   const [acknowledgement, setAcknowledgement] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -110,6 +113,7 @@ export function ProductDetailModal({
     <Modal
       open
       onClose={onClose}
+      closeDisabled={submitting}
       width="max-w-[600px]"
       title={view === 'detail' ? product.name : view === 'subscribe' ? '确认申购' : '申购已受理'}
       description={view === 'detail' ? `${product.issuer} · ${CATEGORY_LABEL[product.category]}` : undefined}
@@ -143,8 +147,10 @@ export function ProductDetailModal({
             <Button block onClick={() => setView('detail')} disabled={submitting}>
               返回
             </Button>
-            <Button block variant="primary" loading={submitting} onClick={() => void submit()}>
-              支付 ¥{formatAmount(amount)} 并申购
+            <Button block variant="primary" loading={submitting}
+              disabled={!matched || !Number.isSafeInteger(amount) || amount < product.minAmount || amount % product.stepAmount !== 0 || acknowledgement.trim() !== RISK_ACKNOWLEDGEMENT || !/^\d{6}$/.test(password)}
+              onClick={() => void submit()}>
+              {amount > 0 ? `支付 ¥${formatAmount(amount)} 并申购` : '确认申购'}
             </Button>
           </>
         ) : (
@@ -163,6 +169,10 @@ export function ProductDetailModal({
       <div className="flex max-h-[62vh] flex-col gap-5 overflow-y-auto pr-1">
         {view === 'detail' && (
           <>
+            <Segmented value={detailSection} onChange={setDetailSection} options={[
+              { value: 'overview', label: '产品概况' }, { value: 'performance', label: '净值走势' },
+              { value: 'fees', label: '费用规则' }, { value: 'risk', label: '资产与风险' },
+            ]} />
             <div className="flex flex-wrap items-center gap-2.5">
               <RiskBadge risk={product.risk} />
               <span className="inline-flex h-7 items-center rounded-chip border border-line bg-surface px-2.5 text-[12px] text-ink-soft">
@@ -202,7 +212,7 @@ export function ProductDetailModal({
             </dl>
 
             {/* 业绩比较基准 */}
-            <section className="rounded-field border border-line px-4 py-4">
+            <section hidden={detailSection !== 'overview'} className="rounded-field border border-line px-4 py-4">
               <p className="text-[12px] text-ink-mute">业绩比较基准</p>
               <p className="num mt-1.5 text-[15px] leading-relaxed font-medium text-ink">
                 {benchmarkLabel(product.benchmark)}
@@ -216,13 +226,13 @@ export function ProductDetailModal({
             </section>
 
             {/* 净值走势 */}
-            <section>
+            <section hidden={detailSection !== 'performance'}>
               <p className="mb-3 text-[13px] font-medium text-ink-soft">近 30 个交易日净值</p>
               <Sparkline points={product.navHistory} />
             </section>
 
             {/* 费用：两类分开列 —— 承担方式完全不同 */}
-            <section>
+            <section hidden={detailSection !== 'fees'}>
               <p className="mb-3 text-[13px] font-medium text-ink-soft">费用</p>
               <div className="flex flex-col gap-3">
                 <div className="rounded-field bg-sunk px-4 py-3.5">
@@ -259,7 +269,7 @@ export function ProductDetailModal({
             </section>
 
             {/* 前十大资产：穿透前 / 穿透后 */}
-            <section>
+            <section hidden={detailSection !== 'risk'}>
               <p className="mb-3 text-[13px] font-medium text-ink-soft">前十大资产</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {[false, true].map((lookThrough) => (
@@ -322,9 +332,17 @@ export function ProductDetailModal({
 
             <Field
               label="申购金额（元）"
+              id="wealth-subscribe-amount"
+              type="number"
+              min={product.minAmount / 100}
+              step="0.01"
+              name="wealth-subscribe-amount"
+              autoComplete="off"
+              readOnly={!amountEditing}
+              onFocus={() => setAmountEditing(true)}
               value={amountText}
               inputMode="decimal"
-              onChange={(e) => setAmountText(e.target.value.replace(/[^\d.]/g, ''))}
+              onChange={(e) => { if (amountEditing) setAmountText(e.target.value.replace(/[^\d.]/g, '')) }}
               placeholder={formatAmount(product.minAmount)}
             />
             <div className="flex flex-wrap gap-2">
@@ -363,32 +381,20 @@ export function ProductDetailModal({
               <p className="rounded-field border border-line bg-sunk px-4 py-3 text-[13px] leading-relaxed text-ink">
                 {RISK_ACKNOWLEDGEMENT}
               </p>
-              <div className="mt-2.5 flex items-end gap-2.5">
-                <div className="min-w-0 flex-1">
-                  <Field
-                    value={acknowledgement}
-                    onChange={(e) => setAcknowledgement(e.target.value)}
-                    placeholder="请完整抄录上面这句话"
-                    aria-label="抄录风险确认语句"
-                    error={
-                      acknowledgement.length > 0 &&
-                      acknowledgement.trim() !== RISK_ACKNOWLEDGEMENT
-                        ? '与要求语句不一致'
-                        : undefined
-                    }
-                  />
-                </div>
-                <Button
-                  className="h-14 shrink-0"
-                  onClick={() => setAcknowledgement(RISK_ACKNOWLEDGEMENT)}
-                >
-                  帮我填入
-                </Button>
-              </div>
-              <p className="mt-2 text-[12px] leading-relaxed text-ink-mute">
-                监管要求该语句由投资者本人抄录确认。「帮我填入」只是演示环境的输入协助，
-                服务端仍会逐字校验。
-              </p>
+              <label className="mt-3 block text-[12px] text-ink-soft" htmlFor="wealth-risk-acknowledgement">请本人完整抄录上方语句</label>
+              <textarea
+                id="wealth-risk-acknowledgement"
+                name="wealth-risk-acknowledgement"
+                autoComplete="off"
+                rows={2}
+                value={acknowledgement}
+                onChange={event => setAcknowledgement(event.target.value)}
+                placeholder="请完整抄录上面这句话"
+                aria-label="抄录风险确认语句"
+                aria-invalid={acknowledgement.length > 0 && acknowledgement.trim() !== RISK_ACKNOWLEDGEMENT}
+                className="mt-2 w-full resize-none rounded-field border border-line bg-surface p-3 text-[14px] text-ink outline-none focus:border-gold"
+              />
+              {acknowledgement.length > 0 && acknowledgement.trim() !== RISK_ACKNOWLEDGEMENT && <p role="alert" className="mt-2 text-[12px] text-coral">与要求语句不一致</p>}
             </section>
 
             <PinInput
@@ -399,7 +405,7 @@ export function ProductDetailModal({
               error={error && error.includes('支付密码') ? error : undefined}
             />
             <p className="text-[12px] leading-relaxed text-ink-mute">
-              演示环境支付密码为 <span className="num text-ink-soft">888888</span>，连续输错 3 次会锁定。
+              连续输错 3 次会锁定。
             </p>
 
             {error && !error.includes('支付密码') && (

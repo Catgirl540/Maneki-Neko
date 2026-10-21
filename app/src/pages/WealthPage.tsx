@@ -1,462 +1,216 @@
-import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { api } from '@/api'
-import type {
-  Account,
-  RiskAssessment,
-  RiskQuestion,
-  WealthAccount,
-  WealthCategory,
-  WealthOverview,
-  WealthProduct,
-} from '@/api/types'
+import type { RiskAssessment, WealthCategory, WealthHolding, WealthProduct } from '@/api/types'
 import { Button } from '@/components/ui/Button'
-import { Card, CardHeader } from '@/components/ui/Card'
-import { EmptyState, Segmented, Skeleton, Tag } from '@/components/ui/Segmented'
-import { AlertIcon, ChartIcon, ChevronRightIcon, ShieldIcon } from '@/components/ui/icons'
-import {
-  ProductDetailModal,
-} from '@/components/wealth/ProductDetailModal'
+import { EmptyState, Segmented } from '@/components/ui/Segmented'
+import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
+import { RevealToggle } from '@/components/ui/Reveal'
+import { Modal } from '@/components/ui/Modal'
+import { ChartIcon, ChevronRightIcon, PigIcon, ReceiptIcon, SearchIcon, ShieldIcon, WalletIcon } from '@/components/ui/icons'
+import { ProductDetailModal } from '@/components/wealth/ProductDetailModal'
 import { RedeemModal } from '@/components/wealth/RedeemModal'
 import { RiskAssessmentModal, RiskResultModal } from '@/components/wealth/RiskAssessmentModal'
 import { WealthAccountOpeningModal } from '@/components/wealth/WealthAccountOpeningModal'
-import { RiskBadge, ToleranceBadge } from '@/components/wealth/RiskBadge'
+import { RiskBadge } from '@/components/wealth/RiskBadge'
+import { WealthHeader } from '@/components/wealth/WealthHeader'
 import { useToast } from '@/components/ui/toast-context'
-import { cn } from '@/lib/cn'
-import { formatAmount } from '@/lib/format'
+import { formatAmount, formatDate } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
-import {
-  BENCHMARK_DISCLAIMER,
-  CATEGORY_LABEL,
-  RISK_PLAIN_LABEL,
-  TOLERANCE_LABEL,
-  WEALTH_DEPOSIT_WARNING,
-  benchmarkLabel,
-  maxRiskFor,
-} from '@/lib/wealth'
+import { useReveal } from '@/lib/useReveal'
+import { BENCHMARK_DISCLAIMER, CATEGORY_LABEL, TOLERANCE_LABEL, benchmarkLabel, canBuyRisk } from '@/lib/wealth'
+import { DEFAULT_WEALTH_FILTERS, filterWealthHoldings, filterWealthProducts, hasValidWealthRisk, type WealthFilters } from '@/lib/wealth-workspace'
+import { MEMBER_TIER_RULES } from '../../../shared/membership.mjs'
 
-type Filter = WealthCategory | 'all'
-
-const FILTERS: { value: Filter; label: string }[] = [
-  { value: 'all', label: '全部' },
-  { value: 'cash', label: '现金管理' },
-  { value: 'fixed', label: '固收' },
-  { value: 'mixed', label: '混合' },
-  { value: 'equity', label: '权益' },
-  { value: 'derivative', label: '衍生品' },
+const CATEGORIES: { value: WealthCategory | 'all'; label: string }[] = [
+  { value: 'all', label: '全部产品' }, { value: 'cash', label: '现金管理' }, { value: 'fixed', label: '固定收益' },
+  { value: 'mixed', label: '混合' }, { value: 'equity', label: '权益' }, { value: 'derivative', label: '衍生品' },
 ]
+type View = 'overview' | 'products' | 'holdings'
+const TITLES: Record<View, string> = { overview: '理财总览', products: '理财产品', holdings: '我的持仓' }
 
-export function WealthPage() {
+export function WealthPage({ view = 'overview' }: { view?: View }) {
   const toast = useToast()
-  const overview = useAsync<WealthOverview>(() => api.getWealthOverview(), [])
-  const products = useAsync<WealthProduct[]>(() => api.listWealthProducts(), [])
-  const questions = useAsync<RiskQuestion[]>(() => api.listRiskQuestions(), [])
-  // 资金账户：开理财账户时要指定，申购扣款走它
-  const accounts = useAsync<Account[]>(() => api.listAccounts(), [])
-
-  const [filter, setFilter] = useState<Filter>('all')
+  const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const overview = useAsync(() => api.getWealthOverview(), [])
+  const products = useAsync(() => api.listWealthProducts(), [])
+  const accounts = useAsync(() => api.listAccounts(), [])
   const [detail, setDetail] = useState<WealthProduct | null>(null)
   const [redeemTarget, setRedeemTarget] = useState<string | null>(null)
+  const [holdingDetail, setHoldingDetail] = useState<WealthHolding | null>(null)
   const [assessing, setAssessing] = useState(false)
   const [assessed, setAssessed] = useState<RiskAssessment | null>(null)
-  const [openingAccount, setOpeningAccount] = useState(false)
+  const [opening, setOpening] = useState(false)
+  const questions = useAsync(() => assessing || opening ? api.listRiskQuestions() : Promise.resolve(null), [assessing, opening])
+  const [compareCodes, setCompareCodes] = useState<string[]>([])
+  const [comparing, setComparing] = useState(false)
+  const [now] = useState(() => Date.now())
+  const candidate = params.get('category')
+  const category = CATEGORIES.some(item => item.value === candidate) ? candidate as WealthFilters['category'] : 'all'
+  const [filters, setFilters] = useState<WealthFilters>({ ...DEFAULT_WEALTH_FILTERS })
+  const [holdingFilter, setHoldingFilter] = useState<'all' | 'open' | 'closed'>('all')
+  const [activeHolding, setActiveHolding] = useState<string | null>(null)
+  const balance = useReveal()
 
-  const wealthAccount: WealthAccount | null = overview.data?.account ?? null
-  const opened = wealthAccount?.opened ?? false
-
+  if (!overview.data) return overview.error ? <DataUnavailable message={overview.error} onRetry={overview.reload} /> : <DataLoading />
   const data = overview.data
-  const risk = data?.risk
-  const assessable = risk?.done && !risk?.expired
-  const holdings = data?.holdings ?? []
-  const redeemHolding = holdings.find((h) => h.id === redeemTarget) ?? null
-  const redeemProduct = products.data?.find((p) => p.code === redeemHolding?.productCode) ?? null
-  const list = (products.data ?? []).filter((p) => filter === 'all' || p.category === filter)
+  const risk = data.risk
+  const validRisk = hasValidWealthRisk(risk)
+  const opened = data.account.opened
+  const catalog = products.data ?? []
+  const list = filterWealthProducts(catalog, { ...filters, category, matchedOnly: filters.matchedOnly && validRisk }, risk)
+  const holdings = filterWealthHoldings(data.holdings, holdingFilter)
+  const redeemHolding = data.holdings.find(holding => holding.id === redeemTarget)
+  const redeemProduct = catalog.find(product => product.code === redeemHolding?.productCode)
+  const compared = compareCodes.flatMap(code => catalog.find(product => product.code === code) ?? [])
+  const upcoming = data.holdings.filter(holding => holding.closed && holding.redeemableAt && Date.parse(holding.redeemableAt) >= now && Date.parse(holding.redeemableAt) - now <= 7 * 86400000)
+  const riskSoon = validRisk && Date.parse(risk.expiresAt) - now <= 30 * 86400000
 
-  const requests = [overview, products, questions, accounts]
-  const failed = requests.filter(state => state.error !== null && state.data === null)
-  if (failed.length) return <DataUnavailable message={failed[0]!.error!} onRetry={() => failed.forEach(state => state.reload())} />
-  if (requests.some(state => state.loading && state.data === null)) return <DataLoading />
+  function toggleCompare(code: string) {
+    if (compareCodes.includes(code)) setCompareCodes(compareCodes.filter(item => item !== code))
+    else if (compareCodes.length < 2) setCompareCodes([...compareCodes, code])
+    else toast.show('一次可比较两款产品，请先移除一款', 'info')
+  }
+  function setCategory(value: WealthFilters['category']) {
+    setParams(previous => { const next = new URLSearchParams(previous); if (value === 'all') next.delete('category'); else next.set('category', value); return next }, { replace: true })
+  }
+  const productError = products.error && <DataUnavailable message={products.error} onRetry={products.reload} />
 
-  return (
-    <div className="flex flex-col gap-7">
-      <header className="float-up flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">理财与储蓄</h1>
-        <div className="flex flex-wrap gap-2"><Link className="service-link" to="/dashboard/savings">存钱计划</Link><Link className="service-link" to="/wealth/cash-management">现金管理</Link><Link className="service-link" to="/wealth/investments">投资与定投</Link></div>
-      </header>
-
-      {/* 风险揭示：监管要求在醒目位置提示 */}
-      <p className="float-up flex items-start gap-2 rounded-field border border-coral-wash bg-coral-wash/40 px-4 py-3 text-[13px] font-medium text-coral">
-        <AlertIcon size={16} className="mt-0.5 shrink-0" />
-        {WEALTH_DEPOSIT_WARNING}
-      </p>
-
-      {/* 未开立理财账户：闸门。银行账户 ≠ 理财账户（和 ZA 一样） */}
-      {overview.loading ? (
-        <Skeleton className="h-52 rounded-card" />
-      ) : !opened ? (
-        <Card className="float-up">
-          <div className="flex flex-wrap items-center gap-6">
-            <span className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold-tint text-gold-deep">
-              <ShieldIcon size={24} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-[19px] leading-tight font-semibold text-ink">
-                还没有理财账户
-              </h2>
-            </div>
-          </div>
-
-          <ol className="mt-6 grid gap-4 border-t border-line pt-6 sm:grid-cols-3">
-            {[
-              { n: '1', title: '风险承受能力评估' },
-              { n: '2', title: '实名身份核验' },
-              { n: '3', title: '签署投资协议' },
-            ].map((item) => (
-              <li key={item.n} className="flex items-center gap-3">
-                <span className="grid size-7 shrink-0 place-items-center rounded-chip bg-sunk text-[12px] font-semibold text-ink-soft">
-                  {item.n}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[14px] font-medium text-ink">{item.title}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
-
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Button
-              variant="primary"
-              icon={<ShieldIcon size={18} />}
-              disabled={questions.loading || !questions.data?.length || !risk}
-              onClick={() => setOpeningAccount(true)}
-            >
-              开立理财账户
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-
-      {/* 总资产 + 风险测评：仅已开立时显示 */}
-      {opened && (
-      <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
-        <Card className="float-up">
-          <p className="text-[13px] text-ink-mute">理财总资产</p>
-          {overview.loading || !data ? (
-            <Skeleton className="mt-4 h-12 w-56" />
-          ) : (
-            <>
-              <p className="num mt-3 text-[clamp(30px,4.2vw,42px)] leading-none font-bold tracking-[-0.03em] text-ink">
-                ¥{formatAmount(data.totalValue)}
-              </p>
-              <dl className="mt-6 grid grid-cols-2 gap-4 border-t border-line pt-5 sm:grid-cols-3">
-                <div className="flex items-baseline justify-between gap-3 sm:block">
-                  <dt className="text-[12px] text-ink-mute">累计收益</dt>
-                  <dd
-                    className={cn(
-                      'num text-[17px] font-semibold sm:mt-1.5',
-                      data.totalProfit >= 0 ? 'text-blue' : 'text-coral',
-                    )}
-                  >
-                    {data.totalProfit >= 0 ? '+' : '-'}¥{formatAmount(Math.abs(data.totalProfit))}
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-3 sm:block sm:border-l sm:border-line sm:pl-4">
-                  <dt className="text-[12px] text-ink-mute">昨日收益</dt>
-                  <dd
-                    className={cn(
-                      'num text-[17px] font-semibold sm:mt-1.5',
-                      data.yesterdayProfit >= 0 ? 'text-blue' : 'text-coral',
-                    )}
-                  >
-                    {data.yesterdayProfit >= 0 ? '+' : '-'}¥
-                    {formatAmount(Math.abs(data.yesterdayProfit))}
-                  </dd>
-                </div>
-                <div className="flex items-baseline justify-between gap-3 sm:block sm:border-l sm:border-line sm:pl-4">
-                  <dt className="text-[12px] text-ink-mute">投入本金</dt>
-                  <dd className="num text-[17px] font-semibold text-ink sm:mt-1.5">
-                    ¥{formatAmount(data.totalPrincipal)}
-                  </dd>
-                </div>
-              </dl>
-            </>
-          )}
-        </Card>
-
-        <Card className="float-up" style={{ animationDelay: '60ms' }}>
-          <CardHeader
-            title="风险承受能力"
-            action={
-              assessable && risk?.level ? (
-                <ToleranceBadge level={risk!.level} />
-              ) : (
-                <Tag tone="coral">{risk?.expired && risk.done ? '已过期' : '未评估'}</Tag>
-              )
-            }
-          />
-          {overview.loading || !risk ? (
-            <Skeleton className="mt-4 h-20 w-full" />
-          ) : assessable ? (
-            <>
-              <p className="mt-4 text-[14px] leading-relaxed text-ink-soft">
-                可购买 <span className="font-medium text-ink">{maxRiskFor(risk.level)}</span>（
-                {RISK_PLAIN_LABEL[maxRiskFor(risk.level)]}）及以下风险等级的产品。
-              </p>
-              <p className="num mt-2 text-[12px] text-ink-mute">
-                有效期至 {risk.expiresAt.slice(0, 10)}
-              </p>
-              <Button className="mt-5" block icon={<ShieldIcon size={18} />} onClick={() => setAssessing(true)}>
-                重新评估
-              </Button>
-            </>
-          ) : (
-            <>
-              <p className="mt-4 text-[14px] leading-relaxed text-ink-soft">
-                {risk.expired && risk.done
-                  ? '评估已过期，请重新评估。'
-                  : '购买前请完成风险评估。'}
-              </p>
-              <Button
-                variant="primary"
-                className="mt-5"
-                block
-                icon={<ShieldIcon size={18} />}
-                onClick={() => setAssessing(true)}
-                disabled={questions.loading || !questions.data?.length}
-              >
-                开始评估（6 题）
-              </Button>
-            </>
-          )}
-        </Card>
+  return <div className="wealth-workspace">
+    <WealthHeader title={TITLES[view]} />
+    <div className="wealth-status">
+      <ShieldIcon size={18} />
+      <div className="wealth-status-copy"><strong>{opened ? '理财已开通' : '尚未开通理财'}</strong>
+        {validRisk ? <>{risk.level && TOLERANCE_LABEL[risk.level]} · 测评有效至 {formatDate(risk.expiresAt)}</> : risk.done && risk.expired ? '风险测评已过期' : '购买前需完成风险测评'}
       </div>
-      )}
-
-      {/* 我的持仓 */}
-      {opened && (
-      <Card className="float-up" style={{ animationDelay: '120ms' }}>
-        <CardHeader
-          title="我的持仓"
-          action={<span className="text-[13px] text-ink-mute">共 {holdings.length} 笔</span>}
-        />
-        <div className="mt-3 divide-y divide-line">
-          {overview.loading &&
-            Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="py-4">
-                <Skeleton className="h-12 w-full" />
-              </div>
-            ))}
-
-          {!overview.loading && holdings.length === 0 && (
-            <EmptyState title="还没有理财持仓" description="从下面的产品超市挑一只开始。" />
-          )}
-
-          {holdings.map((h) => {
-            const closed = h.closed
-            return (
-              <div key={h.id} className="flex flex-wrap items-center gap-4 py-4">
-                <span className="grid size-10 shrink-0 place-items-center rounded-chip bg-gold-tint text-gold-deep">
-                  <ChartIcon size={20} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] font-medium text-ink">
-                    {h.productName}
-                  </span>
-                  <span className="num mt-1 block text-[12px] text-ink-mute">
-                    {h.shares.toFixed(2)} 份 · 买入净值 {h.costNav.toFixed(4)}
-                    {closed ? ` · 封闭至 ${h.redeemableAt!.slice(0, 10)}` : ' · 可随时赎回'}
-                  </span>
-                </span>
-                <span className="text-right">
-                  <span className="num block text-[15px] font-semibold text-ink">
-                    ¥{formatAmount(h.marketValue)}
-                  </span>
-                  <span
-                    className={cn(
-                      'num mt-0.5 block text-[12px]',
-                      h.profit >= 0 ? 'text-blue' : 'text-coral',
-                    )}
-                  >
-                    {h.profit >= 0 ? '+' : '-'}¥{formatAmount(Math.abs(h.profit))}
-                    {' · '}
-                    {(h.profitRate * 100).toFixed(2)}%
-                  </span>
-                </span>
-                <Button size="sm" onClick={() => setRedeemTarget(h.id)}>
-                  赎回
-                </Button>
-              </div>
-            )
-          })}
-        </div>
-      </Card>
-      )}
-
-      {/* 产品超市 */}
-      <Card className="float-up" style={{ animationDelay: '180ms' }}>
-        <CardHeader
-          title="产品超市"
-          action={
-            assessable ? (
-              <span className="text-[13px] text-ink-mute">
-                可购买 {maxRiskFor(risk!.level)} 及以下
-              </span>
-            ) : (
-              <span className="text-[13px] text-coral">完成评估后可购买</span>
-            )
-          }
-        />
-        <div className="mt-4">
-          <Segmented value={filter} options={FILTERS} onChange={setFilter} className="flex-wrap" />
-        </div>
-
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          {products.loading &&
-            Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-40 rounded-card" />
-            ))}
-
-          {list.map((p) => {
-            const purchasable = assessable && maxRiskFor(risk!.level) >= p.risk
-            return (
-              <button
-                key={p.code}
-                type="button"
-                onClick={() => setDetail(p)}
-                className="flex min-w-0 flex-col rounded-card border border-line bg-surface p-5 text-left transition-colors hover:border-line-strong"
-              >
-                <span className="flex items-start justify-between gap-3">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[15px] font-medium text-ink">{p.name}</span>
-                    <span className="mt-1 block text-[12px] text-ink-mute">
-                      {p.issuer} · {CATEGORY_LABEL[p.category]}
-                    </span>
-                  </span>
-                  <RiskBadge risk={p.risk} />
-                </span>
-
-                <span className="mt-4 flex items-end justify-between gap-3">
-                  <span>
-                    <span className="num block text-[22px] leading-none font-bold text-ink">
-                      {p.sevenDayYield != null
-                        ? `${(p.sevenDayYield * 100).toFixed(2)}%`
-                        : p.nav.toFixed(4)}
-                    </span>
-                    <span className="mt-1.5 block text-[12px] text-ink-mute">
-                      {p.sevenDayYield != null ? '七日年化' : '单位净值'}
-                    </span>
-                  </span>
-                  <span className="text-right">
-                    <span className="num block text-[13px] text-ink-soft">{p.term}</span>
-                    <span className="num mt-1.5 block text-[12px] text-ink-mute">
-                      {formatAmount(p.minAmount)} 元起
-                    </span>
-                  </span>
-                </span>
-
-                <span className="mt-4 block border-t border-line pt-3.5 text-[12px] leading-relaxed text-ink-mute">
-                  业绩比较基准 {benchmarkLabel(p.benchmark)}
-                </span>
-
-                <span className="mt-3 flex items-center gap-2 text-[12px]">
-                  {!risk?.done ? (
-                    <span className="text-ink-mute">需先完成风险测评</span>
-                  ) : risk.expired ? (
-                    <span className="text-gold-deep">测评已过期，需重新评估</span>
-                  ) : purchasable ? (
-                    <span className="text-gold-deep">查看详情</span>
-                  ) : (
-                    <span className="text-coral">超出你的风险承受能力</span>
-                  )}
-                  <ChevronRightIcon size={14} className="ml-auto text-ink-mute" />
-                </span>
-              </button>
-            )
-          })}
-
-          {!products.loading && list.length === 0 && (
-            <div className="lg:col-span-2">
-              <EmptyState title="该分类下暂无产品" />
-            </div>
-          )}
-        </div>
-
-        <p className="mt-5 text-[12px] leading-relaxed text-ink-mute">{BENCHMARK_DISCLAIMER}</p>
-      </Card>
-
-      {/* —— 弹层 —— */}
-      {assessing && questions.data && (
-        <RiskAssessmentModal
-          questions={questions.data}
-          onClose={() => setAssessing(false)}
-          onDone={(result) => {
-            setAssessing(false)
-            setAssessed(result)
-            overview.reload()
-          }}
-        />
-      )}
-
-      {assessed && (
-        <RiskResultModal
-          result={assessed}
-          onClose={() => {
-            setAssessed(null)
-            toast.show(`风险承受能力已更新为 ${assessed.level}（${assessed.level ? TOLERANCE_LABEL[assessed.level] : '未评估'}）`, 'success')
-          }}
-        />
-      )}
-
-      {detail && risk && (
-        <ProductDetailModal
-          product={detail}
-          risk={risk}
-          accountOpened={opened}
-          onClose={() => setDetail(null)}
-          onNeedAccount={() => {
-            setDetail(null)
-            setOpeningAccount(true)
-          }}
-          onNeedAssessment={() => {
-            setDetail(null)
-            setAssessing(true)
-          }}
-          onSubscribed={() => {
-            setDetail(null)
-            overview.reload()
-            toast.show('申购已受理，可在「我的持仓」查看', 'success')
-          }}
-        />
-      )}
-
-      {openingAccount && risk && questions.data && (
-        <WealthAccountOpeningModal
-          accounts={accounts.data ?? []}
-          questions={questions.data}
-          risk={risk}
-          onClose={() => setOpeningAccount(false)}
-          onRiskUpdated={() => overview.reload()}
-          onOpened={(acc) => {
-            setOpeningAccount(false)
-            overview.reload()
-            toast.show(`理财账户已开立（${acc.accountNo}），可以申购了`, 'success')
-          }}
-        />
-      )}
-
-      {redeemHolding && redeemProduct && (
-        <RedeemModal
-          holding={redeemHolding}
-          product={redeemProduct}
-          onClose={() => setRedeemTarget(null)}
-          onDone={() => {
-            setRedeemTarget(null)
-            overview.reload()
-            toast.show('赎回已受理，款项将于 T+1 个工作日到账', 'success')
-          }}
-        />
-      )}
+      <Button size="sm" onClick={() => opened ? setAssessing(true) : setOpening(true)}>{opened ? validRisk ? '重新测评' : '完成测评' : '开通理财'}</Button>
     </div>
-  )
+    {overview.error && <DataUnavailable message={overview.error} onRetry={overview.reload} />}
+
+    {view === 'overview' && <>
+      <div className="wealth-hero">
+        <div className="wealth-hero-main">
+          <div className="wealth-hero-label">理财持仓市值 · CNY<RevealToggle shown={balance.shown} onToggle={balance.toggle} label={balance.shown ? '隐藏理财资产' : '显示理财资产'} /></div>
+          <p className="wealth-hero-value">{balance.shown ? `¥${formatAmount(data.totalValue)}` : '¥••••••'}</p>
+          <dl className="wealth-metrics">
+            <div><dt>累计盈亏</dt><dd className={data.totalProfit >= 0 ? 'text-blue' : 'text-coral'}>{balance.shown ? signed(data.totalProfit) : '••••••'}</dd></div>
+            <div><dt>昨日收益</dt><dd className={data.yesterdayProfit >= 0 ? 'text-blue' : 'text-coral'}>{balance.shown ? signed(data.yesterdayProfit) : '••••••'}</dd></div>
+            <div><dt>投入本金</dt><dd>{balance.shown ? `¥${formatAmount(data.totalPrincipal)}` : '••••••'}</dd></div>
+          </dl>
+        </div>
+        <div className="wealth-shortcuts">
+          <Link to="/wealth/products"><ChartIcon size={21} />浏览产品</Link>
+          <Link to="/wealth/holdings"><WalletIcon size={21} />查看持仓 / 赎回</Link>
+          <Link to="/wealth/plans"><PigIcon size={21} />存钱目标</Link>
+          <Link to="/wealth/plans?tab=invest"><ReceiptIcon size={21} />定投计划</Link>
+        </div>
+      </div>
+      <div className="wealth-two-columns">
+        <section className="wealth-section">
+          <SectionTitle title="我的持仓" to="/wealth/holdings" />
+          {data.holdings.length ? data.holdings.slice(0, 3).map(holding => <HoldingRow key={holding.id} holding={holding} shown={balance.shown} onDetail={() => setHoldingDetail(holding)} />) : <EmptyState title="还没有理财持仓" description="先了解产品，再决定如何投资。" action={<Link className="service-link" to="/wealth/products">浏览理财产品</Link>} />}
+        </section>
+        <section className="wealth-section">
+          <SectionTitle title="待处理事项" />
+          <div>
+            {!opened && <div className="wealth-task"><ShieldIcon size={18} /><p>开通投资资格，使用现有储蓄账户结算。</p><button onClick={() => setOpening(true)}>去开通</button></div>}
+            {(!validRisk || riskSoon) && <div className="wealth-task"><ChartIcon size={18} /><p>{!risk.done ? '首次购买前需要完成风险测评' : risk.expired ? '测评已过期，购买前请重新评估' : '风险测评将在 30 天内到期'}</p><button onClick={() => setAssessing(true)}>去测评</button></div>}
+            {upcoming.map(holding => <div className="wealth-task" key={holding.id}><WalletIcon size={18} /><p>{holding.productName}<br />{formatDate(holding.redeemableAt!)} 结束封闭期</p><Link to="/wealth/holdings">查看</Link></div>)}
+            {opened && validRisk && !riskSoon && !upcoming.length && <EmptyState title="暂无待处理事项" />}
+          </div>
+        </section>
+      </div>
+      <section>
+        <SectionTitle title="了解不同投资选择" to="/wealth/products" />
+        {productError || (products.loading ? <DataLoading /> : <div className="wealth-product-grid">{catalog.slice(0, 3).map(product => <ProductTile key={product.code} product={product} onClick={() => setDetail(product)} />)}</div>)}
+        {products.data?.length === 0 && <EmptyState title="暂无在售产品" />}
+      </section>
+      <p className="text-[12px] leading-relaxed text-ink-mute">{BENCHMARK_DISCLAIMER}</p>
+    </>}
+
+    {view === 'products' && <>
+      <section className="wealth-section">
+        <Segmented value={category} options={CATEGORIES} onChange={setCategory} className="flex-wrap" />
+        <div className="wealth-filters">
+          <label className="wealth-search"><SearchIcon size={17} /><input type="search" aria-label="搜索理财产品" placeholder="产品名称、代码或发行方" value={filters.keyword} onChange={event => setFilters({ ...filters, keyword: event.target.value })} /></label>
+          <select aria-label="产品风险等级" value={filters.risk} onChange={event => setFilters({ ...filters, risk: event.target.value })}><option value="all">全部风险</option>{['R1', 'R2', 'R3', 'R4', 'R5'].map(level => <option key={level}>{level}</option>)}</select>
+          <select aria-label="赎回开放条件" value={filters.liquidity} onChange={event => setFilters({ ...filters, liquidity: event.target.value as WealthFilters['liquidity'] })}><option value="all">全部期限</option><option value="open">开放式</option><option value="closed">有封闭期</option></select>
+          <select aria-label="起购金额上限" value={filters.maxMinimum ?? ''} onChange={event => setFilters({ ...filters, maxMinimum: event.target.value ? Number(event.target.value) : null })}><option value="">不限起购金额</option><option value="10000">100 元及以下</option><option value="100000">1,000 元及以下</option><option value="1000000">10,000 元及以下</option></select>
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-3 text-[12px] text-ink-mute">
+          <span>{products.data ? `${list.length} 款产品` : '加载产品中'}</span>
+          <label className="flex items-center gap-2"><input type="checkbox" className="accent-gold" disabled={!validRisk} checked={filters.matchedOnly && validRisk} onChange={event => setFilters({ ...filters, matchedOnly: event.target.checked })} />仅看风险匹配{!validRisk && '（需先测评）'}</label>
+        </div>
+        {category === 'cash' && <Link to="/wealth/cash-management" className="mt-4 inline-flex items-center gap-1 text-[13px] text-gold-deep">查看已有活钱余额与转入设置<ChevronRightIcon size={14} /></Link>}
+        {productError || (products.loading ? <DataLoading /> : <div className="wealth-table-scroll mt-5"><table className="wealth-table">
+          <thead><tr><th scope="col">产品</th><th scope="col">净值 / 七日年化</th><th scope="col">起购金额</th><th scope="col">期限与流动性</th><th scope="col">操作</th></tr></thead>
+          <tbody>{list.map(product => <tr key={product.code}>
+            <td><button className="text-left" onClick={() => setDetail(product)}><strong>{product.name}</strong><small>{product.code} · {product.issuer}</small></button><span className="mt-2 block"><RiskBadge risk={product.risk} /></span><small>{!risk.done ? '需先完成风险测评' : risk.expired ? '测评已过期，需重新评估' : canBuyRisk(risk.level, product.risk) ? '风险匹配' : '超出你的风险承受能力'}</small>
+              {product.priorityOpenAt && product.priorityTier && Date.parse(product.priorityOpenAt) > now && <small>{MEMBER_TIER_RULES[product.priorityTier].label}优先购至 {formatDate(product.priorityOpenAt)}</small>}</td>
+            <td><strong className="num text-[18px]">{product.sevenDayYield == null ? product.nav.toFixed(4) : `${(product.sevenDayYield * 100).toFixed(2)}%`}</strong><small>{product.sevenDayYield == null ? '单位净值' : '七日年化'} · {product.navDate}</small></td>
+            <td className="num">¥{formatAmount(product.minAmount)}</td><td>{product.term}<small>{product.openEnded ? '开放式，按规则赎回' : '封闭期内不可赎回'}</small></td>
+            <td><Button size="sm" onClick={() => setDetail(product)}>详情</Button><label className="mt-3 flex items-center gap-2 text-[12px] text-ink-mute"><input type="checkbox" aria-label={`比较 ${product.name}`} className="accent-gold" checked={compareCodes.includes(product.code)} onChange={() => toggleCompare(product.code)} />比较</label></td>
+          </tr>)}</tbody>
+        </table></div>)}
+        {products.data && list.length === 0 && <EmptyState title="没有符合条件的产品" action={<Button size="sm" onClick={() => { setFilters(DEFAULT_WEALTH_FILTERS); setCategory('all') }}>清空筛选</Button>} />}
+      </section>
+      <p className="text-[12px] leading-relaxed text-ink-mute">{BENCHMARK_DISCLAIMER}</p>
+      {compareCodes.length > 0 && <div className="wealth-compare-tray"><p>已选 {compareCodes.length}/2 款：{compared.map(product => product.name).join('、')}</p><Button size="sm" variant="ghost" onClick={() => setCompareCodes([])}>清空</Button><Button size="sm" variant="primary" disabled={compared.length !== 2} onClick={() => setComparing(true)}>开始比较</Button></div>}
+    </>}
+
+    {view === 'holdings' && <>
+      <section className="wealth-section">
+        <div className="flex items-center justify-between"><SectionTitle title="持仓资产 · CNY" /><RevealToggle shown={balance.shown} onToggle={balance.toggle} label={balance.shown ? '隐藏持仓金额' : '显示持仓金额'} /></div>
+        <dl className="wealth-metrics"><div><dt>持有市值</dt><dd>{balance.shown ? `¥${formatAmount(data.totalValue)}` : '¥••••••'}</dd></div><div><dt>投入本金</dt><dd>{balance.shown ? `¥${formatAmount(data.totalPrincipal)}` : '¥••••••'}</dd></div><div><dt>持仓盈亏</dt><dd className={data.totalProfit >= 0 ? 'text-blue' : 'text-coral'}>{balance.shown ? signed(data.totalProfit) : '••••••'}</dd></div></dl>
+      </section>
+      <section className="wealth-section">
+        <div className="wealth-section-heading"><Segmented value={holdingFilter} options={[{ value: 'all', label: '全部持仓' }, { value: 'open', label: '可赎回' }, { value: 'closed', label: '封闭期内' }]} onChange={setHoldingFilter} /><span className="text-[12px] text-ink-mute">{holdings.length} 笔</span></div>
+        {holdings.map(holding => <HoldingRow key={holding.id} holding={holding} shown={balance.shown} onDetail={() => setHoldingDetail(holding)} onRedeem={() => setRedeemTarget(holding.id)} redeemDisabled={holding.closed || !catalog.some(product => product.code === holding.productCode)} />)}
+        {!holdings.length && <EmptyState title={data.holdings.length ? '此分类暂无持仓' : '还没有理财持仓'} action={<Link className="service-link" to="/wealth/products">浏览理财产品</Link>} />}
+        {productError}
+      </section>
+      {data.holdings.length > 0 && <section className="wealth-section"><SectionTitle title="持仓分布" /><div className="flex flex-col gap-4">{Object.entries(CATEGORY_LABEL).flatMap(([key, label]) => {
+        const value = data.holdings.filter(holding => holding.category === key).reduce((sum, holding) => sum + holding.marketValue, 0)
+        if (value <= 0) return []
+        const ratio = data.totalValue > 0 ? value / data.totalValue : 0
+        return [<div key={key} className="grid grid-cols-[150px_minmax(0,1fr)_60px] items-center gap-4 text-[13px] text-ink-soft" onPointerEnter={() => setActiveHolding(key)} onPointerLeave={() => setActiveHolding(null)}><span>{label}</span><div className="h-2 overflow-hidden rounded bg-sunk"><div className="h-full rounded bg-gold transition-opacity" style={{ width: `${ratio * 100}%`, opacity: activeHolding && activeHolding !== key ? 0.35 : 1 }} /></div><span className="num text-right">{(ratio * 100).toFixed(1)}%</span></div>]
+      })}</div></section>}
+    </>}
+
+    {(assessing || opening) && questions.error && <DataUnavailable message={questions.error} onRetry={questions.reload} />}
+    {(assessing || opening) && questions.loading && <DataLoading />}
+    {assessing && questions.data && <RiskAssessmentModal questions={questions.data} onClose={() => setAssessing(false)} onDone={result => { setAssessing(false); setAssessed(result); overview.reload() }} />}
+    {assessed && <RiskResultModal result={assessed} onClose={() => { setAssessed(null); toast.show('风险测评已更新', 'success') }} />}
+    {opening && questions.data && accounts.data && <WealthAccountOpeningModal accounts={accounts.data} questions={questions.data} risk={risk} onClose={() => setOpening(false)} onRiskUpdated={overview.reload} onOpened={() => { setOpening(false); overview.reload(); toast.show('理财已开通，申赎通过现有储蓄资金账户结算', 'success') }} />}
+    {opening && accounts.error && <DataUnavailable message={accounts.error} onRetry={accounts.reload} />}
+    {detail && <ProductDetailModal product={detail} risk={risk} accountOpened={opened} onClose={() => setDetail(null)} onNeedAccount={() => { setDetail(null); setOpening(true) }} onNeedAssessment={() => { setDetail(null); setAssessing(true) }} onSubscribed={() => { setDetail(null); overview.reload(); navigate('/wealth/holdings'); toast.show('申购结果已更新，请查看持仓与资金流水', 'success') }} />}
+    {redeemHolding && redeemProduct && <RedeemModal holding={redeemHolding} product={redeemProduct} onClose={() => setRedeemTarget(null)} onDone={() => { setRedeemTarget(null); overview.reload(); toast.show('赎回结果已更新，到账信息以银行回执与流水为准', 'success') }} />}
+    {holdingDetail && <Modal open title="持仓详情" onClose={() => setHoldingDetail(null)} footer={<><Button block onClick={() => setHoldingDetail(null)}>关闭</Button><Button block disabled={!catalog.some(product => product.code === holdingDetail.productCode)} onClick={() => { setDetail(catalog.find(product => product.code === holdingDetail.productCode) ?? null); setHoldingDetail(null) }}>查看产品</Button></>}>
+      <h2 className="mb-4 font-semibold">{holdingDetail.productName}</h2><RiskBadge risk={holdingDetail.risk} />
+      <dl className="mt-5 space-y-4 text-[13px]">{[['持有份额', `${holdingDetail.shares.toFixed(2)} 份`], ['买入净值', holdingDetail.costNav.toFixed(4)], ['持有市值', balance.shown ? `¥${formatAmount(holdingDetail.marketValue)}` : '¥••••••'], ['累计盈亏', balance.shown ? signed(holdingDetail.profit) : '••••••'], ['确认日期', formatDate(holdingDetail.purchasedAt)], ['赎回状态', holdingDetail.closed ? `封闭至 ${holdingDetail.redeemableAt ? formatDate(holdingDetail.redeemableAt) : '以产品规则为准'}` : '可按产品规则赎回']].map(([label, value]) => <div key={label} className="flex justify-between gap-4"><dt className="text-ink-mute">{label}</dt><dd>{value}</dd></div>)}</dl>
+    </Modal>}
+    <Modal open={comparing && compared.length === 2} title="产品比较" width="max-w-[820px]" onClose={() => setComparing(false)} footer={<Button block onClick={() => setComparing(false)}>返回产品列表</Button>}>
+      {compared.length === 2 && <><div className="wealth-table-scroll"><table className="wealth-compare-table"><thead><tr><th scope="col">比较项</th>{compared.map(product => <td key={product.code}>{product.name}<small className="block text-ink-mute">{product.code}</small></td>)}</tr></thead><tbody>
+        <tr><th scope="row">风险等级</th>{compared.map(product => <td key={product.code}><RiskBadge risk={product.risk} /></td>)}</tr>
+        <tr><th scope="row">本人风险匹配</th>{compared.map(product => <td key={product.code}>{!validRisk ? '需完成有效测评' : canBuyRisk(risk.level, product.risk) ? '风险匹配，仍需核对申购条件' : '超出本人风险承受能力'}</td>)}</tr>
+        <tr><th scope="row">期限与赎回</th>{compared.map(product => <td key={product.code}>{product.term}<br />{product.openEnded ? '开放式' : '封闭期内不可赎回'}</td>)}</tr>
+        <tr><th scope="row">起购 / 递增</th>{compared.map(product => <td key={product.code}>¥{formatAmount(product.minAmount)} / ¥{formatAmount(product.stepAmount)}</td>)}</tr>
+        <tr><th scope="row">业绩比较基准</th>{compared.map(product => <td key={product.code}>{benchmarkLabel(product.benchmark)}<small className="block mt-2 text-ink-mute">依据：{product.benchmark.basis}</small></td>)}</tr>
+        <tr><th scope="row">一次性费用</th>{compared.map(product => <td key={product.code}>{product.transactionFees.length ? product.transactionFees.map(fee => <p key={fee.label}>{fee.label} {(fee.rate * 100).toFixed(2)}%</p>) : '申购、赎回免费'}</td>)}</tr>
+        <tr><th scope="row">按日计提费用</th>{compared.map(product => <td key={product.code}>{product.ongoingFees.length ? product.ongoingFees.map(fee => <p key={fee.label}>{fee.label} {(fee.rate * 100).toFixed(2)}%/年</p>) : '无'}</td>)}</tr>
+      </tbody></table></div><p className="mt-4 text-[12px] text-ink-mute">{BENCHMARK_DISCLAIMER}。比较不会产生申购或扣款。</p></>}
+    </Modal>
+  </div>
+}
+
+function signed(amount: number) { return `${amount < 0 ? '-' : '+'}¥${formatAmount(Math.abs(amount))}` }
+function SectionTitle({ title, to }: { title: string; to?: string }) {
+  return <div className="wealth-section-heading"><h2>{title}</h2>{to && <Link to={to}>查看全部 →</Link>}</div>
+}
+function HoldingRow({ holding, shown, onDetail, onRedeem, redeemDisabled }: { holding: WealthHolding; shown: boolean; onDetail: () => void; onRedeem?: () => void; redeemDisabled?: boolean }) {
+  return <div className="wealth-holding"><span className="wealth-holding-mark"><ChartIcon size={18} /></span><button onClick={onDetail} className="wealth-holding-title text-left"><p>{holding.productName}</p><small>{holding.closed ? `封闭期${holding.redeemableAt ? `至 ${formatDate(holding.redeemableAt)}` : '内'}` : '可按规则赎回'} · {holding.risk}</small></button><div className="wealth-holding-value"><span>{shown ? `¥${formatAmount(holding.marketValue)}` : '¥••••••'}</span><small className={holding.profit >= 0 ? 'text-blue' : 'text-coral'}>{shown ? signed(holding.profit) : '••••••'}</small></div>{onRedeem && <Button size="sm" disabled={redeemDisabled} onClick={onRedeem}>{holding.closed ? '封闭中' : '赎回'}</Button>}</div>
+}
+function ProductTile({ product, onClick }: { product: WealthProduct; onClick: () => void }) {
+  return <button className="wealth-product-tile" onClick={onClick}><div className="flex items-center justify-between gap-2"><small>{CATEGORY_LABEL[product.category]}</small><RiskBadge risk={product.risk} showLevel={false} /></div><h3>{product.name}</h3><div><strong>{product.sevenDayYield == null ? product.nav.toFixed(4) : `${(product.sevenDayYield * 100).toFixed(2)}%`}</strong><small>{product.sevenDayYield == null ? '单位净值' : '七日年化'} · {product.navDate}</small></div><div className="wealth-product-foot"><span>¥{formatAmount(product.minAmount)} 起</span><span>{product.term}</span></div></button>
 }

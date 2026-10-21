@@ -1,0 +1,73 @@
+.wealth-workspace { display:flex; flex-direction:column; gap:24px; min-width:0; }
+.wealth-page-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.wealth-page-heading h1 { margin-top:6px; font-size:28px; font-weight:650; letter-spacing:-.025em; line-height:1.3; color:var(--color-ink); }
+.wealth-breadcrumb { font-size:12px; color:var(--color-ink-mute); }
+.wealth-breadcrumb:hover { color:var(--color-gold-deep); }
+.wealth-warning { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--color-coral); margin-top:-10px; }
+.wealth-status { display:flex; align-items:center; gap:12px; padding:14px 18px; border:1px solid var(--color-line); border-radius:var(--radius-card); background:white; font-size:13px; }
+.wealth-status > svg { flex-shrink:0; color:var(--color-gold-deep); }
+.wealth-status .wealth-status-copy { flex:1; color:var(--color-ink-soft); }
+.wealth-status strong { font-weight:550; color:var(--color-ink); margin-right:14px; }
+.wealth-hero { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr); gap:0; border:1px solid var(--color-line); border-radius:var(--radius-card); background:white; overflow:hidden; }
+.wealth-hero-main { padding:30px; background:linear-gradient(120deg,var(--color-gold-tint),white 85%); }
+.wealth-hero-label { display:flex; align-items:center; gap:10px; font-size:13px; color:var(--color-ink-soft); }
+.wealth-hero-value { margin:14px 0 22px; font-family:var(--font-num); font-size:clamp(30px,3.3vw,44px); font-weight:600; letter-spacing:-.045em; color:var(--color-ink); line-height:1.15; }
+.wealth-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
+.wealth-metrics dt { font-size:12px; color:var(--color-ink-mute); margin-bottom:7px; }
+.wealth-metrics dd { font-size:16px; font-family:var(--font-num); font-weight:550; }
+.wealth-shortcuts { padding:24px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; border-left:1px solid var(--color-line); }
+.wealth-shortcuts a { display:flex; flex-direction:column; justify-content:center; align-items:flex-start; gap:10px; padding:16px; border-radius:var(--radius-field); border:1px solid var(--color-line); color:var(--color-ink); font-size:13px; transition:background-color .2s,border-color .2s,transform .2s; }
+.wealth-shortcuts a:hover { background:var(--color-gold-tint); border-color:var(--color-gold-wash); transform:translateY(-2px); }
+.wealth-shortcuts svg { color:var(--color-gold-deep); }
+.wealth-two-columns { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(260px,1fr); gap:20px; }
+.wealth-section { min-width:0; background:white; border:1px solid var(--color-line); border-radius:var(--radius-card); padding:24px; }
+.wealth-section-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px; }
+.wealth-section-heading h2 { font-size:16px; font-weight:600; color:var(--color-ink); }
+.wealth-section-heading a { font-size:12px; color:var(--color-gold-deep); }
+.wealth-task { display:flex; gap:12px; align-items:center; padding:15px 0; font-size:13px; border-top:1px solid var(--color-line); }
+.wealth-task:first-child { border-top:0; }
+.wealth-task svg { flex-shrink:0; color:var(--color-gold-deep); }
+.wealth-task p { flex:1; min-width:0; color:var(--color-ink-soft); line-height:1.6; }
+.wealth-task button,.wealth-task a { color:var(--color-gold-deep); font-size:12px; white-space:nowrap; }
+.wealth-product-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.wealth-product-tile { display:flex; flex-direction:column; gap:18px; background:white; border:1px solid var(--color-line); border-radius:var(--radius-card); padding:22px; text-align:left; transition:border-color .2s,box-shadow .2s; }
+.wealth-product-tile:hover { border-color:var(--color-gold); box-shadow:0 4px 16px #533afd09; }
+.wealth-product-tile h3 { color:var(--color-ink); font-size:14px; font-weight:550; line-height:1.6; }
+.wealth-product-tile small { display:block; font-size:11px; color:var(--color-ink-mute); line-height:1.6; }
+.wealth-product-tile strong { font-size:26px; font-weight:550; font-family:var(--font-num); letter-spacing:-.025em; color:var(--color-ink); }
+.wealth-product-foot { display:flex; justify-content:space-between; gap:12px; border-top:1px solid var(--color-line); padding-top:14px; font-size:12px; color:var(--color-ink-soft); }
+.wealth-holding { display:flex; gap:14px; align-items:center; padding:18px 0; border-top:1px solid var(--color-line); }
+.wealth-holding:first-child { border-top:0; }
+.wealth-holding-mark { flex-shrink:0; display:grid; place-items:center; width:38px; height:38px; background:var(--color-gold-tint); color:var(--color-gold-deep); border-radius:var(--radius-field); }
+.wealth-holding-title { flex:1; min-width:0; }
+.wealth-holding-title p { font-size:14px; font-weight:550; color:var(--color-ink); }
+.wealth-holding-title small { display:block; margin-top:5px; color:var(--color-ink-mute); font-size:12px; }
+.wealth-holding-value { text-align:right; font-family:var(--font-num); font-size:14px; white-space:nowrap; }
+.wealth-holding-value small { display:block; font-size:12px; margin-top:5px; }
+.wealth-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:center; padding-top:20px; border-top:1px solid var(--color-line); margin-top:20px; }
+.wealth-filters select,.wealth-search { border:1px solid var(--color-line); border-radius:var(--radius-field); padding:10px 12px; background:white; color:var(--color-ink-soft); font-size:13px; }
+.wealth-search { display:flex; align-items:center; gap:9px; flex:1; min-width:200px; }
+.wealth-search input { outline:none; min-width:0; width:100%; background:none; color:var(--color-ink); }
+.wealth-search:focus-within { border-color:var(--color-gold); }
+.wealth-table-scroll { overflow-x:auto; }
+.wealth-table { width:100%; min-width:760px; border-collapse:collapse; text-align:left; font-size:13px; }
+.wealth-table th { font-weight:400; font-size:12px; color:var(--color-ink-mute); padding:15px 12px; background:var(--color-sunk); }
+.wealth-table td { padding:20px 12px; border-bottom:1px solid var(--color-line); vertical-align:middle; }
+.wealth-table th:first-child,.wealth-table td:first-child { padding-left:0; }
+.wealth-table th:first-child { padding-left:12px; }
+.wealth-table tbody tr:last-child td { border-bottom:0; }
+.wealth-table tbody tr:hover { background:var(--color-gold-tint); }
+.wealth-table td small { display:block; color:var(--color-ink-mute); font-size:11px; margin-top:5px; }
+.wealth-table td strong { font-weight:550; }
+.wealth-compare-tray { position:sticky; bottom:0; z-index:3; display:flex; align-items:center; gap:12px; background:white; padding:15px 20px; border:1px solid var(--color-gold-wash); border-radius:var(--radius-card); box-shadow:0 -4px 24px #061b3108; }
+.wealth-compare-tray p { flex:1; font-size:13px; color:var(--color-ink-soft); }
+.wealth-compare-table { width:100%; font-size:13px; border-collapse:collapse; }
+.wealth-compare-table th,.wealth-compare-table td { text-align:left; vertical-align:top; padding:14px 12px; border-bottom:1px solid var(--color-line); line-height:1.7; }
+.wealth-compare-table th { width:110px; font-weight:400; color:var(--color-ink-mute); }
+.wealth-compare-table td { width:38%; color:var(--color-ink); }
+.wealth-plan-switch { display:flex; gap:24px; border-bottom:1px solid var(--color-line); }
+.wealth-plan-switch a { padding:0 2px 14px; color:var(--color-ink-mute); border-bottom:2px solid transparent; font-size:14px; }
+.wealth-plan-switch a[aria-current=page] { color:var(--color-gold-deep); border-color:var(--color-gold); }
+.wealth-workspace :is(button,a,input,select):focus-visible { outline:2px solid var(--color-gold); outline-offset:3px; }
+@media (max-width:1150px) { .wealth-hero,.wealth-two-columns { grid-template-columns:minmax(0,1fr); } .wealth-shortcuts { grid-template-columns:repeat(4,minmax(0,1fr)); border-left:0; border-top:1px solid var(--color-line); } .wealth-product-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (prefers-reduced-motion:reduce) { .wealth-workspace * { animation:none!important; transition:none!important; } }

@@ -1,15 +1,19 @@
 import { ledgerBalances, findBalance, normalizeFundingAccount } from '../../shared/account-model.mjs';
 export { ledgerBalances, findBalance, normalizeFundingAccount } from '../../shared/account-model.mjs';
-import { beijingDay, freshMembership, normalizeMembership, recordAssetSnapshot } from '../../shared/membership.mjs';
+import { aumAssets, beijingDay, freshMembership, normalizeMembership, priorityOpenAt, recordAssetSnapshot } from '../../shared/membership.mjs';
 export {
+    applyRealtimeUpgrade,
+    aumAssets,
     beijingDay,
     beijingMonth,
     cardFeeQuote,
     effectiveSpread,
+    entitlements,
     evaluateMembership,
     freshMembership,
     fxRateFor,
     membershipOverview,
+    memberBenefits,
     nextMonth,
     nextTier,
     normalizeMembership,
@@ -19,6 +23,10 @@ export {
     ratedAssets,
     recordAssetSnapshot,
     recordCardFeeWaiver,
+    redeemLoungePass,
+    transferFee,
+    transferFeeWaived,
+    wealthPriorityGate,
 } from '../../shared/membership.mjs';
 import { hashPassword, needsRehash } from '../passwords.mjs';
 // Server-owned business implementation; API contract preserved from the existing client.
@@ -57,8 +65,8 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin.mjs';
  *  13 → 新增 cardSecrets（完整卡号与安全码，与卡列表分开存）
  *  14 → 卡号改用真实感号段（Visa 402688 / 银联 620522）
  *       —— 卡号存在 cardSecrets 里，不升版本的话浏览器会继续用旧号段
- *  15 → 新增账户域（存钱计划 / 一次性虚拟卡）与我的域（邀请 / 会员 / 身份认证）：
- *       savings / virtualCards / invitations / membership / identity
+ *  15 → 新增账户域（存钱计划 / 一次性虚拟卡）与我的域（邀请 / 会员）：
+ *       savings / virtualCards / invitations / membership
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
  */
@@ -706,6 +714,9 @@ export const WEALTH_PRODUCTS = [
         stepAmount: 100_000,
         term: '365 天',
         openEnded: false,
+        // 热门产品：钻石会员提前申购窗口（窗口结束全员开放）
+        priorityTier: 'diamond',
+        priorityOpenAt: priorityOpenAt(),
         ongoingFees: ONGOING_FEES_STD,
         transactionFees: [],
         navHistory: navSeries(37, 30, 0.029, 0.0008),
@@ -739,6 +750,9 @@ export const WEALTH_PRODUCTS = [
         stepAmount: 100_000,
         term: '180 天',
         openEnded: false,
+        // 热门产品：白金及以上提前申购窗口（窗口结束全员开放）
+        priorityTier: 'platinum',
+        priorityOpenAt: priorityOpenAt(),
         ongoingFees: ONGOING_FEES_STD,
         transactionFees: [],
         navHistory: navSeries(51, 30, 0.045, 0.006),
@@ -1113,7 +1127,7 @@ function seed() {
             id: 'u_0001',
             name: '林小满',
             phone: '13800138000',
-            memberLevel: '钻石会员',
+            memberTier: 'platinum',
             avatarInitial: '林',
         },
         passwordDigest: '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92',
@@ -1400,54 +1414,13 @@ function seed() {
             ],
             totalEarned: 3000,
         },
-        // 会员等级按上月日均储蓄资产评定；旧月费套餐只做只读历史，不能再买
+        // 会员等级按上月日均 AUM 评定；林小满储蓄 ≈¥128 万 → 白金
         membership: {
             ...freshMembership(),
-            tier: 'diamond',
-            legacy: {
-                current: {
-                    planId: 'free',
-                    planName: '普通会员',
-                    status: 'none',
-                    price: 0,
-                    period: '—',
-                    startedAt: null,
-                    renewAt: null,
-                },
-                plans: [
-                    {
-                        id: 'gold',
-                        name: '招财金卡会员',
-                        price: 1_900,
-                        period: '每月',
-                        perks: ['跨行转账手续费全免', '专属理财优先购', '生日双倍积分'],
-                        highlight: true,
-                    },
-                    {
-                        id: 'platinum',
-                        name: '白金会员',
-                        price: 4_900,
-                        period: '每月',
-                        perks: ['含金卡全部权益', '专属客户经理', '机场贵宾厅每年 6 次', '境外取现免手续费'],
-                    },
-                ],
-            },
+            tier: 'platinum',
         },
-        assetSnapshots: seedAssetSnapshots(accounts[0].balance),
-        identity: {
-            level: 'verified',
-            idType: '居民身份证',
-            maskedIdNumber: '330106********1234',
-            verifiedAt: daysAgo(120, 9, 0),
-            livenessVerified: true,
-            steps: [
-                { id: 'profile', label: '资料填写', status: 'done', note: '实名资料已登记', completedAt: daysAgo(120, 9, 5) },
-                { id: 'verify', label: '身份核验', status: 'done', note: '证件与人脸已通过', completedAt: daysAgo(120, 9, 12) },
-                { id: 'review', label: '合规审核', status: 'done', note: 'AML 与风险审核通过', completedAt: daysAgo(119, 10, 0) },
-                { id: 'card', label: '发卡', status: 'done', note: '借记卡已寄出', completedAt: daysAgo(118, 15, 30) },
-            ],
-            ocr: null,
-        },
+        // 日终快照存当日 AUM（储蓄 + 理财 + 现金管理），在 db 建好后按全口径生成
+        assetSnapshots: [],
         salaryPlan: {
             salaryDay: 8,
             amount: 2_180_000,
@@ -1604,6 +1577,8 @@ function seed() {
         // 只有使用中（active）的卡留安全码；已换卡的历史卡秘密随旧卡一起作废
         [db.cards[0].id]: { cvv: '417', pan: cardPan('visa', db.cards[0].last4) },
     };
+    // 种子快照按新 AUM 口径生成（储蓄 + 理财市值 + 现金管理），日均约 ¥129 万 → 白金
+    db.assetSnapshots = seedAssetSnapshots(aumAssets(db, FX_MID_RATES));
     normalizeFundingAccount(db);
     return db;
 }
@@ -1619,7 +1594,7 @@ function ensureDemoRecipient() {
     if (all['13600136000'])
         return;
     const demo = seed();
-    demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberLevel: '白银会员', avatarInitial: '陈' };
+    demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberTier: 'standard', avatarInitial: '陈' };
     demo.accounts = [{
             id: 'acc_demo_chen', kind: 'savings', label: '储蓄账户',
             accountNo: '8820000000124471', currency: 'CNY',
@@ -1770,7 +1745,6 @@ export function emptyCustomerDomains(user, accountId) {
         invitations: { invite: { code: `LC-${user.id}`, link: `https://luckycat.bank/i/LC-${user.id}`, createdAt: new Date().toISOString() }, friends: [], rewards: [], totalEarned: 0 },
         membership: freshMembership(),
         assetSnapshots: [],
-        identity: { level: 'none', idType: '', maskedIdNumber: '', verifiedAt: '', livenessVerified: false, steps: [], ocr: null },
         salaryPlan: { salaryDay: 8, amount: 0, employer: '', accountId, nextPayday: '', history: [] },
         overdraft: { ...catalog.overdraft, active: false, creditLimit: 0, available: 0, used: 0, activatedAt: null },
         credit: { creditLimit: 0, availableCredit: 0, products: catalog.credit.products, loans: [], installments: [], builder: { score: 0, level: '未评估', streakMonths: 0, nextMilestone: '', tips: [] } },
@@ -1784,7 +1758,7 @@ export function migrateProfile(profile) {
     if (!Number.isInteger(profile.schema) || profile.schema > MOCK_SCHEMA || !profile.user || !Array.isArray(profile.accounts)) {
         throw new Error('无法识别客户档案版本，已保留原数据');
     }
-    // 会员结构与快照字段的修补对全版本幂等：旧订阅套餐收进 legacy，新字段补默认
+    // 会员结构与快照字段的修补对全版本幂等：旧订阅字段与 legacy 一律删除，新字段补默认
     normalizeMembership(profile);
     profile.assetSnapshots ??= [];
     if (profile.schema === MOCK_SCHEMA)

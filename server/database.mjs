@@ -14,7 +14,6 @@ const DOMAINS = {
   customer_investment_state: ['cashManagement', 'investments'],
   customer_insurance_state: ['insurance'],
   customer_security_state: ['security', 'pendingSms'],
-  customer_identity_state: ['identity'],
   customer_membership_state: ['invitations', 'membership', 'assetSnapshots'],
   customer_payment_state: ['virtualCards'],
   customer_reference_state: ['banks'],

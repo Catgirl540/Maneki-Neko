@@ -14,7 +14,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms))
 const listen=s=>new Promise(r=>s.listen(0,'127.0.0.1',()=>r(s.address().port)))
 async function freePort(){const s=createServer();const p=await listen(s);await new Promise(r=>s.close(r));return p}
 const children=[], requests=[],issues=[]
-let product,auth,bank,bridge,modelCalls=0
+let product,payable,auth,bank,bridge,modelCalls=0
 const expected=HTTP_OPERATIONS.map(x=>x.toolName)
 const cleanEnv={...process.env}
 for(const key of Object.keys(cleanEnv)) if(/TOKEN|API_KEY|ACCESS_KEY|SECRET/.test(key)) delete cleanEnv[key]
@@ -60,6 +60,8 @@ try{
  auth=await call(bank,'/api/auth/login',null,{phone:'13800138000',password:'123456',smsCode:sms.demoCode})
  const token=auth.token
  product=(await call(bank,'/api/cards/products',token))[0]
+ // 会员等级决定实付：以银行返回的 feeQuote.payable 为准，不自己拿标价重算
+ payable=product.feeQuote?.payable??(product.issuingFee+product.deliveryFee)
  const beforeCards=await call(bank,'/api/cards',token),before=(await call(bank,'/api/accounts',token))[0]
  const modelPort=await listen(provider),bridgePort=await freePort();bridge=`http://127.0.0.1:${bridgePort}`
  const overlay=join(tmp,'local-model.yml')
@@ -85,7 +87,7 @@ try{
      application=true;assert(queried,'必须先查产品')
      assert.equal(ch.verification,'payment-password')
      assert(ch.fields.some(f=>f.label==='寄送地址'&&f.value.includes(address.detail)))
-     assert(ch.fields.some(f=>f.label==='费用合计'&&f.value===`CNY ${((product.issuingFee+product.deliveryFee)/100).toFixed(2)}`))
+     assert(ch.fields.some(f=>f.label==='费用合计'&&f.value===`CNY ${(payable/100).toFixed(2)}`))
      const denied=await fetch(bridge+`/agent-api/consent/${ch.challengeId}`,{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body:JSON.stringify({decision:'approve'})})
      assert(!denied.ok,'未验证支付密码不能开卡')
      assert.equal((await call(bank,'/api/cards',token)).length,beforeCards.length)
@@ -101,7 +103,7 @@ try{
  const after=await call(bank,'/api/cards',token),accounts=await call(bank,'/api/accounts',token)
  assert.equal(after.length,beforeCards.length+1)
  assert.equal(after.find(card=>!beforeCards.some(old=>old.id===card.id)).status,'pending')
- assert.equal(accounts[0].balance,before.balance-product.issuingFee-product.deliveryFee)
+ assert.equal(accounts[0].balance,before.balance-payable)
  assert.match(answer,/受理|寄送/)
  console.log(`PASS 模型侧实际提供全部 ${expected.length} 个银行工具，未泄露银行令牌或支付密码`)
  console.log('PASS 真实 Harness 完成查卡产品→开卡确认→支付验证→临时银行扣费及新卡回执；未确认/无密码不能开卡')

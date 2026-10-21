@@ -1,0 +1,1699 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>安卓端框架 · 设计草稿 · 招财猫银行</title>
+<style>
+:root{
+  --bg:#ffffff;--surface-warm:#f6f9fc;
+  --fg:#061b31;--fg-2:#273951;--muted:#64748d;
+  --border:#e5edf5;--accent:#533afd;
+  --font:"sohne-var","Söhne","SF Pro Display",-apple-system,BlinkMacSystemFont,system-ui,"Helvetica Neue","Noto Sans CJK SC","Microsoft YaHei",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;font-family:var(--font)}
+symbol path,symbol rect,symbol circle,symbol line,symbol polyline{fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+.phone{position:relative;width:390px;height:800px;border:10px solid #101826;border-radius:44px;overflow:hidden;background:var(--bg);box-shadow:0 24px 60px -24px rgba(6,27,49,.35);display:flex;flex-direction:column}
+.status{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;font:600 12px var(--font);color:var(--fg-2)}
+.status .icons{display:flex;gap:5px;align-items:center}
+.status svg{width:14px;height:14px}
+.p-body{flex:1;overflow:hidden;background:var(--surface-warm);position:relative}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;background:var(--surface-warm)}
+.screen.on{display:flex}
+.screen-home{padding:14px 14px 8px;gap:12px}
+/* 二级页 */
+.sub-nav{height:48px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;background:var(--bg);border-bottom:1px solid var(--border);font-size:15px;font-weight:600;color:var(--fg)}
+.sub-nav .back{width:30px;height:30px;margin-left:-8px;display:flex;align-items:center;justify-content:center;color:var(--fg-2);cursor:pointer}
+.sub-nav .back svg{width:18px;height:18px;transform:rotate(180deg)}
+.sub-body{flex:1;overflow:hidden;padding:14px;display:flex;flex-direction:column;gap:12px}
+/* 收款方搜索 */
+.search{display:flex;align-items:center;gap:8px;height:42px;padding:0 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:13px}
+.search svg{width:16px;height:16px;flex:none}
+/* 转账方式 */
+.method{display:flex;align-items:center;gap:12px;padding:14px}
+.method + .method{border-top:1px solid var(--border)}
+.method .mic{width:40px;height:40px;border-radius:10px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2);flex:none}
+.method .mic svg{width:20px;height:20px}
+.method .mt{flex:1}
+.method .mt b{display:block;font-size:14px;font-weight:600;color:var(--fg)}
+.method .mt span{font-size:11.5px;color:var(--muted)}
+.method > svg{width:16px;height:16px;color:var(--muted);flex:none}
+.sec-title{font-size:12px;color:var(--muted);padding:0 2px}
+/* 历史收款人 */
+.payee{display:flex;align-items:center;gap:12px;padding:11px 14px}
+.payee + .payee{border-top:1px solid var(--border)}
+.payee .av{width:38px;height:38px;border-radius:50%;background:var(--surface-warm);color:var(--fg-2);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;flex:none}
+.payee .pt{flex:1;min-width:0}
+.payee .pt b{display:block;font-size:13.5px;font-weight:500;color:var(--fg)}
+.payee .pt span{font-size:11px;color:var(--muted)}
+.payee > svg{width:15px;height:15px;color:var(--muted);flex:none}
+/* 转入：收款账户卡 */
+.recv{padding:16px}
+.recv .rk{display:flex;align-items:center;justify-content:space-between;padding:7px 0;font-size:13px}
+.recv .rk + .rk{border-top:1px solid var(--border)}
+.recv .rk span{color:var(--muted)}
+.recv .rk b{font-weight:500;color:var(--fg);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:8px}
+.recv .rk b svg{width:15px;height:15px;color:var(--muted)}
+.recv .tip{margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6}
+/* 表单 */
+.fld label{display:block;font-size:12px;color:var(--muted);margin:0 0 6px 2px}
+.fld input{width:100%;height:46px;padding:0 12px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:14px;background:var(--bg);outline:none;box-sizing:border-box}
+.fld input:focus{border-color:var(--fg-2)}
+.fld .hint{margin-top:6px;font-size:11px;color:var(--muted)}
+.btn-primary{height:48px;border-radius:10px;background:#101826;color:#fff;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;cursor:pointer;margin-top:auto}
+/* 分段选择 */
+.seg{display:flex;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:3px;gap:2px}
+.seg span{flex:1;text-align:center;padding:8px 0;font-size:12.5px;color:var(--muted);border-radius:6px;cursor:pointer}
+.seg span.on{background:var(--surface-warm);color:var(--fg);font-weight:600}
+/* 金额页 */
+.payee-head{display:flex;align-items:center;gap:12px;padding:14px 16px}
+.amt{display:flex;align-items:baseline;gap:6px;padding:10px 16px 14px}
+.amt .cur{font-size:24px;font-weight:600;color:var(--fg)}
+.amt input{flex:1;border:none;outline:none;font-size:34px;font-weight:600;font-variant-numeric:tabular-nums;background:transparent;color:var(--fg);min-width:0}
+.info-row{display:flex;justify-content:space-between;padding:12px 16px;font-size:13px}
+.info-row + .info-row{border-top:1px solid var(--border)}
+.info-row span{color:var(--muted)}
+.info-row b{font-weight:500;color:var(--fg)}
+/* 确认弹层内密码 */
+.pwd{display:flex;gap:10px;justify-content:center;margin:16px 0 6px}
+.pwd i{width:38px;height:48px;border:1px solid var(--border);border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:20px;color:var(--fg)}
+.pwd i::after{content:'●';color:transparent}
+.pwd i.full::after{color:var(--fg)}
+.pwd-hint{text-align:center;font-size:11.5px;color:var(--muted);margin-bottom:14px}
+/* 结果页 */
+.result{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:24px}
+.result .ok{width:64px;height:64px;border-radius:50%;background:#e8f8ee;color:#15be53;display:flex;align-items:center;justify-content:center}
+.result .ok svg{width:32px;height:32px}
+.result h5{font-size:18px;font-weight:600}
+.result .ramt{font-size:32px;font-weight:600;font-variant-numeric:tabular-nums}
+.result p{font-size:12.5px;color:var(--muted)}
+/* tab 一级页标题栏（无返回） */
+.tab-head{height:52px;flex:none;display:flex;align-items:center;padding:0 16px;font-size:16px;font-weight:600;background:var(--bg);border-bottom:1px solid var(--border)}
+/* 智能助手 */
+.chat-head{height:52px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 12px;background:var(--bg);border-bottom:1px solid var(--border)}
+.chat-head .hbtn{width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:var(--fg-2);cursor:pointer}
+.chat-head .hbtn svg{width:20px;height:20px}
+.chat-head .hbtn.back svg{transform:rotate(180deg)}
+.chat-head > img{width:36px;height:36px;border-radius:50%;border:1px solid var(--border);object-fit:contain;padding:3px;background:var(--bg)}
+.chat-body{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.msg{display:flex;gap:8px;max-width:88%}
+.msg .mav{width:30px;height:30px;flex:none;border-radius:50%;border:1px solid var(--border);object-fit:contain;padding:2px;background:var(--bg)}
+.msg .bubble{padding:10px 12px;border-radius:12px;border-top-left-radius:3px;font-size:13.5px;line-height:1.6;background:var(--bg);border:1px solid var(--border);color:var(--fg)}
+.msg.user{align-self:flex-end;justify-content:flex-end}
+.msg.user .bubble{background:#101826;color:#fff;border:none;border-radius:12px;border-top-right-radius:3px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;padding-left:38px}
+.chips a{padding:6px 12px;border:1px solid var(--border);border-radius:14px;font-size:12px;background:var(--bg);color:var(--fg-2);cursor:pointer}
+.chat-input{flex:none;display:flex;align-items:center;gap:8px;padding:10px 14px 12px;background:var(--bg);border-top:1px solid var(--border)}
+.chat-input > svg{width:21px;height:21px;color:var(--fg-2);flex:none}
+.chat-input .box{flex:1;height:40px;border-radius:20px;padding:0 14px;display:flex;align-items:center;color:var(--muted);font-size:13px;background:var(--surface-warm)}
+.chat-input .plus{display:flex;align-items:center;color:var(--fg-2);cursor:pointer;flex:none}
+.chat-input .plus svg{width:21px;height:21px}
+.chat-input .send{width:40px;height:40px;border-radius:50%;background:#101826;color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+/* 助手能力列表：上下边缘透明度渐变的滚动窗口 */
+.caps{max-height:52vh;overflow-y:auto;padding:2px 14px 6px;
+  -webkit-mask-image:linear-gradient(180deg,transparent 0,#000 16px,#000 calc(100% - 20px),transparent 100%);
+  mask-image:linear-gradient(180deg,transparent 0,#000 16px,#000 calc(100% - 20px),transparent 100%)}
+.caps .cp{display:flex;align-items:center;gap:12px;padding:11px 2px;border-bottom:1px solid var(--border);cursor:pointer}
+.caps .cp:last-child{border-bottom:none}
+.caps .cp .ic{width:34px;height:34px;border-radius:10px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2);flex:none}
+.caps .cp .ic svg{width:17px;height:17px}
+.caps .cp .lb{flex:1;min-width:0;font-size:13.5px;color:var(--fg)}
+.caps .cp .lb span{display:block;margin-top:2px;font-size:10.5px;color:var(--muted)}
+.caps .cp .ck{width:20px;height:20px;border-radius:50%;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:transparent;flex:none}
+.caps .cp .ck svg{width:12px;height:12px}
+.caps .cp.on .ck{background:#101826;border-color:#101826;color:#fff}
+.upload{display:flex;align-items:center;gap:10px;margin:2px 0 14px;padding:12px 14px;border:1px dashed var(--border);border-radius:10px;background:var(--bg);font-size:13px;color:var(--fg);cursor:pointer}
+.upload svg{width:18px;height:18px;color:var(--fg-2);flex:none}
+.upload span{margin-left:auto;font-size:10.5px;color:var(--muted)}
+.chat-input .send svg{width:16px;height:16px}
+/* tab 栏在二级页隐藏 */
+.phone.nav-open .tabbar{display:none}
+/* 底部弹层（转入） */
+.sheet-mask{position:absolute;inset:0;z-index:8;background:rgba(6,27,49,.32);opacity:0;pointer-events:none;transition:opacity 220ms}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:9;background:var(--surface-warm);border-radius:18px 18px 0 0;padding:8px 14px 26px;max-height:80%;overflow-y:auto;transform:translateY(103%);transition:transform 280ms cubic-bezier(.4,0,.2,1)}
+.sheet.open{transform:translateY(0)}
+.sheet .grip{width:36px;height:4px;border-radius:2px;background:var(--border);margin:2px auto 10px}
+.sheet h4{margin:0 2px 12px;font-size:15px;font-weight:600}
+.sheet .recv{background:var(--bg)}
+.phone.sheet-open .sheet-mask,.phone.drawer-open .sheet-mask{opacity:1;pointer-events:auto}
+/* 右侧抽屉（历史会话） */
+.drawer{position:absolute;top:0;right:0;bottom:0;z-index:9;width:80%;background:var(--bg);border-left:1px solid var(--border);transform:translateX(103%);transition:transform 280ms cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
+.drawer.open{transform:translateX(0)}
+.drawer .d-head{height:52px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 16px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600;color:var(--fg)}
+.drawer .d-close{width:36px;height:36px;display:flex;align-items:center;justify-content:center;color:var(--fg-2);cursor:pointer}
+.drawer .d-close svg{width:20px;height:20px}
+.drawer .d-list{flex:1;overflow-y:auto;padding:4px 16px 20px}
+.drawer .d-grp{margin:14px 0 2px;font-size:11px;color:var(--muted)}
+.drawer .sess{padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.drawer .sess .t{font-size:13.5px;font-weight:500;color:var(--fg);line-height:1.45}
+.drawer .sess .m{margin-top:4px;display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:11.5px;color:var(--muted)}
+.drawer .sess .m span:first-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.drawer .sess .m span:last-child{flex:none;font-variant-numeric:tabular-nums}
+/* 通知 */
+.greet .bell{position:relative}
+.greet .bell i{position:absolute;top:-1px;right:-1px;width:8px;height:8px;border-radius:50%;background:#d92159;border:1.5px solid var(--bg)}
+.ntf .grp{margin:14px 16px 4px;font-size:11px;color:var(--muted)}
+.ntf .item{display:flex;gap:12px;padding:12px 16px;border-bottom:1px solid var(--border)}
+.ntf .item .ic{width:36px;height:36px;border-radius:50%;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--fg-2);flex:none}
+.ntf .item .ic svg{width:17px;height:17px}
+.ntf .item .tx{flex:1;min-width:0}
+.ntf .item .tt{display:flex;align-items:center;gap:6px;font-size:13.5px;font-weight:500;color:var(--fg)}
+.ntf .item .tt i{width:6px;height:6px;border-radius:50%;background:#533afd;flex:none}
+.ntf .item .pp{margin-top:3px;font-size:12px;color:var(--muted);line-height:1.5}
+.ntf .item .tm{flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ntf .item.read .tt{font-weight:400}
+.sub-body.ntf{overflow-y:auto;padding:0;display:block}
+/* 我的 */
+.me{flex:1;overflow-y:auto;background:var(--bg)}
+.me .prof{display:flex;align-items:center;gap:14px;padding:18px 16px;border-bottom:1px solid var(--border)}
+.me .prof .av{width:54px;height:54px;border-radius:50%;border:1px solid var(--border);background:var(--surface-warm);display:flex;align-items:center;justify-content:center;overflow:hidden;flex:none}
+.me .prof .av img{width:46px;height:46px;object-fit:contain}
+.me .prof .nm{flex:1;min-width:0}
+.me .prof .nm b{display:block;font-size:16px;font-weight:600;color:var(--fg)}
+.me .prof .nm span{display:block;margin-top:3px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.me .prof .tier{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 9px;border-radius:6px;border:1px solid var(--border);background:var(--surface-warm);font-size:11.5px;color:var(--fg-2);flex:none}
+.me .prof .tier svg{width:12px;height:12px}
+.me .grp{padding:14px 16px 4px;font-size:11px;color:var(--muted)}
+.me .row{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid var(--border);font-size:13.5px;color:var(--fg)}
+.me .row .ic{width:30px;height:30px;border-radius:8px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2);flex:none}
+.me .row .ic svg{width:16px;height:16px}
+.me .row .lb{flex:1}
+.me .row .val{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.me .row .cv{width:14px;height:14px;color:var(--muted);flex:none}
+.me .row.danger .lb{color:#d92159}
+.me .ver{padding:20px 16px 24px;text-align:center;font-size:11px;color:var(--muted);line-height:1.6}
+/* 换汇 */
+.fx{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;position:relative}
+.fx .side{margin-top:16px}
+.fx .side:first-child{margin-top:0}
+.fx .k{font-size:11px;color:var(--muted)}
+.fx .amt{display:flex;align-items:baseline;gap:6px;margin-top:5px}
+.fx .amt b{font-size:22px;font-weight:600;letter-spacing:-.3px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.fx .amt b.dim{color:var(--fg-2)}
+.fx .cur{margin-top:7px;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-2)}
+.fx .cur .tag{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;background:var(--surface-warm);border:1px solid var(--border);font-size:11px;color:var(--fg-2)}
+.fx .avail{margin-left:auto;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.fx .swap{position:absolute;right:16px;top:40%;width:34px;height:34px;margin-top:-17px;border-radius:50%;background:var(--surface-warm);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+.fx .swap svg{width:16px;height:16px;transform:rotate(90deg)}
+.fx .rate{margin-top:13px;padding-top:11px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);line-height:1.6}
+/* 银行卡：卡面口径同网页版（按卡种配色 + 卡号遮罩 + 眼睛） */
+.sec-h{display:flex;align-items:center;justify-content:space-between;padding:14px 14px 8px;font-size:12px;color:var(--muted)}
+.empty{margin:0 14px;padding:20px 16px;border:1px dashed var(--border);border-radius:10px;text-align:center;font-size:12px;color:var(--muted);line-height:1.7;background:var(--bg)}
+/* 通用补充：引用块 / 表单区 / 明细键值 */
+.quote{margin:0 14px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface-warm);font-size:11.5px;color:var(--fg-2);line-height:1.7}
+.sect{margin:12px 14px 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px}
+.sect .lbl{font-size:11px;color:var(--muted);margin-bottom:8px}
+.kv{margin:12px 14px 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:2px 14px}
+.kv div{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.kv div:last-child{border-bottom:none}
+.kv span{color:var(--muted);flex:none}
+.kv b{font-weight:500;color:var(--fg);text-align:right;font-variant-numeric:tabular-nums}
+.kv b.neg{color:#d92159}
+/* 储蓄与计划 */
+.goal{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px}
+.goal .hd{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.goal .hd b{font-size:14px;font-weight:600;color:var(--fg)}
+.goal .hd span{display:block;margin-top:3px;font-size:11px;color:var(--muted)}
+.goal .amt{display:flex;align-items:flex-end;justify-content:space-between;margin-top:12px}
+.goal .amt b{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg)}
+.goal .amt span{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.prog{height:7px;border-radius:4px;background:var(--surface-warm);margin-top:9px;overflow:hidden}
+.prog i{display:block;height:100%;border-radius:4px;background:#101826}
+.goal .ft{display:flex;align-items:center;justify-content:space-between;margin-top:8px;font-size:11px;color:var(--muted)}
+/* 消费分析 */
+.sub-nav .act{margin-left:auto;font-size:12.5px;font-weight:400;color:var(--fg-2);cursor:pointer}
+.an{padding-bottom:18px}
+.an .row2{display:flex;gap:10px;padding:0 14px}
+.an .row2 .card{flex:1;padding:13px 14px}
+.an .k{font-size:11px;color:var(--muted)}
+.an .big{margin-top:6px;font-size:22px;font-weight:600;letter-spacing:-.3px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.an .sub{margin-top:5px;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.donutwrap{display:flex;align-items:center;gap:16px;padding:14px 14px 4px}
+.donut{width:118px;height:118px;border-radius:50%;position:relative;flex:none}
+.donut::after{content:'';position:absolute;inset:16px;border-radius:50%;background:var(--bg)}
+.donut .cen{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;z-index:1}
+.donut .cen small{font-size:9.5px;color:var(--muted)}
+.donut .cen b{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.dleg{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}
+.dleg div{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--fg-2)}
+.dleg i{width:8px;height:8px;border-radius:2px;flex:none}
+.dleg span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dleg b{font-weight:500;color:var(--fg);font-variant-numeric:tabular-nums}
+.bars{display:flex;align-items:flex-end;gap:10px;height:112px;padding:16px 16px 12px}
+.bars div{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;height:100%;justify-content:flex-end}
+.bars i{width:100%;max-width:24px;border-radius:4px 4px 0 0;background:var(--border);display:block}
+.bars i.on{background:#101826}
+.bars span{font-size:9.5px;color:var(--muted);white-space:nowrap}
+/* 更多服务：按侧栏四个服务分组铺开 */
+.mgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:2px 8px 8px}
+.mgrid a{display:flex;flex-direction:column;align-items:center;gap:7px;padding:10px 0;font-size:11px;color:var(--fg-2);text-align:center;line-height:1.35;cursor:pointer}
+.mgrid .ic{width:38px;height:38px;border-radius:12px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+.mgrid .ic svg{width:19px;height:19px}
+.bank-card-face{aspect-ratio:1.62;border-radius:10px;border:1px solid #ffffff40;box-shadow:0 12px 26px -18px #061b3160;color:#fff;padding:16px;display:flex;flex-direction:column;justify-content:space-between;box-sizing:border-box}
+.bank-card-face.violet{background:#5840c4}
+.bank-card-face.navy{background:#08233e}
+.bank-card-face.jade{background:#126b62}
+.cf-head{display:flex;align-items:center;gap:10px}
+.cf-mark{width:30px;height:30px;object-fit:contain;filter:brightness(0) invert(1);opacity:.92;flex:none}
+.cf-name{flex:1;min-width:0}
+.cf-name strong{display:block;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cf-name small{display:block;margin-top:3px;font-size:11px;opacity:.75}
+.cf-net{flex:none;font-size:10px;letter-spacing:.5px;border:1px solid #ffffff59;border-radius:4px;padding:2px 6px;opacity:.85}
+.cf-mid{display:flex;align-items:center;gap:8px}
+.cf-mid span{font-size:15px;letter-spacing:.06em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cf-mid svg{width:16px;height:16px;opacity:.8;cursor:pointer;flex:none}
+.cf-bot{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;font-size:12px;opacity:.85}
+.cf-bot .cf-right{display:flex;gap:14px}
+.cf-bot small{display:block;font-size:8.5px;letter-spacing:.14em;opacity:.7;text-transform:uppercase}
+.cf-bot b{font-weight:400;font-variant-numeric:tabular-nums}
+/* 卡堆：横向卡面，滑动切换；卡只是支付工具，余额在账户分区里 */
+.cards{display:flex;gap:12px;overflow-x:auto;padding:0 14px;scrollbar-width:none;scroll-snap-type:x mandatory}
+.cards::-webkit-scrollbar{display:none}
+.cards>.bank-card-face{flex:none;width:296px;scroll-snap-align:center}
+.cards>.card-add{flex:none;width:296px;aspect-ratio:1.62;border-radius:10px;border:1px dashed var(--border);background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;color:var(--muted);font-size:12.5px;cursor:pointer;box-sizing:border-box}
+.cards>.card-add svg{width:26px;height:26px}
+.memcard{flex:none;width:296px;aspect-ratio:1.585;border-radius:10px;border:1px solid var(--border);object-fit:cover;scroll-snap-align:center;box-shadow:0 12px 26px -18px #061b3160;background:var(--surface-warm)}
+.memcard.lock{opacity:.55}
+.memwrap{position:relative;flex:none;width:296px;scroll-snap-align:center}
+.memwrap .memcard{width:100%;display:block}
+/* 进度条放在卡面右下空白区，不压住卡上的字 */
+.membar{position:absolute;right:15px;bottom:17px;width:116px;color:rgba(16,24,38,.72)}
+.membar .t{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:9px;letter-spacing:.1px;font-variant-numeric:tabular-nums}
+.membar .track{margin-top:5px;height:2.5px;border-radius:2px;background:rgba(16,24,38,.18);overflow:hidden}
+.membar .track i{display:block;height:100%;border-radius:2px;background:rgba(16,24,38,.6)}
+.cdots{display:flex;justify-content:center;gap:6px;padding:10px 0 2px}
+.cdots i{width:5px;height:5px;border-radius:50%;background:var(--border)}
+.cdots i.on{background:var(--fg-2)}
+.cact{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:4px 14px 0}
+.cact a{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:11.5px;color:var(--fg-2);cursor:pointer}
+.cact a svg{width:18px;height:18px}
+.cinfo,.cset{margin:12px 14px 0;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:2px 14px}
+.cinfo div{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.cinfo div:last-child{border-bottom:none}
+.cinfo span{color:var(--muted)}
+.cinfo b{font-weight:500;color:var(--fg);font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:8px}
+.cinfo b svg{width:15px;height:15px;color:var(--muted);cursor:pointer}
+.cset .r{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--border)}
+.cset .r:last-child{border-bottom:none}
+.cset .r .lb{flex:1}
+.cset .r .lb b{display:block;font-size:13px;font-weight:500;color:var(--fg)}
+.cset .r .lb span{font-size:10.5px;color:var(--muted)}
+.sw{width:42px;height:24px;border-radius:12px;background:#dfe6ee;position:relative;cursor:pointer;flex:none;transition:background 200ms}
+.sw i{position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(6,27,49,.2);transition:transform 200ms}
+.sw.on{background:#101826}
+.sw.on i{transform:translateX(18px)}
+.limits{display:flex;gap:8px;padding:12px 0;flex-wrap:wrap}
+.limits a{padding:6px 12px;border:1px solid var(--border);border-radius:14px;font-size:11.5px;color:var(--fg-2);cursor:pointer}
+.limits a.on{background:#101826;border-color:#101826;color:#fff}
+/* 登录与开户 */
+.auth{flex:1;display:flex;flex-direction:column;padding:24px 20px;background:var(--bg);overflow-y:auto}
+.auth .brand{display:flex;flex-direction:column;align-items:center;gap:9px;padding:16px 0 22px}
+.auth .brand img{width:62px;height:62px;object-fit:contain}
+.auth .brand b{font-size:19px;font-weight:600;letter-spacing:.5px;color:var(--fg)}
+.auth .brand span{font-size:11.5px;color:var(--muted)}
+.auth .fld{margin-bottom:14px}
+.auth .sms{display:flex;gap:8px;margin-bottom:14px}
+.auth .sms .fld{flex:1;margin-bottom:0}
+.auth .code-btn{flex:none;height:46px;padding:0 13px;border-radius:8px;border:1px solid var(--border);background:var(--bg);font-size:12.5px;color:var(--fg-2);display:flex;align-items:center;cursor:pointer}
+.auth .sub{margin-top:auto;padding-top:22px;display:flex;flex-direction:column;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.auth .sub a{color:var(--fg);font-weight:500;cursor:pointer}
+.auth .steps{display:flex;align-items:center;gap:10px;margin-bottom:20px}
+.auth .steps .bar{flex:1;height:3px;border-radius:2px;background:var(--border);overflow:hidden}
+.auth .steps .bar i{display:block;height:100%;background:#101826;border-radius:2px}
+.auth .steps span{flex:none;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.auth h3{margin:0 0 6px;font-size:19px;font-weight:600;color:var(--fg)}
+.auth p.lead{margin:0 0 20px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.auth .face{display:flex;flex-direction:column;align-items:center;gap:14px;padding:26px 0}
+.auth .face .ring{width:148px;height:148px;border-radius:50%;border:1px dashed var(--border);background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.auth .face .ring svg{width:52px;height:52px}
+.auth .face p{margin:0;font-size:12px;color:var(--muted);text-align:center;line-height:1.6}
+.auth .ok{display:flex;flex-direction:column;align-items:center;gap:12px;padding:34px 0 10px}
+.auth .ok .c{width:62px;height:62px;border-radius:50%;background:#101826;color:#fff;display:flex;align-items:center;justify-content:center}
+.auth .ok .c svg{width:30px;height:30px}
+.auth .ok b{font-size:18px;font-weight:600;color:var(--fg)}
+.auth .ok span{font-size:12.5px;color:var(--muted)}
+.auth .card2{margin-top:8px;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:2px 14px}
+.auth .card2 div{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.auth .card2 div:last-child{border-bottom:none}
+.auth .card2 span{color:var(--muted)}
+.auth .card2 b{font-weight:500;color:var(--fg-2);font-variant-numeric:tabular-nums}
+/* 理财 */
+.wtab{padding:10px 14px 4px;background:var(--bg);border-bottom:1px solid var(--border)}
+.wbody{flex:1;min-height:0;overflow-y:auto;background:var(--surface-warm)}
+.wpanel{display:none;padding:14px}
+.wpanel.on{display:block}
+.wsum{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:15px 16px}
+.wsum .k{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.wsum .k svg{width:15px;height:15px;cursor:pointer}
+.wsum .v{margin-top:6px;font-size:27px;font-weight:600;letter-spacing:-.4px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.wsum .rows{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+.wsum .rows div{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
+.wsum .rows b{font-weight:500;color:var(--fg-2);font-variant-numeric:tabular-nums}
+.wsum .rows b.neg{color:#d92159}
+.wq{margin-top:10px;display:flex;align-items:center;gap:8px;padding:11px 14px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--fg-2)}
+.wq svg{width:15px;height:15px;color:var(--fg-2);flex:none}
+.wq span{flex:1}
+.wgrid{margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.wgrid a{display:flex;align-items:center;gap:10px;padding:13px 14px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:13px;color:var(--fg);cursor:pointer}
+.wgrid a .ic{width:30px;height:30px;border-radius:8px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2);flex:none}
+.wgrid a .ic svg{width:16px;height:16px}
+.wlist{display:flex;flex-direction:column;gap:10px}
+.prod{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;cursor:pointer}
+.prod .pt{display:flex;align-items:center;gap:8px}
+.prod .pt b{font-size:14px;font-weight:600;color:var(--fg);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.risk{flex:none;display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:5px;border:1px solid var(--border);background:var(--surface-warm);font-size:10.5px;font-weight:600;color:var(--fg-2);letter-spacing:.2px}
+.risk.hi{color:#d92159;border-color:#f3d3dd;background:#fdf1f4}
+.prod .pm{margin-top:9px;display:flex;align-items:flex-end;gap:14px}
+.prod .pm div{display:flex;flex-direction:column;gap:2px}
+.prod .pm .k{font-size:10.5px;color:var(--muted)}
+.prod .pm .n{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg)}
+.prod .pm .n small{font-size:11px;font-weight:400;color:var(--muted);margin-left:3px}
+.prod .pf{margin-top:9px;padding-top:9px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted)}
+.prod .pf b{font-weight:500;color:var(--fg-2)}
+.prod .pf b.no{color:#d92159}
+.hold{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px}
+.hold .pt{display:flex;align-items:center;gap:8px}
+.hold .pt b{font-size:13.5px;font-weight:600;color:var(--fg);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hold .pm{margin-top:10px;display:flex;gap:18px}
+.hold .pm div{display:flex;flex-direction:column;gap:2px}
+.hold .pm .k{font-size:10.5px;color:var(--muted)}
+.hold .pm .n{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg)}
+.hold .pm .n.neg{color:#d92159}
+.hold .pf{margin-top:11px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hold .pf span{font-size:11px;color:var(--muted)}
+.hold .pf a{height:30px;padding:0 14px;border-radius:15px;display:inline-flex;align-items:center;font-size:12px;font-weight:500;background:#101826;color:#fff;cursor:pointer}
+.hold .pf a.off{background:var(--surface-warm);color:var(--muted);border:1px solid var(--border)}
+/* 产品详情 */
+.pdet{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:15px 16px}
+.pdet .hd{display:flex;align-items:center;gap:8px}
+.pdet .hd b{font-size:15px;font-weight:600;color:var(--fg)}
+.pdet .sub{margin-top:4px;font-size:11px;color:var(--muted)}
+.pdet .nav{margin-top:13px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:flex-end;justify-content:space-between}
+.pdet .nav .k{font-size:11px;color:var(--muted)}
+.pdet .nav .n{margin-top:3px;font-size:24px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg)}
+.pdet .nav .n small{font-size:11px;font-weight:400;color:var(--muted);margin-left:4px}
+.pdet .nav svg{width:96px;height:34px;color:var(--fg-2)}
+.pkv{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:4px 16px}
+.pkv div{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--border);font-size:12px}
+.pkv div:last-child{border-bottom:none}
+.pkv span{color:var(--muted);flex:none}
+.pkv b{font-weight:500;color:var(--fg-2);text-align:right;line-height:1.5}
+
+/* 交易记录 */
+.tr{flex:1;overflow-y:auto;padding-bottom:18px}
+.tr .sum{display:flex;gap:10px;padding:14px 14px 0}
+.tr .sum .card{flex:1;padding:12px}
+.tr .sum .k{font-size:11px;color:var(--muted)}
+.tr .sum .v{margin-top:4px;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg)}
+.tr .sum .v.neg{color:#d92159}
+.fbar{display:flex;align-items:center;gap:8px;padding:12px 14px 6px}
+.fchips{flex:1;min-width:0;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none}
+.fchips::-webkit-scrollbar{display:none}
+.fbtn{flex:none;width:34px;height:32px;border-radius:16px;border:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--fg-2);cursor:pointer;position:relative}
+.fbtn svg{width:16px;height:16px}
+.fbtn.on{background:#101826;border-color:#101826;color:#fff}
+.fbtn i{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:#533afd;color:#fff;font-size:9.5px;line-height:15px;text-align:center;font-style:normal;font-weight:600}
+/* 筛选抽屉 */
+.flt{flex:1;overflow-y:auto;padding:4px 16px 22px}
+.flt .g{margin-top:16px;font-size:11px;color:var(--muted)}
+.flt .ch{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}
+.flt .ch a{padding:6px 12px;border:1px solid var(--border);border-radius:14px;font-size:12px;background:var(--bg);color:var(--fg-2);cursor:pointer}
+.flt .ch a.on{background:#101826;border-color:#101826;color:#fff}
+.flt .foot{display:flex;gap:10px;margin-top:22px}
+.flt .foot a{flex:1;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:500;border:1px solid var(--border);color:var(--fg);background:var(--bg);cursor:pointer}
+.flt .foot a.pri{background:#101826;border-color:#101826;color:#fff}
+.fchips a{flex:none;padding:6px 12px;border:1px solid var(--border);border-radius:14px;font-size:12px;background:var(--bg);color:var(--fg-2);cursor:pointer}
+.fchips a.on{background:#101826;border-color:#101826;color:#fff}
+.tr .day{padding:12px 16px 4px;font-size:11px;color:var(--muted)}
+.tr .row{display:flex;align-items:center;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);background:var(--bg)}
+.tr .row .ic{width:32px;height:32px;border-radius:50%;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2);flex:none}
+.tr .row .ic svg{width:15px;height:15px}
+.tr .row .tt{flex:1;min-width:0}
+.tr .row .tt b{display:block;font-size:13px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tr .row .tt span{font-size:10.5px;color:var(--muted)}
+.tr .row .tv{font-size:13px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg);flex:none}
+.tr .row .tv.neg{color:#d92159}
+.greet{display:flex;align-items:center;justify-content:space-between;padding:0 2px}
+.greet .hi{font-size:12px;color:var(--muted)}
+.greet .hi b{display:block;font-size:16px;font-weight:600;color:var(--fg)}
+.greet .bell{width:34px;height:34px;border-radius:50%;border:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+.greet .bell svg{width:17px;height:17px}
+.card{background:var(--bg);border:1px solid var(--border);border-radius:10px}
+[data-go]{cursor:pointer;-webkit-tap-highlight-color:transparent}
+/* 总资产 */
+.asset{padding:16px 16px 14px}
+.asset .lab{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.asset .lab svg{width:15px;height:15px;cursor:pointer}
+.asset .amt{margin-top:6px;font-size:30px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums;color:var(--fg)}
+.asset .sub{margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}
+.asset .sub b{font-weight:500;color:var(--fg-2);font-variant-numeric:tabular-nums}
+.asset .sub svg{width:14px;height:14px;color:var(--muted)}
+/* 功能入口 */
+.entries{display:grid;grid-template-columns:repeat(4,1fr);padding:14px 6px;gap:4px;row-gap:14px}
+.entries a{display:flex;flex-direction:column;align-items:center;gap:7px;font-size:11px;color:var(--fg-2);cursor:pointer}
+.entries .ic{width:40px;height:40px;border-radius:12px;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2)}
+.entries .ic svg{width:20px;height:20px}
+/* 最近交易 */
+.txs{flex:1;display:flex;flex-direction:column;min-height:0}
+.txs h3{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px;font-size:13px;font-weight:600}
+.txs h3 a{font-size:11px;font-weight:400;color:var(--muted);display:flex;align-items:center;gap:2px}
+.txs h3 a svg{width:12px;height:12px}
+.txs ul{list-style:none;margin:0;padding:0 14px;overflow:hidden}
+.txs li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)}
+.txs li:first-child{border-top:none}
+.txs .tic{width:32px;height:32px;border-radius:50%;background:var(--surface-warm);display:flex;align-items:center;justify-content:center;color:var(--fg-2);flex:none}
+.txs .tic svg{width:15px;height:15px}
+.txs .tt{flex:1;min-width:0}
+.txs .tt b{display:block;font-size:12.5px;font-weight:500;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.txs .tt span{font-size:10.5px;color:var(--muted)}
+.txs .tv{font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;color:var(--fg)}
+.txs .tv.neg{color:#d92159}
+.tabbar{position:relative;height:64px;border-top:1px solid var(--border);background:var(--bg);display:grid;grid-template-columns:repeat(5,1fr);align-items:center}
+.tab{position:relative;display:flex;align-items:center;justify-content:center;color:var(--muted)}
+.tab .dot{position:absolute;top:14px;left:calc(50% + 4px);width:7px;height:7px;border-radius:50%;background:#d92159;border:1.5px solid var(--bg)}
+.tab svg{width:22px;height:22px}
+.tab.on{color:var(--accent)}
+.tab.center{color:var(--fg-2)}
+.tab.center img{position:relative;width:38px;height:38px;object-fit:contain;transform:translateY(-14px)}
+.tab.center.peek img{animation:cat-peek 520ms cubic-bezier(.22,1,.36,1)}
+.tab.center.peek::before{animation:btn-pop 520ms cubic-bezier(.22,1,.36,1)}
+@keyframes cat-peek{
+  0%{transform:translateY(-14px) rotate(0)}
+  35%{transform:translateY(-20px) rotate(-7deg)}
+  70%{transform:translateY(-12px) rotate(3deg)}
+  100%{transform:translateY(-14px) rotate(0)}
+}
+@keyframes btn-pop{
+  0%{transform:translateY(-14px) scale(1)}
+  40%{transform:translateY(-14px) scale(1.07)}
+  100%{transform:translateY(-14px) scale(1)}
+}
+.tab.center::before{content:'';position:absolute;width:56px;height:56px;border-radius:50%;background:#101826;border:1px solid #101826;box-shadow:0 6px 16px -6px rgba(6,27,49,.35);transform:translateY(-14px)}
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+  <symbol id="i-sig" viewBox="0 0 24 24"><path d="M2.5 8.5C5 6.8 8.3 5.5 12 5.5s7 1.3 9.5 3"/><path d="M5.5 12c1.8-1.2 4-2 6.5-2s4.7.8 6.5 2"/><path d="M8.5 15.4c1-.6 2.2-1 3.5-1s2.5.4 3.5 1"/><circle cx="12" cy="19" r="1.2"/></symbol>
+  <symbol id="i-batt" viewBox="0 0 24 24"><rect x="3" y="8" width="15" height="8" rx="2"/><path d="M20 10.5v3"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z"/><path d="M9.5 20.5v-6h5v6"/></symbol>
+  <symbol id="i-wealth" viewBox="0 0 24 24"><path d="M4 19.5V10"/><path d="M9.5 19.5V5.5"/><path d="M15 19.5v-8"/><path d="M20 19.5V8"/><path d="m4 8 5-3.5L14 8l6-4"/></symbol>
+  <symbol id="i-im" viewBox="0 0 24 24"><path d="M18 9.5a6 6 0 1 0-12 0c0 5-2 6-2 6h16s-2-1-2-6"/><path d="M10 19.5a2.2 2.2 0 0 0 4 0"/></symbol>
+  <symbol id="i-me" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6Z"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-down-in" viewBox="0 0 24 24"><path d="M12 4v11"/><path d="m7 11 5 5 5-5"/><path d="M5 20h14"/></symbol>
+  <symbol id="i-up-out" viewBox="0 0 24 24"><path d="M12 20V9"/><path d="m7 13 5-5 5 5"/><path d="M5 4h14"/></symbol>
+  <symbol id="i-pig" viewBox="0 0 24 24"><path d="M5 12a6 6 0 0 1 12-2.5c1.8.3 3 1.6 3 3.5a3.4 3.4 0 0 1-2 3.1V19h-2.5l-.6-1h-3.8l-.6 1H8v-2.6A6 6 0 0 1 5 12Z"/><path d="M14.5 6.5c1 0 2-.3 2.5-1 .5 1.2 0 2.5-1 3"/><circle cx="10" cy="11.5" r=".6"/></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M2.5 9.5h19"/><path d="M6.5 15h3"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 4h12a1 1 0 0 1 1 1v15l-2.5-1.6L14 20l-2-1.4L10 20l-2.5-1.6L5 20V5a1 1 0 0 1 1-1Z"/><path d="M9 9.5h6M9 13h4"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/></symbol>
+  <symbol id="i-shop" viewBox="0 0 24 24"><path d="M4.5 8 6 4.5h12L19.5 8v11a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 19Z"/><path d="M4.5 8h15"/><path d="M9.5 12h5"/></symbol>
+  <symbol id="i-food" viewBox="0 0 24 24"><path d="M6.5 4v7M10 4v7M6.5 11h3.5V20M6.5 20v-9"/><path d="M15.5 4c-1.8 2-2.5 4.5-2.5 7v9M15.5 4v16"/></symbol>
+  <symbol id="i-transfer" viewBox="0 0 24 24"><path d="M7.5 9.5h9M14 7l2.5 2.5L14 12"/><path d="M16.5 14.5h-9M10 12.5 7.5 15l2.5 2.5"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M10.5 17.5h3"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.8 2.4 4.2 5.2 4.2 8.5s-1.4 6.1-4.2 8.5c-2.8-2.4-4.2-5.2-4.2-8.5S9.2 5.9 12 3.5Z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v2.5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="M4.5 12 20 4.5l-4.5 7.5L20 19.5 4.5 12Z"/><path d="M15.5 12H4.5"/></symbol>
+  <symbol id="i-hist" viewBox="0 0 24 24"><path d="M4 6.5h16M4 12h16M4 17.5h10"/></symbol>
+  <symbol id="i-compose" viewBox="0 0 24 24"><path d="m14.5 5.5 4 4L9 19H5v-4Z"/><path d="m13 7 4 4"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.8c0 1.7-2.4 1.9-2.4 3.4"/><circle cx="12" cy="16.8" r=".7"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="8" r=".7"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5.5h16l-6.2 7.3v5.4L10.2 20v-7.2Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><circle cx="9" cy="10" r="1.6"/><path d="m5 17.5 4.5-4.5 3 3 2.5-2.5 4 4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v6c0 4-3 6.8-7 8.5-4-1.7-7-4.5-7-8.5V6Z"/><path d="m9 12 2.2 2.2L15.5 10"/></symbol>
+</svg>
+
+<div class="phone">
+  <div class="status">
+    <span>9:41</span>
+    <span class="icons">
+      <svg><use href="#i-sig"/></svg>
+      <svg><use href="#i-batt"/></svg>
+    </span>
+  </div>
+  <div class="p-body">
+    <!-- 主页 -->
+    <div class="screen screen-home tab-screen on" id="s-home">
+    <div class="greet">
+      <div class="hi">上午好<b>陈先生</b></div>
+      <span class="bell" data-go="通知"><svg><use href="#i-im"/></svg><i></i></span>
+    </div>
+    <div class="card asset">
+      <div class="lab">总资产（元）<svg><use href="#i-eye"/></svg></div>
+      <div class="amt">128,460.00</div>
+      <div class="sub"><span>人民币活期</span><span><b>¥86,320.00</b></span><svg><use href="#i-chev"/></svg></div>
+    </div>
+    <div class="card entries">
+      <a data-sheet="in"><span class="ic"><svg><use href="#i-down-in"/></svg></span>转入</a>
+      <a data-go="转出"><span class="ic"><svg><use href="#i-up-out"/></svg></span>转出</a>
+      <a data-go="存款"><span class="ic"><svg><use href="#i-pig"/></svg></span>存款</a>
+      <a data-go="银行卡"><span class="ic"><svg><use href="#i-card"/></svg></span>银行卡</a>
+      <a data-go="换汇"><span class="ic"><svg><use href="#i-globe"/></svg></span>换汇</a>
+      <a data-tab="1"><span class="ic"><svg><use href="#i-wealth"/></svg></span>理财</a>
+      <a data-go="交易记录"><span class="ic"><svg><use href="#i-receipt"/></svg></span>交易记录</a>
+      <a data-go="更多"><span class="ic"><svg><use href="#i-dots"/></svg></span>更多</a>
+    </div>
+    <div class="card txs">
+      <h3>最近交易<a data-go="交易记录">查看全部<svg><use href="#i-chev"/></svg></a></h3>
+      <ul>
+        <li><span class="tic"><svg><use href="#i-food"/></svg></span><span class="tt"><b>星巴克咖啡</b><span>今天 09:12 · 餐饮</span></span><span class="tv neg">-38.00</span></li>
+        <li><span class="tic"><svg><use href="#i-transfer"/></svg></span><span class="tt"><b>转入 · 他行卡</b><span>昨天 18:40 · 转账</span></span><span class="tv">+5,000.00</span></li>
+        <li><span class="tic"><svg><use href="#i-shop"/></svg></span><span class="tt"><b>永辉超市</b><span>昨天 12:05 · 购物</span></span><span class="tv neg">-126.50</span></li>
+        <li><span class="tic"><svg><use href="#i-pig"/></svg></span><span class="tt"><b>工资</b><span>10-15 · 收入</span></span><span class="tv">+18,000.00</span></li>
+      </ul>
+    </div>
+    </div><!-- /screen-home -->
+
+    <!-- tab 一级页：智能助手 -->
+    <div class="screen" id="s-assistant" data-name="智能助手">
+      <div class="chat-head"><span class="hbtn back"><svg><use href="#i-chev"/></svg></span><img src="assets/support-cat-trim.png" alt=""><span style="display:flex;gap:2px"><span class="hbtn" id="new-chat"><svg><use href="#i-compose"/></svg></span><span class="hbtn" data-drawer="hist"><svg><use href="#i-hist"/></svg></span></span></div>
+      <div class="chat-body">
+        <div class="msg"><img class="mav" src="assets/support-cat-trim.png" alt=""><div class="bubble">上午好，陈先生。我是小招，可以帮你查账、转账、看支出，也可以直接说想做的事。</div></div>
+        <div class="chips"><a>查余额</a><a>转账</a><a>换汇报价</a><a>本月支出</a></div>
+        <div class="msg user"><div class="bubble">帮我看看这个月花了多少</div></div>
+        <div class="msg"><img class="mav" src="assets/support-cat-trim.png" alt=""><div class="bubble">本月支出共 ¥3,486.50，比上月少 12%。最多的是餐饮 ¥1,020.50，其次是购物 ¥860.00。要看分类明细吗？</div></div>
+      </div>
+      <div class="chat-input"><span class="plus" data-sheet="cap"><svg><use href="#i-plus"/></svg></span><span class="box">问点什么…</span><svg><use href="#i-mic"/></svg><span class="send"><svg><use href="#i-send"/></svg></span></div>
+    </div>
+
+    <!-- tab 一级页占位 -->
+    <div class="screen tab-screen" id="s-wealth"><div class="tab-head">理财</div>
+      <div class="wtab"><div class="seg"><span class="on" data-wp="ov">总览</span><span data-wp="prod">产品</span><span data-wp="hold">持仓</span><span data-wp="rec">记录</span></div></div>
+      <div class="wbody">
+        <!-- 总览 -->
+        <div class="wpanel on" data-wp="ov">
+          <div class="wsum">
+            <div class="k">持仓市值<svg><use href="#i-eye"/></svg></div>
+            <div class="v">¥42,456.90</div>
+            <div class="rows">
+              <div><span>投入本金</span><b>¥42,999.00</b></div>
+              <div><span>累计盈亏</span><b class="neg">-542.10</b></div>
+              <div><span>昨日盈亏</span><b>+18.40</b></div>
+            </div>
+          </div>
+          <div class="wq"><svg><use href="#i-check"/></svg><span>风险测评 R3 · 有效至 2027-05-12</span></div>
+          <div class="wgrid">
+            <a data-wp-go="prod"><span class="ic"><svg><use href="#i-pig"/></svg></span>产品市场</a>
+            <a data-wp-go="hold"><span class="ic"><svg><use href="#i-wealth"/></svg></span>我的持仓</a>
+            <a data-go="储蓄与计划"><span class="ic"><svg><use href="#i-receipt"/></svg></span>储蓄与计划</a>
+            <a data-wp-go="rec"><span class="ic"><svg><use href="#i-transfer"/></svg></span>交易记录</a>
+          </div>
+        </div>
+        <!-- 产品 -->
+        <div class="wpanel" data-wp="prod">
+          <div class="fchips" style="margin-bottom:12px"><a class="on">全部</a><a>现金管理</a><a>固定收益</a><a>混合</a><a>权益</a><a>商品</a></div>
+          <div class="wlist">
+            <div class="prod" data-go="产品详情"><div class="pt"><b>招财猫现金添利 A</b><span class="risk">R1</span></div>
+              <div class="pm"><div><span class="k">七日年化</span><span class="n">1.86%</span></div><div><span class="k">起购</span><span class="n">¥1.00</span></div><div><span class="k">期限</span><span class="n">随时赎回</span></div></div>
+              <div class="pf"><span>现金管理 · 开放式</span><b>风险匹配</b></div></div>
+            <div class="prod" data-go="产品详情"><div class="pt"><b>招财猫稳盈 90 天</b><span class="risk">R2</span></div>
+              <div class="pm"><div><span class="k">单位净值</span><span class="n">1.0064</span></div><div><span class="k">起购</span><span class="n">¥10,000</span></div><div><span class="k">期限</span><span class="n">90 天</span></div></div>
+              <div class="pf"><span>固定收益 · 封闭期内不可赎回</span><b>风险匹配</b></div></div>
+            <div class="prod" data-go="产品详情"><div class="pt"><b>招财猫稳盈 365 天</b><span class="risk">R2</span></div>
+              <div class="pm"><div><span class="k">单位净值</span><span class="n">1.0128</span></div><div><span class="k">起购</span><span class="n">¥10,000</span></div><div><span class="k">期限</span><span class="n">365 天</span></div></div>
+              <div class="pf"><span>固定收益 · 白金优先购中</span><b>风险匹配</b></div></div>
+            <div class="prod" data-go="产品详情"><div class="pt"><b>招财猫平衡配置 180 天</b><span class="risk">R3</span></div>
+              <div class="pm"><div><span class="k">单位净值</span><span class="n">0.9984</span></div><div><span class="k">起购</span><span class="n">¥10,000</span></div><div><span class="k">期限</span><span class="n">180 天</span></div></div>
+              <div class="pf"><span>混合 · 封闭期内不可赎回</span><b>风险匹配</b></div></div>
+            <div class="prod" data-go="产品详情"><div class="pt"><b>招财猫沪深 300 指数增强</b><span class="risk hi">R4</span></div>
+              <div class="pm"><div><span class="k">单位净值</span><span class="n">1.0342</span></div><div><span class="k">起购</span><span class="n">¥10,000</span></div><div><span class="k">期限</span><span class="n">随时赎回</span></div></div>
+              <div class="pf"><span>权益 · 开放式</span><b class="no">超出你的风险承受能力</b></div></div>
+            <div class="prod" data-go="产品详情"><div class="pt"><b>招财猫黄金挂钩 365 天</b><span class="risk hi">R5</span></div>
+              <div class="pm"><div><span class="k">单位净值</span><span class="n">1.0571</span></div><div><span class="k">起购</span><span class="n">¥50,000</span></div><div><span class="k">期限</span><span class="n">365 天</span></div></div>
+              <div class="pf"><span>商品及衍生品 · 封闭期内不可赎回</span><b class="no">超出你的风险承受能力</b></div></div>
+          </div>
+        </div>
+        <!-- 持仓 -->
+        <div class="wpanel" data-wp="hold">
+          <div class="fchips" style="margin-bottom:12px"><a class="on">全部</a><a>可赎回</a><a>封闭期</a></div>
+          <div class="wlist">
+            <div class="hold"><div class="pt"><b>招财猫现金添利 A</b><span class="risk">R1</span></div>
+              <div class="pm"><div><span class="k">市值</span><span class="n">¥20,014.50</span></div><div><span class="k">份额</span><span class="n">19,985.02</span></div><div><span class="k">盈亏</span><span class="n">+14.50</span></div></div>
+              <div class="pf"><span>确认日 2026-10-18</span><a data-sheet="red">赎回</a></div></div>
+            <div class="hold"><div class="pt"><b>招财猫稳盈 90 天</b><span class="risk">R2</span></div>
+              <div class="pm"><div><span class="k">市值</span><span class="n">¥10,032.00</span></div><div><span class="k">份额</span><span class="n">9,968.21</span></div><div><span class="k">盈亏</span><span class="n">+32.00</span></div></div>
+              <div class="pf"><span>封闭期至 2027-01-18</span><a class="off">封闭期不可赎回</a></div></div>
+            <div class="hold"><div class="pt"><b>招财猫沪深 300 指数增强</b><span class="risk hi">R4</span></div>
+              <div class="pm"><div><span class="k">市值</span><span class="n">¥12,410.40</span></div><div><span class="k">份额</span><span class="n">12,000.00</span></div><div><span class="k">盈亏</span><span class="n neg">-589.60</span></div></div>
+              <div class="pf"><span>确认日 2026-09-28</span><a>赎回</a></div></div>
+          </div>
+        </div>
+        <!-- 记录 -->
+        <div class="wpanel" data-wp="rec">
+          <div class="fchips" style="margin-bottom:10px"><a class="on">全部</a><a>申购</a><a>赎回</a></div>
+          <div class="wlist">
+            <div class="prod" style="cursor:default"><div class="pt"><b>申购 · 招财猫现金添利 A</b><span class="risk">申购</span></div>
+              <div class="pf" style="border-top:none;padding-top:0;margin-top:6px"><span>2026-10-18 14:32 · 份额 19,985.02</span><b>-¥20,000.00</b></div></div>
+            <div class="prod" style="cursor:default"><div class="pt"><b>赎回 · 招财猫稳盈 90 天</b><span class="risk">赎回</span></div>
+              <div class="pf" style="border-top:none;padding-top:0;margin-top:6px"><span>2026-10-12 10:05 · 预计 T+1 到账</span><b>+¥10,032.00</b></div></div>
+            <div class="prod" style="cursor:default"><div class="pt"><b>申购 · 招财猫沪深 300 指数增强</b><span class="risk">申购</span></div>
+              <div class="pf" style="border-top:none;padding-top:0;margin-top:6px"><span>2026-09-28 09:41 · 份额 12,000.00</span><b>-¥13,000.00</b></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="screen tab-screen" id="s-me"><div class="tab-head">我的</div><div class="me">
+      <div class="prof">
+        <span class="av"><img src="assets/brand-cat.png" alt=""></span>
+        <span class="nm"><b>陈先生</b><span>138 **** 8000</span></span>
+        <span class="tier" data-go="会员等级">普通会员<svg><use href="#i-chev"/></svg></span>
+      </div>
+      <div class="grp">账户与安全</div>
+      <div class="row" data-go="个人资料"><span class="ic"><svg><use href="#i-me"/></svg></span><span class="lb">个人资料</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="row" data-go="安全中心"><span class="ic"><svg><use href="#i-lock"/></svg></span><span class="lb">安全中心</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="row" data-go="银行卡"><span class="ic"><svg><use href="#i-card"/></svg></span><span class="lb">银行卡管理</span><span class="val">2 张</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="row" data-go="会员等级"><span class="ic"><svg><use href="#i-wealth"/></svg></span><span class="lb">会员等级</span><span class="val">距金卡差 ¥12,480</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="grp">连接与偏好</div>
+      <div class="row" data-go="IM 连接"><span class="ic"><svg><use href="#i-im"/></svg></span><span class="lb">IM 连接</span><span class="val">未绑定</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="row" data-go="通知设置"><span class="ic"><svg><use href="#i-dots"/></svg></span><span class="lb">通知设置</span><span class="val">全部开启</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="row" data-go="语言与地区"><span class="ic"><svg><use href="#i-globe"/></svg></span><span class="lb">语言与地区</span><span class="val">简体中文</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="grp">其他</div>
+      <div class="row" data-go="帮助与客服"><span class="ic"><svg><use href="#i-help"/></svg></span><span class="lb">帮助与客服</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="row" data-go="关于"><span class="ic"><svg><use href="#i-info"/></svg></span><span class="lb">关于招财猫银行</span><svg class="cv"><use href="#i-chev"/></svg></div>
+      <div class="row danger" data-go="登录"><span class="ic"><svg><use href="#i-up-out"/></svg></span><span class="lb">退出登录</span></div>
+      <div class="ver">招财猫银行 v1.0.0</div>
+    </div></div>
+
+    <!-- tab 一级页：通知 -->
+    <div class="screen tab-screen" id="s-ntf" data-name="通知"><div class="tab-head">通知</div>
+    <div class="fbar">
+      <div class="fchips"><a class="on">全部</a><a>交易</a><a>银行卡</a><a>提醒</a><a>安全</a></div>
+      <span class="fbtn" data-drawer="ntf"><svg><use href="#i-filter"/></svg></span>
+    </div>
+    <div class="sub-body ntf">
+      <div class="grp">今天</div>
+      <div class="item"><span class="ic"><svg><use href="#i-down-in"/></svg></span><div class="tx"><div class="tt"><i></i>转入到账</div><div class="pp">他行卡尾号 6633 转入 ¥5,000.00 已到账，当前余额 ¥86,320.00。</div></div><span class="tm">09:12</span></div>
+      <div class="item"><span class="ic"><svg><use href="#i-card"/></svg></span><div class="tx"><div class="tt"><i></i>银行卡已寄出</div><div class="pp">你申请的招财猫借记卡（尾号 8821）已通过审核并寄出，请注意签收。</div></div><span class="tm">08:40</span></div>
+      <div class="grp">昨天</div>
+      <div class="item"><span class="ic"><svg><use href="#i-receipt"/></svg></span><div class="tx"><div class="tt">自动扣款预告</div><div class="pp">「话费月缴」将于 10月21日 从人民币活期扣款 ¥98.00。</div></div><span class="tm">19:05</span></div>
+      <div class="item read"><span class="ic"><svg><use href="#i-up-out"/></svg></span><div class="tx"><div class="tt">转出成功</div><div class="pp">向陈嘉禾（招财猫银行 ··8821）转出 ¥500.00 已到账。</div></div><span class="tm">15:26</span></div>
+      <div class="grp">更早</div>
+      <div class="item read"><span class="ic"><svg><use href="#i-phone"/></svg></span><div class="tx"><div class="tt">新设备登录</div><div class="pp">你的账户于 10月18日 在 Android 设备登录。若非本人操作，请立即前往安全中心处理。</div></div><span class="tm">10月18日</span></div>
+      <div class="item read"><span class="ic"><svg><use href="#i-wealth"/></svg></span><div class="tx"><div class="tt">月度资产统计已生成</div><div class="pp">上月日均资产已更新，可在「我的 - 会员等级」查看。</div></div><span class="tm">10月15日</span></div>
+    </div></div>
+
+    <!-- 二级页（占位，内容后续填） -->
+    <div class="screen" data-name="转出"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>转出</div><div class="sub-body">
+      <div class="search"><svg><use href="#i-search"/></svg>手机号 / 银行卡号 / 收款人</div>
+      <div class="card">
+        <a class="method" data-go="手机号转账"><span class="mic"><svg><use href="#i-phone"/></svg></span><span class="mt"><b>手机号转账</b><span>本行与他行账户，凭手机号直达</span></span><svg><use href="#i-chev"/></svg></a>
+        <a class="method" data-go="银行卡号转账"><span class="mic"><svg><use href="#i-card"/></svg></span><span class="mt"><b>银行卡号转账</b><span>支持本行与他行储蓄卡</span></span><svg><use href="#i-chev"/></svg></a>
+        <a class="method" data-go="跨境支付通"><span class="mic"><svg><use href="#i-globe"/></svg></span><span class="mt"><b>跨境支付通</b><span>转数快（FPS）· 港币 / 离岸人民币</span></span><svg><use href="#i-chev"/></svg></a>
+      </div>
+      <div class="sec-title">历史收款人</div>
+      <div class="card">
+        <a class="payee" data-go="填写金额"><span class="av">陈</span><span class="pt"><b>陈嘉禾</b><span>招财猫银行 ··8821 · 昨天</span></span><svg><use href="#i-chev"/></svg></a>
+        <a class="payee" data-go="填写金额"><span class="av">王</span><span class="pt"><b>王思远</b><span>招商银行 ··6688 · 3 天前</span></span><svg><use href="#i-chev"/></svg></a>
+        <a class="payee" data-go="填写金额"><span class="av">L</span><span class="pt"><b>LAM HO**</b><span>FPS 852 ··4321 · 上周</span></span><svg><use href="#i-chev"/></svg></a>
+      </div>
+    </div></div>
+    <div class="screen" data-name="手机号转账"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>手机号转账</div><div class="sub-body">
+      <div class="fld"><label>收款人手机号</label><input placeholder="请输入已登记的手机号"><p class="hint">本行与他行账户均可，凭已登记手机号直达收款账户</p></div>
+      <div class="fld"><label>收款人姓名（选填）</label><input placeholder="留空则由银行侧核对户名"></div>
+      <a class="btn-primary" data-go="填写金额">下一步</a>
+    </div></div>
+    <div class="screen" data-name="银行卡号转账"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>银行卡号转账</div><div class="sub-body">
+      <div class="fld"><label>银行卡号</label><input placeholder="请输入卡号，自动识别发卡行"><p class="hint">识别结果：招商银行 储蓄卡</p></div>
+      <div class="fld"><label>收款人姓名</label><input placeholder="请输入收款人姓名"></div>
+      <div class="fld"><label>收款银行</label><input value="招商银行" readonly></div>
+      <a class="btn-primary" data-go="填写金额">下一步</a>
+    </div></div>
+    <div class="screen" data-name="跨境支付通"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>跨境支付通</div><div class="sub-body">
+      <div class="fld"><label>收款标识类型</label>
+        <div class="seg"><span class="on">手机号</span><span>电邮</span><span>FPS ID</span><span>账户</span></div>
+      </div>
+      <div class="fld"><label>收款标识</label><input placeholder="+852 ···· ····"><p class="hint">解析结果：LAM HO** · 中银香港</p></div>
+      <div class="fld"><label>入账币种</label>
+        <div class="seg"><span class="on">港币 HKD</span><span>离岸人民币</span><span>澳门元 MOP</span></div>
+      </div>
+      <a class="btn-primary" data-go="填写金额">下一步</a>
+    </div></div>
+    <div class="screen" data-name="填写金额"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>填写金额</div><div class="sub-body">
+      <div class="card payee-head"><span class="av" style="width:38px;height:38px;border-radius:50%;background:var(--surface-warm);color:var(--fg-2);display:flex;align-items:center;justify-content:center;font-weight:600">陈</span><span><b style="display:block;font-size:14px">陈嘉禾</b><span style="font-size:11.5px;color:var(--muted)">招财猫银行 ··8821</span></span></div>
+      <div class="card">
+        <div class="amt"><span class="cur">¥</span><input value="500.00"></div>
+        <div class="info-row"><span>手续费</span><b>¥0.00（会员减免）</b></div>
+        <div class="info-row"><span>到账时间</span><b>实时到账</b></div>
+        <div class="info-row"><span>单笔限额</span><b>¥1,000,000.00</b></div>
+      </div>
+      <div class="fld"><label>附言（选填）</label><input placeholder="最多 20 字"></div>
+      <a class="btn-primary" data-sheet="cf">确认转出</a>
+    </div></div>
+    <div class="screen" data-name="转账结果"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>转账结果</div>
+      <div class="result">
+        <span class="ok"><svg><use href="#i-check"/></svg></span>
+        <h5>转账成功</h5>
+        <div class="ramt">¥500.00</div>
+        <p>陈嘉禾 · 招财猫银行 ··8821 · 实时到账</p>
+        <a class="btn-primary" style="width:100%;margin-top:14px" data-home>完成</a>
+      </div>
+    </div>
+    <div class="screen" data-name="存款"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>存款</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="sec-h"><span>活期存款</span><span>人民币活期 ··8821</span></div>
+      <div class="cinfo">
+        <div><span>人民币 CNY</span><b>¥86,320.00</b></div>
+        <div><span>港币 HKD</span><b>HK$8,720.00</b></div>
+        <div><span>人民币活期年利率</span><b>1.55%</b></div>
+        <div><span>港币活期年利率</span><b>1.25%</b></div>
+      </div>
+      <div class="cact" style="padding-top:12px">
+        <a data-sheet="in"><svg><use href="#i-down-in"/></svg><span>转入</span></a>
+        <a data-go="转出"><svg><use href="#i-up-out"/></svg><span>转出</span></a>
+        <a data-go="交易记录"><svg><use href="#i-receipt"/></svg><span>利息流水</span></a>
+      </div>
+      <div class="sec-h"><span>定期存款</span></div>
+      <div class="empty">暂无可用的定期存款产品<br>当前仅提供活期存款</div>
+    </div></div>
+    <div class="screen" data-name="银行卡"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>银行卡</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="sec-h"><span>我的卡片</span><span>2 张</span></div>
+      <div class="cards">
+        <div class="bank-card-face violet">
+          <div class="cf-head">
+            <img class="cf-mark" src="assets/support-cat-trim.png" alt="">
+            <span class="cf-name"><strong>招财猫借记卡</strong><small>尾号 8821 · <i data-lock-state style="font-style:normal">使用中</i></small></span>
+            <span class="cf-net">银联</span>
+          </div>
+          <div class="cf-mid"><span data-pan>•••• •••• •••• ••••</span><svg data-pan-toggle><use href="#i-eye"/></svg></div>
+          <div class="cf-bot">
+            <span>陈嘉禾</span>
+            <span class="cf-right">
+              <span><small>Valid Thru</small><b data-exp>••/••</b></span>
+              <span><small>CVV</small><b>•••</b></span>
+            </span>
+          </div>
+        </div>
+        <div class="bank-card-face navy">
+          <div class="cf-head">
+            <img class="cf-mark" src="assets/support-cat-trim.png" alt="">
+            <span class="cf-name"><strong>招财猫白金卡</strong><small>尾号 4417 · 待激活</small></span>
+            <span class="cf-net">银联</span>
+          </div>
+          <div class="cf-mid"><span>•••• •••• •••• ••••</span><svg><use href="#i-eye"/></svg></div>
+          <div class="cf-bot">
+            <span>陈嘉禾</span>
+            <span class="cf-right">
+              <span><small>Valid Thru</small><b>••/••</b></span>
+              <span><small>CVV</small><b>•••</b></span>
+            </span>
+          </div>
+        </div>
+        <div class="card-add" data-sheet="card"><svg><use href="#i-plus"/></svg><span>申请新卡</span></div>
+      </div>
+      <div class="cdots"><i class="on"></i><i></i><i></i></div>
+      <div class="cact">
+        <a data-lock><svg><use href="#i-lock"/></svg><span>立即锁卡</span></a>
+        <a data-sheet="card"><svg><use href="#i-transfer"/></svg><span>换卡</span></a>
+        <a data-go="寄送信息"><svg><use href="#i-receipt"/></svg><span>寄送信息</span></a>
+      </div>
+      <div class="sec-h"><span>资金账户</span><span style="display:flex;align-items:center;gap:7px">人民币活期 ··8821<svg data-bal-toggle style="width:14px;height:14px;cursor:pointer"><use href="#i-eye"/></svg></span></div>
+      <div class="cinfo">
+        <div><span>人民币 CNY</span><b data-bal>¥86,320.00</b></div>
+        <div><span>港币 HKD</span><b data-bal>HK$8,720.00</b></div>
+      </div>
+      <div class="cset">
+        <div class="r"><span class="lb"><b>线上支付</b></span><span class="sw on"><i></i></span></div>
+        <div class="r"><span class="lb"><b>境外交易</b></span><span class="sw"><i></i></span></div>
+        <div class="limits"><a>¥2,000</a><a>¥5,000</a><a>¥10,000</a><a class="on">¥50,000</a></div>
+      </div>
+    </div></div>
+    <div class="screen" data-name="交易记录"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>交易记录<span class="act" data-go="消费分析">消费分析</span></div><div class="tr">
+      <div class="sum">
+        <div class="card"><div class="k">本月支出</div><div class="v neg">¥3,486.50</div></div>
+        <div class="card"><div class="k">本月收入</div><div class="v">¥23,000.00</div></div>
+      </div>
+      <div class="fbar">
+        <div class="fchips"><a class="on">全部</a><a>餐饮</a><a>购物</a><a>房租</a><a>交通</a><a>订阅</a><a>转账</a><a>工资入账</a><a>其他</a></div>
+        <span class="fbtn" data-drawer="filter"><svg><use href="#i-filter"/></svg></span>
+      </div>
+      <div class="day">今天</div>
+      <div class="row" data-go="交易详情"><span class="ic"><svg><use href="#i-food"/></svg></span><span class="tt"><b>星巴克咖啡</b><span>09:12 · 餐饮</span></span><span class="tv neg">-38.00</span></div>
+      <div class="row"><span class="ic"><svg><use href="#i-down-in"/></svg></span><span class="tt"><b>转入 · 他行卡</b><span>08:40 · 转账</span></span><span class="tv">+5,000.00</span></div>
+      <div class="row"><span class="ic"><svg><use href="#i-transfer"/></svg></span><span class="tt"><b>地铁出行</b><span>07:48 · 交通</span></span><span class="tv neg">-6.00</span></div>
+      <div class="day">昨天</div>
+      <div class="row"><span class="ic"><svg><use href="#i-up-out"/></svg></span><span class="tt"><b>转出 · 陈嘉禾</b><span>15:26 · 转账</span></span><span class="tv neg">-500.00</span></div>
+      <div class="row"><span class="ic"><svg><use href="#i-shop"/></svg></span><span class="tt"><b>永辉超市</b><span>12:05 · 购物</span></span><span class="tv neg">-126.50</span></div>
+      <div class="row"><span class="ic"><svg><use href="#i-card"/></svg></span><span class="tt"><b>视频会员续费</b><span>10:00 · 订阅服务</span></span><span class="tv neg">-25.00</span></div>
+      <div class="day">10月18日</div>
+      <div class="row"><span class="ic"><svg><use href="#i-globe"/></svg></span><span class="tt"><b>换汇 · 人民币 → 港币</b><span>16:42 · 其他 · HK$8,720.00</span></span><span class="tv neg">-8,000.00</span></div>
+      <div class="row"><span class="ic"><svg><use href="#i-down-in"/></svg></span><span class="tt"><b>工资入账</b><span>10:00 · 工资入账</span></span><span class="tv">+18,000.00</span></div>
+      <div class="row"><span class="ic"><svg><use href="#i-receipt"/></svg></span><span class="tt"><b>房租</b><span>09:00 · 房租</span></span><span class="tv neg">-4,500.00</span></div>
+    </div></div>
+    <div class="screen" data-name="更多"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>更多服务</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="sec-h"><span>账户与支付</span></div>
+      <div class="mgrid">
+        <a data-tab="1"><span class="ic"><svg><use href="#i-eye"/></svg></span>账户资产</a>
+        <a data-go="转出"><span class="ic"><svg><use href="#i-transfer"/></svg></span>转账与支付</a>
+        <a data-sheet="in"><span class="ic"><svg><use href="#i-down-in"/></svg></span>收款与转入</a>
+        <a data-go="换汇"><span class="ic"><svg><use href="#i-globe"/></svg></span>多币种换汇</a>
+        <a data-go="银行卡"><span class="ic"><svg><use href="#i-card"/></svg></span>银行卡管理</a>
+        <a data-go="存款"><span class="ic"><svg><use href="#i-pig"/></svg></span>存款</a>
+      </div>
+      <div class="sec-h"><span>账单与资金</span></div>
+      <div class="mgrid">
+        <a data-go="交易记录"><span class="ic"><svg><use href="#i-receipt"/></svg></span>账单与交易</a>
+        <a data-go="交易记录"><span class="ic"><svg><use href="#i-wealth"/></svg></span>消费分析</a>
+        <a data-go="自动扣款"><span class="ic"><svg><use href="#i-up-out"/></svg></span>自动扣款</a>
+        <a data-go="工资与备用金"><span class="ic"><svg><use href="#i-down-in"/></svg></span>工资与备用金</a>
+        <a data-go="借款与分期"><span class="ic"><svg><use href="#i-card"/></svg></span>借款与分期</a>
+      </div>
+      <div class="sec-h"><span>理财与储蓄</span></div>
+      <div class="mgrid">
+        <a data-tab="1"><span class="ic"><svg><use href="#i-pig"/></svg></span>理财总览</a>
+        <a data-tab="1"><span class="ic"><svg><use href="#i-wealth"/></svg></span>产品市场</a>
+        <a data-tab="1"><span class="ic"><svg><use href="#i-wealth"/></svg></span>我的持仓</a>
+        <a data-go="储蓄与计划"><span class="ic"><svg><use href="#i-pig"/></svg></span>储蓄与计划</a>
+        <a data-tab="1"><span class="ic"><svg><use href="#i-receipt"/></svg></span>理财记录</a>
+      </div>
+      <div class="sec-h"><span>个人与安全</span></div>
+      <div class="mgrid">
+        <a data-go="保险保障"><span class="ic"><svg><use href="#i-shield"/></svg></span>保险保障</a>
+        <a data-tab="4"><span class="ic"><svg><use href="#i-lock"/></svg></span>安全设置</a>
+        <a data-go="邀请与奖励"><span class="ic"><svg><use href="#i-me"/></svg></span>邀请与奖励</a>
+        <a data-tab="4"><span class="ic"><svg><use href="#i-check"/></svg></span>会员中心</a>
+      </div>
+    </div></div>
+    <div class="screen" data-name="消费分析"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>消费分析</div><div class="an">
+      <div class="seg" style="margin:14px 14px 0"><span class="on">2026-10</span><span>2026-09</span><span>2026-08</span></div>
+      <div class="sec-h"><span>人民币 CNY</span><span>北京时间</span></div>
+      <div class="row2">
+        <div class="card"><div class="k">本月支出</div><div class="big">¥3,486.50</div><div class="sub">较 2026-09 ↓ 12.0%</div></div>
+        <div class="card"><div class="k">最大支出分类</div><div class="big" style="font-size:17px">房租</div><div class="sub">¥1,120.00 · 占比 32%</div></div>
+      </div>
+      <div class="sec-h"><span>支出构成</span></div>
+      <div class="card" style="margin:0 14px;padding-bottom:14px">
+        <div class="donutwrap">
+          <div class="donut" style="background:conic-gradient(#101826 0 32%,#5840c4 32% 61%,#306fdb 61% 86%,#8fa3b8 86% 94%,#d92159 94% 100%)">
+            <div class="cen"><small>10 月合计</small><b>¥3,486.50</b></div>
+          </div>
+          <div class="dleg">
+            <div><i style="background:#101826"></i><span>房租</span><b>¥1,120.00</b></div>
+            <div><i style="background:#5840c4"></i><span>餐饮</span><b>¥1,020.50</b></div>
+            <div><i style="background:#306fdb"></i><span>购物</span><b>¥860.00</b></div>
+            <div><i style="background:#8fa3b8"></i><span>交通</span><b>¥286.00</b></div>
+            <div><i style="background:#d92159"></i><span>订阅服务</span><b>¥200.00</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="sec-h"><span>近 6 个月走势</span><span>人民币 CNY</span></div>
+      <div class="card" style="margin:0 14px">
+        <div class="bars">
+          <div><span>¥3,820</span><i style="height:78%"></i><span>5 月</span></div>
+          <div><span>¥4,120</span><i style="height:86%"></i><span>6 月</span></div>
+          <div><span>¥3,650</span><i style="height:74%"></i><span>7 月</span></div>
+          <div><span>¥4,480</span><i style="height:94%"></i><span>8 月</span></div>
+          <div><span>¥3,960</span><i style="height:82%"></i><span>9 月</span></div>
+          <div><span>¥3,486</span><i class="on" style="height:72%"></i><span>10 月</span></div>
+        </div>
+      </div>
+      <div class="sec-h"><span>现金流 · 近 30 天</span><span>人民币 CNY</span></div>
+      <div class="cinfo" style="margin-top:0">
+        <div><span>收入</span><b>+¥23,000.00</b></div>
+        <div><span>支出</span><b style="color:#d92159">-¥12,486.50</b></div>
+        <div><span>净流入</span><b>+¥10,513.50</b></div>
+      </div>
+    </div></div>
+
+    <div class="screen" data-name="换汇"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>换汇</div><div class="sub-body">
+      <div class="fx">
+        <div class="side">
+          <div class="k">卖出</div>
+          <div class="amt"><b>¥ 8,000.00</b></div>
+          <div class="cur"><span class="tag">CNY</span>人民币活期 ··8821<span class="avail">可用 ¥86,320.00</span></div>
+        </div>
+        <span class="swap"><svg><use href="#i-transfer"/></svg></span>
+        <div class="side">
+          <div class="k">买入</div>
+          <div class="amt"><b class="dim">HK$ 8,720.00</b></div>
+          <div class="cur"><span class="tag">HKD</span>港币活期</div>
+        </div>
+        <div class="rate">参考汇率 1 CNY ≈ 1.0900 HKD，含点差 0.15%，以成交时为准。</div>
+      </div>
+      <a class="btn-primary">确认换汇</a>
+    </div></div>
+    <div class="screen" data-name="产品详情"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>产品详情</div><div class="sub-body" style="overflow-y:auto">
+      <div class="pdet">
+        <div class="hd"><b>招财猫现金添利 A</b><span class="risk">R1</span></div>
+        <div class="sub">LCB-CASH-A · 招财猫理财有限责任公司</div>
+        <div class="nav">
+          <div><div class="k">单位净值</div><div class="n">1.0015<small>2026-10-20</small></div></div>
+          <svg viewBox="0 0 96 34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="0,27 12,25 24,26 36,22 48,23 60,19 72,20 84,16 96,15"/></svg>
+        </div>
+      </div>
+      <div class="pkv">
+        <div><span>业绩比较基准</span><b>1.60%–2.10%（年化区间）</b></div>
+        <div><span>起购 / 递增</span><b>¥1.00 / ¥1.00</b></div>
+        <div><span>期限与开放性</span><b>随时赎回 · 开放式</b></div>
+        <div><span>费用</span><b>管理 0.15% · 托管 0.02% · 销售服务 0.20%<br>申购 0 · 赎回 0（年化，已体现在净值中）</b></div>
+        <div><span>近一月年化波动率</span><b>0.04%</b></div>
+      </div>
+      <a class="btn-primary" data-sheet="sub">立即申购</a>
+    </div></div>
+    <div class="screen" data-name="申购受理"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>申购受理</div><div class="auth">
+      <div class="ok"><span class="c"><svg><use href="#i-check"/></svg></span><b>申购已受理</b><span>扣款与份额按演示即时记账</span></div>
+      <div class="card2">
+        <div><span>产品</span><b>招财猫现金添利 A</b></div>
+        <div><span>申购金额</span><b>¥20,000.00</b></div>
+        <div><span>确认份额</span><b>19,985.02</b></div>
+        <div><span>确认日</span><b>2026-10-20</b></div>
+      </div>
+      <a class="btn-primary" data-tab="1">回到理财</a>
+    </div></div>
+    <div class="screen" data-name="赎回受理"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>赎回受理</div><div class="auth">
+      <div class="ok"><span class="c"><svg><use href="#i-check"/></svg></span><b>赎回已受理</b><span>回执标注预计 T+1 个工作日到账</span></div>
+      <div class="card2">
+        <div><span>产品</span><b>招财猫现金添利 A</b></div>
+        <div><span>赎回份额</span><b>19,985.02</b></div>
+        <div><span>赎回金额</span><b>¥20,014.50</b></div>
+        <div><span>赎回费</span><b>¥0.00</b></div>
+      </div>
+      <a class="btn-primary" data-tab="1">回到理财</a>
+    </div></div>
+    <div class="screen" data-name="交易详情"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>交易详情</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="auth" style="padding:0">
+        <div class="ok" style="padding:22px 0 18px"><span class="c" style="width:52px;height:52px"><svg style="width:24px;height:24px"><use href="#i-food"/></svg></span><b style="font-size:24px;font-variant-numeric:tabular-nums">-¥38.00</b><span>星巴克咖啡 · 交易成功</span></div>
+      </div>
+      <div class="kv">
+        <div><span>交易时间</span><b>2026-10-20 09:12</b></div>
+        <div><span>交易类型</span><b>消费支出</b></div>
+        <div><span>分类</span><b>餐饮</b></div>
+        <div><span>付款卡片</span><b>招财猫借记卡 ··8821</b></div>
+        <div><span>资金账户</span><b>人民币活期 ··8821</b></div>
+        <div><span>交易号</span><b>TX20261020091201</b></div>
+      </div>
+      <div style="padding:14px"><a class="btn-primary">下载电子回单</a></div>
+    </div></div>
+
+    <!-- 更多服务 · 二级页 -->
+    <div class="screen" data-name="自动扣款"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>自动扣款</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="wlist" style="padding:14px">
+        <div class="prod" style="cursor:default"><div class="pt"><b>话费月缴</b><span class="risk">每月</span></div>
+          <div class="pm"><div><span class="k">金额</span><span class="n">¥98.00</span></div><div><span class="k">扣款日</span><span class="n">21 日</span></div><div><span class="k">下次</span><span class="n">10-21</span></div></div>
+          <div class="pf"><span>人民币活期 ··8821</span><b>修改</b></div></div>
+        <div class="prod" style="cursor:default"><div class="pt"><b>房租</b><span class="risk">每月</span></div>
+          <div class="pm"><div><span class="k">金额</span><span class="n">¥4,500.00</span></div><div><span class="k">扣款日</span><span class="n">1 日</span></div><div><span class="k">下次</span><span class="n">11-01</span></div></div>
+          <div class="pf"><span>人民币活期 ··8821</span><b>修改</b></div></div>
+      </div>
+      <div class="empty">扣款规则由服务端调度执行<br>余额不足时该次扣款会失败</div>
+      <div style="padding:14px"><a class="btn-primary">新建自动扣款</a></div>
+    </div></div>
+
+    <div class="screen" data-name="工资与备用金"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>工资与备用金</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div style="padding:14px 14px 0">
+        <div class="wsum">
+          <div class="k">工资计划</div>
+          <div class="v" style="font-size:20px">每月 10 日 ¥18,000.00</div>
+          <div class="rows">
+            <div><span>入账账户</span><b>人民币活期 ··8821</b></div>
+            <div><span>上次入账</span><b>2026-10-10</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="sec-h"><span>备用金目标</span></div>
+      <div class="wlist" style="padding:0 14px">
+        <div class="goal"><div class="hd"><div><b>应急备用金</b><span>目标 ¥30,000.00</span></div><svg style="width:16px;height:16px;color:var(--muted)"><use href="#i-pig"/></svg></div>
+          <div class="amt"><b>¥12,000.00</b><span>已完成 40%</span></div>
+          <div class="prog"><i style="width:40%"></i></div>
+          <div class="ft"><span>每月自动归集 ¥1,000</span><span>40%</span></div></div>
+      </div>
+      <div class="quote" style="margin-top:12px">工资计划与归集只保存规则，自动执行尚未开放；备用金目标不代表独立资金账户。</div>
+    </div></div>
+
+    <div class="screen" data-name="借款与分期"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>借款与分期</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div style="padding:14px 14px 0">
+        <div class="wsum">
+          <div class="k">可用额度</div>
+          <div class="v">¥50,000.00</div>
+          <div class="rows">
+            <div><span>已用额度</span><b>¥0.00</b></div>
+            <div><span>年化利率</span><b>4.35% 起</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="sec-h"><span>分期计划</span></div>
+      <div class="empty">暂无分期计划</div>
+      <div style="padding:14px"><a class="btn-primary">立即借款</a></div>
+    </div></div>
+
+    <div class="screen" data-name="保险保障"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>保险保障</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="wlist" style="padding:14px">
+        <div class="prod" style="cursor:default"><div class="pt"><b>综合意外险</b><span class="risk">生效中</span></div>
+          <div class="pm"><div><span class="k">保额</span><span class="n">¥500,000</span></div><div><span class="k">保费</span><span class="n">¥199/年</span></div></div>
+          <div class="pf"><span>保障期至 2027-03-14</span><b>查看条款</b></div></div>
+        <div class="prod" style="cursor:default"><div class="pt"><b>百万医疗险</b><span class="risk">生效中</span></div>
+          <div class="pm"><div><span class="k">保额</span><span class="n">¥2,000,000</span></div><div><span class="k">保费</span><span class="n">¥326/年</span></div></div>
+          <div class="pf"><span>保障期至 2027-01-08</span><b>查看条款</b></div></div>
+      </div>
+      <div class="empty">保单为演示数据<br>保险保障不计入投资资产与收益</div>
+    </div></div>
+
+    <div class="screen" data-name="邀请与奖励"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>邀请与奖励</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div style="padding:14px 14px 0">
+        <div class="wsum">
+          <div class="k">我的邀请码</div>
+          <div class="v" style="font-size:22px;letter-spacing:2px">CAT-8821</div>
+          <div class="rows">
+            <div><span>已邀请</span><b>3 人</b></div>
+            <div><span>累计奖励</span><b>¥150.00</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="sec-h"><span>奖励记录</span></div>
+      <div class="kv" style="margin-top:0">
+        <div><span>沈一诺 开户成功</span><b>+¥50.00</b></div>
+        <div><span>顾亦辰 开户成功</span><b>+¥50.00</b></div>
+        <div><span>陆书瑶 开户成功</span><b>+¥50.00</b></div>
+      </div>
+      <div style="padding:14px"><a class="btn-primary">邀请好友</a></div>
+    </div></div>
+
+    <!-- 我的 · 二级页 -->
+    <div class="screen" data-name="申请受理"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>申请受理</div><div class="auth">
+      <div class="ok"><span class="c"><svg><use href="#i-check"/></svg></span><b>申请已提交</b><span>审核通过后制卡并寄出</span></div>
+      <div class="card2">
+        <div><span>卡种</span><b>招财猫白金卡</b></div>
+        <div><span>制卡费</span><b>¥50.00</b></div>
+        <div><span>预计寄送</span><b>3–5 个工作日</b></div>
+      </div>
+      <a class="btn-primary" data-go="银行卡">回到银行卡</a>
+    </div></div>
+
+    <div class="screen" data-name="寄送信息"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>寄送信息</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="kv" style="margin-top:14px">
+        <div><span>银行卡</span><b>招财猫白金卡 · 尾号 4417</b></div>
+        <div><span>收件人</span><b>陈嘉禾</b></div>
+        <div><span>联系电话</span><b>138 **** 8000</b></div>
+        <div><span>寄送地址</span><b>上海市徐汇区漕溪北路 88 号</b></div>
+        <div><span>已收制卡费</span><b>¥50.00</b></div>
+        <div><span>物流状态</span><b>已寄出 · 待签收</b></div>
+      </div>
+    </div></div>
+
+    <div class="screen" data-name="个人资料"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>个人资料</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="me"><div class="prof"><span class="av"><img src="assets/brand-cat.png" alt=""></span><span class="nm"><b>陈嘉禾</b><span>138 **** 8000</span></span><span class="tier">普通会员</span></div></div>
+      <div class="kv">
+        <div><span>姓名</span><b>陈嘉禾</b></div>
+        <div><span>手机号</span><b>138 **** 8000</b></div>
+        <div><span>身份证号</span><b>3101**********1234</b></div>
+        <div><span>开户日期</span><b>2026-03-14</b></div>
+        <div><span>联系地址</span><b>上海市徐汇区漕溪北路 88 号</b></div>
+      </div>
+      <div style="padding:14px"><a class="btn-primary">修改手机号</a></div>
+    </div></div>
+
+    <div class="screen" data-name="安全中心"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>安全中心</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="kv" style="margin-top:14px">
+        <div><span>登录密码</span><b>已设置</b></div>
+        <div><span>支付密码</span><b>已设置</b></div>
+        <div><span>已登录设备</span><b>1 台 · Android</b></div>
+        <div><span>最近登录</span><b>2026-10-20 08:40</b></div>
+      </div>
+      <div class="cset">
+        <div class="r"><span class="lb"><b>人脸识别登录</b><span>下次登录可用人脸代替密码</span></span><span class="sw on"><i></i></span></div>
+        <div class="r"><span class="lb"><b>大额转账二次确认</b><span>超过 ¥50,000 需再次验证</span></span><span class="sw on"><i></i></span></div>
+      </div>
+      <div class="cact" style="padding-top:12px">
+        <a><svg><use href="#i-lock"/></svg><span>修改登录密码</span></a>
+        <a><svg><use href="#i-check"/></svg><span>修改支付密码</span></a>
+        <a><svg><use href="#i-phone"/></svg><span>设备管理</span></a>
+      </div>
+    </div></div>
+
+    <div class="screen" data-name="会员等级"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>会员等级</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="sec-h"><span>会员卡</span><span>普通会员 · 使用中</span></div>
+      <div class="cards">
+        <div class="memwrap">
+          <img class="memcard" src="assets/member-standard.webp" alt="普通会员卡">
+          <div class="membar">
+            <div class="t"><span>距金卡</span><span>88%</span></div>
+            <div class="track"><i style="width:88%"></i></div>
+          </div>
+        </div>
+        <img class="memcard lock" src="assets/member-gold.webp" alt="金卡会员卡（未解锁）">
+        <img class="memcard lock" src="assets/member-platinum.webp" alt="白金会员卡（未解锁）">
+        <img class="memcard lock" src="assets/member-diamond.webp" alt="钻石会员卡（未解锁）">
+      </div>
+      <div class="cdots"><i class="on"></i><i></i><i></i><i></i></div>
+      <div style="padding:6px 14px 0">
+        <div class="wsum">
+          <div class="k">当前等级</div>
+          <div class="v" style="font-size:22px">普通会员</div>
+          <div class="rows">
+            <div><span>上月日均资产</span><b>¥87,520.00</b></div>
+            <div><span>距金卡会员还差</span><b>¥12,480.00</b></div>
+          </div>
+        </div>
+      </div>
+      <div class="sec-h"><span>权益</span></div>
+      <div class="kv" style="margin-top:0">
+        <div><span>制卡费减免</span><b>每年 0 张</b></div>
+        <div><span>换汇点差</span><b>标准价</b></div>
+        <div><span>机场贵宾厅</span><b>—</b></div>
+        <div><span>专属顾问</span><b>—</b></div>
+      </div>
+      <div class="quote" style="margin-top:12px">等级按上月日均资产每月 1 号重算，实时达标当天升级；缺快照的日子按 0 计入日均。</div>
+    </div></div>
+
+    <div class="screen" data-name="IM 连接"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>IM 连接</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="sect">
+        <div class="lbl">输入绑定码</div>
+        <div class="fld"><input placeholder="例如 WX-8F2K" style="text-transform:uppercase"></div>
+        <a class="btn-primary" style="margin-top:12px">确认绑定</a>
+      </div>
+      <div class="kv">
+        <div><span>绑定状态</span><b>未绑定</b></div>
+        <div><span>支持渠道</span><b>微信 / 企业微信</b></div>
+      </div>
+      <div class="cset">
+        <div class="r"><span class="lb"><b>账户变动提醒</b><span>入账、转出、扣款成功时推送</span></span><span class="sw on"><i></i></span></div>
+        <div class="r"><span class="lb"><b>提醒尚未启用</b><span>桥接服务未开启时不推送</span></span><span class="sw"><i></i></span></div>
+      </div>
+    </div></div>
+
+    <div class="screen" data-name="通知设置"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>通知设置</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="cset" style="margin-top:14px">
+        <div class="r"><span class="lb"><b>交易通知</b><span>入账、转出、消费</span></span><span class="sw on"><i></i></span></div>
+        <div class="r"><span class="lb"><b>安全提醒</b><span>新设备登录、密码变更</span></span><span class="sw on"><i></i></span></div>
+        <div class="r"><span class="lb"><b>产品与活动</b><span>理财上新、会员权益</span></span><span class="sw"><i></i></span></div>
+      </div>
+    </div></div>
+
+    <div class="screen" data-name="语言与地区"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>语言与地区</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="sec-h"><span>语言</span></div>
+      <div style="padding:0 14px"><div class="seg"><span class="on">简体中文</span><span>English</span></div></div>
+      <div class="kv">
+        <div><span>地区</span><b>中国大陆</b></div>
+        <div><span>时区</span><b>北京时间 UTC+8</b></div>
+        <div><span>记账币种</span><b>人民币 CNY</b></div>
+      </div>
+    </div></div>
+
+    <div class="screen" data-name="帮助与客服"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>帮助与客服</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="sec-h"><span>常见问题</span></div>
+      <div class="kv" style="margin-top:0">
+        <div><span>转账多久到账</span><b>›</b></div>
+        <div><span>如何提高单日限额</span><b>›</b></div>
+        <div><span>忘记支付密码怎么办</span><b>›</b></div>
+        <div><span>理财赎回什么时候到账</span><b>›</b></div>
+      </div>
+      <div style="padding:14px"><a class="btn-primary" data-go="智能助手">联系在线客服</a></div>
+    </div></div>
+
+    <div class="screen" data-name="关于"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>关于</div><div class="auth">
+      <div class="brand"><img src="assets/brand-cat.png" alt=""><b>招财猫银行</b></div>
+      <div class="kv" style="margin:0">
+        <div><span>版本</span><b>v1.0.0</b></div>
+        <div><span>服务条款</span><b>›</b></div>
+        <div><span>隐私政策</span><b>›</b></div>
+        <div><span>开源许可</span><b>›</b></div>
+      </div>
+    </div></div>
+    <div class="screen" data-name="储蓄与计划"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>储蓄与计划</div><div style="flex:1;overflow-y:auto;padding-bottom:18px">
+      <div class="wtab" style="border-bottom:none"><div class="seg"><span class="on" data-sp="goal">存钱目标</span><span data-sp="plan">定投计划</span></div></div>
+      <div class="wpanel on" data-sp="goal" style="padding-top:6px">
+        <div class="wlist">
+          <div class="goal"><div class="hd"><div><b>旅行基金</b><span>目标日 2027-03-01</span></div><svg style="width:16px;height:16px;color:var(--muted)"><use href="#i-pig"/></svg></div>
+            <div class="amt"><b>¥8,000.00</b><span>目标 ¥20,000.00</span></div>
+            <div class="prog"><i style="width:40%"></i></div>
+            <div class="ft"><span>归集设置 · 每月 ¥1,000</span><span>40%</span></div></div>
+          <div class="goal"><div class="hd"><div><b>换电脑</b><span>无固定期限</span></div><svg style="width:16px;height:16px;color:var(--muted)"><use href="#i-pig"/></svg></div>
+            <div class="amt"><b>¥4,500.00</b><span>目标 ¥12,000.00</span></div>
+            <div class="prog"><i style="width:38%"></i></div>
+            <div class="ft"><span>暂无归集设置</span><span>38%</span></div></div>
+        </div>
+        <div class="cset" style="margin-top:12px">
+          <div class="r"><span class="lb"><b>消费凑整</b><span>凑整到 ¥10 · 单日上限 ¥50</span></span><span class="sw on"><i></i></span></div>
+        </div>
+        <div style="padding:14px"><a class="btn-primary">新建存钱目标</a></div>
+      </div>
+      <div class="wpanel" data-sp="plan" style="padding-top:6px">
+        <div class="wlist">
+          <div class="prod" style="cursor:default"><div class="pt"><b>沪深 300 指数基金</b><span class="risk">每月</span></div>
+            <div class="pm"><div><span class="k">每期金额</span><span class="n">¥1,000</span></div><div><span class="k">下次拟定</span><span class="n">11-01</span></div><div><span class="k">累计投入</span><span class="n">¥6,000</span></div></div>
+            <div class="pf"><span>定投计划 · 运行中</span><b>暂停</b></div></div>
+          <div class="prod" style="cursor:default"><div class="pt"><b>稳利纯债基金 A</b><span class="risk">每月</span></div>
+            <div class="pm"><div><span class="k">每期金额</span><span class="n">¥500</span></div><div><span class="k">下次拟定</span><span class="n">11-15</span></div><div><span class="k">累计投入</span><span class="n">¥1,500</span></div></div>
+            <div class="pf"><span>定投计划 · 已暂停</span><b>恢复</b></div></div>
+        </div>
+        <div class="empty" style="margin-top:12px">计划只保存规则<br>自动扣款与执行尚未开放</div>
+        <div style="padding:14px"><a class="btn-primary">新建定投计划</a></div>
+      </div>
+    </div></div>
+
+    <!-- 登录 -->
+    <div class="screen" data-name="登录"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>登录</div><div class="auth">
+      <div class="brand"><img src="assets/brand-cat.png" alt=""><b>招财猫银行</b></div>
+      <div class="fld"><label>手机号</label><input value="138 0013 8000" inputmode="numeric"></div>
+      <div class="fld"><label>登录密码</label><input type="password" value="········"></div>
+      <div class="sms"><div class="fld"><label>短信验证码</label><input placeholder="6 位验证码" inputmode="numeric"></div><span class="code-btn">获取验证码</span></div>
+      <a class="btn-primary" data-home>登入</a>
+      <div class="sub"><a data-go="开户·手机号">注册并开户</a><a>忘记密码？</a></div>
+    </div></div>
+
+    <!-- 开户：4 步 -->
+    <div class="screen" data-name="开户·手机号"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>注册开户</div><div class="auth">
+      <div class="steps"><span>第 1 步 / 共 4 步</span><div class="bar"><i style="width:25%"></i></div></div>
+      <h3>先验证手机号</h3>
+      <p class="lead">这个号码会成为你的登录账号，也用于接收账户变动通知。</p>
+      <div class="fld"><label>手机号</label><input value="138 0013 8000" inputmode="numeric"></div>
+      <div class="sms"><div class="fld"><label>短信验证码</label><input placeholder="6 位验证码" inputmode="numeric"></div><span class="code-btn">获取验证码</span></div>
+      <a class="btn-primary" data-go="开户·实名">下一步</a>
+    </div></div>
+
+    <div class="screen" data-name="开户·实名"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>实名信息</div><div class="auth">
+      <div class="steps"><span>第 2 步 / 共 4 步</span><div class="bar"><i style="width:50%"></i></div></div>
+      <h3>填写实名信息</h3>
+      <p class="lead">姓名与证件号需与本人证件一致，开户后不可自行修改。</p>
+      <div class="fld"><label>姓名</label><input value="陈嘉禾"></div>
+      <div class="fld"><label>身份证号</label><input value="3101**********1234" inputmode="numeric"><div class="hint">演示环境已自动填入示例证件号</div></div>
+      <a class="btn-primary" data-go="开户·核验">下一步</a>
+    </div></div>
+
+    <div class="screen" data-name="开户·核验"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>身份核验</div><div class="auth">
+      <div class="steps"><span>第 3 步 / 共 4 步</span><div class="bar"><i style="width:75%"></i></div></div>
+      <h3>人脸核验</h3>
+      <p class="lead">把脸放进框内，按提示完成动作。核验只用于确认是本人开户。</p>
+      <div class="face"><span class="ring"><svg><use href="#i-me"/></svg></span><p>光线充足时识别更快<br>演示环境不会调用真实摄像头</p></div>
+      <a class="btn-primary" data-go="开户·支付密码">开始人脸核验</a>
+    </div></div>
+
+    <div class="screen" data-name="开户·支付密码"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>设置支付密码</div><div class="auth">
+      <div class="steps"><span>第 4 步 / 共 4 步</span><div class="bar"><i style="width:100%"></i></div></div>
+      <h3>设置 6 位支付密码</h3>
+      <p class="lead">转账、办卡等敏感操作需要输入这个密码，请勿与登录密码相同。</p>
+      <div class="fld"><label>支付密码</label><input type="password" maxlength="6" placeholder="6 位数字" inputmode="numeric" style="letter-spacing:6px"></div>
+      <div class="fld"><label>确认支付密码</label><input type="password" maxlength="6" placeholder="再输一次" inputmode="numeric" style="letter-spacing:6px"></div>
+      <a class="btn-primary" data-go="开户完成">完成开户</a>
+    </div></div>
+
+    <div class="screen" data-name="开户完成"><div class="sub-nav"><span class="back"><svg><use href="#i-chev"/></svg></span>开户完成</div><div class="auth">
+      <div class="ok"><span class="c"><svg><use href="#i-check"/></svg></span><b>开户成功</b><span>储蓄账户已开立，借记卡随后寄出</span></div>
+      <div class="card2">
+        <div><span>户名</span><b>陈嘉禾</b></div>
+        <div><span>账户号码</span><b>1024 ···· 8821</b></div>
+        <div><span>借记卡</span><b>尾号 8821 · 待签收</b></div>
+        <div><span>支付密码</span><b>已设置</b></div>
+      </div>
+      <a class="btn-primary" data-home>进入首页</a>
+    </div></div>
+  </div>
+  <div class="tabbar">
+    <div class="tab on"><svg><use href="#i-home"/></svg></div>
+    <div class="tab"><svg><use href="#i-wealth"/></svg></div>
+    <div class="tab center"><img src="assets/support-cat-trim.png" alt=""></div>
+    <div class="tab"><svg><use href="#i-im"/></svg><i class="dot"></i></div>
+    <div class="tab"><svg><use href="#i-me"/></svg></div>
+  </div>
+
+  <!-- 转入：底部弹层 -->
+  <div class="sheet-mask"></div>
+  <div class="sheet" data-sheet="in">
+    <div class="grip"></div>
+    <h4>转入</h4>
+    <div class="sec-title">我的收款账户</div>
+    <div class="card recv">
+      <div class="rk"><span>户名</span><b>陈**<svg><use href="#i-copy"/></svg></b></div>
+      <div class="rk"><span>账户号码</span><b>1024 ···· 8821<svg><use href="#i-copy"/></svg></b></div>
+      <div class="rk"><span>开户银行</span><b>招财猫银行</b></div>
+      <p class="tip">把账户号码发给对方即可收款；跨行转账请同时提供开户银行名称。</p>
+    </div>
+    <div class="sec-title" style="margin-top:12px">转数快收款（FPS）</div>
+    <div class="card recv">
+      <div class="rk"><span>登记手机号</span><b>+852 ···· 4321<svg><use href="#i-copy"/></svg></b></div>
+      <div class="rk"><span>FPS ID</span><b>10248821<svg><use href="#i-copy"/></svg></b></div>
+      <div class="rk"><span>入账账户</span><b>港币活期 ··8821</b></div>
+      <p class="tip">香港付款方用以上任一标识即可经转数快即时入账；未登记他行标识时可改用 FPS ID。</p>
+    </div>
+  </div>
+
+  <!-- 确认转账：底部弹层 -->
+  <div class="sheet" data-sheet="cf">
+    <div class="grip"></div>
+    <h4>确认转账</h4>
+    <div class="card">
+      <div class="info-row"><span>收款人</span><b>陈嘉禾 ··8821</b></div>
+      <div class="info-row"><span>转账金额</span><b>¥500.00</b></div>
+      <div class="info-row"><span>手续费</span><b>¥0.00</b></div>
+      <div class="info-row"><span>付款账户</span><b>人民币活期 ··8821</b></div>
+    </div>
+    <div class="pwd"><i class="full"></i><i class="full"></i><i class="full"></i><i class="full"></i><i class="full"></i><i></i></div>
+    <p class="pwd-hint">请输入 6 位支付密码</p>
+    <a class="btn-primary" data-go="转账结果">确认支付</a>
+  </div>
+
+  <!-- 历史会话：右侧抽屉 -->
+  <div class="drawer" data-drawer="hist">
+    <div class="d-head">历史会话<span class="d-close"><svg><use href="#i-chev"/></svg></span></div>
+    <div class="d-list">
+      <div class="d-grp">今天</div>
+      <div class="sess"><div class="t">本月支出明细</div><div class="m"><span>本月支出共 ¥3,486.50，比上月少…</span><span>14:32</span></div></div>
+      <div class="sess"><div class="t">转账限额调整</div><div class="m"><span>单笔限额当前为 ¥1,000,000…</span><span>09:18</span></div></div>
+      <div class="d-grp">本周</div>
+      <div class="sess"><div class="t">给陈嘉禾转账</div><div class="m"><span>已为你填好转账信息，请核对…</span><span>周二</span></div></div>
+      <div class="sess"><div class="t">港币换汇汇率</div><div class="m"><span>当前 ¥1 ≈ HK$1.09，换汇免…</span><span>周一</span></div></div>
+      <div class="d-grp">更早</div>
+      <div class="sess"><div class="t">工资卡自动扣款设置</div><div class="m"><span>每月 10 日自动转入 ¥5,000…</span><span>10月8日</span></div></div>
+      <div class="sess"><div class="t">信用卡还款提醒</div><div class="m"><span>已设置每月 25 日提醒…</span><span>9月27日</span></div></div>
+    </div>
+  </div>
+
+  <!-- 助手能力：底部弹层 -->
+  <div class="sheet" data-sheet="cap">
+    <div class="grip"></div>
+    <a class="upload"><svg><use href="#i-image"/></svg>上传图片<span>截图 / 账单 / 回单</span></a>
+    <h4>选择智能服务</h4>
+    <div class="caps">
+      <div class="cp on"><span class="ic"><svg><use href="#i-transfer"/></svg></span><span class="lb">智能转账<span>说一句就填好收款人与金额</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-wealth"/></svg></span><span class="lb">理财顾问<span>产品对比、持仓与申赎</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-receipt"/></svg></span><span class="lb">账单分析<span>分类、趋势与消费异常</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-card"/></svg></span><span class="lb">银行卡管家<span>锁卡、限额、换卡与寄送</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-globe"/></svg></span><span class="lb">换汇助手<span>汇率查询与换汇下单</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-pig"/></svg></span><span class="lb">储蓄规划<span>存钱目标与定投计划</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-up-out"/></svg></span><span class="lb">借款测算<span>额度与分期测算</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-shield"/></svg></span><span class="lb">保险咨询<span>保单与保障范围</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-lock"/></svg></span><span class="lb">安全助手<span>密码、设备与风险提示</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+      <div class="cp"><span class="ic"><svg><use href="#i-im"/></svg></span><span class="lb">智能客服<span>常见问题与人工转接</span></span><span class="ck"><svg><use href="#i-check"/></svg></span></div>
+    </div>
+    <a class="btn-primary" data-close>完成</a>
+  </div>
+
+  <!-- 申请新卡：底部弹层 -->
+  <div class="sheet" data-sheet="card">
+    <div class="grip"></div>
+    <h4>申请新卡</h4>
+    <div class="cinfo" style="margin:0">
+      <div><span>卡种</span><b>招财猫白金卡</b></div>
+      <div><span>制卡费</span><b>¥50.00 · 普通会员标准价</b></div>
+      <div><span>寄送</span><b>顺丰到付 · 3–5 个工作日</b></div>
+    </div>
+    <div class="quote" style="margin:12px 0 0">新卡与现有卡片同属一个资金账户，不新开户；收到后需签收并激活。</div>
+    <div class="pwd"><i class="full"></i><i class="full"></i><i class="full"></i><i class="full"></i><i class="full"></i><i></i></div>
+    <p class="pwd-hint">请输入 6 位支付密码</p>
+    <a class="btn-primary" data-go="申请受理">确认申请</a>
+  </div>
+
+  <!-- 理财申购：底部弹层 -->
+  <div class="sheet" data-sheet="sub">
+    <div class="grip"></div>
+    <h4>申购 · 招财猫现金添利 A</h4>
+    <div class="cinfo" style="margin:0">
+      <div><span>起购 / 递增</span><b>¥1.00 / ¥1.00</b></div>
+      <div><span>风险等级</span><b>R1 · 与你的测评匹配</b></div>
+      <div><span>申购金额</span><b>¥20,000.00</b></div>
+    </div>
+    <div class="quote" style="margin:12px 0 0">本人已阅读产品说明书与风险揭示，理解「理财非存款、产品有风险、投资须谨慎」，确认本次申购为本人意愿。</div>
+    <div class="pwd"><i class="full"></i><i class="full"></i><i class="full"></i><i class="full"></i><i class="full"></i><i></i></div>
+    <p class="pwd-hint">请输入 6 位支付密码</p>
+    <a class="btn-primary" data-go="申购受理">确认申购</a>
+  </div>
+
+  <!-- 理财赎回：底部弹层 -->
+  <div class="sheet" data-sheet="red">
+    <div class="grip"></div>
+    <h4>赎回 · 招财猫现金添利 A</h4>
+    <div class="cinfo" style="margin:0">
+      <div><span>持有份额</span><b>19,985.02</b></div>
+      <div><span>本次赎回</span><b>19,985.02（全部）</b></div>
+      <div><span>预计到账</span><b>T+1 个工作日</b></div>
+    </div>
+    <div class="quote" style="margin:12px 0 0">赎回到账时间为回执文案，演示环境即时记账；份额与金额以确认结果为准。</div>
+    <a class="btn-primary" data-go="赎回受理">确认赎回</a>
+  </div>
+
+  <!-- 通知筛选：右侧抽屉 -->
+  <div class="drawer" data-drawer="ntf">
+    <div class="d-head">筛选<span class="d-close"><svg><use href="#i-chev"/></svg></span></div>
+    <div class="flt">
+      <div class="g">类型</div>
+      <div class="ch"><a class="on">全部</a><a>交易</a><a>银行卡</a><a>提醒</a><a>安全</a><a>服务通知</a></div>
+      <div class="g">状态</div>
+      <div class="ch"><a class="on">全部</a><a>未读</a><a>已读</a></div>
+      <div class="g">时间范围</div>
+      <div class="ch"><a class="on">不限</a><a>近 7 天</a><a>近 30 天</a><a>近 90 天</a></div>
+      <div class="foot"><a class="reset">重置</a><a class="pri">应用</a></div>
+    </div>
+  </div>
+
+  <!-- 交易记录筛选：右侧抽屉 -->
+  <div class="drawer" data-drawer="filter">
+    <div class="d-head">筛选<span class="d-close"><svg><use href="#i-chev"/></svg></span></div>
+    <div class="flt">
+      <div class="g">收支</div>
+      <div class="ch"><a class="on">全部</a><a>支出</a><a>收入</a></div>
+      <div class="g">分类</div>
+      <div class="ch"><a class="on">全部</a><a>餐饮</a><a>购物</a><a>房租</a><a>交通</a><a>订阅服务</a><a>转账</a><a>工资入账</a><a>其他</a></div>
+      <div class="g">时间范围</div>
+      <div class="ch"><a class="on">不限</a><a>近 7 天</a><a>近 30 天</a><a>近 90 天</a></div>
+      <div class="g">币种</div>
+      <div class="ch"><a class="on">全部</a><a>人民币 CNY</a><a>港币 HKD</a></div>
+      <div class="foot"><a class="reset">重置</a><a class="pri">应用</a></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// 点击 tab：图标线条依次「画」出来（stroke-dashoffset 描边动画）。
+// <use> 的影子节点选不中，直接动画 <symbol> 里的原始 path —— 样式会同步到实例。
+const tabs = document.querySelectorAll('.tab')
+// tab 顺序对应的 symbol；中间猫头是位图，跳过描边动画
+const ICONS = ['#i-home', '#i-wealth', null, '#i-im', '#i-me']
+// tab 顺序对应的一级屏；中间助手不是 tab 页，是推入式全屏页
+const TABSCREENS = ['#s-home', '#s-wealth', null, '#s-ntf', '#s-me']
+tabs.forEach((tab, i) => {
+  tab.addEventListener('click', () => {
+    tabs.forEach(t => t.classList.remove('on'))
+    tab.classList.add('on')
+    // 中间猫头：播探身动画，并把助手页作为全屏页推入（隐藏底栏）
+    if (tab.classList.contains('center')) {
+      tab.classList.remove('peek')
+      void tab.offsetWidth
+      tab.classList.add('peek')
+      // 等猫钮探身动画播完再推入助手页
+      setTimeout(() => {
+        closeSheets()
+        const cur = document.querySelector('.screen.on')
+        if (cur && cur.id !== 's-assistant') navStack.push(cur)
+        showScreen(document.getElementById('s-assistant'))
+        phone.classList.add('nav-open')
+      }, 300)
+      return
+    }
+    // 切到对应一级屏，清空二级页导航栈
+    navStack.length = 0
+    closeSheets()
+    showScreen(document.querySelector(TABSCREENS[i]))
+    phone.classList.remove('nav-open')
+    const sel = ICONS[i]
+    if (!sel) return
+    document.querySelectorAll(sel + ' path').forEach((p, j) => {
+      const len = p.getTotalLength()
+      p.style.transition = 'none'
+      p.style.strokeDasharray = len
+      p.style.strokeDashoffset = len
+      p.getBoundingClientRect()
+      p.style.transition = `stroke-dashoffset 460ms cubic-bezier(.4,0,.2,1) ${j * 140}ms`
+      p.style.strokeDashoffset = '0'
+    })
+  })
+})
+
+// —— 单文件多屏导航：data-go 进二级页，返回逐级回退 ——
+const phone = document.querySelector('.phone')
+const home = document.getElementById('s-home')
+const navStack = []
+
+function showScreen(el) {
+  document.querySelectorAll('.screen.on').forEach(s => s.classList.remove('on'))
+  el.classList.add('on')
+}
+document.querySelectorAll('[data-go]').forEach(el => {
+  el.addEventListener('click', () => {
+    const target = document.querySelector(`.screen[data-name="${el.dataset.go}"]`)
+    if (!target) return
+    // 目标是 tab 一级页（如通知）：按 tab 切换处理，不走二级页推入
+    if (target.classList.contains('tab-screen')) {
+      navStack.length = 0
+      closeSheets()
+      showScreen(target)
+      phone.classList.remove('nav-open')
+      const idx = TABSCREENS.findIndex(s => document.querySelector(s) === target)
+      tabs.forEach((t, j) => t.classList.toggle('on', j === idx))
+      return
+    }
+    closeSheets()
+    const current = document.querySelector('.screen.on')
+    if (current) navStack.push(current)
+    showScreen(target)
+    phone.classList.add('nav-open')
+  })
+})
+function goHome() {
+  navStack.length = 0
+  showScreen(home)
+  phone.classList.remove('nav-open')
+}
+document.querySelectorAll('[data-home]').forEach(el => el.addEventListener('click', goHome))
+// 更多服务里跳到一级页（理财、我的）：直接切 tab，不留返回栈
+document.querySelectorAll('[data-tab]').forEach(el => el.addEventListener('click', () => {
+  const idx = Number(el.dataset.tab)
+  const screen = document.querySelector(TABSCREENS[idx])
+  if (!screen) return
+  navStack.length = 0
+  closeSheets()
+  showScreen(screen)
+  phone.classList.remove('nav-open')
+  tabs.forEach((t, j) => t.classList.toggle('on', j === idx))
+}))
+document.querySelectorAll('.sub-nav .back, .chat-head .back').forEach(el => {
+  el.addEventListener('click', () => {
+    el.closest('.screen').classList.remove('on')
+    const prev = navStack.pop() || home
+    prev.classList.add('on')
+    // 回到一级页（主页或任意 tab 屏）就恢复底栏
+    if (prev.classList.contains('tab-screen')) phone.classList.remove('nav-open')
+  })
+})
+
+// —— 弹层与抽屉：data-sheet / data-drawer 打开，点遮罩或跳转前关闭 ——
+function closeSheets() {
+  document.querySelectorAll('.sheet.open, .drawer.open').forEach(s => s.classList.remove('open'))
+  phone.classList.remove('sheet-open', 'drawer-open')
+}
+document.querySelectorAll('[data-sheet]:not(.sheet)').forEach(el => {
+  el.addEventListener('click', () => {
+    const sheet = document.querySelector(`.sheet[data-sheet="${el.dataset.sheet}"]`)
+    if (!sheet) return
+    sheet.classList.add('open')
+    phone.classList.add('sheet-open')
+  })
+})
+document.querySelectorAll('[data-drawer]:not(.drawer)').forEach(el => {
+  el.addEventListener('click', () => {
+    const d = document.querySelector(`.drawer[data-drawer="${el.dataset.drawer}"]`)
+    if (!d) return
+    d.classList.add('open')
+    phone.classList.add('drawer-open')
+  })
+})
+document.querySelectorAll('.drawer .d-close').forEach(el => el.addEventListener('click', closeSheets))
+document.querySelector('.sheet-mask').addEventListener('click', closeSheets)
+document.querySelectorAll('[data-close]').forEach(el => el.addEventListener('click', closeSheets))
+// 助手能力多选：点一行切换勾选
+document.querySelectorAll('.caps .cp').forEach(el => el.addEventListener('click', () => el.classList.toggle('on')))
+
+// —— 银行卡：交易开关 / 限额选择 / 卡号显隐 / 锁卡 ——
+document.querySelectorAll('.sw').forEach(sw => sw.addEventListener('click', () => sw.classList.toggle('on')))
+document.querySelectorAll('.limits').forEach(group => group.addEventListener('click', e => {
+  const item = e.target.closest('a')
+  if (!item) return
+  group.querySelectorAll('a').forEach(a => a.classList.remove('on'))
+  item.classList.add('on')
+}))
+// 卡面上的眼睛管卡号与有效期（同网页版），安全码不跟着眼睛走
+const panEl = document.querySelector('[data-pan]')
+const expEl = document.querySelector('[data-exp]')
+const panBtn = document.querySelector('[data-pan-toggle]')
+if (panEl && panBtn) panBtn.addEventListener('click', () => {
+  const shown = panEl.textContent.startsWith('6222')
+  panEl.textContent = shown ? '•••• •••• •••• ••••' : '6222 0241 8823 8821'
+  if (expEl) expEl.textContent = shown ? '••/••' : '08/29'
+})
+// 账户余额是同一个资金账户的币种分区，一次遮罩/显示全部
+const balEls = [...document.querySelectorAll('[data-bal]')]
+const balToggle = document.querySelector('[data-bal-toggle]')
+if (balEls.length && balToggle) {
+  balEls.forEach(el => { el.dataset.raw = el.textContent.trim() })
+  let masked = false
+  balToggle.addEventListener('click', () => {
+    masked = !masked
+    balEls.forEach(el => { el.textContent = masked ? '••••••' : el.dataset.raw })
+  })
+}
+const lockBtn = document.querySelector('[data-lock]')
+const lockState = document.querySelector('[data-lock-state]')
+const lockPanel = document.querySelector('[data-lock-panel]')
+if (lockBtn) lockBtn.addEventListener('click', () => {
+  const locked = lockBtn.dataset.locked === '1'
+  lockBtn.dataset.locked = locked ? '0' : '1'
+  lockBtn.querySelector('span').textContent = locked ? '立即锁卡' : '解锁卡片'
+  if (lockState) lockState.textContent = locked ? '使用中' : '已锁定'
+  if (lockPanel) lockPanel.textContent = locked ? '使用中' : '已锁定'
+})
+
+// —— 理财内页：分段切换 + 总览快捷入口跳到对应分段 ——
+function showWealthPanel(key) {
+  document.querySelectorAll('.wtab .seg span').forEach(s => s.classList.toggle('on', s.dataset.wp === key))
+  document.querySelectorAll('.wpanel').forEach(p => p.classList.toggle('on', p.dataset.wp === key))
+}
+document.querySelectorAll('.wtab .seg span').forEach(el =>
+  el.addEventListener('click', () => showWealthPanel(el.dataset.wp)))
+document.querySelectorAll('[data-wp-go]').forEach(el =>
+  el.addEventListener('click', () => showWealthPanel(el.dataset.wpGo)))
+
+// —— 储蓄与计划：存钱目标 / 定投计划 分段 ——
+document.querySelectorAll('.seg span[data-sp]').forEach(el => el.addEventListener('click', () => {
+  document.querySelectorAll('[data-sp]').forEach(node =>
+    node.classList.toggle('on', node.dataset.sp === el.dataset.sp))
+}))
+
+// —— 筛选抽屉：分类多选，其余组单选；应用后底栏按钮点亮并显示已选数 ——
+document.querySelectorAll('.flt .ch').forEach(group => {
+  const multi = group.hasAttribute('data-multi')
+  group.addEventListener('click', e => {
+    const item = e.target.closest('a')
+    if (!item) return
+    if (multi) {
+      const all = group.querySelector('a')
+      if (item === all) group.querySelectorAll('a').forEach(a => a.classList.toggle('on', a === all))
+      else { all.classList.remove('on'); item.classList.toggle('on') }
+    } else { group.querySelectorAll('a').forEach(a => a.classList.remove('on')); item.classList.add('on') }
+  })
+})
+document.querySelectorAll('.drawer .flt').forEach(flt => {
+  const btn = document.querySelector(`.fbtn[data-drawer="${flt.closest('.drawer').dataset.drawer}"]`)
+  if (!btn) return
+  const setBadge = picked => {
+    btn.classList.toggle('on', picked > 0)
+    let badge = btn.querySelector('i')
+    if (picked > 0) {
+      if (!badge) { badge = document.createElement('i'); btn.appendChild(badge) }
+      badge.textContent = picked
+    } else if (badge) badge.remove()
+  }
+  flt.querySelector('.foot .reset').addEventListener('click', () => {
+    flt.querySelectorAll('.ch').forEach(group => {
+      group.querySelectorAll('a').forEach(a => a.classList.remove('on'))
+      group.querySelector('a').classList.add('on')
+    })
+    setBadge(0)
+  })
+  flt.querySelector('.foot .pri').addEventListener('click', () => {
+    // 每组第一项是默认值（全部 / 不限），不计入已选数
+    const picked = [...flt.querySelectorAll('.ch')].reduce((n, group) => {
+      const def = group.querySelector('a')
+      return n + [...group.querySelectorAll('a.on')].filter(a => a !== def).length
+    }, 0)
+    setBadge(picked)
+    closeSheets()
+  })
+})
+
+// —— 分段选择：组内单选 ——
+document.querySelectorAll('.seg').forEach(seg => {
+  seg.addEventListener('click', e => {
+    const item = e.target.closest('span')
+    if (!item) return
+    seg.querySelectorAll('span').forEach(s => s.classList.remove('on'))
+    item.classList.add('on')
+  })
+})
+</script>
+</body>
+</html>

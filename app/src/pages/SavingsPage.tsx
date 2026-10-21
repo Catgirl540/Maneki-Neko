@@ -60,7 +60,7 @@ function GoalCard({ goal, onDelete, disabled }: { goal: SavingsGoal; onDelete: (
   )
 }
 
-export function SavingsPage() {
+export function SavingsPage({ embedded = false }: { embedded?: boolean }) {
   const toast = useToast()
   const savings = useAsync<SavingsOverview>(() => api.getSavingsOverview(), [])
   const [createOpen, setCreateOpen] = useState(false)
@@ -149,17 +149,18 @@ export function SavingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">存钱计划</h1>
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        {!embedded && <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">存钱目标</h1>}
         <Button variant="primary" size="sm" disabled={updating || submitting} icon={<PlusIcon size={16} />} onClick={() => setCreateOpen(true)}>
           新建目标
         </Button>
       </div>
 
+      <p className="text-[12px] text-ink-mute">目标用于记录储蓄进度，不创建资金账户，也不额外计入理财资产；自动归集尚未开放。</p>
       <Card className="float-up">
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
-            <p className="text-[13px] text-ink-soft">已存总额</p>
+            <p className="text-[13px] text-ink-soft">目标进度合计</p>
             <p className="num mt-1 text-[34px] leading-none font-bold text-ink">¥{formatAmount(data.totalSaved)}</p>
             <p className="mt-2 text-[13px] text-ink-mute">共 {data.goals.length} 个目标</p>
           </div>
@@ -183,15 +184,15 @@ export function SavingsPage() {
           ))}
         </div>
         {data.goals.length === 0 && (
-          <EmptyState title="还没有存钱目标" description="设置目标金额与期限。" action={<Button variant="primary" size="sm" disabled={updating || submitting} icon={<PlusIcon size={16} />} onClick={() => setCreateOpen(true)}>新建目标</Button>} />
+          <EmptyState title="还没有存钱目标" description="设置目标金额与期限。" />
         )}
       </Card>
 
       <Card className="float-up" style={{ animationDelay: '120ms' }}>
-        <CardHeader title="消费凑整规则" action={<Toggle label="消费凑整转存" disabled={updating || submitting} checked={data.roundup.enabled} onChange={(next) => void toggleRoundup(next)} />} />
+        <CardHeader title="消费凑整规则" action={<Toggle label="消费凑整规则开关" disabled={updating || submitting} checked={data.roundup.enabled} onChange={(next) => void toggleRoundup(next)} />} />
         <div className="mt-3 divide-y divide-line">
           <Row icon={<BoltIcon size={18} />} title="凑整到整数" description={`已设置凑整到 ¥${formatAmount(data.roundup.roundupTo)}，自动执行暂未开放`} />
-          <Row icon={<WalletIcon size={18} />} title="单日上限" description={`每天最多转存 ¥${formatAmount(data.roundup.dailyCap)}`} />
+          <Row icon={<WalletIcon size={18} />} title="单日上限" description={`已设置每日上限 ¥${formatAmount(data.roundup.dailyCap)}`} />
         </div>
       </Card>
 

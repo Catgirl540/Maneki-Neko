@@ -136,11 +136,15 @@ export function TicketDrawer({
             <div className="font-mono text-sm text-[var(--color-ink-mute)]">{ticketId}</div>
             <div className="mt-0.5 text-base font-semibold text-[var(--color-ink)]">
               {ticket ? TICKET_STATUS_LABEL[ticket.status] : '加载中…'}
-              {ticket?.priority === 'high' && (
+              {ticket?.priority === 'vip' ? (
+                <span className="ml-2 rounded-full bg-[var(--color-gold-tint)] px-2 py-0.5 text-xs text-[var(--color-gold-deep)]">
+                  会员 VIP
+                </span>
+              ) : ticket?.priority === 'high' ? (
                 <span className="ml-2 rounded-full bg-[var(--color-coral-wash)] px-2 py-0.5 text-xs text-[var(--color-coral)]">
                   加急
                 </span>
-              )}
+              ) : null}
             </div>
           </div>
           <button

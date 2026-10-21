@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 import { cn } from '../../lib/cn'
 
-type Variant = 'primary' | 'secondary' | 'ghost' | 'danger'
+type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'ink'
 type Size = 'sm' | 'md' | 'lg'
 
 const VARIANTS: Record<Variant, string> = {
@@ -12,6 +12,9 @@ const VARIANTS: Record<Variant, string> = {
     'bg-surface text-ink border border-line hover:border-line-strong hover:bg-sunk active:scale-[0.985] disabled:text-ink-mute',
   ghost: 'bg-transparent text-ink-soft hover:bg-sunk hover:text-ink disabled:text-ink-mute',
   danger: 'bg-coral-wash text-coral hover:bg-coral hover:text-ink-invert',
+  // 近黑主按钮：用于"确认一组条件"这类不涉及资金的提交（如筛选抽屉的「应用」）。
+  // 紫色是选中/点缀色，铺满整个按钮会把"一屏一个主按钮"的层级打乱。
+  ink: 'bg-ink-deep text-ink-invert hover:bg-ink active:scale-[0.985] disabled:bg-ink-deep/40',
 }
 
 const SIZES: Record<Size, string> = {

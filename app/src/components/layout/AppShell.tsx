@@ -9,12 +9,12 @@ import { SupportPage } from '@/pages/SupportPage'
 export function AppShell() {
   const { pathname, search } = useLocation()
   const navigate = useNavigate()
-  const home = pathname === '/dashboard' || pathname === '/support'
+  const home = pathname === '/assistant'
   const [serviceIds, setServiceIds] = useState<SmartServiceId[]>([])
   const [highlightTaskId, setHighlightTaskId] = useState<SmartServiceId>()
   const [focusRequest, setFocusRequest] = useState(0)
   const pageScroller = useRef<HTMLDivElement>(null)
-  const service = serviceForPath(pathname)
+  const service = serviceForPath(pathname, search)
   const services = home ? smartServices.filter(item => serviceIds.includes(item.id)) : service ? [service] : []
   const flow = new URLSearchParams(search).get('flow')
   useEffect(() => {
@@ -25,7 +25,7 @@ export function AppShell() {
   function activate() {
     if (!home) {
       if (service) setServiceIds(ids => ids.includes(service.id) ? ids : [...ids, service.id])
-      navigate('/dashboard')
+      navigate('/assistant')
     }
   }
 
@@ -48,6 +48,8 @@ export function AppShell() {
         <div ref={pageScroller} hidden={home} className="business-scroll">{!home && <div key={pathname} className="business-content"><Outlet /></div>}</div>
         <SupportPage workbench={{ docked: !home, tasks: services, focusRequest, highlightTaskId,
           onActivate: activate, onClearTask: id => setServiceIds(ids => ids.filter(item => item !== id)),
+          // 能力选择按会话隔离：新建对话后需重新选择。
+          onNewConversation: () => setServiceIds([]),
         }} selectedServices={serviceIds} onSelectService={toggleService}
           onClearServices={() => { setServiceIds([]); setHighlightTaskId(undefined) }} />
       </main>

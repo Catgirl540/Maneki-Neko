@@ -45,6 +45,7 @@ const ROUTES = [
   ['POST', 'fpsRegistration', 'registerFps', (id, b) => [b]],
   ['POST', 'cardBin', 'resolveCardBin', (id, b) => [b]],
   ['GET', 'payees', 'listPayees', () => []],
+  ['DELETE', 'payee', 'deletePayee', (id) => [id]],
   ['POST', 'fpsResolve', 'resolveFps', (id, b) => [b.idType, b.fpsId]],
   ['POST', 'transferQuote', 'quoteTransfer', (id, b) => [b]],
   ['POST', 'transferRecipient', 'resolveTransferRecipient', (id, b) => [b]],
@@ -102,12 +103,10 @@ const ROUTES = [
   ['PATCH', 'savingsRoundup', 'updateSavingsRoundup', (id, b) => [b]],
   ['POST', 'virtualCard', 'createVirtualCard', (id, b) => [id, b]],
 
-  // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
+  // —— 我的域扩展：邀请 / 会员 ——
   ['GET', 'invitations', 'getInvitations', () => []],
   ['GET', 'membership', 'getMembership', () => []],
-  ['GET', 'identityStatus', 'getIdentityStatus', () => []],
-  ['POST', 'identityOcr', 'runIdentityOcr', () => []],
-  ['POST', 'identityLiveness', 'runIdentityLiveness', () => []],
+  ['POST', 'membershipLoungePass', 'redeemLoungePass', () => []],
 
   // —— 工资与备用金 ——
   ['GET', 'salaryPlan', 'getSalaryPlan', () => []],
@@ -130,6 +129,38 @@ const ROUTES = [
   ['POST', 'insuranceEnroll', 'enrollInsurance', (id, b) => [b]],
 ]
 
+/**
+ * 日期与方向参数在这里校验：静默忽略非法值会让筛选条件"看起来生效了"
+ * 却返回全量流水，对账时最难发现。
+ */
+const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+function queryError(message, code) {
+  return Object.assign(new Error(message), { status: 400, code })
+}
+
+/** `YYYY-MM-DD` 且是真实存在的日期（拒绝 2026-02-31 这类）。 */
+function dayParam(q, key) {
+  const raw = q.get(key)
+  if (raw === null || raw === '') return undefined
+  if (!DAY_PATTERN.test(raw) || Number.isNaN(Date.parse(`${raw}T00:00:00`))) {
+    throw queryError(`${key} 须为 YYYY-MM-DD`, 'INVALID_DATE')
+  }
+  const parsed = new Date(`${raw}T00:00:00`)
+  const [year, month, day] = raw.split('-').map(Number)
+  if (parsed.getFullYear() !== year || parsed.getMonth() + 1 !== month || parsed.getDate() !== day) {
+    throw queryError(`${key} 须为 YYYY-MM-DD`, 'INVALID_DATE')
+  }
+  return raw
+}
+
+function directionParam(q) {
+  const raw = q.get('direction')
+  if (raw === null || raw === '' || raw === 'all') return undefined
+  if (raw !== 'in' && raw !== 'out') throw queryError('direction 只能是 in 或 out', 'INVALID_DIRECTION')
+  return raw
+}
+
 /** 与 http.ts 的 `listTransactions` 拼参数保持一致（`size` 不是 `pageSize`）。 */
 function transactionQuery(q) {
   const out = {}
@@ -141,19 +172,29 @@ function transactionQuery(q) {
   if (category !== null && category !== 'all') out.category = category
   const keyword = q.get('keyword')
   if (keyword !== null) out.keyword = keyword
+  const direction = directionParam(q)
+  if (direction !== undefined) out.direction = direction
+  const from = dayParam(q, 'from')
+  if (from !== undefined) out.from = from
+  const to = dayParam(q, 'to')
+  if (to !== undefined) out.to = to
   return out
 }
 
 function exportQuery(q) {
   const out = {}
-  for (const key of ['from', 'to', 'keyword']) {
-    const v = q.get(key)
-    if (v !== null) out[key] = v
+  for (const key of ['from', 'to']) {
+    const day = dayParam(q, key)
+    if (day !== undefined) out[key] = day
   }
+  const keyword = q.get('keyword')
+  if (keyword !== null) out.keyword = keyword
   const currency = q.get('currency')
   if (currency !== null) out.currency = currency
   const category = q.get('category')
   if (category !== null && category !== 'all') out.category = category
+  const direction = directionParam(q)
+  if (direction !== undefined) out.direction = direction
   return out
 }
 

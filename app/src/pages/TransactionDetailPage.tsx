@@ -302,7 +302,7 @@ export function TransactionDetailPage() {
                   <Button
                     block
                     icon={<ChatIcon size={18} />}
-                    onClick={() => navigate('/support')}
+                    onClick={() => navigate('/assistant')}
                   >
                     对这笔交易有疑问
                   </Button>

@@ -25,7 +25,7 @@ export function WorkbenchPage() {
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hourCycle: 'h23' }).format(now))
   const greeting = hour < 12 ? '上午好' : hour < 18 ? '下午好' : '晚上好'
   const metrics = [
-    { label: '待处理工单', value: pending.length, note: `其中 ${pending.filter(t => t.priority === 'high').length} 项加急`, to: '/tickets?status=open', Icon: ReceiptIcon },
+    { label: '待处理工单', value: pending.length, note: `其中 ${pending.filter(t => t.priority !== 'normal').length} 项优先`, to: '/tickets?status=open', Icon: ReceiptIcon },
     { label: '我的待办', value: mine.length, note: '由我负责的进行中工单', to: '/tickets?assignee=me', Icon: UserIcon },
     { label: '等待客户', value: tickets.filter(t => t.status === 'waiting').length, note: '等待客户补充信息', to: '/tickets?status=waiting', Icon: ChatIcon },
     { label: '已解决', value: tickets.filter(t => t.status === 'resolved').length, note: '当前工单列表中的已解决项', to: '/tickets?status=resolved', Icon: CheckIcon },
@@ -44,7 +44,7 @@ export function WorkbenchPage() {
         <table className="staff-table"><thead><tr><th>客户与事由</th><th>状态</th><th>创建时间</th><th></th></tr></thead>
           <tbody>{pending.slice(0, 8).map(ticket => <tr key={ticket.ticketId}>
             <td><Link className="staff-ticket-link" to={`/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`}><strong>{ticket.customerName ?? ticket.customerId}</strong><span>{ticket.reason}</span></Link></td>
-            <td><span className={`rounded-full px-2 py-1 text-xs ${STATUS_CLASS[ticket.status]}`}>{TICKET_STATUS_LABEL[ticket.status]}</span>{ticket.priority === 'high' && <span className="ml-2 text-xs text-coral">加急</span>}</td>
+            <td><span className={`rounded-full px-2 py-1 text-xs ${STATUS_CLASS[ticket.status]}`}>{TICKET_STATUS_LABEL[ticket.status]}</span>{ticket.priority === 'vip' ? <span className="ml-2 text-xs text-gold-deep">VIP</span> : ticket.priority === 'high' ? <span className="ml-2 text-xs text-coral">加急</span> : null}</td>
             <td className="text-xs text-ink-mute">{formatTime(ticket.createdAt)}</td>
             <td><Link className="staff-ticket-open" aria-label={`查看工单 ${ticket.ticketId}`} to={`/tickets?ticket=${encodeURIComponent(ticket.ticketId)}`}><ChevronRightIcon size={16} /></Link></td>
           </tr>)}{pending.length === 0 && <tr><td colSpan={4}><div className="staff-empty"><span><ReceiptIcon size={22} /></span><strong>{error ? '工单暂时无法加载' : loaded ? '暂无待处理工单' : '正在加载工单…'}</strong>{loaded && !error && <small>新工单到达后会自动出现在这里</small>}</div></td></tr>}</tbody>

@@ -40,6 +40,7 @@ import type {
   HumanSupportRequest,
   Transaction,
   TransactionCategory,
+  TransactionDirection,
   RiskAssessment,
   RiskQuestion,
   TransactionRecord,
@@ -75,8 +76,6 @@ import type {
   CardLimitPatch,
   InvitationsOverview,
   MembershipOverview,
-  IdentityStatus,
-  IdentityOcrResult,
   SalaryPlan,
   SalaryUpdate,
   OverdraftFacility,
@@ -123,6 +122,7 @@ export const routes = {
   /** 卡 BIN 查询：输卡号前缀反查发卡行（银联/网联侧的接口） */
   cardBin: () => '/api/cards/bin',
   payees: () => '/api/payees',
+  payee: (id: string) => `/api/payees/${id}`,
   fpsResolve: () => '/api/fps/resolve',
   transferQuote: () => '/api/transfers/quote',
   transferRecipient: () => '/api/transfers/recipient',
@@ -178,12 +178,11 @@ export const routes = {
   savingsRoundup: () => '/api/savings/roundup',
   virtualCard: (id: string) => `/api/cards/${id}/virtual`,
 
-  // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
+  // —— 我的域扩展：邀请 / 会员 ——
   invitations: () => '/api/invitations',
   membership: () => '/api/membership',
-  identityStatus: () => '/api/identity/status',
-  identityOcr: () => '/api/identity/ocr',
-  identityLiveness: () => '/api/identity/liveness',
+  /** 核销一次机场 / 高铁贵宾厅额度（年度次数） */
+  membershipLoungePass: () => '/api/membership/lounge-pass',
 
   // —— 工资与备用金 ——
   salaryPlan: () => '/api/cashflow/salary',
@@ -212,6 +211,15 @@ export interface TransactionQuery {
   keyword?: string
   /** 多币种对账：按币种筛选流水 */
   currency?: Currency | 'all'
+  /**
+   * 收支方向：`in` 收入 / `out` 支出，`all`（或省略）表示不限。
+   * 服务端按记账行的 `direction` 过滤，分页总数同口径 —— 不能在前端对当前页过滤。
+   */
+  direction?: TransactionDirection | 'all'
+  /** 起始本地日 `YYYY-MM-DD`（含当天）；省略表示不限 */
+  from?: string
+  /** 截止本地日 `YYYY-MM-DD`（含当天）；省略表示不限 */
+  to?: string
 }
 
 export interface BankApi {
@@ -252,6 +260,8 @@ export interface BankApi {
   /** 卡 BIN 查询：卡号前缀 → 发卡行。前缀不认识时明确回 unsupported，界面据此提示 */
   resolveCardBin(req: CardBinQuery): Promise<CardBinResolution>
   listPayees(): Promise<Payee[]>
+  /** 删除一条历史收款人；不存在时 404 */
+  deletePayee(id: string): Promise<void>
   /** 转数快标识解析：查收款人姓名与收款银行 */
   resolveFps(idType: FpsIdType, fpsId: string): Promise<FpsResolveResult>
   quoteTransfer(req: TransferQuoteRequest): Promise<TransferQuote>
@@ -344,9 +354,9 @@ export interface BankApi {
   // —— 我的域扩展 ——
   getInvitations(): Promise<InvitationsOverview>
   getMembership(): Promise<MembershipOverview>
-  getIdentityStatus(): Promise<IdentityStatus>
-  runIdentityOcr(): Promise<IdentityOcrResult>
-  runIdentityLiveness(): Promise<{ verified: boolean; verifiedAt: string }>
+  /** 核销一次机场 / 高铁贵宾厅额度；额度耗尽返回 409 LOUNGE_QUOTA_EXHAUSTED */
+  redeemLoungePass(): Promise<MembershipOverview>
+
 
   // —— 工资与备用金 ——
   getSalaryPlan(): Promise<SalaryPlan>

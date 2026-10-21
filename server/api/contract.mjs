@@ -28,6 +28,7 @@ export const routes = {
     /** 卡 BIN 查询：输卡号前缀反查发卡行（银联/网联侧的接口） */
     cardBin: () => '/api/cards/bin',
     payees: () => '/api/payees',
+    payee: (id) => `/api/payees/${id}`,
     fpsResolve: () => '/api/fps/resolve',
     transferQuote: () => '/api/transfers/quote',
     transferRecipient: () => '/api/transfers/recipient',
@@ -76,12 +77,12 @@ export const routes = {
     savingsGoal: (id) => `/api/savings/goals/${id}`,
     savingsRoundup: () => '/api/savings/roundup',
     virtualCard: (id) => `/api/cards/${id}/virtual`,
-    // —— 我的域扩展：邀请 / 会员 / 身份认证 ——
+    // —— 我的域扩展：邀请 / 会员 ——
     invitations: () => '/api/invitations',
     membership: () => '/api/membership',
-    identityStatus: () => '/api/identity/status',
-    identityOcr: () => '/api/identity/ocr',
-    identityLiveness: () => '/api/identity/liveness',
+    /** 核销一次机场 / 高铁贵宾厅额度（年度次数） */
+    membershipLoungePass: () => '/api/membership/lounge-pass',
+
     // —— 工资与备用金 ——
     salaryPlan: () => '/api/cashflow/salary',
     overdraft: () => '/api/cashflow/overdraft',

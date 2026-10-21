@@ -88,6 +88,9 @@ export function createHttpApi(): BankApi {
       if (query.category && query.category !== 'all') params.set('category', query.category)
       if (query.keyword) params.set('keyword', query.keyword)
       if (query.currency && query.currency !== 'all') params.set('currency', query.currency)
+      if (query.direction && query.direction !== 'all') params.set('direction', query.direction)
+      if (query.from) params.set('from', query.from)
+      if (query.to) params.set('to', query.to)
       const qs = params.toString()
       return request(routes.transactions(id) + (qs ? `?${qs}` : ''))
     },
@@ -97,6 +100,8 @@ export function createHttpApi(): BankApi {
       if (query.to) params.set('to', query.to)
       if (query.category && query.category !== 'all') params.set('category', query.category)
       if (query.keyword) params.set('keyword', query.keyword)
+      if (query.currency && query.currency !== 'all') params.set('currency', query.currency)
+      if (query.direction && query.direction !== 'all') params.set('direction', query.direction)
       const qs = params.toString()
       return request(routes.transactionsExport(id) + (qs ? `?${qs}` : ''))
     },
@@ -111,6 +116,7 @@ export function createHttpApi(): BankApi {
     registerFps: (req) => post(routes.fpsRegistration(), req),
     resolveCardBin: (req) => post(routes.cardBin(), req),
     listPayees: () => request<Payee[]>(routes.payees()),
+    deletePayee: (id) => del<void>(routes.payee(id)),
     resolveFps: (idType, fpsId) => post(routes.fpsResolve(), { idType, fpsId }),
     quoteTransfer: (req: TransferQuoteRequest) => post(routes.transferQuote(), req),
     resolveTransferRecipient: (req) => post(routes.transferRecipient(), req),
@@ -171,9 +177,7 @@ export function createHttpApi(): BankApi {
     // —— 我的域扩展 ——
     getInvitations: () => request(routes.invitations()),
     getMembership: () => request(routes.membership()),
-    getIdentityStatus: () => request(routes.identityStatus()),
-    runIdentityOcr: () => post(routes.identityOcr()),
-    runIdentityLiveness: () => post(routes.identityLiveness()),
+    redeemLoungePass: () => post(routes.membershipLoungePass()),
 
     // —— 工资与备用金 ——
     getSalaryPlan: () => request(routes.salaryPlan()),
