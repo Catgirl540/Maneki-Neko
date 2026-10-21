@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-21T11:45:00+08:00",
+  "url": "https://bank.waveflow.men",
+  "server": "15.235.241.158",
+  "status": "deployed-and-verified",
+  "revision": "e7d92de",
+  "sourceRelease": "/srv/maneki-bank/releases/20261021-e7d92de",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261021-e7d92de",
+  "previousRelease": "/srv/maneki-bank/releases/20261020-reminders-e9f2c9e",
+  "notes": [
+    "node_modules 与 packages/*/lib、.dsh-home profiles 沿用上一 release（依赖与 packages 源码自 e9f2c9e 无变更）",
+    "web downloads/（安卓安装包）从上一 web release 继承，因不在 git 中",
+    "systemd 新增 96-release-e7d92de.conf drop-in，env 文件沿用现行生效配置"
+  ],
+  "checks": {
+    "allSixServicesActive": true,
+    "siteHttps200": true,
+    "apiAccountsUnauth401": true,
+    "agentApiHealthOkWithVoice": true,
+    "demoLoginAndMembershipPlatinum": true,
+    "androidDownloadManifest200": true
+  },
+  "highlights": [
+    "总览页 /dashboard 与 /assistant 拆分",
+    "IM 连接客户侧 /reminders",
+    "会员四档体系（普通/金卡/白金/钻石）与权益接入",
+    "开户五步：双面身份证必传 + 人脸核身",
+    "官网首页按调研重写（新文案）",
+    "历史收款人管理 + DELETE /api/payees/:id",
+    "独立身份认证页移除"
+  ]
+}
