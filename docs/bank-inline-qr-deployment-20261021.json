@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-21T17:15:58+08:00",
+  "url": "https://bank.waveflow.men/reminders",
+  "status": "deployed-and-verified",
+  "revision": "49ee28eea1c0163d2459e20e48bc769036695174",
+  "sourceRelease": "/srv/maneki-bank/releases/20261021-inline-qr-49ee28e",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261021-inline-qr-49ee28e",
+  "previousSourceRelease": "/srv/maneki-bank/releases/20261021-im-entry-2468adf",
+  "previousWebRelease": "/var/www/bank.waveflow.men/releases/20261021-im-entry-2468adf",
+  "artifactSha256": "5be09be3e07db0a9145dd4f96dc0a2286eed15db4a9bf28f00ae941af7723edf",
+  "backupLocation": "/var/backups/maneki-inline-qr-49ee28e",
+  "changes": [
+    "Authenticated bank customers generate their own WeChat QR directly inside the IM page; no operations login, popup or redirect.",
+    "In-page status, optional provider verification code, phone confirmation and explicit bank binding confirmation.",
+    "Five-minute owner-scoped QR attempts, generation quota, safe cancellation and duplicate confirmation handling.",
+    "Fresh QR login excludes existing customer credential hints; a private chat already owned by another bank customer cannot be overwritten.",
+    "Existing manual pairing codes, WeCom private-chat binding and reminders remain available."
+  ],
+  "checks": {
+    "localFrontendBuild": "passed",
+    "localImPageBrowserFixtureRegression": "ALL PASS",
+    "localCustomerQrIsolationTests": "3/3 passed, zero skips",
+    "stagedLinuxCustomerQrIsolationTests": "3/3 passed, zero skips",
+    "localExistingImBrowserRegression": "10/10 passed, zero skips",
+    "localExistingImUnitRegression": "11 passed, 2 explicit-mode skips",
+    "localKnowledgeTests": "29/29 passed; Top3 90/90",
+    "accountModelChecks": "passed",
+    "customerBootstrapAndBankToolPolicies": "passed; 37 exact tools",
+    "publishedBrowserUsingRealAssetsAndFixtureApis": "ALL PASS",
+    "frontendAssetHashesMatched": 71,
+    "publicRemindersEntry": 200,
+    "publicOperationsPortal": 200,
+    "unauthenticatedQrGeneration": 401,
+    "unauthenticatedQrStatus": 401,
+    "unauthenticatedBindings": 401,
+    "unauthenticatedReminders": 401,
+    "unauthenticatedAdmin": 401,
+    "sixServicesActive": true,
+    "customerAgentRestartCount": 0,
+    "otherFiveServicePidsAndDirectoriesUnchanged": true,
+    "originalEnvironmentHashesAndSessionPathPreserved": true,
+    "staffAndAndroidDownloadEntrypointsPreserved": true,
+    "paidModelCalled": false,
+    "realProviderQrCreatedForVerification": false,
+    "wechatMessageSentForVerification": false,
+    "financialOperationExecuted": false
+  },
+  "verificationNotes": [
+    "Published assets rendered a generated fixture QR and completed the same-page lifecycle with all bank, IM and Agent requests intercepted in the browser; this is not a real WeChat handshake.",
+    "The first production-browser run timed out waiting for the full remote load event on a later page reload. The full regression was rerun with DOMContentLoaded navigation and a 45-second navigation limit.",
+    "Real provider login requires the authenticated customer to click Generate QR, scan with their own WeChat and explicitly confirm the bank binding."
+  ],
+  "limits": [
+    "Only WeChat QR login is exposed to bank customers; operations management remains separately authorized.",
+    "A new WeChat login needs a private message to ClawBot to establish the current delivery context.",
+    "Customer Agent restart clears in-memory bank sessions; this release does not restore them or migrate existing bindings.",
+    "Existing database failure protection and separate financial-operation confirmation remain in force."
+  ]
+}
