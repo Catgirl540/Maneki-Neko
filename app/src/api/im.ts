@@ -22,7 +22,20 @@ import { AUTH_EXPIRED_EVENT, forgetSession, getAuthToken } from '@/lib/authToken
  */
 const AGENT_BASE = (import.meta.env.VITE_AGENT_URL ?? '/agent-api').trim().replace(/\/+$/, '')
 const IM_BASE = `${AGENT_BASE === '' ? '/agent-api' : AGENT_BASE}/im`
-export const imRobotManagementUrl = `${IM_BASE}?view=admin`
+export interface WeixinQr {
+  attemptId: string
+  status: string
+  qrImage: string
+  expiresAt: number
+  verificationRequired?: boolean
+  error?: { message: string }
+  binding?: ImClaimResult
+}
+export const startWeixinQr = () => post<WeixinQr>('/weixin/qr', {})
+export const getWeixinQr = (id: string) => request<WeixinQr>(`/weixin/qr/${encodeURIComponent(id)}`)
+export const verifyWeixinQr = (id: string, code: string) => post<WeixinQr>(`/weixin/qr/${encodeURIComponent(id)}/verify`, { code })
+export const cancelWeixinQr = (id: string) => post<WeixinQr>(`/weixin/qr/${encodeURIComponent(id)}/cancel`, {})
+export const confirmWeixinQr = (id: string) => post<ImClaimResult>(`/weixin/qr/${encodeURIComponent(id)}/confirm`, { confirmed: true })
 const REQUEST_TIMEOUT_MS = 12_000
 
 /** 提醒的投递状态。语义见 `docs/api/im-reminders.md` 的「状态与恢复」。 */

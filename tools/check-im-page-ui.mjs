@@ -11,7 +11,8 @@
 
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
+import { loadImVendor } from '../framework/bridge/im-channels.mjs'
 import { createServer } from '../app/node_modules/vite/dist/node/index.js'
 import { chromium } from 'playwright-core'
 
@@ -29,9 +30,10 @@ const web = await createServer({
   server: { host: '127.0.0.1', port: 0, hmr: false },
 })
 
+const fixtureQrImage = await (await loadImVendor()).qrImage('fixture:weixin-test-only')
 const user = { id: 'fixture-user', name: '测试客户', phone: '13900139000', memberTier: 'standard', avatarInitial: '测' }
 /** 内存里的 IM 状态：绑定码 → 来源、绑定列表、提醒列表。 */
-const im = { codes: new Map(), bindings: [], reminders: [], disabled: false, outage: false, truncated: false, nextReminder: 0, writes: [] }
+const im = { codes: new Map(), bindings: [], reminders: [], disabled: false, outage: false, truncated: false, nextReminder: 0, qr: null, qrStarts: 0, writes: [] }
 const issueCode = label => {
   const code = `fixture-code-${im.codes.size + 1}`
   im.codes.set(code, { label, expiresAt: Date.now() + 600_000 })
@@ -70,6 +72,21 @@ try {
       route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
     if (im.outage) return respond({ error: '会话持久化服务不可用，请稍后重试', code: 'SESSION_STORE_UNAVAILABLE' }, 503)
     if (method !== 'GET') im.writes.push({ method, path, body })
+    if (path === '/weixin/qr' && method === 'POST') {
+      im.qr = { attemptId: 'fixture-qr-' + ++im.qrStarts, status: 'pending', qrImage: fixtureQrImage, expiresAt: Date.now() + 300000 }
+      return respond(im.qr)
+    }
+    if (path.startsWith('/weixin/qr/')) {
+      if (!im.qr || !path.startsWith('/weixin/qr/' + im.qr.attemptId)) return respond({ error: '扫码任务不存在' }, 404)
+      if (path.endsWith('/verify')) { assert.equal(body.code, '123456'); im.qr.status = 'scanned' }
+      if (path.endsWith('/cancel')) im.qr.status = 'cancelled'
+      if (path.endsWith('/confirm')) {
+        assert.equal(body.confirmed, true); assert.equal(im.qr.status, 'connected')
+        const binding = { id: 'im-fixture-qr', label: '微信私聊 · QR01', sessionId: 's-qr', connected: true }
+        im.bindings.push(binding); im.qr.binding = binding; return respond(binding)
+      }
+      return respond(im.qr)
+    }
     if (im.disabled && path.startsWith('/reminders')) return respond({ error: '微信提醒尚未启用' }, 503)
     if (method === 'GET' && path === '/bindings') return respond(im.bindings)
     if (method === 'DELETE' && path.startsWith('/bindings/')) {
@@ -145,26 +162,32 @@ try {
   assert(previewText.includes('（北京时间）'))
   assert(previewText.includes('还没有绑定 IM 私聊'))
   assert.equal(im.bindings.length, 0)
-  const management = page.getByRole('link', { name: '打开机器人扫码管理', exact: true })
-  assert.equal(await management.getAttribute('href'), '/agent-api/im?view=admin')
-  assert.equal(await management.getAttribute('target'), '_blank')
-  assert((await management.getAttribute('rel')).includes('noopener'))
-  await page.context().route(/\/agent-api\/im\?view=admin$/, async route => route.fulfill({
-    contentType: 'text/html', body: await readFile(path.join(root, 'framework/bridge/im-portal.html'), 'utf8'),
-  }))
-  await page.context().route(/\/agent-api\/im\/portal\.js$/, async route => route.fulfill({
-    contentType: 'text/javascript', body: await readFile(path.join(root, 'framework/bridge/im-portal.js'), 'utf8'),
-  }))
-  const popupReady = page.waitForEvent('popup')
-  await management.click()
-  const popup = await popupReady
-  await popup.getByRole('heading', { name: '运维人员登录', exact: true }).waitFor()
-  assert.equal(await popup.getByLabel('员工账号', { exact: true }).count(), 1)
-  assert.equal(await popup.evaluate(() => sessionStorage.getItem('luckycat.token')), null)
-  await popup.close()
-  console.log('PASS 首次接入入口新窗口直达真实扫码管理的运维登录，不传递银行令牌、不发起扫码或修改机器人')
+  assert.equal(im.qrStarts, 0)
+  await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).click()
+  const image = page.getByRole('img', { name: '微信连接二维码', exact: true })
+  await image.waitFor()
+  assert((await image.getAttribute('src')).startsWith('data:image/png;base64,'))
+  assert.equal(page.context().pages().length, 1)
+  assert.equal(im.bindings.length, 0)
   await mkdir(path.join(root, '.generated/local-postgres'), { recursive: true })
-  await page.screenshot({ path: path.join(root, '.generated/local-postgres/im-entry-20261021.png') })
+  await page.screenshot({ path: path.join(root, '.generated/local-postgres/weixin-inline-qr-20261021.png') })
+  im.qr.status = 'needs_verification'
+  await page.getByLabel('扫码验证码', { exact: true }).fill('123456')
+  await page.getByRole('button', { name: '提交扫码验证码', exact: true }).click()
+  await page.getByText('已扫码，请在微信中确认登录', { exact: true }).waitFor()
+  im.qr.status = 'connected'
+  await page.getByRole('button', { name: '确认绑定此微信到当前账户', exact: true }).waitFor()
+  assert.equal(im.bindings.length, 0)
+  await page.getByRole('button', { name: '确认绑定此微信到当前账户', exact: true }).click()
+  await page.getByText('微信已绑定到当前银行账户', { exact: true }).waitFor()
+  assert.equal(im.bindings.length, 1)
+  assert.equal(im.writes.filter(w => w.path.endsWith('/confirm')).length, 1)
+  assert.equal(im.writes.filter(w => w.path.startsWith('/admin/')).length, 0)
+  console.log('PASS 本页展示真实生成的夹具二维码：扫码验证码 → 手机确认 → 银行绑定确认；不跳转、不使用运维权限，不提前绑定')
+  // Reset only the memory fixture before exercising the independent legacy binding-code flow.
+  im.bindings = []
+  await page.goto(`${base}/reminders#code=${code}`)
+  await page.getByText('来源：微信私聊 · 8001', { exact: true }).waitFor()
   console.log('PASS /reminders 渲染 IM 连接与提醒两块，侧栏一级入口高亮，hash 绑定码预填并自动核对来源')
 
   await page.getByRole('button', { name: '确认绑定到当前银行账户', exact: true }).click()
@@ -253,13 +276,24 @@ try {
   await page.getByText('IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。', { exact: true }).waitFor()
   assert.equal(await page.getByText('IM 连接尚未启用', { exact: true }).count(), 0)
   assert.equal(await page.getByText('提醒尚未启用', { exact: true }).count(), 0)
-  assert(await management.isVisible())
+  assert(await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).isVisible())
   im.outage = false
   await page.reload()
   await page.getByRole('heading', { name: '私聊绑定', exact: true }).waitFor()
   await page.getByText('还没有绑定 IM 私聊', { exact: true }).waitFor()
   assert.equal(await page.getByText('IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。', { exact: true }).count(), 0)
   console.log('PASS 会话库 503 显示服务故障，保留扫码入口，不谎报未启用；恢复后可重新加载')
+
+  await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).click()
+  await page.getByRole('img', { name: '微信连接二维码', exact: true }).waitFor()
+  await page.getByRole('button', { name: '取消扫码', exact: true }).click()
+  await page.getByText('本次扫码已取消', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '重新生成二维码', exact: true }).click()
+  im.qr.expiresAt = Date.now() - 1000
+  await page.getByText('二维码已过期，请重新生成', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('img', { name: '微信连接二维码', exact: true }).count(), 0)
+  assert.equal(im.bindings.length, 0)
+  console.log('PASS 取消与过期均停止展示旧二维码，可重新生成，不产生银行绑定')
 
   assert.deepEqual(errors, [])
   console.log('ALL PASS IM 连接页：绑定码核对/绑定、提醒创建/取消、解除绑定、未启用空态，无页面运行异常')

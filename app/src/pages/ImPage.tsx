@@ -2,7 +2,6 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   ImError,
-  imRobotManagementUrl,
   isImFeatureUnavailable,
   cancelImReminder,
   claimImCode,
@@ -16,6 +15,7 @@ import {
   type ImReminderList,
 } from '@/api/im'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { WeixinQrBinding } from '@/components/im/WeixinQrBinding'
 import { Button } from '@/components/ui/Button'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { DataUnavailable } from '@/components/ui/DataUnavailable'
@@ -317,19 +317,7 @@ export function ImPage() {
         description="绑定本人微信/企微私聊，并按北京时间设置提醒；提醒只发消息，不查询账户、不执行交易。"
       />
 
-      <Card className="float-up">
-        <CardHeader title="首次接入机器人" />
-        <ol className="mt-3 grid gap-3 text-[13px] leading-relaxed text-ink-soft md:grid-cols-3">
-          <li><strong className="block text-ink">1. 扫码连接微信机器人</strong>由运维人员在机器人管理中登录并扫码接入。已有微信 ClawBot 私聊可直接进行下一步。</li>
-          <li><strong className="block text-ink">2. 在微信发送「绑定」</strong>向已连接的机器人发送文字，获取带绑定码的银行链接。</li>
-          <li><strong className="block text-ink">3. 确认绑定银行账户</strong>在下方核对来源并确认，随后即可设置微信提醒。</li>
-        </ol>
-        <a href={imRobotManagementUrl} target="_blank" rel="noopener noreferrer"
-          className="mt-4 inline-flex min-h-12 items-center rounded-chip border border-line bg-surface px-5 text-[14px] font-medium text-ink hover:bg-sunk">
-          打开机器人扫码管理
-        </a>
-        <p className="mt-2 text-[12px] text-ink-mute">扫码管理需要运维账号；银行手机号用于下方私聊绑定。管理页在新窗口打开，不会传递您的银行登录信息。</p>
-      </Card>
+      <WeixinQrBinding onBound={async () => { await loadBindings(); await loadReminders() }} />
 
       {serviceUnavailable && <DataUnavailable
         message="IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。"

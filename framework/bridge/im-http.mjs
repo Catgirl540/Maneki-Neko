@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { createCustomerQr } from './im-customer-qr.mjs'
 
 const files = new Map([
   ['/agent-api/im', ['im-portal.html', 'text/html']],
@@ -6,6 +7,7 @@ const files = new Map([
 ])
 export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, authorizeAdmin, connectionTestStatus, reminders = () => undefined }) {
   const attempts = new Map()
+  const customerQr = createCustomerQr({ bank, channels })
   async function bankRequest(path, { authorization, body } = {}) {
     const response = await fetchImpl(new URL(path, bankUrl), { method: body ? 'POST' : 'GET', redirect: 'error', headers: { 'content-type': 'application/json', ...(authorization ? { authorization } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(12_000) })
     const data = await response.json()
@@ -78,7 +80,19 @@ export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, autho
       }
       if (!identity) return false // The normal Bridge authenticates all remaining routes.
       let result
-      if (pathname === '/agent-api/im/reminders' || /^\/agent-api\/im\/reminders\/rem-[\w-]+$/.test(pathname)) {
+      const qr = /^\/agent-api\/im\/weixin\/qr(?:\/([\w-]{1,128})(?:\/(verify|cancel|confirm))?)?$/.exec(pathname)
+      if (qr) {
+        const [, id, action] = qr
+        if (!id && req.method === 'POST') result = await customerQr.start(identity)
+        else if (id && !action && req.method === 'GET') result = customerQr.poll(identity, id)
+        else if (id && action && req.method === 'POST') {
+          const body = await readJson(req, 8192)
+          if (action === 'confirm') result = await customerQr.confirm(identity, id, body.confirmed)
+          else if (action === 'verify') result = await customerQr.verify(identity, id, body.code)
+          else result = await customerQr.cancel(identity, id)
+        } else throw Object.assign(Error('请求方式不支持'), { status: 405 })
+      }
+      else if (pathname === '/agent-api/im/reminders' || /^\/agent-api\/im\/reminders\/rem-[\w-]+$/.test(pathname)) {
         const service = reminders()
         if (!service) throw Object.assign(Error('微信提醒尚未启用'), { status: 503 })
         if (pathname === '/agent-api/im/reminders' && req.method === 'GET') result = service.list(identity.user.id)

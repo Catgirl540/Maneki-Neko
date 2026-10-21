@@ -29,10 +29,12 @@ export async function createImChannels({ directory, credentials, harness, vendor
     group: api.createAccessPolicyScope(),
   }) }
   const wx = weixinApi ?? api.createWeixinApi()
+  let freshLogin = false, starting = false
+  const wxConfig = await new api.WeixinConfigStore(join(directory, 'weixin.json')).load()
   const controllers = {
     weixin: new api.WeixinController({
-      api: wx, credentials, logger,
-      configStore: await new api.WeixinConfigStore(join(directory, 'weixin.json')).load(),
+      api: { ...wx, beginLogin: options => wx.beginLogin({ ...options, ...(freshLogin ? { localTokens: [] } : {}) }) }, credentials, logger,
+      configStore: wxConfig,
       createRuntime: async ({ botId, config, token }) => new api.WeixinRuntime({ api: wx, config, token, logger, accessPolicy, harness: harness('weixin', botId), state: await new api.WeixinStateStore(join(directory, `${botId}-state.json`)).load() }),
     }),
     wecom: new api.WecomController({
@@ -48,9 +50,19 @@ export async function createImChannels({ directory, credentials, harness, vendor
   return {
     async initialize() { await Promise.all(Object.values(controllers).map(item => item.initialize())) },
     status: () => ({ version: '5.1.0', channels: Object.fromEntries(Object.entries(controllers).map(([channel, item]) => [channel, item.status()])) }),
-    async provision(channel) {
-      const attempt = await controller(channel).startProvisioning()
-      return { ...attempt, ...(attempt.verificationUrl ? { qrImage: await api.qrImage(attempt.verificationUrl) } : {}) }
+    async provision(channel, { fresh = false } = {}) {
+      const instance = controller(channel)
+      if (starting || instance.status().provisioning) throw Object.assign(Error('已有扫码任务进行中，请稍后再试'), { status: 409 })
+      starting = true; freshLogin = channel === 'weixin' && fresh
+      try {
+        const attempt = await instance.startProvisioning()
+        return { ...attempt, ...(attempt.verificationUrl ? { qrImage: await api.qrImage(attempt.verificationUrl) } : {}) }
+      } finally { starting = false; freshLogin = false }
+    },
+    privateWeixinRecipient(botId) {
+      const config = wxConfig.get(botId)
+      if (!config?.ownerUserId) throw Object.assign(Error('微信扫码身份尚未就绪'), { status: 409 })
+      return `p2p:${config.ownerUserId}`
     },
     registration: (channel, id) => controller(channel).registrationStatus(id),
     verify: (channel, id, code) => {

@@ -115,6 +115,14 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
   }
   return {
     harness, observe,
+    async bindScannedWeixin(botId, conversationKey, identity) {
+      // Identity comes from the provider's confirmed QR result, never a browser-supplied recipient.
+      const conflict = Object.values(store.snapshot().routes).some(route => route.channel === 'weixin'
+        && route.key === conversationKey && route.ownerId && route.ownerId !== identity.user.id)
+      if (conflict) throw fail('此微信私聊已绑定其他银行账户，请由原账户先解除', 409)
+      const id = await harness('weixin', botId).createSession({ conversationKey })
+      return this.claim(pairing(store.snapshot().routes[id]), identity)
+    },
     reminderRoutes() { return Object.fromEntries(Object.entries(store.snapshot().routes).filter(([id]) => !claiming.has(id))) },
     async authorizeQuery(challenge, approve) {
       const route = active.get(challenge.sessionId)?.route

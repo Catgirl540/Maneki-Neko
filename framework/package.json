@@ -17,6 +17,7 @@
     "start:im:local": "node scripts/start-im-local.mjs",
     "stop:im:local": "node scripts/stop-im-local.mjs",
     "test:im": "node --test bridge/im.test.mjs bridge/im-local.test.mjs bridge/im-query.test.mjs",
+    "test:im:customer-qr": "node --test bridge/im-customer-qr.test.mjs",
     "test:im:browser": "node scripts/check-im-browser.mjs",
     "start:staff": "node scripts/bootstrap-staff.mjs && node bridge/staff-server.mjs",
     "start:ops": "node scripts/bootstrap-staff.mjs && node bridge/ops-server.mjs",
