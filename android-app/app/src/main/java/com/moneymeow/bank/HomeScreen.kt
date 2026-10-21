@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +67,22 @@ private val recent = listOf(
 fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
     var balanceVisible by remember { mutableStateOf(true) }
     var transferInOpen by remember { mutableStateOf(false) }
+    // 真实数据：登录后从 server/ 拉账户与最近流水
+    var account by remember { mutableStateOf<AccountDto?>(null) }
+    var recentRows by remember { mutableStateOf<List<TransactionDto>>(emptyList()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        if (!BankApi.hasToken()) return@LaunchedEffect
+        runCatching { BankApi.accounts() }
+            .onSuccess { list ->
+                account = list.firstOrNull()
+                account?.let { acc ->
+                    runCatching { BankApi.transactions(acc.id, 6) }
+                        .onSuccess { recentRows = it }
+                }
+            }
+            .onFailure { loadError = it.message }
+    }
 
     Column(
         Modifier
@@ -75,11 +92,11 @@ fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
     ) {
         Greeting(onNotify = { onSwitchTab(3) })
         Spacer(Modifier.height(12.dp))
-        AssetCard(balanceVisible) { balanceVisible = !balanceVisible }
+        AssetCard(balanceVisible, account, loadError) { balanceVisible = !balanceVisible }
         Spacer(Modifier.height(12.dp))
         EntryGrid(onOpen, onSwitchTab) { transferInOpen = true }
         Spacer(Modifier.height(4.dp))
-        RecentTransactions(onOpen)
+        RecentTransactions(onOpen, recentRows)
     }
 
     if (transferInOpen) {
@@ -123,7 +140,7 @@ private fun Greeting(onNotify: () -> Unit) {
 }
 
 @Composable
-private fun AssetCard(visible: Boolean, onToggle: () -> Unit) {
+private fun AssetCard(visible: Boolean, account: AccountDto?, loadError: String?, onToggle: () -> Unit) {
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -139,7 +156,14 @@ private fun AssetCard(visible: Boolean, onToggle: () -> Unit) {
                 )
             }
             VSpacer(6)
-            AmountText(if (visible) "¥86,320.00" else "¥••••••")
+            val cny = account?.currencyBalances?.firstOrNull { it.currency == "CNY" }?.balance
+                ?: account?.balance
+            val total = when {
+                cny != null -> formatCents(cny)
+                loadError != null -> "—"
+                else -> "¥86,320.00"
+            }
+            AmountText(if (visible) total else "¥••••••")
             VSpacer(12)
             Hairline()
             VSpacer(10)
@@ -147,9 +171,9 @@ private fun AssetCard(visible: Boolean, onToggle: () -> Unit) {
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("人民币活期", fontSize = 12.sp, color = Tokens.Muted)
+                Text(account?.label?.ifEmpty { "人民币活期" } ?: "人民币活期", fontSize = 12.sp, color = Tokens.Muted)
                 Text(
-                    if (visible) "¥86,320.00" else "••••••",
+                    if (!visible) "••••••" else if (cny != null) formatCents(cny) else "—",
                     fontSize = 12.sp,
                     color = Tokens.Ink2,
                     fontWeight = FontWeight.Medium,
@@ -200,7 +224,7 @@ private fun EntryGrid(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onTr
 }
 
 @Composable
-private fun RecentTransactions(onOpen: (String) -> Unit) {
+private fun RecentTransactions(onOpen: (String) -> Unit, rows: List<TransactionDto>) {
     Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -219,7 +243,28 @@ private fun RecentTransactions(onOpen: (String) -> Unit) {
         VSpacer(6)
         HairlineCard {
             Column(Modifier.padding(horizontal = 14.dp)) {
-                recent.forEachIndexed { index, txn ->
+                val shown = if (rows.isNotEmpty()) {
+                    rows.take(4).map { dto ->
+                        Txn(
+                            name = dto.counterparty.ifEmpty { dto.memo.ifEmpty { "交易" } },
+                            meta = dto.createdAt.take(16).replace('T', ' ') + " · " + BankApi.categoryLabel(dto.category),
+                            amount = (if (dto.direction == "in") "+" else "-") +
+                                formatCents(dto.amount).removePrefix("¥").removePrefix("HK$"),
+                            income = dto.direction == "in",
+                            icon = when (dto.category) {
+                                "dining" -> Icons.Food
+                                "shopping" -> Icons.Shop
+                                "transport" -> Icons.Transfer
+                                "housing" -> Icons.Receipt
+                                "salary" -> Icons.DownIn
+                                else -> Icons.Receipt
+                            },
+                        )
+                    }
+                } else {
+                    recent
+                }
+                shown.forEachIndexed { index, txn ->
                     if (index > 0) Hairline()
                     Row(
                         Modifier

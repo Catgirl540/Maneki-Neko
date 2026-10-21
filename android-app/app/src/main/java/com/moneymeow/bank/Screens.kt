@@ -375,3 +375,62 @@ fun FormScaffold(
         }
     }
 }
+
+/** 可编辑的单行输入（胶囊样式，与设计稿输入框一致）。 */
+@Composable
+fun TextFieldRow(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String = "",
+    keyboardType: androidx.compose.ui.text.input.KeyboardType = androidx.compose.ui.text.input.KeyboardType.Text,
+    password: Boolean = false,
+    trailing: (@Composable () -> Unit)? = null,
+) {
+    Column {
+        Text(label, fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(46.dp)
+                    .clip(CircleShape)
+                    .background(Tokens.Surface)
+                    .border(1.dp, Tokens.Border, CircleShape)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                androidx.compose.foundation.text.BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(
+                        fontSize = 14.sp,
+                        color = Tokens.Ink,
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Tokens.Accent),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = keyboardType,
+                        imeAction = androidx.compose.ui.text.input.ImeAction.Next,
+                    ),
+                    visualTransformation = if (password) {
+                        androidx.compose.ui.text.input.PasswordVisualTransformation()
+                    } else {
+                        androidx.compose.ui.text.input.VisualTransformation.None
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    decorationBox = { inner ->
+                        if (value.isEmpty() && placeholder.isNotEmpty()) {
+                            Text(placeholder, fontSize = 14.sp, color = Tokens.Muted)
+                        }
+                        inner()
+                    },
+                )
+            }
+            if (trailing != null) {
+                Spacer(Modifier.size(8.dp))
+                trailing()
+            }
+        }
+    }
+}

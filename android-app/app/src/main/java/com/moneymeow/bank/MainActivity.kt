@@ -61,6 +61,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        SessionStore.init(applicationContext)
+        AgentApi.bindToken { BankApi.currentToken() }
         setContent {
             MoneyMeowTheme {
                 BankApp()
@@ -98,6 +100,10 @@ fun BankApp() {
         if (stack.isNotEmpty()) pop() else tab = 0
     }
     val goHome: () -> Unit = { stack.clear(); tab = 0 }
+    var transferDraft by remember { mutableStateOf(TransferDraft()) }
+    var transferResult by remember { mutableStateOf<TransferResultDto?>(null) }
+    var selectedTxId by remember { mutableStateOf<String?>(null) }
+    var selectedProductCode by remember { mutableStateOf<String?>(null) }
 
     val navState = NavState(tab = tab, route = stack.lastOrNull(), depth = stack.size)
     val showBottomBar = navState.route == null && navState.tab != 2
@@ -180,7 +186,7 @@ fun BankApp() {
                     when (state.tab) {
                         0 -> HomeScreen(onOpen = push, onSwitchTab = { tab = it })
                         1 -> WealthTab(
-                            onOpenProduct = { push("产品详情") },
+                            onOpenProduct = { code -> selectedProductCode = code; push("产品详情") },
                             onOpenPlans = { push("储蓄与计划") },
                             onRedeemed = { push("赎回受理") },
                         )
@@ -198,7 +204,10 @@ fun BankApp() {
                         "交易记录" -> TransactionsScreen(
                             onBack = pop,
                             onAnalysis = { push("消费分析") },
-                            onOpenTx = { push("交易详情") },
+                            onOpenTx = { id ->
+                                selectedTxId = id
+                                push("交易详情")
+                            },
                         )
                         "更多服务" -> MoreScreen(onBack = pop) { target ->
                             when (target) {
@@ -223,7 +232,7 @@ fun BankApp() {
                             onTransferOut = { push("转出") },
                         )
                         "换汇" -> ExchangeScreen(onBack = pop)
-                        "交易详情" -> TxDetailScreen(onBack = pop)
+                        "交易详情" -> TxDetailScreen(onBack = pop, transactionId = selectedTxId)
                         "寄送信息" -> DeliveryScreen(onBack = pop)
                         "会员等级" -> MembershipScreen(onBack = pop)
                         "储蓄与计划" -> PlansScreen(onBack = pop)
@@ -276,17 +285,43 @@ fun BankApp() {
                             onBack = pop,
                             onAction = goHome,
                         )
-                        "转出" -> TransferSelectScreen(onBack = pop) { push(it) }
-                        "手机号转账", "银行卡号转账", "跨境支付通" ->
-                            TransferFormScreen(route, onBack = pop, onNext = { push("填写金额") })
-                        "填写金额" -> AmountScreen(onBack = pop, onDone = { push("转账结果") })
-                        "转账结果" -> TransferResultScreen(onBack = pop, onHome = goHome)
-                        "产品详情" -> ProductDetailScreen(onBack = pop)
+                        "转出" -> TransferSelectScreen(
+                            onBack = pop,
+                            onPick = { push(it) },
+                            onPickPayee = { draft ->
+                                transferDraft = draft
+                                push("填写金额")
+                            },
+                        )
+                        "手机号转账", "银行卡号转账", "跨境支付通" -> TransferFormScreen(
+                            title = route,
+                            onBack = pop,
+                            draft = transferDraft,
+                            onDraftChange = { transferDraft = it },
+                            onNext = { push("填写金额") },
+                        )
+                        "填写金额" -> AmountScreen(
+                            onBack = pop,
+                            draft = transferDraft,
+                            onSubmitted = { result ->
+                                transferResult = result
+                                push("转账结果")
+                            },
+                        )
+                        "转账结果" -> TransferResultScreen(
+                            result = transferResult,
+                            onBack = pop,
+                            onHome = goHome,
+                        )
+                        "产品详情" -> ProductDetailScreen(onBack = pop, productCode = selectedProductCode)
                         else -> SimplePushScreen(route, pop)
                     }
                 }
                 }
             }
+
+            // 启动时检查一次更新（有新版本弹窗）
+            UpdatePromptHost()
 
             // 底栏固定叠在底部（不改 Scaffold 布局高度，避免页面切换时上下抖动或切掉上浮的猫耳朵）
             if (showBottomBar) {

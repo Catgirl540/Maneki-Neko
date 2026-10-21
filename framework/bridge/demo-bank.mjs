@@ -88,6 +88,8 @@ const ROUTES = [
   ['POST', 'cardReplace', 'replaceCard', (id, b) => [id, b]],
   ['POST', 'cardSecrets', 'revealCardSecrets', (id, b) => [id, b.paymentPassword]],
   ['PATCH', 'cardSettings', 'updateCardSettings', (id, b) => [id, b]],
+  ['POST', 'cardSpend', 'spendOnCard', (id, b) => [id, b]],
+  ['POST', 'cardActivate', 'activateCard', (id, b) => [id, b.paymentPassword]],
 
   // —— 理财 ——
   ['GET', 'wealthProducts', 'listWealthProducts', () => []],

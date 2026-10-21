@@ -19,6 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,7 @@ private data class Product(
     val term: String,
     val meta: String,
     val matched: Boolean,
+    val code: String = "",
 )
 
 private val products = listOf(
@@ -79,9 +81,22 @@ private val records = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: () -> Unit) {
+fun WealthTab(onOpenProduct: (String) -> Unit, onOpenPlans: () -> Unit, onRedeemed: () -> Unit) {
     var tab by remember { mutableIntStateOf(0) }
     var redeemOpen by remember { mutableStateOf(false) }
+    // 真实理财数据
+    var overview by remember { mutableStateOf<WealthOverviewDto?>(null) }
+    var catalog by remember { mutableStateOf<List<WealthProductDto>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        if (!BankApi.hasToken()) return@LaunchedEffect
+        runCatching { BankApi.wealthOverview() }
+            .onSuccess { overview = it }
+            .onFailure { error = it.message }
+        runCatching { BankApi.wealthProducts() }
+            .onSuccess { catalog = it }
+            .onFailure { if (error == null) error = it.message }
+    }
     Column(Modifier.fillMaxSize()) {
         TabBar("理财")
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -94,9 +109,9 @@ fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: ()
                 .padding(bottom = 16.dp),
         ) {
             when (tab) {
-                0 -> WealthOverview(onOpenPlans) { tab = it }
-                1 -> WealthProducts(onOpenProduct)
-                2 -> WealthHoldings { redeemOpen = true }
+                0 -> WealthOverview(overview, error, onOpenPlans) { tab = it }
+                1 -> WealthProducts(catalog, error, onOpenProduct)
+                2 -> WealthHoldings(overview, { redeemOpen = true })
                 else -> WealthRecords()
             }
         }
@@ -143,7 +158,7 @@ fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: ()
 }
 
 @Composable
-private fun WealthOverview(onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
+private fun WealthOverview(overview: WealthOverviewDto?, error: String?, onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -152,13 +167,24 @@ private fun WealthOverview(onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
                 Icon(Icons.Eye, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(15.dp))
             }
             Spacer(Modifier.height(6.dp))
-            AmountText("¥42,456.90", 27)
+            AmountText(
+                when {
+                    overview != null -> formatCents(overview.totalValue)
+                    error != null -> "—"
+                    else -> "¥42,456.90"
+                },
+                27,
+            )
             Spacer(Modifier.height(12.dp))
             Hairline()
             Spacer(Modifier.height(10.dp))
-            KvInline("投入本金", "¥42,999.00")
-            KvInline("累计盈亏", "-542.10", Tokens.Coral)
-            KvInline("昨日盈亏", "+18.40")
+            KvInline("投入本金", overview?.let { formatCents(it.totalPrincipal) } ?: "—")
+            KvInline(
+                "累计盈亏",
+                overview?.let { formatCents(it.totalProfit) } ?: "—",
+                if ((overview?.totalProfit ?: 0) < 0) Tokens.Coral else Tokens.Ink2,
+            )
+            KvInline("昨日盈亏", overview?.let { formatCents(it.yesterdayProfit) } ?: "—")
         }
     }
     Spacer(Modifier.height(10.dp))
@@ -171,7 +197,16 @@ private fun WealthOverview(onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
         ) {
             Icon(Icons.Check, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
             Spacer(Modifier.size(8.dp))
-            Text("风险测评 R3 · 有效至 2027-05-12", fontSize = 12.sp, color = Tokens.Ink2)
+            Text(
+                when {
+                    overview == null -> "风险测评加载中…"
+                    !overview.riskDone -> "尚未完成风险测评 · 申购前需先测评"
+                    overview.riskLevel != null -> "风险测评 ${overview.riskLevel} · 有效至 ${overview.riskExpiresAt.take(10)}"
+                    else -> "风险测评已完成"
+                },
+                fontSize = 12.sp,
+                color = Tokens.Ink2,
+            )
         }
     }
     Spacer(Modifier.height(10.dp))
@@ -225,16 +260,40 @@ private fun QuickCard(label: String, icon: androidx.compose.ui.graphics.vector.I
 }
 
 @Composable
-private fun WealthProducts(onOpenProduct: () -> Unit) {
+private fun WealthProducts(catalog: List<WealthProductDto>, error: String?, onOpenProduct: (String) -> Unit) {
     var chip by remember { mutableIntStateOf(0) }
     ChipRow(listOf("全部", "现金管理", "固定收益", "混合", "权益", "商品"), chip) { chip = it }
     Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        products.forEach { product ->
+        val shownProducts = if (catalog.isNotEmpty()) {
+            catalog.map { dto ->
+                Product(
+                    name = dto.name,
+                    risk = dto.risk,
+                    metricLabel = if (dto.sevenDayYield != null) "七日年化" else "单位净值",
+                    metric = if (dto.sevenDayYield != null) {
+                        String.format("%.2f%%", dto.sevenDayYield * 100)
+                    } else {
+                        String.format("%.4f", dto.nav)
+                    },
+                    minAmount = formatCents(dto.minAmount),
+                    term = dto.term.ifEmpty { if (dto.openEnded) "随时赎回" else "封闭期" },
+                    meta = dto.category.ifEmpty { "理财" } + " · " + if (dto.openEnded) "开放式" else "封闭期内不可赎回",
+                    matched = true,
+                    code = dto.code,
+                )
+            }
+        } else {
+            products
+        }
+        if (error != null && catalog.isEmpty()) {
+            Text("产品目录加载失败：$error", fontSize = 11.sp, color = Tokens.Coral, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        shownProducts.forEach { product ->
             HairlineCard {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenProduct() }
+                        .clickable { onOpenProduct(product.code) }
                         .padding(14.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -302,11 +361,26 @@ fun RiskBadge(risk: String) {
 }
 
 @Composable
-private fun WealthHoldings(onRedeem: () -> Unit) {
+private fun WealthHoldings(overview: WealthOverviewDto?, onRedeem: () -> Unit) {
     var chip by remember { mutableIntStateOf(0) }
     ChipRow(listOf("全部", "可赎回", "封闭期"), chip) { chip = it }
     Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        holdings.forEach { holding ->
+        val shownHoldings = overview?.holdings?.map { dto ->
+            Holding(
+                name = dto.productName,
+                risk = "—",
+                marketValue = formatCents(dto.marketValue),
+                shares = formatCents(dto.shares).removePrefix("¥"),
+                pnl = formatCents(dto.profit),
+                pnlUp = dto.profit >= 0,
+                note = if (dto.closed) "封闭期内不可赎回" else "可赎回",
+                redeemable = !dto.closed,
+            )
+        }.orEmpty().ifEmpty { if (overview != null) emptyList() else holdings }
+        if (overview != null && overview.holdings.isEmpty()) {
+            Text("暂无持仓", fontSize = 12.sp, color = Tokens.Muted, modifier = Modifier.padding(vertical = 16.dp))
+        }
+        shownHoldings.forEach { holding ->
             HairlineCard {
                 Column(Modifier.padding(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {

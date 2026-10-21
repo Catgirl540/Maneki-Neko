@@ -1,0 +1,9 @@
+{
+  "manifestUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/latest.json",
+  "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-4.apk",
+  "versionCode": 4,
+  "versionName": "1.0.3",
+  "notes": "1.0.3：公开域名更新验证",
+  "expiresAt": null,
+  "publishedAt": "2026-10-21T09:28:43.793Z"
+}

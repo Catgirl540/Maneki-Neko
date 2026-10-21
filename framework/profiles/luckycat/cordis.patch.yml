@@ -109,6 +109,15 @@
               - id: qwen/qwen3.8-flash
                 name: Qwen 3.8 Flash
                 contextWindow: 1000000
+              # ══ 默认（2026-10-21 起）：DeepSeek V4.1 Flash 1017 ═══════════════
+              # 换默认的原因：qwen3.8-flash 的 Alibaba 共享池持续 429
+              # （`model-retry: 模型服务繁忙` 三连后 assistant-reset）。
+              - id: deepseek/deepseek-v4.1-flash-1017
+                name: DeepSeek V4.1 Flash 1017
+                contextWindow: 1000000
+              - id: deepseek/deepseek-v4.1-flash
+                name: DeepSeek V4.1 Flash
+                contextWindow: 1000000
               # ── 备选：ling 系（都**不是**默认，选它们的理由与坑见下面记录）────
               #
               #   模型                       工具调用   可用性

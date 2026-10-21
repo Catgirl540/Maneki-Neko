@@ -18,6 +18,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -103,10 +108,30 @@ private fun ReceiptRow(label: String, value: String, copy: Boolean = false) {
 
 @Composable
 fun AutoDebitScreen(onBack: () -> Unit) {
+    var rows by remember { mutableStateOf<List<AutoDebitDto>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        if (!BankApi.hasToken()) return@LaunchedEffect
+        runCatching { BankApi.autoDebits() }
+            .onSuccess { rows = it }
+            .onFailure { error = it.message }
+    }
     PushScreen(title = "自动扣款", onBack = onBack) {
         Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            DebitCard("话费月缴", "¥98.00", "21 日", "10-21")
-            DebitCard("房租", "¥4,500.00", "1 日", "11-01")
+            if (error != null) {
+                Text("加载失败：$error", fontSize = 12.sp, color = Tokens.Coral)
+            } else if (rows.isEmpty()) {
+                Text("暂无自动扣款", fontSize = 12.sp, color = Tokens.Muted)
+            } else {
+                rows.forEach { row ->
+                    DebitCard(
+                        name = row.merchant,
+                        amount = formatCents(row.amount),
+                        day = row.cycle,
+                        next = row.nextRunAt.take(10),
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
         EmptyNote("扣款规则由服务端调度执行\n余额不足时该次扣款会失败")
@@ -196,10 +221,25 @@ fun CreditScreen(onBack: () -> Unit) {
 
 @Composable
 fun InsuranceScreen(onBack: () -> Unit) {
+    var insurance by remember { mutableStateOf<InsuranceDto?>(null) }
+    LaunchedEffect(Unit) {
+        if (BankApi.hasToken()) runCatching { BankApi.insurance() }.onSuccess { insurance = it }
+    }
     PushScreen(title = "保险保障", onBack = onBack) {
         Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            PolicyCard("综合意外险", "¥500,000", "¥199/年", "保障期至 2027-03-14")
-            PolicyCard("百万医疗险", "¥2,000,000", "¥326/年", "保障期至 2027-01-08")
+            val policies = insurance?.policies.orEmpty()
+            if (policies.isEmpty()) {
+                Text("暂无保单", fontSize = 12.sp, color = Tokens.Muted)
+            } else {
+                policies.forEach { policy ->
+                    PolicyCard(
+                        name = policy.productName,
+                        coverage = formatCents(policy.coverage),
+                        fee = formatCents(policy.premium) + "/年",
+                        period = "保障期至 " + policy.expireAt.take(10),
+                    )
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
         EmptyNote("保单为演示数据\n保险保障不计入投资资产与收益")
@@ -232,26 +272,41 @@ private fun PolicyCard(name: String, coverage: String, fee: String, period: Stri
 
 @Composable
 fun InviteScreen(onBack: () -> Unit) {
+    var invite by remember { mutableStateOf<InvitationDto?>(null) }
+    LaunchedEffect(Unit) {
+        if (BankApi.hasToken()) runCatching { BankApi.invitations() }.onSuccess { invite = it }
+    }
     PushScreen(title = "邀请与奖励", onBack = onBack) {
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Text("我的邀请码", fontSize = 11.sp, color = Tokens.Muted)
                 Spacer(Modifier.height(5.dp))
-                Text("CAT-8821", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink, letterSpacing = 2.sp)
+                Text(
+                    invite?.code?.ifEmpty { "—" } ?: "—",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Tokens.Ink,
+                    letterSpacing = 2.sp,
+                )
                 Spacer(Modifier.height(12.dp))
                 Hairline()
                 Spacer(Modifier.height(10.dp))
-                KvInline("已邀请", "3 人")
-                KvInline("累计奖励", "¥150.00")
+                KvInline("已邀请", (invite?.friends?.size ?: 0).toString() + " 人")
+                KvInline(
+                    "已发放奖励",
+                    invite?.friends?.count { it.stage == "reward_earned" }?.toString()?.plus(" 人") ?: "—",
+                )
             }
         }
         SectionHeader("奖励记录")
         KvCard(
-            listOf(
-                "沈一诺 开户成功" to "+¥50.00",
-                "顾亦辰 开户成功" to "+¥50.00",
-                "陆书瑶 开户成功" to "+¥50.00",
-            ),
+            invite?.friends?.map { friend ->
+                (friend.name + " · " + friend.maskedPhone) to when (friend.stage) {
+                    "reward_earned" -> "已发奖"
+                    "registered" -> "已注册"
+                    else -> friend.stage
+                }
+            } ?: listOf("暂无邀请记录" to "—"),
             Modifier.padding(horizontal = 14.dp),
         )
         Spacer(Modifier.height(14.dp))

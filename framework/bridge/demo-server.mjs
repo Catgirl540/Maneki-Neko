@@ -24,7 +24,7 @@
  * 环境变量：
  *   LUCKYCAT_DEMO_PORT  监听端口，默认 8788
  *   LUCKYCAT_PROVIDER   模型路由，默认 openrouter
- *   LUCKYCAT_MODEL      模型名，默认 qwen/qwen3.8-flash
+ *   LUCKYCAT_MODEL      模型名，默认 deepseek/deepseek-v4.1-flash-1017
  *   LUCKYCAT_FALLBACK_MODELS OpenRouter 备用模型，逗号分隔，按顺序尝试
  *   LUCKYCAT_BANK_URL  银行 HTTP 地址，默认 http://127.0.0.1:8080
  *   LUCKYCAT_BANK_MODE demo 才启用独立占位工具；默认 http
@@ -95,7 +95,7 @@ const SESSION_DIR = resolve(process.env.LUCKYCAT_SESSION_DIR ?? (OPS_MODE ? join
 
 const PORT = Number(process.env.LUCKYCAT_DEMO_PORT ?? (STAFF_MODE ? 8789 : 8788))
 const PROVIDER = process.env.LUCKYCAT_PROVIDER ?? 'openrouter'
-const MODEL = process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash'
+const MODEL = process.env.LUCKYCAT_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017'
 const DEMO_PASSWORD = process.env.LUCKYCAT_DEMO_PASSWORD ?? '123456'
 const ACCESS_TOKEN = process.env.LUCKYCAT_DEMO_TOKEN ?? ''
 // 默认连接独立 PostgreSQL 银行；旧演示工具只能显式启用。
