@@ -77,6 +77,7 @@ export const routes = {
     savingsOverview: () => '/api/savings/overview',
     savingsGoals: () => '/api/savings/goals',
     savingsGoal: (id) => `/api/savings/goals/${id}`,
+    savingsGoalSweep: (id) => `/api/savings/goals/${id}/sweep`,
     savingsRoundup: () => '/api/savings/roundup',
     virtualCard: (id) => `/api/cards/${id}/virtual`,
     // —— 我的域扩展：邀请 / 会员 ——
@@ -99,6 +100,8 @@ export const routes = {
     investments: () => '/api/wealth/investments',
     investPlan: () => '/api/wealth/investments/plan',
     investPlanStatus: (id) => `/api/wealth/investments/plan/${id}`,
+    investPlanPause: (id) => `/api/wealth/investments/plan/${id}/pause`,
+    investPlanTerminate: (id) => `/api/wealth/investments/plan/${id}/terminate`,
     insurance: () => '/api/wealth/insurance',
     insuranceEnroll: () => '/api/wealth/insurance/enroll',
 };

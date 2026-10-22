@@ -24,7 +24,7 @@ test('unknown product risk, incomplete assessments and invalid amounts cannot by
   assert.throws(() => validateInvestPlan({ ...product, risk: 'high' }, risk, true, 10000, '每月'), error => error.code === 'RISK_MISMATCH')
 })
 
-test('plan transitions are versioned, cancellation is terminal, history is preserved and no-op does not advance revision', () => {
+test('plan transitions are versioned, termination is terminal, history is preserved and no-op does not advance revision', () => {
   const original = { id: 'owned', status: 'active', cycle: '每周', executedRuns: 3, totalInvested: 30000, nextRunAt: '2025-12-20' }
   const paused = transitionInvestPlan(original, { status: 'paused', expectedRevision: 0 }, now)
   assert.equal(paused.revision, 1)
@@ -35,7 +35,10 @@ test('plan transitions are versioned, cancellation is terminal, history is prese
   assert.equal(resumed.nextRunAt, '2026-02-07')
   assert.equal(resumed.executedRuns, 3); assert.equal(resumed.totalInvested, 30000)
   assert.deepEqual(transitionInvestPlan(resumed, { status: 'active', expectedRevision: 2 }, now), resumed)
-  const cancelled = transitionInvestPlan(resumed, { status: 'cancelled', expectedRevision: 2 }, now)
-  assert.throws(() => transitionInvestPlan(cancelled, { status: 'active', expectedRevision: 3 }, now), error => error.code === 'INVALID_PLAN_TRANSITION')
-  assert.throws(() => transitionInvestPlan(cancelled, { status: 'paused', expectedRevision: 3, amount: 1 }, now), error => error.code === 'INVALID_PLAN_STATUS')
+  const terminated = transitionInvestPlan(resumed, { status: 'terminated', expectedRevision: 2 }, now)
+  assert.equal(terminated.status, 'terminated')
+  assert.ok(terminated.terminatedAt)
+  assert.throws(() => transitionInvestPlan(terminated, { status: 'active', expectedRevision: 3 }, now), error => error.code === 'INVALID_PLAN_TRANSITION')
+  assert.throws(() => transitionInvestPlan(terminated, { status: 'paused', expectedRevision: 3, amount: 1 }, now), error => error.code === 'INVALID_PLAN_STATUS')
+  assert.throws(() => transitionInvestPlan(resumed, { status: 'cancelled', expectedRevision: 2 }, now), error => error.code === 'INVALID_PLAN_STATUS')
 })

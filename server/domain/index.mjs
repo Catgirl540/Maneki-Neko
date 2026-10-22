@@ -2138,6 +2138,28 @@ async getSecurityOverview() {
                 db.savings.roundup.goalId = null;
             persist();
         },
+        async setSavingsSweep(id, req) {
+            await delay(260);
+            const db = loadDb();
+            const goal = db.savings.goals.find((g) => g.id === id);
+            if (!goal)
+                throw new ApiError('存钱目标不存在', 404, 'GOAL_NOT_FOUND');
+            if (!req.enabled) {
+                goal.sweep = null;
+                persist();
+                return goal;
+            }
+            if (!Number.isSafeInteger(req.amount) || req.amount <= 0)
+                throw new ApiError('归集金额必须是正的安全整数分', 400, 'INVALID_AMOUNT');
+            if (!req.cycle || !req.cycle.trim())
+                throw new ApiError('请选择归集周期', 400, 'INVALID_CYCLE');
+            if (!req.accountId)
+                throw new ApiError('请选择扣款账户', 400, 'INVALID_ACCOUNT');
+            requireCurrencyBalance(db, req.accountId);
+            goal.sweep = { amount: req.amount, cycle: req.cycle.trim(), accountId: req.accountId };
+            persist();
+            return goal;
+        },
         async updateSavingsRoundup(req) { const db = loadDb(); db.savings.roundup = validateRoundup(db, req); persist(); return db.savings.roundup },
         async createVirtualCard(id, req) {
             await delay(560);
@@ -2401,6 +2423,35 @@ async getSecurityOverview() {
                 verifyPayPassword(req.paymentPassword);
             }
             Object.assign(plan, next);
+            persist();
+            return plan;
+        },
+        async pauseInvestPlan(id) {
+            await delay(240);
+            const db = loadDb();
+            const plan = db.investments.plans.find((p) => p.id === id);
+            if (!plan)
+                throw new ApiError('定投计划不存在', 404, 'PLAN_NOT_FOUND');
+            if (plan.status !== 'active')
+                throw new ApiError(`状态「${plan.status === 'paused' ? '已暂停' : '已终止'}」不可暂停`, 409, 'CONFLICT');
+            plan.status = 'paused';
+            plan.revision = (plan.revision ?? 0) + 1;
+            plan.updatedAt = new Date().toISOString();
+            persist();
+            return plan;
+        },
+        async terminateInvestPlan(id) {
+            await delay(240);
+            const db = loadDb();
+            const plan = db.investments.plans.find((p) => p.id === id);
+            if (!plan)
+                throw new ApiError('定投计划不存在', 404, 'PLAN_NOT_FOUND');
+            if (plan.status === 'terminated')
+                throw new ApiError('计划已终止', 409, 'CONFLICT');
+            plan.status = 'terminated';
+            plan.terminatedAt = new Date().toISOString();
+            plan.revision = (plan.revision ?? 0) + 1;
+            plan.updatedAt = plan.terminatedAt;
             persist();
             return plan;
         },
