@@ -303,6 +303,7 @@ export async function createBankApi({
   holdWindowMs,
   onTransferHeld,
   onHoldClosed,
+  onHumanSupport,
   security,
   database,
   classify: classifyFn,
@@ -483,6 +484,13 @@ export async function createBankApi({
             customerId: dbModule.loadDb().user.id,
             request: body,
             result: value,
+          })
+        }
+        // 客户转人工：通知已绑定企微的员工，工单本身仍走工单中心
+        if (entry.bankMethod === 'requestHumanSupport' && onHumanSupport) {
+          await onHumanSupport({
+            customerId: dbModule.loadDb().user.id,
+            ticket: value,
           })
         }
         // 用户撤销：mock 内部已了结流水，这里补一刀关掉员工端的窗口记录

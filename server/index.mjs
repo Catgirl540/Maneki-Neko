@@ -68,6 +68,19 @@ const classify = categorizer.enabled
       return category
     }
   : categorizer.classify
+// 员工企微通知：银行服务 → staff-agent /agent-api/im/notify（独立内部令牌），fire-and-forget。
+// 注意不能用 LUCKYCAT_INTERNAL_TOKEN：bridge 进程启动时会把它覆写成随机值。
+const staffImNotifyUrl = process.env.LUCKYCAT_STAFF_IM_NOTIFY_URL
+function notifyStaffIm(text, roles) {
+  const token = process.env.LUCKYCAT_IM_INTERNAL_TOKEN
+  if (!staffImNotifyUrl || !token) return
+  void fetch(staffImNotifyUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-luckycat-internal': token },
+    body: JSON.stringify({ text, ...(roles ? { roles } : {}) }),
+    signal: AbortSignal.timeout(5_000),
+  }).catch(() => {})
+}
 // 后台分类任务要区分「失败」与「判定为 other」，用带失败标记的版本
 classify.detailed = (tx) => categorizer.enabled
   ? categorizer.classifyDetailed(tx)
@@ -80,7 +93,14 @@ const bank = await createBankApi({
   storage: database.storage,
   reviewThreshold: () => getTransferReviewCents(database.db),
   holdWindowMs,
-  onTransferHeld: (held) => staffApi.createTransferApproval(held),
+  onTransferHeld: (held) => {
+    const created = staffApi.createTransferApproval(held)
+    notifyStaffIm(`有一笔大额转账进入待审核（金额 ¥${((held.result?.amount ?? held.request?.amount ?? 0) / 100).toFixed(2)}），请在处置中心处理。`, ['csr', 'supervisor'])
+    return created
+  },
+  onHumanSupport: ({ ticket }) => {
+    notifyStaffIm(`客户转人工工单待处理：${String(ticket?.reason ?? '').slice(0, 80)}`, ['csr', 'supervisor'])
+  },
   onHoldClosed: (closed) => staffApi.closeTransferApproval(closed),
   classify,
 })

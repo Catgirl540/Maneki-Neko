@@ -5,7 +5,7 @@ const files = new Map([
   ['/agent-api/im', ['im-portal.html', 'text/html']],
   ['/agent-api/im/portal.js', ['im-portal.js', 'text/javascript']],
 ])
-export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, authorizeAdmin, connectionTestStatus, reminders = () => undefined }) {
+export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, authorizeAdmin, connectionTestStatus, reminders = () => undefined, staff = false, internalToken = process.env.LUCKYCAT_IM_INTERNAL_TOKEN }) {
   const attempts = new Map()
   const customerQr = createCustomerQr({ bank, channels })
   async function bankRequest(path, { authorization, body } = {}) {
@@ -78,9 +78,21 @@ export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, autho
         else throw Object.assign(Error('接口不存在'), { status: 404 })
         await sendJson(res, 200, result ?? { ok: true }); return true
       }
+      // 服务端内部推送（银行 → 员工企微通知）：只认内部令牌，不走员工身份；
+      // 只在员工运行时开放——客户运行时没有内部推送语义，避免误投递到客户私聊。
+      if (staff && pathname === '/agent-api/im/notify' && req.method === 'POST') {
+        if (!internalToken || req.headers['x-luckycat-internal'] !== internalToken) throw Object.assign(Error('内部接口不可用'), { status: 404 })
+        const body = await readJson(req, 8192)
+        if (typeof body.text !== 'string' || !body.text.trim() || body.text.length > 2000) throw Object.assign(Error('通知内容无效'), { status: 400 })
+        const routes = bank.notifyRoutes(body.roles)
+        const results = await Promise.allSettled(routes.map(route => channels.deliver(route, body.text)))
+        await sendJson(res, 200, { delivered: results.filter(r => r.status === 'fulfilled').length, total: routes.length })
+        return true
+      }
       if (!identity) return false // The normal Bridge authenticates all remaining routes.
       let result
-      const qr = /^\/agent-api\/im\/weixin\/qr(?:\/([\w-]{1,128})(?:\/(verify|cancel|confirm))?)?$/.exec(pathname)
+      // 页内生成微信登录码只面向客户；员工侧只保留绑定码路径（企微由运维先创建机器人）。
+      const qr = staff ? null : /^\/agent-api\/im\/weixin\/qr(?:\/([\w-]{1,128})(?:\/(verify|cancel|confirm))?)?$/.exec(pathname)
       if (qr) {
         const [, id, action] = qr
         if (!id && req.method === 'POST') result = await customerQr.start(identity)

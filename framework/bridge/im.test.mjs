@@ -400,3 +400,81 @@ test('browser: bind a private chat, inspect bank confirmation, correct a passwor
   await page.waitForFunction(() => document.querySelector('#bot-secret').value === '')
   assert.deepEqual(failures, [])
 })
+
+test('staff mode: pairing points at the staff console, claims record the role, and notifyRoutes filters bound live routes', async t => {
+  const f = await fixture(t, { dependencies: { staff: true, portalPath: '/staff/im' } })
+  const staff = (id, role) => ({ user: { id, name: id, role }, token: `staff-token-${id}` })
+  const route = await conversation(f.bank, 'wecom', 'bot-staff', 'direct:worker-a')
+  const message = await route.session.ask('在吗')
+  assert.match(message, /员工工作台登录/)
+  assert.match(message, /https:\/\/bank\.example\.com\/staff\/im#code=/)
+  assert(!message.includes('支付密码'))
+  const bound = await f.bank.claim(pairCode(message), staff('u-csr', 'csr'))
+  assert.equal(f.store.snapshot().routes[route.id].role, 'csr')
+  assert.equal(bound.label, '企业微信私聊 · er-a')
+  // 已绑定且在线的路由按角色过滤；未绑定/离线/角色不符的不进推送列表。
+  assert.deepEqual(f.bank.notifyRoutes(['supervisor']), [])
+  assert.equal(f.bank.notifyRoutes(['csr', 'supervisor'])[0]?.id, route.id)
+  assert.equal(f.bank.notifyRoutes().length, 1)
+  await f.bank.revoke(route.id, 'u-csr')
+  assert.equal(f.bank.notifyRoutes().length, 0)
+  assert.equal(f.bank.notifyRoutes(['csr']).length, 0)
+})
+
+test('staff http: notify needs the internal token and delivers to role-filtered routes; QR and customer endpoints are off', async t => {
+  const f = await fixture(t, { dependencies: { staff: true, portalPath: '/staff/im' } })
+  const delivered = []
+  const channels = {
+    status: () => ({ channels: {} }),
+    deliver: async (route, text) => { delivered.push({ route, text }) },
+  }
+  const http = createImHttp({ bank: f.bank, channels, bankUrl: 'https://bank.internal/', staff: true, internalToken: 'fixture-internal' })
+  const customerHttp = createImHttp({ bank: f.bank, channels, bankUrl: 'https://bank.internal/', internalToken: 'fixture-internal' })
+  const staffIdentity = { user: { id: 'u-csr', name: '小安', role: 'csr' }, token: 'staff-token' }
+  const server = createServer(async (req, res) => {
+    const readJson = async () => { let body = ''; for await (const chunk of req) body += chunk; return JSON.parse(body || '{}') }
+    const sendJson = async (response, status, body) => { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(body)) }
+    try {
+      const identity = req.headers.authorization === 'Bearer staff-token' ? staffIdentity : undefined
+      const impl = new URL(req.url, 'http://localhost').pathname.startsWith('/customer-mode/') ? customerHttp : http
+      const pathname = new URL(req.url, 'http://localhost').pathname.replace(/^\/customer-mode/, '')
+      const handled = await impl.handle(req, res, { pathname, identity, readJson, sendJson })
+      if (!handled) await sendJson(res, 401, { error: 'Staff login required' })
+    } catch (error) { await sendJson(res, error.status ?? 500, { error: error.message }) }
+  })
+  await new Promise(done => server.listen(0, '127.0.0.1', done)); t.after(() => new Promise(done => { server.closeAllConnections(); server.close(done) }))
+  const base = `http://127.0.0.1:${server.address().port}`
+  const post = (path, body, headers = {}) => fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) })
+
+  // 员工侧不开客户页内二维码：整个 weixin/qr 命名空间 404。
+  assert.equal((await post('/agent-api/im/weixin/qr', {}, { authorization: 'Bearer staff-token' })).status, 404)
+  // 内部推送：无令牌/错令牌 404，不泄露端点存在；空文本 400；客户运行时不开放该端点。
+  // 客户运行时 notify 未注册：带内部令牌也只会落到 401（员工模式下是 404/投递）。
+  assert.equal((await post('/customer-mode/agent-api/im/notify', { text: 'hi', roles: ['csr'] }, { 'x-luckycat-internal': 'fixture-internal' })).status, 401)
+  assert.equal((await post('/agent-api/im/notify', { text: 'hi' })).status, 404)
+  assert.equal((await post('/agent-api/im/notify', { text: 'hi' }, { 'x-luckycat-internal': 'wrong' })).status, 404)
+  assert.equal((await post('/agent-api/im/notify', { text: '  ' }, { 'x-luckycat-internal': 'fixture-internal' })).status, 400)
+
+  // 绑定一条企微私聊到 csr 员工。
+  const route = await conversation(f.bank, 'wecom', 'bot-staff', 'direct:worker-a')
+  const code = pairCode(await route.session.ask('绑定'))
+  const preview = await post('/agent-api/im/preview', { code }, { authorization: 'Bearer staff-token' })
+  assert.equal(preview.status, 200)
+  assert.equal((await preview.json()).label, '企业微信私聊 · er-a')
+  const claim = await post('/agent-api/im/claim', { code }, { authorization: 'Bearer staff-token' })
+  assert.equal(claim.status, 200)
+  assert.equal((await fetch(base + '/agent-api/im/bindings', { headers: { authorization: 'Bearer staff-token' } })).status, 200)
+
+  // 内部推送按角色投递；全部角色不带 roles 也通。
+  let notify = await post('/agent-api/im/notify', { text: '有待审核的大额转账', roles: ['supervisor'] }, { 'x-luckycat-internal': 'fixture-internal' })
+  assert.deepEqual(await notify.json(), { delivered: 0, total: 0 })
+  notify = await post('/agent-api/im/notify', { text: '有待审核的大额转账', roles: ['csr', 'supervisor'] }, { 'x-luckycat-internal': 'fixture-internal' })
+  assert.deepEqual(await notify.json(), { delivered: 1, total: 1 })
+  assert.equal(delivered.at(-1).text, '有待审核的大额转账')
+  assert.equal(delivered.at(-1).route.key, 'direct:worker-a')
+
+  // 解绑后不再投递；绑定列表归属校验仍生效。
+  assert.equal((await fetch(`${base}/agent-api/im/bindings/${route.id}`, { method: 'DELETE', headers: { authorization: 'Bearer staff-token' } })).status, 200)
+  notify = await post('/agent-api/im/notify', { text: 'x' }, { 'x-luckycat-internal': 'fixture-internal' })
+  assert.deepEqual(await notify.json(), { delivered: 0, total: 0 })
+})

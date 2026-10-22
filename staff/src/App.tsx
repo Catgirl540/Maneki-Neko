@@ -10,6 +10,7 @@ import { ActionsPage } from '@/pages/actions/ActionsPage'
 import { AuditPage } from '@/pages/audit/AuditPage'
 import { ApprovalsPage } from '@/pages/approvals/ApprovalsPage'
 import { TicketsPage } from '@/pages/tickets/TicketsPage'
+import { ImPage } from '@/pages/im/ImPage'
 import { RequireAuth, SessionProvider } from '@/store/session'
 import { useSession } from '@/store/session-context'
 
@@ -63,6 +64,7 @@ export default function App() {
           >
             <Route path="/operations" element={<RequireOperations />} />
             <Route path="/assistant" element={<AssistantPage />} />
+            <Route path="/im" element={<ImPage />} />
             <Route element={<RequireBusiness />}>
             <Route path="/workbench" element={<WorkbenchPage />} />
             <Route path="/tickets" element={<TicketsPage />} />

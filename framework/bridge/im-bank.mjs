@@ -3,11 +3,11 @@ import { randomBytes, randomUUID } from 'node:crypto'
 const fail = (message, status = 400) => Object.assign(new Error(message), { status })
 const label = route => `${route.channel === 'weixin' ? '微信' : '企业微信'}私聊 · ${route.key.slice(-4)}`
 
-export function createImBank({ store, publicUrl, createSession, current, run, cancel, deliver, onBindingChange = () => {}, clock = Date.now, timeoutMs = 600_000 }) {
+export function createImBank({ store, publicUrl, portalPath, staff = false, createSession, current, run, cancel, deliver, onBindingChange = () => {}, clock = Date.now, timeoutMs = 600_000 }) {
   const base = new URL(publicUrl)
   if (base.username || base.password || base.search || base.hash || !['https:', 'http:'].includes(base.protocol)
       || (base.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw Error('LUCKYCAT_IM_PUBLIC_URL must use HTTPS (HTTP is only allowed on loopback)')
-  const portal = new URL('agent-api/im', base.origin).href
+  const portal = new URL(portalPath ?? 'agent-api/im', base.origin).href
   const pairings = new Map(), active = new Map(), live = new Set(), claiming = new Set()
   let closed = false
   function pairing(route) {
@@ -18,8 +18,10 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
     pairings.set(code, { routeId: route.id, expiresAt: clock() + 600_000 })
     return code
   }
-  const loginMessage = route => `请先在银行页面登录并绑定${label(route)}，再发送您的需求：\n${portal}#code=${pairing(route)}\n绑定码十分钟有效；登录密码和支付密码只在银行页面填写。`
-  const actionMessage = route => `有一项操作需要您在银行页面核对或补充信息：\n${portal}#session=${encodeURIComponent(route.sessionId)}\n请在页面中完成确认，我会继续办理并在这里回复结果。`
+  const loginMessage = staff
+    ? route => `请先在员工工作台登录并绑定${label(route)}，再发送您的需求：\n${portal}#code=${pairing(route)}\n绑定码十分钟有效；员工密码只在工作台页面填写。`
+    : route => `请先在银行页面登录并绑定${label(route)}，再发送您的需求：\n${portal}#code=${pairing(route)}\n绑定码十分钟有效；登录密码和支付密码只在银行页面填写。`
+  const actionMessage = route => `有一项操作需要您在${staff ? '工作台页面' : '银行页面'}核对或补充信息：\n${portal}#session=${encodeURIComponent(route.sessionId)}\n请在页面中完成确认，我会继续办理并在这里回复结果。`
   function isLiveRoute(route) {
     const latest = store.snapshot().routes[route.id]
     return !closed && live.has(route.id) && latest?.sessionId === route.sessionId && latest?.ownerId === route.ownerId
@@ -124,6 +126,12 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
       return this.claim(pairing(store.snapshot().routes[id]), identity)
     },
     reminderRoutes() { return Object.fromEntries(Object.entries(store.snapshot().routes).filter(([id]) => !claiming.has(id))) },
+    /** 全部已绑定且在线的路由，供服务端主动推送；roles 给定时按绑定记录的员工角色过滤。 */
+    notifyRoutes(roles) {
+      const allowed = Array.isArray(roles) && roles.length ? new Set(roles) : null
+      return Object.values(store.snapshot().routes).filter(route =>
+        route.ownerId && live.has(route.id) && !claiming.has(route.id) && (!allowed || allowed.has(route.role)))
+    },
     async authorizeQuery(challenge, approve) {
       const route = active.get(challenge.sessionId)?.route
       if (!route || !isLiveRoute(route)) return false
@@ -156,7 +164,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
         await store.update(draft => {
           const latest = draft.routes[routeId]
           if (!latest || (latest.ownerId && latest.ownerId !== identity.user.id)) throw fail('此 IM 身份已更改，请重新连接', 409)
-          Object.assign(latest, { ownerId: identity.user.id, sessionId, bindingRevision: randomUUID() })
+          Object.assign(latest, { ownerId: identity.user.id, sessionId, bindingRevision: randomUUID(), ...(identity.user.role ? { role: identity.user.role } : {}) })
         })
         live.add(routeId)
         return { id: routeId, sessionId, label: label(route) }

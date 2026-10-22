@@ -1466,18 +1466,24 @@ async function stopSession(sessionId) {
   return entry.stopTask
 }
 
-if (!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
+// IM 在客户演示（customer）与员工（staff）两套进程各自启用，互不共享 store；
+// ops 运行时不开 IM。客户侧走微信/企微两条渠道，员工侧只用企微（运维先行创建机器人）。
+if (!OPS_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
   if (!HTTP_BANK) throw Error('IM requires the authenticated bank HTTP mode')
   const directory = join(SESSION_DIR, 'im')
-  const store = await openImStore(join(directory, 'bank-bindings.enc.json'), process.env.LUCKYCAT_IM_DATA_KEY ?? process.env.LUCKYCAT_SESSION_DATA_KEY)
-  if (process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') await migrateImBindingRevisions(store)
+  const store = await openImStore(join(directory, STAFF_MODE ? 'staff-bindings.enc.json' : 'bank-bindings.enc.json'), process.env.LUCKYCAT_IM_DATA_KEY ?? process.env.LUCKYCAT_SESSION_DATA_KEY)
+  if (!STAFF_MODE && process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') await migrateImBindingRevisions(store)
   imBank = createImBank({
     store, publicUrl: process.env.LUCKYCAT_IM_PUBLIC_URL ?? `http://127.0.0.1:${PORT}`,
+    staff: STAFF_MODE, portalPath: STAFF_MODE ? '/staff/im' : undefined,
     createSession: identity => createWebSession(identity), current: id => bankAgent.current(id), cancel: stopSession,
     run: (id, text) => {
       const entry = sessions.get(id)
       if (!entry || entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
-      const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感卡信息仍须在银行页面授权。】\n' + serviceSkillContext(undefined) + text)
+      const preamble = STAFF_MODE
+        ? '【可信渠道：已绑定的企业微信私聊。按该员工的工作台权限办理；敏感操作仍须在员工页面授权。】\n'
+        : '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感卡信息仍须在银行页面授权。】\n'
+      const turn = runTurn(id, preamble + (STAFF_MODE ? '' : serviceSkillContext(undefined)) + text)
       activeTurns.add(turn)
       void turn.finally(() => activeTurns.delete(turn)).catch(() => {})
       return turn
@@ -1486,9 +1492,9 @@ if (!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
     onBindingChange: id => imReminders?.invalidateRoute(id),
   })
   imChannels = await createImChannels({ directory, credentials: store.credentials, harness: imBank.harness })
-  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', reminders: () => imReminders })
+  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', reminders: () => imReminders, staff: STAFF_MODE })
   await imChannels.initialize()
-  if (process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') {
+  if (!STAFF_MODE && process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') {
     imReminders = await createBankReminders({ directory: join(SESSION_DIR, 'bank-workbench'), routes: () => imBank.reminderRoutes(), ready: route => imChannels.reminderReady(route), deliver: (route, text, options) => imChannels.deliver(route, text, options) })
     imReminders.start()
   }

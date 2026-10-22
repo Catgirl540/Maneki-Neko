@@ -41,6 +41,17 @@ VITE_USE_MOCK=false VITE_BASE_PATH=/ VITE_API_BASE_URL='' VITE_AGENT_URL=/agent-
 
 若回退，先停演示客户 Agent，恢复备份的 `demo-server.mjs`，撤除本次新增 drop-in，`daemon-reload` 后启动原服务。保留 IM 状态、依赖和备份；不回退数据库，不删除会话或资金数据。
 
+### 员工 IM（企微通知）
+
+`luckycat-staff-agent`（8789）在 `LUCKYCAT_IM_ENABLED=1` 时启用员工侧 IM，与客户侧互不共享绑定数据：
+
+- 绑定文件是状态目录下独立的 `im/staff-bindings.enc.json`，密钥沿用 `LUCKYCAT_IM_DATA_KEY`（缺省回落 `LUCKYCAT_SESSION_DATA_KEY`）。
+- `LUCKYCAT_IM_PUBLIC_URL` 用站点 HTTPS 源；绑定码消息指向员工控制台 `https://bank.waveflow.men/staff/im#code=…`。
+- 员工侧只保留绑定码路径：`/staff-agent-api/im/{preview,claim,bindings}`；客户页内二维码 `/im/weixin/qr` 在员工运行时不开放。企微机器人由运维先在 `/staff-agent-api/im/admin/`（需 ops 员工 token）创建。
+- 服务端主动推送走内部通道：`POST /agent-api/im/notify`，头 `x-luckycat-internal` 必须等于 `LUCKYCAT_IM_INTERNAL_TOKEN`（与 `LUCKYCAT_INTERNAL_TOKEN` 是两个值，后者由 bridge 进程自行生成并覆写，不能复用）。body `{text, roles?}`，`roles` 给定时只投递到绑定记录里该角色的员工。
+- 银行服务侧由 `LUCKYCAT_STAFF_IM_NOTIFY_URL`（本机部署指向 `http://127.0.0.1:8789/agent-api/im/notify`）与同一个 `LUCKYCAT_IM_INTERNAL_TOKEN` 启用：大额转账进入在途处置、客户转人工工单会向 `csr`/`supervisor` 绑定的私聊推送一条文本。
+- 员工运行时重启后，已绑定私聊标记为离线，员工需在 `/staff/im` 页面重新领取绑定码完成绑定后才恢复推送，与客户端语义一致。
+
 后续 IM 查询修复：已绑定且登录有效的当前私聊请求，对普通只读工具白名单复核归属后直接执行，不再逐次跳转网页确认。写操作和敏感卡信息保持原确认。新增 `bank-agent.approveRoutineQuery` 与 `im-bank.authorizeQuery` 在 Bridge 的内部确认通道串联，仍沿用参数绑定、一次性授权、持久化审计与提交前校验。普通网页及员工 Agent 不使用此授权入口。源码、生成语料、技能与原文件备份位于服务器 `query-reuse-backup` 子目录，检查记录为 `query-checks.json`。此次只重启演示客户 Agent，用户需重新绑定一次。回退这次修复应恢复 `query-reuse-backup` 中的文件并重启演示客户 Agent，保留原 IM 启用 drop-in，不删除用户数据。
 
 本次停止旧写入后分别导出两库，再恢复到新机空库。两库各 73 张表，146 张表逐表记录数在启动前全部匹配，126 个原生日志和附件文件同步恢复。没有重置客户、余额、冻结、流水、员工或 AI 会话数据；账户模型继续遵守 `docs/product/account-model.md`。
