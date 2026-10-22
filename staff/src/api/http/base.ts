@@ -28,6 +28,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
+        ...(init.method && ['POST','PUT','PATCH'].includes(init.method) && path.startsWith('/staff-api/') && ![routes.login(),routes.logout()].includes(path) ? {'X-Staff-Request-Id':crypto.randomUUID()} : {}),
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(init.headers ?? {}),
       },

@@ -84,7 +84,14 @@ export async function openSessionStore(connectionString = process.env.LUCKYCAT_S
   }
   const legacyCipher = entry => entry.legacyContext == null ? null : cipher.seal(entry.legacyContext, ctx(entry.id, 'legacy'))
   async function eventsFor(id) {
-    const rows = await q('SELECT seq,body_cipher FROM ai_sessions.events WHERE namespace=$1 AND session_id=$2 ORDER BY seq DESC LIMIT 256', [namespace, id])
+    // Bound the encrypted bytes before fetching/decrypting, including old large
+    // cumulative snapshots. One newest event is always kept for recovery.
+    const rows = await q(`WITH recent AS (
+      SELECT seq,body_cipher FROM ai_sessions.events WHERE namespace=$1 AND session_id=$2 ORDER BY seq DESC LIMIT 256
+    ), sized AS (
+      SELECT seq,body_cipher,sum(octet_length(body_cipher)) OVER (ORDER BY seq DESC) AS bytes,
+        row_number() OVER (ORDER BY seq DESC) AS n FROM recent
+    ) SELECT seq,body_cipher FROM sized WHERE bytes<=1400000 OR n=1 ORDER BY seq DESC`, [namespace, id])
     return rows.reverse().map(row => ({ id: String(row.seq), event: eventSnapshot(cipher.open(row.body_cipher, ctx(id, `event:${row.seq}`))) }))
   }
   async function entryOf(row, interrupted = row?.interrupted) {
@@ -98,7 +105,7 @@ export async function openSessionStore(connectionString = process.env.LUCKYCAT_S
     if (!locked) throw new Error('Another AI worker owns this session namespace')
     await q('SELECT id FROM ai_sessions.sessions WHERE namespace=$1 LIMIT 1', [namespace], lockClient)
     if (requireEmpty && (await q('SELECT (SELECT count(*) FROM ai_sessions.sessions WHERE namespace=$1)+(SELECT count(*) FROM ai_sessions.imports WHERE namespace=$1) AS n', [namespace], lockClient))[0].n > 0) throw new Error('Target session namespace must be empty')
-    recovered = await transaction(client => q('UPDATE ai_sessions.sessions SET busy=false,interrupted=true,updated_at=now() WHERE namespace=$1 AND (busy=true OR interrupted=true) RETURNING *', [namespace], client))
+    recovered = await transaction(client => q('UPDATE ai_sessions.sessions SET busy=false,interrupted=true,updated_at=now() WHERE namespace=$1 AND (busy=true OR interrupted=true) RETURNING id', [namespace], client))
   } catch {
     if (lockClient) { await lockClient.query('SELECT pg_advisory_unlock_all()').catch(() => {}); lockClient.release() }
     await pool.end()
@@ -107,7 +114,15 @@ export async function openSessionStore(connectionString = process.env.LUCKYCAT_S
   const store = {
     namespace,
     async interrupted() {
-      try { await flush(); const result = []; for (const row of recovered) result.push(await entryOf(row, true)); return result }
+      try {
+        await flush()
+        const result = []
+        for (const { id } of recovered) {
+          const row = (await q('SELECT * FROM ai_sessions.sessions WHERE namespace=$1 AND id=$2', [namespace, id]))[0]
+          if (row) result.push(await entryOf(row, true))
+        }
+        return result
+      }
       catch { fail(); throw failure }
     },
     async get(id) {

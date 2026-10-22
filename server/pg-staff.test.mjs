@@ -14,7 +14,7 @@ const afterTick = () => new Promise(resolve => setImmediate(resolve))
 function asyncDatabase() {
   const state = { events: [], approvals: new Map(), messages: [], rejectAudit: false }
   const db = {
-    async exec(sql) { await afterTick(); state.schema = sql; state.events.push('schema') },
+    async exec(sql) { await afterTick(); state.schema = (state.schema ?? '') + '\n' + sql; state.events.push('schema') },
     prepare(sql) {
       const statement = sql.replace(/\s+/g, ' ').trim()
       return {

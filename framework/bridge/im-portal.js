@@ -1,5 +1,7 @@
 // Same-origin bank portal. Tokens stay in memory; no credentials in URLs or browser storage.
 const $ = id => document.getElementById(id)
+const staffMode = document.documentElement.dataset.audience === 'staff'
+const apiPrefix = staffMode ? '/staff-agent-api' : '/agent-api'
 let token = '', admin = false, sessionId = '', cursor = '0', pollTimer, provisionTimer, pendingId = '', previewCode = ''
 const messages = new Map()
 const smsCooldowns = new Map()
@@ -24,7 +26,7 @@ function element(tag, text, parent) { const item = document.createElement(tag); 
 function button(text, handler, parent, style = '') { const item = element('button', text, parent); item.type = 'button'; item.className = style; item.addEventListener('click', () => task(item, handler)); return item }
 async function task(item, operation) { item.disabled = true; notice(); try { await operation() } catch (error) { notice(error.message) } finally { item.disabled = false } }
 async function request(path, body, method = body === undefined ? 'GET' : 'POST') {
-  const response = await fetch(`/agent-api${path}`, { method, credentials: 'omit', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000) })
+  const response = await fetch(`${apiPrefix}${path}`, { method, credentials: 'omit', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000) })
   const data = await response.json()
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith('/im/auth/') && (!path.startsWith('/consent/') || data.code === 'UNAUTHORIZED')) logout()
@@ -45,6 +47,14 @@ function mode(value) { admin = value; logout(); $('login-title').textContent = a
 $('customer-tab').onclick = () => mode(false)
 $('admin-tab').onclick = () => mode(true)
 if (!connectionTest && new URLSearchParams(location.search).get('view') === 'admin') mode(true)
+if (staffMode) {
+  admin=false; $('admin-tab').hidden=true; $('customer-tab').hidden=true; $('sms-fields').hidden=true
+  $('login-title').textContent='工作人员登录';$('identity-label').textContent='员工账号'
+  document.querySelector('h1').textContent='工作人员 IM';document.querySelector('header small').textContent='招财猫银行 · 客服与主管'
+  $('claim-button').textContent='绑定本人微信并开通任务提醒'
+  $('pair-panel').querySelector('p').textContent='绑定后可接收客户任务提醒，退出网页仍持续提醒。业务查询需要有效员工登录，写操作仍须确认；代客操作另需客户核验。'
+  $('reminder-panel').hidden=true
+}
 $('logout-button').onclick = logout
 $('admin-logout-button').onclick = logout
 $('identity').addEventListener('input', () => { $('sms-code').value = ''; $('sms-hint').textContent = ''; $('sms-hint').hidden = true; renderSmsButton() })
@@ -98,7 +108,7 @@ $('pair-code').oninput = () => { previewCode = ''; $('claim-button').hidden = tr
 $('claim-button').onclick = () => task($('claim-button'), async () => {
   if (!previewCode || previewCode !== $('pair-code').value.trim()) throw Error('请先核对绑定来源。')
   let result
-  try { result = await request('/im/claim', { code: previewCode }) }
+  try { result = await request('/im/claim', { code: previewCode, ...(staffMode ? {confirmed:true} : {}) }) }
   catch (error) { if (error.status === 404) { previewCode = ''; $('claim-button').hidden = true; $('pair-preview').textContent = expiredPairingHint }; throw error }
   previewCode = ''; $('pair-code').value = ''; $('claim-button').hidden = true; $('pair-preview').textContent = '绑定成功，请回到 IM 发送需求。'
   $('preview-button').disabled = true
@@ -123,6 +133,7 @@ async function refreshBindings() {
   await refreshReminders()
 }
 async function refreshReminders() {
+  if (staffMode) return
   if (!token || admin) return
   let data
   try { data = await request('/im/reminders') }
@@ -194,13 +205,19 @@ function consent(challenge) {
   if (!card) return
   for (const field of challenge.fields ?? []) { const line = element('div', undefined, card); line.className = 'field'; element('b', field.label, line); element('span', field.value, line) }
   element('p', challenge.consequence, card)
-  let password, acknowledgement
+  let password, acknowledgement,verificationMethod,verificationPassed
+  if (staffMode && challenge.requiresCustomerVerification) {
+    element('label','客户核验方式',card);verificationMethod=element('select',undefined,card)
+    for (const [value,text] of [['','请选择核验方式'],['phone','电话核验'],['sms','短信核验'],['face','人脸核验']]) {const option=element('option',text,verificationMethod);option.value=value}
+    const label=element('label',undefined,card);label.className='check';verificationPassed=element('input',undefined,label);verificationPassed.type='checkbox';element('span','我已独立完成该客户身份核验，结果通过',label)
+  }
   if (challenge.verification) { element('label', '支付密码', card); password = element('input', undefined, card); password.type = 'password'; password.autocomplete = 'off' }
   if (challenge.riskAcknowledgementText) { element('p', challenge.riskAcknowledgementText, card); element('label', '请本人完整抄录上述风险确认语句', card); acknowledgement = element('textarea', undefined, card) }
   button('确认操作', async () => {
     if (Date.now() >= challenge.expiresAt) throw Error('确认已过期，请重新发起。')
     if (acknowledgement && acknowledgement.value.trim() !== challenge.riskAcknowledgementText) throw Error('风险确认语句不一致。')
-    await request(`/consent/${encodeURIComponent(challenge.challengeId)}`, { decision: 'approve', paymentPassword: password?.value ?? '', riskAcknowledgement: acknowledgement?.value ?? '' })
+    if (verificationPassed && (!verificationPassed.checked || !verificationMethod.value)) throw Error('请由员工独立完成客户身份核验并选择方式。')
+    await request(`/consent/${encodeURIComponent(challenge.challengeId)}`, { decision: 'approve', ...(staffMode ? {customerVerification:verificationPassed ? {method:verificationMethod.value,result:'passed'} : undefined} : {paymentPassword: password?.value ?? '', riskAcknowledgement: acknowledgement?.value ?? ''}) })
     if (password) password.value = ''; if (acknowledgement) acknowledgement.value = ''; pendingId = ''; $('pending').replaceChildren(); notice('已提交确认，办理结果以银行回执为准。')
   }, card)
   button('取消操作', async () => { await request(`/consent/${encodeURIComponent(challenge.challengeId)}`, { decision: 'reject' }); pendingId = ''; $('pending').replaceChildren() }, card, 'secondary')

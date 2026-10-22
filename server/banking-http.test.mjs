@@ -398,6 +398,13 @@ test('single funding HTTP migration, currency transfers and fees remain atomic a
       profile.schema = 18
       profile.accounts.push({ ...profile.accounts[0], id: legacyId, accountNo: legacyNo, balance: 3000, available: 2500 })
     })
+    // The target has not opened its own account page yet. A staff lookup must
+    // still migrate a lazily loaded legacy profile to the unique funding model.
+    const supervisor = await app.supervisorLogin()
+    const staffView = ok(await app.call(`/staff-api/customers/${sender.user.id}/profile?reason=scoped-migration`, { token: supervisor }))
+    assert.equal(staffView.accounts.length, 1)
+    assert.equal(staffView.accounts[0].balance, before.balance + 3000)
+    assert.equal(staffView.accounts[0].available, before.available + 2500)
     const accounts = ok(await app.call('/api/accounts', { token: sender.token }))
     assert.equal(accounts.length, 1)
     assert.equal(accounts[0].balance, before.balance + 3000)
@@ -450,24 +457,26 @@ test('single funding HTTP migration, currency transfers and fees remain atomic a
     assert.deepEqual(await financialState(app), before)
   })
   await t.test('overseas principal, fee, payee and idempotency record commit or roll back together', async () => {
-    const body = { fromAccountId: sender.accounts[0].id, channel: 'bank', scope: 'overseas',
+    const feeSender=await register(app,'13900000033','TEST ONLY overseas fee')
+    ok(await app.call(routes.deposit(feeSender.accounts[0].id),{method:'POST',token:feeSender.token,body:{amount:800000,channel:'bank'}}))
+    const body = { fromAccountId: feeSender.accounts[0].id, channel: 'bank', scope: 'overseas',
       payeeBankCode: '004', payeeBankRegion: 'HK', payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY external', amount: 100, memo: 'fee transaction fixture' }
-    const before = await account(app, sender), key = `fee-${randomUUID()}`
-    const result = ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body, key }))
+    const before = await account(app, feeSender), key = `fee-${randomUUID()}`
+    const result = ok(await app.call(routes.transfers(), { method: 'POST', token: feeSender.token, body, key }))
     assert.equal(result.fee, 5000)
     const first = await financialState(app)
-    assert.deepEqual(ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body, key })), result)
+    assert.deepEqual(ok(await app.call(routes.transfers(), { method: 'POST', token: feeSender.token, body, key })), result)
     assert.deepEqual(await financialState(app), first)
-    assert.equal((await account(app, sender)).balance, before.balance - result.amount - result.fee)
+    assert.equal((await account(app, feeSender)).balance, before.balance - result.amount - result.fee)
     await app.database(db => db.exec(`CREATE FUNCTION reject_fee_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
       IF NEW.counterparty='手续费' THEN RAISE EXCEPTION 'TEST ONLY fee failure'; END IF; RETURN NEW; END $$;
       CREATE TRIGGER reject_fee_fixture BEFORE INSERT ON bank_transactions FOR EACH ROW EXECUTE FUNCTION reject_fee_fixture()`))
     try {
-      const failed = await app.call(routes.transfers(), { method: 'POST', token: sender.token, body: { ...body, payeeName: 'TEST ONLY failed payee' }, key: `fail-fee-${randomUUID()}` })
+      const failed = await app.call(routes.transfers(), { method: 'POST', token: feeSender.token, body: { ...body, payeeName: 'TEST ONLY failed payee' }, key: `fail-fee-${randomUUID()}` })
       assert.equal(failed.status, 500)
       assert.deepEqual(await financialState(app), first)
     } finally { await app.database(db => db.exec('DROP TRIGGER reject_fee_fixture ON bank_transactions; DROP FUNCTION reject_fee_fixture()')) }
-    assert(!ok(await app.call(routes.payees(), { token: sender.token })).some(row => row.name === 'TEST ONLY failed payee'))
+    assert(!ok(await app.call(routes.payees(), { token: feeSender.token })).some(row => row.name === 'TEST ONLY failed payee'))
     await reconcile(app)
   })
 })
@@ -525,7 +534,7 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
   const before = await financialState(app)
   await t.test('every legacy financial contract route refuses live demo reads and writes', async () => {
     const safe = new Set(['login','register','logout','profile','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
-    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll'])
+    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
     const patches = new Set(['cardSettings','autoDebit','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     const deletes = new Set(['payee'])
     for (const [name, build] of Object.entries(routes)) {
@@ -540,10 +549,12 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
     assert.deepEqual(await financialState(app), before)
   })
   await t.test('staff and staff-agent API channels cannot mutate live legacy cards or reservations', async () => {
+    const ticket = await app.call('/staff-api/tickets',{method:'POST',token:supervisor,body:{customerId:customer.id,channel:'web',reason:'TEST ONLY valid linked ticket for live rejection'}})
+    assert.equal(ticket.status,201)
     const actions = [['lockCard',{ cardId }],['unlockCard',{ cardId }],['updateCardSettings',{ cardId,dailyLimit:500_000 }],['patchAutodebit',{ autoDebitId:mandateId,enabled:false }]]
     for (const [action, payload] of actions) {
       const result = await app.call(`/staff-api/customers/${customer.id}/actions/${action}`, { method: 'POST', token: supervisor,
-        body: { ticketId:'TEST-LIVE-BLOCK',verificationMethod:'phone',verificationResult:'passed',reason:'TEST ONLY live rejection',...payload } })
+        body: { ticketId:ticket.body.ticketId,verificationMethod:'phone',verificationResult:'passed',reason:'TEST ONLY live rejection',...payload } })
       assert.equal(result.status, 503, action); assert.equal(result.body.code, 'BANK_NOT_CONNECTED', action)
     }
     for (const decision of [{ decision:'settle' },{ decision:'intercept',reasonCode:'客户来电要求叫停' }]) {

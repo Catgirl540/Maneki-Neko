@@ -27,6 +27,10 @@ node index.mjs
 
 科目模板 `CN-PLATFORM-DRAFT-1` 保持草稿，等待主体会计政策审批；`BANK-MEMO-1` 仅为银行资金备查账。不存在适用于所有机构、可直接宣称完整且获监管认可的通用银行科目表。
 
+## 内存与容量
+
+HTTP 运行时采用按需客户投影、变更流水持久化和 pending 客户扫账；启动与结构部署不再全库 hydrate。内存边界、迁移版本 `2026102201`、本地双核/4GiB/40GiB 验证与限制见 [后端内存维护说明](../docs/backend-memory-20261022.md)。离线兼容接口可读取全库，不能用于新 HTTP 路径。
+
 ## 交易自动分类
 
 记账时对 `category === 'other'` 的支出流水调用 OpenRouter 决策模型（默认 `perplexity/pplx-decider-flash-v1.2`，`/api/alpha/decisions`）按对方户名、摘要、渠道与金额归入消费分类；`transfer`、`salary` 等明确赋值与 `businessType` 流水不参与。配置 `OPENROUTER_API_KEY` 即启用，可用 `BANK_CATEGORIZE_MODEL` 换模型；无密钥、超时或响应异常一律回落 `other`，不影响记账。相同流水要素有进程内缓存去重。浏览器 mock 不调用付费模型，行为不变。门禁：`node tools/check-categorize.mjs`（纯夹具）。

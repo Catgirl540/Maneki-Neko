@@ -18,7 +18,7 @@ import { createStaffApi, ensureStaffSchema, getTransferReviewCents } from './sta
 const root = fileURLToPath(new URL('..', import.meta.url))
 const host = process.env.BANK_HOST ?? '127.0.0.1'
 const port = Number(process.env.BANK_PORT ?? 8080)
-const database = await openBankDatabase()
+const database = await openBankDatabase(process.env.BANK_DATABASE_URL, { profileProjection: 'scoped', max: 4 })
 const auth = await createCustomerAuth(database.db)
 const security = await createSecurityGateway(database.db, auth)
 await ensureStaffSchema(database.db)
@@ -63,6 +63,7 @@ staffApi = await createStaffApi({
   db: database.db,
   operations,
   bankHooks: {
+    runStaffUnitOfWork: (work,requestId) => bank.runStaffUnitOfWork(work,requestId),
     getHeldTransfer: (args) => bank.getHeldTransfer(args),
     settleHeldTransfer: (args) => bank.settleHeldTransfer(args),
     // 乙模块（客户查询 / 代客办理）：复用同一份 mock 业务规则，不复制校验

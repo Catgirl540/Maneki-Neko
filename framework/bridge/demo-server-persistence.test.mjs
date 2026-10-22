@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createContext, runInContext } from 'node:vm'
+import { isReplayCheckpoint, retainReplayEvent } from './session-memory.mjs'
 
 // Execute the real publisher without starting HTTP, the model SDK or a bank call.
 const source = readFileSync(new URL('./demo-server.mjs', import.meta.url), 'utf8')
@@ -15,6 +16,7 @@ function fixture(store) {
   const entry = { id: 'session', ownerId: 'owner', eventSeq: 0, events: [] }
   const response = { write(frame) { state.frames.push(frame) }, end() { state.ended++ } }
   const context = createContext({
+    isReplayCheckpoint, retainReplayEvent,
     sessions: new Map([['session', entry]]), streams: new Map([['session', new Set([response])]]),
     HTTP_BANK: true, imBank: undefined, eventPolling: { remember() {} },
     sessionStore: { flush: async () => {}, record(...args) { state.records++; return store(...args) } },

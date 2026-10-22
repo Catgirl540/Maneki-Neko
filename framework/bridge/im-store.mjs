@@ -16,11 +16,13 @@ export async function migrateImBindingRevisions(store) {
   })
 }
 
-export async function openImStore(path, encodedKey) {
+export async function openImStore(path, encodedKey, { audience = 'customer' } = {}) {
   const source = Buffer.from(encodedKey ?? '', 'base64')
   if (source.length !== 32 || source.toString('base64') !== encodedKey) throw Error('IM requires a canonical Base64 32-byte AI session data key')
-  const key = Buffer.from(hkdfSync('sha256', source, Buffer.alloc(0), 'luckycat-im-store-v1', 32))
-  const aad = Buffer.from('luckycat-im-store-v1')
+  if (!['customer','staff'].includes(audience)) throw Error('Invalid IM audience')
+  const domain = audience === 'staff' ? 'luckycat-staff-im-store-v1' : 'luckycat-im-store-v1'
+  const key = Buffer.from(hkdfSync('sha256', source, Buffer.alloc(0), domain, 32))
+  const aad = Buffer.from(domain)
   let document = { version: 1, credentials: {}, routes: {} }
   try {
     const envelope = JSON.parse(await readFile(path, 'utf8'))

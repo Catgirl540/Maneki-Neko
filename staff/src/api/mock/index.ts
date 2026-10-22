@@ -233,6 +233,8 @@ export function createMockApi(): StaffApi {
   const ok = <T,>(value: T): Promise<T> => Promise.resolve(value)
 
   return {
+    listAssignees:()=>ok<StaffUser[]>(session?.role==='supervisor' ? [{id:'staff_wang',name:'王小明',role:'csr'},{id:'staff_li',name:'李主管',role:'supervisor'}] : [{id:'staff_li',name:'李主管',role:'supervisor'}]),
+    getWorkbench:()=>ok({pending:[...tickets.values()].filter(t=>t.status==='open').length,mine:[...tickets.values()].filter(t=>['processing','waiting'].includes(t.status)&&t.assigneeId===session?.id).length,waiting:[...tickets.values()].filter(t=>t.status==='waiting').length,resolved:[...tickets.values()].filter(t=>t.status==='resolved').length,asOf:new Date().toISOString(),scope:'mock-fixture'}),
     login(name, password) {
       if (!['王小明', '李主管', '运维人员'].includes(name)) return Promise.reject(new ApiError('员工账号或密码错误', 401, 'BAD_CREDENTIALS'))
       if (password !== '123456') {
@@ -287,9 +289,11 @@ export function createMockApi(): StaffApi {
       })
       return ok({ ticketId: id, status: 'open' as const })
     },
-    updateTicketStatus: (id, status, assigneeId) => {
+    updateTicketStatus: (id, status, assigneeId,expectedVersion) => {
       const t = tickets.get(id)
       if (!t) return Promise.reject(new ApiError('工单不存在', 404, 'NOT_FOUND'))
+      if(expectedVersion!==undefined&&expectedVersion!==(t.version??1)) return Promise.reject(new ApiError('工单已变化',409,'STATE_CHANGED'))
+      t.version=(t.version??1)+1
       // 纯转派：状态没变、只换负责人（转给主管），不走状态机（contract 注释）
       if (status === t.status) {
         if (!assigneeId) {

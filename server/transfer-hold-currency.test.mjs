@@ -1,11 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { fixture, ok, login, transfer, account, financialState, reconcile, testOptions, routes } from './testing/http-fixture.mjs'
+import { fixture, ok, login, register, transfer, account, financialState, reconcile, testOptions, routes } from './testing/http-fixture.mjs'
 
 test('foreign currency transfer holds release the exact partition, preserve other holds and settle atomically', { ...testOptions, timeout: 90000 }, async t => {
   const app = await fixture({ reviewThreshold: 1000, holdSeconds: 300 })
   t.after(() => app.close())
-  const owner = await login(app, '13800138000'), other = await login(app, '13600136000')
+  // A low-AUM new customer keeps this a real fee-reservation test; seeded VIPs now have fee waivers.
+  const owner = await register(app,'13900000031','TEST ONLY fee reservation'), other = await login(app, '13600136000')
+  ok(await app.call(routes.deposit(owner.accounts[0].id),{method:'POST',token:owner.token,body:{amount:800000,channel:'bank'}}))
   const supervisor = await app.supervisorLogin()
   const exchange = { fromAccountId: owner.accounts[0].id, toCurrency: 'USD', amount: 250000 }
   const quote = ok(await app.call(routes.exchangeQuote(), { method: 'POST', token: owner.token, body: exchange }))

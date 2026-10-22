@@ -2,7 +2,7 @@
 
 固定使用社区插件 [`@xmanrui/dsh-im@5.1.0`](https://github.com/xmanrui/dsh-im)，由 `framework/bridge/im-channels.mjs` 复用其微信/企微 Controller、Runtime、扫码及消息协议。SDK 客户运行时通过银行 Harness 适配器接入，不修改第三方源码，不向 `sdk-minimal` 挂载依赖完整 Web Host 的管理界面。
 
-支持客户 Agent 的微信私聊、企业微信智能机器人私聊、扫码连接、企微 Bot ID + Secret 绑定、重连、移除、文字收发和结果回传。企微自建应用、外部联系人客服、群聊业务、员工/运维工具的 IM 执行、图片及文件办理尚未接入。企微账号不授予银行员工权限。
+支持客户 Agent 的微信私聊、企业微信智能机器人私聊、扫码连接、企微 Bot ID + Secret 绑定、重连、移除、文字收发和结果回传。客服与主管的独立微信入口见 [工作人员 IM](staff-im.md)，不复用客户身份。企微自建应用、外部联系人客服、群聊业务、运维 IM、图片及文件办理尚未接入。企微账号不授予银行员工权限。
 
 ## 本地扫码与收发验证
 

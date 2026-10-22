@@ -1,5 +1,6 @@
 import { PageHeader } from '@/components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   ApiError,
   INTERCEPT_REASONS,
@@ -108,7 +109,8 @@ export function ApprovalsPage() {
   const isSupervisor = user?.role === 'supervisor'
   const [approvals, setApprovals] = useState<Approval[]>([])
   const [error, setError] = useState<string | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [searchParams]=useSearchParams()
+  const [selectedId, setSelectedId] = useState<string | null>(searchParams.get('approval'))
   const [statusFilter, setStatusFilter] = useState<'all' | ApprovalStatus>('all')
   const [busy, setBusy] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -122,12 +124,14 @@ export function ApprovalsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      setApprovals(await api.listApprovals())
+      const items=await api.listApprovals(),linkedId=searchParams.get('approval')
+      if(linkedId&&!items.some(item=>item.approvalId===linkedId))items.unshift(await api.getApproval(linkedId))
+      setApprovals(items)
       setError(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '处置列表加载失败，请检查后端是否已启动')
     }
-  }, [])
+  }, [searchParams])
 
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect

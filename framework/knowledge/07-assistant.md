@@ -4,7 +4,7 @@ title: "助手能力与对话"
 navigation: "助手"
 routes: ["/support"]
 keywords: ["助手", "图片", "语音", "历史记录", "人工客服", "转人工", "工单", "投诉"]
-sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "server/support-api.mjs", "app/src/components/support/HumanSupport.tsx", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs", "framework/bridge/im-bank.mjs", "docs/api/im-agent.md", "shared/support-guidance.mjs"]
+sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "server/support-api.mjs", "app/src/components/support/HumanSupport.tsx", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs", "framework/bridge/im-bank.mjs", "docs/api/im-agent.md", "shared/support-guidance.mjs", "server/staff-im.mjs", "docs/api/staff-im.md"]
 ---
 
 ## 助手能办理什么？哪些功能暂不支持？ {#capabilities}
@@ -39,6 +39,8 @@ sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/s
 
 ## 没有资料或查询失败时怎么办？ {#unavailable}
 
+助手空闲缓存回收或服务重启不会删除已保存的会话历史，也不改变客户资金账户、余额或交易。重新打开仍须验证本人归属；生成中突然中断时，最后一小段尚未保存的正文可能无法回放，不能据此判断金融操作是否成功，应重新查询原交易状态。
+
 知识库仅解释现有网页操作与通用规则，不包含个人实时余额、实际费用、汇率、净值、额度与交易状态。相关查询失败时应明确无法确认并引导对应页面核对；没有匹配知识时应说明未找到依据，不编造网点、客服电话、收费或完成结果。
 
 ## 怎么转人工？助手可以帮我联系人工客服吗？ {#human-support}
@@ -48,3 +50,7 @@ sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/s
 ## 人工客服回复在哪里看？怎么补充问题？ {#human-replies}
 
 在“助手 → 人工工单”查看本人已提交工单、处理状态和客服回复，并补充留言；助手也能在确认后查询或补充。页面打开时定时更新，关闭页面后不保证即时通知。等待受理、处理中、待你补充、已暂停和已解决分别按实际状态显示；已解决工单不能继续留言，仍需帮助时重新提交转人工请求。人工留言不会自动执行转账等银行操作。
+
+## 客户提交任务后会通过微信提醒工作人员吗？ {#staff-im-notification}
+
+在银行启用工作人员微信通道、员工本人绑定并开通提醒、主管配置接收规则后，保存成功的客户工单和补充会自动进入提醒队列，通知值班客服或当前负责人；转派、审批和超时升级按规则通知主管。网页关闭不阻止已开通的员工提醒。未开通或渠道异常时不保证微信通知；渠道确认发送不代表微信已读、人工已接手或业务已经完成。客户仍以本人“人工工单”的实际状态与回复为准，不能因提醒推断资金已执行。

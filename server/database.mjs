@@ -2,10 +2,11 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { createDataCipher } from './database-crypto.mjs'
 import { createPgClient } from './pg-client.mjs'
+import { createScopedProfileStorage, fingerprint } from './profile-store.mjs'
 
 export const CURRENT_KEY = 'luckycat.mock.db'
 export const PROFILES_KEY = 'luckycat.luckycat.mock.user-profiles.v1'
-export const CORE_SCHEMA_VERSION = 2026101502
+export const CORE_SCHEMA_VERSION = 2026102201
 const PROFILE_KEYS = new Set([CURRENT_KEY, PROFILES_KEY])
 const DOMAINS = {
   customer_wealth_state: ['holdings', 'riskAssessment', 'wealthAccount'],
@@ -58,13 +59,13 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
         await run('INSERT INTO bank_schema_migrations(version) VALUES (?) ON CONFLICT DO NOTHING', CORE_SCHEMA_VERSION)
       }
     })
-    committed = await hydrate()
+    if (settings.profileProjection !== 'scoped') committed = await hydrate()
   } catch (error) { await db.close(); throw error }
 
   async function upsertPayload(table, owner, payload) {
     await run(`INSERT INTO ${table}(owner_id,payload_cipher) VALUES (?,?) ON CONFLICT(owner_id) DO UPDATE SET payload_cipher=excluded.payload_cipher,updated_at=CURRENT_TIMESTAMP`, owner, cipher.seal(payload, `${table}:${owner}`))
   }
-  async function saveProfile(profile, changes) {
+  async function saveProfile(profile, changes, original) {
     const owner = requireText(profile?.user?.id, 'customer id')
     requireText(profile.user.phone, 'customer phone'); requireText(profile.user.name, 'customer name')
     if (!Array.isArray(profile.accounts) || !Array.isArray(profile.transactions)) throw new Error('Customer accounts and transactions arrays are required')
@@ -97,7 +98,7 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
       if ((!old && a.balance !== 0) || (old && old.balance_cents !== a.balance)) changes.push({ owner, account: a.id, currency: a.currency, before: old?.balance_cents ?? 0, after: a.balance, opening: !old, glId })
     }
     for (const a of await query('SELECT id FROM bank_accounts WHERE owner_id=?', owner)) if (!ids.has(a.id)) throw new Error(`Cannot remove existing account: ${a.id}`)
-    await saveTransactions(owner, profile.transactions, profile.accountAliases ?? {}); await saveCards(owner, profile.cards ?? [], profile.cardSecrets ?? {})
+    await saveTransactions(owner, profile.transactions, profile.accountAliases ?? {}, original?.transactions); await saveCards(owner, profile.cards ?? [], profile.cardSecrets ?? {})
     await saveRows('bank_payees', owner, profile.payees ?? [], (item, i) => [item.id, item.bankCode ?? null, item.bankRegion ?? null, i, cipher.seal(item, `payee:${owner}:${item.id}`)], ['id', 'bank_code', 'bank_region', 'ordinal', 'payload_cipher'])
     await saveRows('payment_mandates', owner, profile.autoDebits ?? [], (item, i) => [item.id, i, cipher.seal(item, `mandate:${owner}:${item.id}`)], ['id', 'ordinal', 'payload_cipher'])
     await saveRows('fps_registrations', owner, profile.fpsRegistrations ?? [], (item, i) => { const id = `${item.idType}:${item.id}`; return [id, item.accountId, i, cipher.seal(item, `fps:${owner}:${id}`)] }, ['id', 'account_id', 'ordinal', 'payload_cipher'])
@@ -115,15 +116,24 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
       await run(`DELETE FROM ${table} WHERE owner_id=? AND id=?`, owner, row.id)
     }
   }
-  async function saveTransactions(owner, transactions, aliases = {}) {
+  async function saveTransactions(owner, transactions, aliases = {}, original) {
     const ids = new Set()
-    for (const [ordinal, tx] of transactions.entries()) {
+    // New business rows are prepended. Keep existing ordinal values so adding one
+    // row never rewrites the entire historical ledger just to shift its indices.
+    const firstKnown = original ? transactions.findIndex(tx => original.has(tx.id)) : -1
+    const prefixOnly = original && firstKnown >= 0 && transactions.slice(firstKnown).every(tx => original.has(tx.id))
+    let minimum = 0
+    if (original?.size) { minimum = Infinity; for (const row of original.values()) minimum = Math.min(minimum, row.ordinal) }
+    for (const [index, tx] of transactions.entries()) {
+      const previous = original?.get(tx.id)
+      const ordinal = prefixOnly ? previous?.ordinal ?? minimum - firstKnown + index : index
       requireText(tx.id, 'transaction id')
       if (ids.has(tx.id)) throw new Error(`Duplicate transaction id: ${tx.id}`)
       ids.add(tx.id); assertCents(tx.amount, 'transaction amount', { positive: true }); assertCents(tx.signedAmount, 'signed transaction amount', { signed: true })
       if (tx.signedAmount !== (tx.direction === 'in' ? tx.amount : -tx.amount)) throw new Error('Transaction sign does not match direction')
       if (tx.heldFrozenAmount !== undefined) assertCents(tx.heldFrozenAmount, 'held frozen amount')
       for (const field of ['balanceBefore', 'balanceAfter', 'originAmount']) if (tx.detail?.[field] !== undefined) assertCents(tx.detail[field], `transaction detail ${field}`)
+      if (previous?.hash === fingerprint(tx) && previous.ordinal === ordinal) continue
       const old = await get('SELECT account_id,direction,amount_cents,signed_amount_cents,created_at FROM bank_transactions WHERE owner_id=? AND id=?', owner, tx.id)
       if (old && ((aliases[old.account_id] ?? old.account_id) !== tx.accountId || old.direction !== tx.direction || old.amount_cents !== tx.amount || old.signed_amount_cents !== tx.signedAmount || old.created_at !== tx.createdAt)) throw new Error('Transaction financial identity is immutable')
       const extra = without(tx, ['id', 'accountId', 'direction', 'amount', 'signedAmount', 'counterparty', 'memo', 'category', 'status', 'pendingReason', 'createdAt', 'detail'])
@@ -131,7 +141,8 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
         owner, tx.id, tx.accountId, tx.direction, tx.amount, tx.signedAmount, tx.counterparty, tx.memo, tx.category, tx.status, tx.pendingReason ?? null, tx.createdAt,
         cipher.seal(tx.detail ?? null, `transaction-detail:${owner}:${tx.id}`), cipher.seal(extra, `transaction:${owner}:${tx.id}`), ordinal, migrationImport ? 'historical-import' : 'operational-state')
     }
-    for (const old of await query('SELECT id FROM bank_transactions WHERE owner_id=?', owner)) if (!ids.has(old.id)) throw new Error(`Cannot remove transaction history: ${old.id}`)
+    const existing = original ? [...original.keys()].map(id => ({ id })) : await query('SELECT id FROM bank_transactions WHERE owner_id=?', owner)
+    for (const old of existing) if (!ids.has(old.id)) throw new Error(`Cannot remove transaction history: ${old.id}`)
   }
   async function saveCards(owner, cards, secrets) {
     await saveRows('virtual_cards', owner, cards, (card, ordinal) => {
@@ -193,7 +204,7 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
       await run('INSERT INTO app_storage(key,value_json) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json,updated_at=CURRENT_TIMESTAMP', key, JSON.stringify(preview ?? (current ? { user: current } : null)))
     }
   }
-  async function readProfile(owner) {
+  async function readProfile(owner, original) {
     const customer = await get('SELECT * FROM customers WHERE id=?', owner)
     if (!customer) throw new Error('Profile binding refers to missing customer')
     const result = { user: cipher.open(customer.user_cipher, `customers:${owner}`) }
@@ -208,10 +219,12 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
     result.accounts = accountRows.filter(row => !row.__recordKind || row.__recordKind === 'funding').map(stripKind)
     if (JSON.parse(customer.profile_fields_json).includes('currencyBalances')) result.currencyBalances = accountRows.filter(row => row.__recordKind === 'currency').map(stripKind)
     if (JSON.parse(customer.profile_fields_json).includes('retiredBalances')) result.retiredBalances = accountRows.filter(row => row.__recordKind === 'retired').map(stripKind)
-    result.transactions = (await query('SELECT * FROM bank_transactions WHERE owner_id=? ORDER BY ordinal,id', owner)).map(t => ({
+    const transactionRows = await query('SELECT * FROM bank_transactions WHERE owner_id=? ORDER BY ordinal,id', owner)
+    result.transactions = transactionRows.map(t => ({
       ...cipher.open(t.payload_cipher, `transaction:${owner}:${t.id}`), id: t.id, accountId: result.accountAliases?.[t.account_id] ?? t.account_id, direction: t.direction, amount: t.amount_cents, signedAmount: t.signed_amount_cents,
       counterparty: t.counterparty, memo: t.memo, category: t.category, status: t.status, createdAt: t.created_at, detail: cipher.open(t.detail_json, `transaction-detail:${owner}:${t.id}`), ...(t.pending_reason === null ? {} : { pendingReason: t.pending_reason }),
     }))
+    if (original) original.transactions = new Map(result.transactions.map((tx, index) => [tx.id, { hash: fingerprint(tx), ordinal: transactionRows[index].ordinal }]))
     result.cards = (await query('SELECT * FROM virtual_cards WHERE owner_id=? ORDER BY ordinal,id', owner)).map(c => ({
       ...cipher.open(c.payload_cipher, `card:${owner}:${c.id}`), id: c.id, accountId: c.account_id, productName: c.product_name, last4: c.last4, cardholder: c.cardholder, expiry: c.expiry, theme: c.theme, network: c.network, kind: c.kind,
       status: c.status, onlinePayment: Boolean(c.online_payment), overseasPayment: Boolean(c.overseas_payment), dailyLimit: c.daily_limit_cents,
@@ -297,9 +310,13 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
       committed = await db.transaction(hydrate)
     },
   }
-  return { db, storage, migrationBackup: null, async close() {
-    const unflushed = staged.entries.size
-    await storage.rollbackUnitOfWork()
+  const runtimeStorage = settings.profileProjection === 'scoped'
+    ? await createScopedProfileStorage({ db, query, get, run, readProfile, saveProfile, postChanges,
+      openCardPan: row => cipher.open(row.pan, `pan:${row.owner_id}:${row.card_id}`), currentKey: CURRENT_KEY, profilesKey: PROFILES_KEY })
+    : storage
+  return { db, storage: runtimeStorage, migrationBackup: null, async close() {
+    const unflushed = settings.profileProjection === 'scoped' ? false : staged.entries.size
+    await runtimeStorage.rollbackUnitOfWork()
     await db.close()
     if (unflushed) throw new Error('Unflushed profile writes: call storage.flush() before closing')
   } }

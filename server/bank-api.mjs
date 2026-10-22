@@ -1,5 +1,6 @@
 // HTTP adapter for server-owned banking business rules. All mutations are committed as a single unit.
 import { randomUUID } from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { maskPhone } from './lib/format.mjs'
 
 /** Deterministic sandbox status tags; no inferred risk score or credit decision. */
@@ -314,8 +315,13 @@ export async function createBankApi({
   const { routes, ApiError } = contractModule
   const { findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb, ledgerBalances, findBalance } = dbModule
   await storage.beginUnitOfWork()
-  try { dbModule.loadDb(); await storage.commitUnitOfWork() }
+  try {
+    storage.initializing = true
+    if (storage.scoped && process.env.NODE_ENV !== 'production') await storage.findProfileByPhone('13600136000')
+    dbModule.loadDb(); await storage.commitUnitOfWork()
+  }
   catch (error) { await storage.rollbackUnitOfWork(); throw error }
+  finally { storage.initializing = false; dbModule.discardCache(); storage.releaseProjection?.() }
 
   const api = createBankBusinessApi(
     { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn },
@@ -325,8 +331,11 @@ export async function createBankApi({
   // mock 原本是单标签页内存对象。HTTP 桥接会同时服务多个用户，
   // 所以请求先按 bearer token 切到对应档案，并串行执行以避免切档串号。
   let requestQueue = Promise.resolve()
+  const staffUnit = new AsyncLocalStorage()
   const exclusive = (work, { requestId = randomUUID() } = {}) => {
-    const next = requestQueue.then(async () => {
+    if (staffUnit.getStore()?.active) return Promise.resolve().then(work)
+    const unit={active:true}
+    const next = requestQueue.then(() => staffUnit.run(unit,async () => {
       await storage.beginUnitOfWork({ requestId })
       dbModule.discardCache()
       try {
@@ -344,17 +353,20 @@ export async function createBankApi({
         // Security counters survive a rejected request; business state does not.
         await security.afterRollback(error)
         if (paymentFailure) {
-          const profile = dbModule.findProfileByUserId(paymentFailure.id)
-          if (profile) {
-            dbModule.activateDb(profile)
-            dbModule.loadDb().payPasswordFailures = paymentFailure.failures
-            dbModule.persist()
-            await storage.flush()
-          }
+          await storage.beginUnitOfWork()
+          try {
+            const profile = await dbModule.findProfileByUserId(paymentFailure.id)
+            if (profile) {
+              dbModule.activateDb(profile)
+              dbModule.loadDb().payPasswordFailures = paymentFailure.failures
+              dbModule.persist()
+            }
+            await storage.commitUnitOfWork()
+          } catch (failure) { await storage.rollbackUnitOfWork(); throw failure }
         }
         throw error
-      }
-    })
+      } finally { unit.active=false; dbModule.discardCache(); storage.releaseProjection?.() }
+    }))
     requestQueue = next.catch(() => {})
     return next
   }
@@ -363,7 +375,7 @@ export async function createBankApi({
   async function activateRequestProfile(req, routeName) {
     if (auth) {
       const phone = await auth.resolve(req, routeName)
-      const profile = phone === null ? dbModule.loadDb() : findProfileByPhone(phone)
+      const profile = phone === null ? dbModule.loadDb() : await findProfileByPhone(phone)
       if (profile === null) {
         throw Object.assign(new Error('用户不存在'), { status: 401, code: 'UNAUTHORIZED' })
       }
@@ -457,7 +469,7 @@ export async function createBankApi({
         try {
           value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
         } catch (error) {
-          if (entry.bankMethod === 'login') error.loginOwner = typeof body.phone === 'string' && /^\d{11}$/.test(body.phone) ? findProfileByPhone(body.phone)?.user?.id ?? null : null
+          if (entry.bankMethod === 'login') error.loginOwner = typeof body.phone === 'string' && /^\d{11}$/.test(body.phone) ? (await findProfileByPhone(body.phone))?.user?.id ?? null : null
           throw error
         }
         if (auth?.security && entry.bankMethod === 'getSecurityOverview') return auth.security(req, value)
@@ -504,6 +516,7 @@ export async function createBankApi({
   }
 
   return {
+    runStaffUnitOfWork: (work,requestId) => exclusive(work,{requestId}),
     handle,
     transferRequirements: (req) => exclusive(async () => {
       if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入转账能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
@@ -524,7 +537,7 @@ export async function createBankApi({
     /** 查在途中的转账指令（员工端/agent 提审用）。走同一队列，避免切档串号。 */
     publishSupportNotice(notice) {
       return exclusive(async () => {
-        if (!findProfileByUserId(notice.customerId)) throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
+        if (!await findProfileByUserId(notice.customerId)) throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
         return appendStaffNotice(notice)
       })
     },
@@ -534,7 +547,7 @@ export async function createBankApi({
         // 切档只为读这份指令，读完还原——否则会把「当前登录档案」留成这个客户，
         // 未登录的短信/登录请求就会串档（验证码对不上 → SMS_NOT_SENT）。
         const before = dbModule.loadDb()
-        const profile = findProfileByUserId(customerId)
+        const profile = await findProfileByUserId(customerId)
         if (profile === null) return null
         try {
           activateDb(profile)
@@ -553,7 +566,7 @@ export async function createBankApi({
       return exclusive(async () => {
         if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入此结算能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
         const before = dbModule.loadDb()
-        const profile = findProfileByUserId(customerId)
+        const profile = await findProfileByUserId(customerId)
         if (profile === null) {
           throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
         }
@@ -577,7 +590,30 @@ export async function createBankApi({
      * 跨用户逐档案切换——每个档案是独立台账，只扫当前档会漏掉别人的到期转账。
      * 返回本次自动到账的笔数。
      */
-    tickHolds() {
+    async tickHolds() {
+      if (storage.scoped) {
+        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入此结算能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        let after = '', total = 0
+        for (;;) {
+          const owners = await storage.settlementOwners(after)
+          if (!owners.length) return total
+          for (const { owner_id: owner } of owners) {
+            total += await exclusive(async () => {
+              const before = dbModule.loadDb()
+              const profile = await findProfileByUserId(owner)
+              if (!profile) return 0
+              try {
+                activateDb(profile)
+                const closed = await mockSettleExpiredHolds()
+                mockSettleClearing()
+                if (onHoldClosed) for (const item of closed) await onHoldClosed({ customerId: owner, ...item, reason: item.reason ?? '窗口到点，自动到账' })
+                return closed.length
+              } finally { activateDb(before) }
+            })
+          }
+          after = owners.at(-1).owner_id
+        }
+      }
       return exclusive(async () => {
         if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入此结算能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
         // 记录扫描前的当前档案，扫完还原。
@@ -611,7 +647,7 @@ export async function createBankApi({
       return exclusive(async () => {
         const kw = String(keyword ?? '').trim().toLowerCase()
         const out = []
-        for (const profile of listAllProfiles()) {
+        for (const profile of storage.scoped ? await storage.searchCustomers(keyword) : listAllProfiles()) {
           const { id, name, phone } = profile.user
           if (kw && !`${name} ${phone} ${id}`.toLowerCase().includes(kw)) continue
           out.push({
@@ -629,7 +665,7 @@ export async function createBankApi({
     getCustomerProfile(customerId) {
       return exclusive(async () => {
         if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入客户资金查询'), { status: 503, code: 'BANK_NOT_CONNECTED' })
-        const profile = findProfileByUserId(customerId)
+        const profile = await findProfileByUserId(customerId)
         if (profile === null) {
           throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
         }
@@ -670,7 +706,7 @@ export async function createBankApi({
       return exclusive(async () => {
         if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入此代客办理能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
         const before = dbModule.loadDb()
-        const profile = findProfileByUserId(customerId)
+        const profile = await findProfileByUserId(customerId)
         if (profile === null) {
           throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
         }

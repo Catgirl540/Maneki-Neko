@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { createBankAgent } from './bank-agent.mjs'
-import { fixture, ok, login, account, financialState, reconcile, testOptions, routes } from '../../server/testing/http-fixture.mjs'
+import { fixture, ok, login, register, account, financialState, reconcile, testOptions, routes } from '../../server/testing/http-fixture.mjs'
 
 const input = (toolName, args, sessionId = 'owner') => ({ sessionId, callId: randomUUID(), challengeId: randomUUID(), toolName, arguments: args, expiresAt: Date.now() + 60000 })
 
@@ -55,7 +55,8 @@ test('recall confirmation validates authoritative currency, principal and reserv
 test('real local bank Agent transfers and recalls USD only after exact consent and rejects stale or foreign recalls', { ...testOptions, timeout: 60000 }, async t => {
   const backend = await fixture({ reviewThreshold: 1000, holdSeconds: 300 })
   t.after(() => backend.close())
-  const owner = await login(backend, '13800138000'), other = await login(backend, '13600136000')
+  const owner = await register(backend,'13900000032','TEST ONLY recall fee'), other = await login(backend, '13600136000')
+  ok(await backend.call(routes.deposit(owner.accounts[0].id),{method:'POST',token:owner.token,body:{amount:800000,channel:'bank'}}))
   const exchange = { fromAccountId: owner.accounts[0].id, toCurrency: 'USD', amount: 250000 }
   const quote = ok(await backend.call(routes.exchangeQuote(), { method: 'POST', token: owner.token, body: exchange }))
   ok(await backend.call(routes.exchange(), { method: 'POST', token: owner.token, body: { ...exchange, quoteId: quote.quoteId, paymentPassword: '888888' } }))

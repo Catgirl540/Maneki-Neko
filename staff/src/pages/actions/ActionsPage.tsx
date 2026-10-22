@@ -27,7 +27,6 @@ const ACTIONS: Array<{ key: ActionKey; label: string; highImpact: boolean }> = [
 const DAILY_LIMIT_OPTIONS = [200_000, 500_000, 1_000_000, 5_000_000]
 
 const VERIFY_METHODS = [
-  { value: 'simulated', label: '模拟核验（演示）' },
   { value: 'sms', label: '短信核验' },
   { value: 'face', label: '人脸核验' },
   { value: 'phone', label: '电话核验' },
@@ -46,8 +45,8 @@ export function ActionsPage() {
   const [autoDebitId, setAutoDebitId] = useState('')
   const [dailyLimit, setDailyLimit] = useState(5_000_000)
   const [ticketId, setTicketId] = useState('')
-  const [verificationMethod, setVerificationMethod] = useState<'simulated' | 'sms' | 'face' | 'phone'>('simulated')
-  const [verificationResult, setVerificationResult] = useState<'passed' | 'failed'>('passed')
+  const [verificationMethod, setVerificationMethod] = useState<'sms' | 'face' | 'phone'>('phone')
+  const [verificationResult, setVerificationResult] = useState<'passed' | 'failed'>('failed')
   const [reason, setReason] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
@@ -86,6 +85,7 @@ export function ActionsPage() {
     }
     if (!ticketId.trim()) return setError('请填写关联工单号')
     if (!reason.trim()) return setError('请填写办理事由')
+    if(verificationResult!=='passed')return setError('请由员工独立完成客户身份核验')
 
     const req: CustomerActionRequest = {
       ticketId: ticketId.trim(),
@@ -342,7 +342,7 @@ export function ActionsPage() {
               </label>
             </div>
 
-            {activeAction?.highImpact && verificationResult !== 'passed' && (
+            {activeAction && verificationResult !== 'passed' && (
               <div className="rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-4 py-3 text-sm text-[var(--color-coral)]">
                 办理「{activeAction.label}」须先通过身份核验。
               </div>
@@ -361,7 +361,7 @@ export function ActionsPage() {
 
             <button
               onClick={submit}
-              disabled={submitting}
+              disabled={submitting||verificationResult!=='passed'}
               className="w-fit rounded-[var(--radius-tile)] bg-[var(--color-gold)] px-5 py-2 text-sm font-medium text-white hover:bg-[var(--color-gold-deep)] disabled:opacity-50"
             >
               {submitting ? '办理中…' : `确认办理「${activeAction?.label ?? ''}」`}

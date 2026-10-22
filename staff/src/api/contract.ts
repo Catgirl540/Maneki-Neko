@@ -1,6 +1,7 @@
 /* ==========================================================================
    StaffApi —— 工作人员端前端唯一依赖的接口面
-   版本：v1.4（2026-10-14 合并两条并行变更，各自独立提交过：
+   版本：v1.5（2026-10-21：员工权限版本、工单版本/转派、真实聚合与 IM 接入。
+        v1.4：2026-10-14 合并两条并行变更，各自独立提交过：
         v1.3a postTicketMessage 增加可选 opts.visibleToCustomer，员工留言可投递到
         客户端收件箱；v1.3b 新增 ops 角色与只读运维总览。取高号 v1.4 避免撞车。
         v1.2 补 CustomerActionRequest 目标字段 + CustomerProfile.autoDebits；
@@ -41,6 +42,8 @@ export const routes = {
   me: () => '/staff-api/me',
 
   tickets: () => '/staff-api/tickets',
+  assignees: () => '/staff-api/assignees',
+  workbench: () => '/staff-api/workbench',
   ticket: (id: string) => `/staff-api/tickets/${id}`,
   ticketStatus: (id: string) => `/staff-api/tickets/${id}/status`,
   ticketMessages: (id: string) => `/staff-api/tickets/${id}/messages`,
@@ -97,7 +100,7 @@ export interface CreateApprovalRequest {
 export interface CustomerActionRequest {
   /** 关联工单（代客动作必须挂单，§2 P1） */
   ticketId: string
-  verificationMethod: 'phone' | 'sms' | 'face' | 'simulated'
+  verificationMethod: 'phone' | 'sms' | 'face'
   verificationResult: 'passed' | 'failed'
   reason: string
   /**
@@ -144,6 +147,8 @@ export interface DecideRequest {
 }
 
 export interface StaffApi {
+  listAssignees(): Promise<StaffUser[]>
+  getWorkbench(): Promise<{pending:number;mine:number;waiting:number;resolved:number;asOf:string;scope:string}>
   getOperationsOverview(): Promise<import('./types').OperationsOverview>
   login(name: string, password: string): Promise<StaffLoginResult>
   logout(): Promise<void>
@@ -153,7 +158,7 @@ export interface StaffApi {
   getTicket(id: string): Promise<TicketDetail>
   createTicket(req: CreateTicketRequest): Promise<{ ticketId: string; status: TicketStatus }>
   /** status 与当前相同 + 传 assigneeId = 纯转派（转给主管），不走状态机 */
-  updateTicketStatus(id: string, status: TicketStatus, assigneeId?: string): Promise<Ticket>
+  updateTicketStatus(id: string, status: TicketStatus, assigneeId?: string, expectedVersion?:number): Promise<Ticket>
   /**
    * 在工单下留言。
    * `opts.visibleToCustomer` 为 true 时，这条留言同时投递到该客户的客户端收件箱

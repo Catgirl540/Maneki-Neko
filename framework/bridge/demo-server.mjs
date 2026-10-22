@@ -52,6 +52,7 @@
  */
 
 import { createServer } from 'node:http'
+import { compactReplay, isReplayCheckpoint, retainReplayEvent } from './session-memory.mjs'
 import { projectModelRetry, modelFailureMessage } from './model-retry.mjs'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile, mkdtemp, rm } from 'node:fs/promises'
@@ -78,6 +79,7 @@ import { createImBank } from './im-bank.mjs'
 import { createImChannels } from './im-channels.mjs'
 import { createImHttp } from './im-http.mjs'
 import { createBankReminders } from './bank-reminders.mjs'
+import { createStaffImService, createStaffImWorker } from './staff-im-worker.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const STAFF_MODE = process.env.LUCKYCAT_AUDIENCE === 'staff'
@@ -366,21 +368,20 @@ const pendingConsents = new Map()
 /** 每个会话的 SSE 订阅者：sessionId → Set<res>。 */
 const streams = new Map()
 const eventPolling = createEventPolling()
-let imBank, imChannels, imHttp, imReminders
+let imBank, imChannels, imHttp, imReminders, staffImWorker
 
 /** 把一条 SSE 事件推给某个会话的所有订阅者。 */
 let persistenceFailureLogged = false
 function publish(sessionId, event) {
   const entry = sessions.get(sessionId)
+  if (entry) entry.lastAccess = Date.now()
   if (HTTP_BANK && entry) eventPolling.remember(entry, event)
   // 保留可重放事件，敏感卡信息仅发送一次且不进入缓冲。
-  const replayable = event.type !== 'card-secret'
+  const replayable = isReplayCheckpoint(entry, event)
   let id
   if (HTTP_BANK && entry && replayable) {
     id = String(entry.eventSeq = (entry.eventSeq ?? 0) + 1)
-    entry.events ??= []
-    entry.events.push({ id, event })
-    if (entry.events.length > 256) entry.events.shift()
+    retainReplayEvent(entry, { id, event })
   }
   const subscribers = [...(streams.get(sessionId) ?? [])]
   let frame, durable
@@ -470,7 +471,8 @@ const sessions = new Map()
 const sessionNamespace = OPS_MODE ? 'ops' : STAFF_MODE ? 'staff' : 'customer'
 if (process.env.LUCKYCAT_SESSION_NAMESPACE && process.env.LUCKYCAT_SESSION_NAMESPACE !== sessionNamespace) throw new Error('Session namespace must match this bridge audience')
 const sessionStore = HTTP_BANK ? await openSessionStore(process.env.LUCKYCAT_SESSION_DATABASE_URL, { namespace: sessionNamespace }) : null
-if (sessionStore) for (const entry of await sessionStore.interrupted()) sessions.set(entry.id, entry)
+// Interrupted flags are repaired in SQL. Decrypt/replay a session only when its
+// authenticated owner opens it, rather than loading every interrupted history.
 const bankAgent = HTTP_BANK ? (STAFF_MODE ? createStaffAgent : createBankAgent)({ baseUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', sessions, publish, reminders: () => imReminders, ...(OPS_MODE ? { opsOnly: true, nativeTools: OPS_NATIVE_TOOLS } : {}) }) : null
 const opsGate = OPS_MODE ? createOpsGate({ bankAgent, sessions, publish, review: createClefReviewer(), workspaceRoot: OPS_WORKSPACE, auditPath: join(SESSION_DIR, 'native-audit.jsonl') }) : null
 for (const entry of sessions.values()) {
@@ -485,7 +487,7 @@ await sessionStore?.flush()
 
 // 限制活动索引缓存，历史仍保存在磁盘；避免持久化后 50 段成为永久额度。
 function makeSessionRoom(ownerId) {
-  const full = () => sessions.size >= 1000 || [...sessions.values()].filter(e => e.ownerId === ownerId).length >= 50
+  const full = () => sessions.size >= 200 || [...sessions.values()].filter(e => e.ownerId === ownerId).length >= 50
   for (const [id, entry] of sessions) {
     if (!full()) return
     if (entry.busy || entry.stopTask || entry.requestRefs || streams.has(id)) continue
@@ -494,6 +496,14 @@ function makeSessionRoom(ownerId) {
   }
   if (full()) throw bankError('同时打开的会话过多，请稍后重试', 429)
 }
+const sessionCacheTimer = setInterval(() => {
+  const cutoff = Date.now() - 15 * 60_000
+  for (const [id, entry] of sessions) {
+    if (entry.busy || entry.stopTask || entry.requestRefs || streams.has(id)) continue
+    if ((entry.lastAccess ?? 0) < cutoff) sessions.delete(id)
+  }
+}, 60_000)
+sessionCacheTimer.unref()
 
 /** 共享的 harness（一个进程带多个会话）。 */
 let harness
@@ -556,11 +566,14 @@ async function ensureHarness() {
     const fallbackEnv = PROVIDER === 'openrouter' && process.env.LUCKYCAT_FALLBACK_MODELS
       ? { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${fallbackImport}`.trim() }
       : undefined
+    const harnessEnv={...(fallbackEnv??process.env)}
+    delete harnessEnv.LUCKYCAT_STAFF_IM_SERVICE_KEY
+    delete harnessEnv.LUCKYCAT_STAFF_IM_DATA_KEY
     const candidate = new DeepSeekHarness({
       dshBin: join(ROOT, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), profile: PROFILE,
       provider: PROVIDER, model: MODEL, initializeTimeoutMs: 30_000,
       ...(OPS_MODE ? { processCwd: OPS_WORKSPACE } : {}),
-      ...fallbackEnv === undefined ? {} : { env: fallbackEnv },
+      env:harnessEnv,
       patches: [streamPatch, ...PATCHES],
     })
     harness = candidate
@@ -587,6 +600,7 @@ function sessionOf(sessionId) {
     entry = { id: sessionId, busy: false, handle: undefined, started: false }
     sessions.set(sessionId, entry)
   }
+  entry.lastAccess = Date.now()
   return entry
 }
 
@@ -744,8 +758,13 @@ async function handle(req, res) {
         if (stored) {
           if (stored.ownerId !== identity.user.id) throw bankError('会话不存在或不属于当前账户', 404, 'NOT_FOUND')
           makeSessionRoom(identity.user.id)
-          entry = stored
+          entry = compactReplay(stored)
           sessions.set(entry.id, entry)
+          if (entry.interrupted) {
+            await publish(entry.id, { type: 'session-restored', interrupted: true })
+            entry.interrupted = false
+            await sessionStore.save(entry)
+          }
         }
       }
       // 旧版本未保存归属的会话不能凭 id 认领，网页可迁入自己的本地文字记录。
@@ -754,6 +773,7 @@ async function handle(req, res) {
         return
       }
       if (entry) {
+        entry.lastAccess = Date.now()
         req.sessionEntry = entry
         entry.requestRefs = (entry.requestRefs ?? 0) + 1
       }
@@ -1466,18 +1486,35 @@ async function stopSession(sessionId) {
   return entry.stopTask
 }
 
-if (!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
+if ((!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') || (STAFF_MODE && !OPS_MODE && process.env.LUCKYCAT_STAFF_IM_ENABLED === '1')) {
   if (!HTTP_BANK) throw Error('IM requires the authenticated bank HTTP mode')
-  const directory = join(SESSION_DIR, 'im')
-  const store = await openImStore(join(directory, 'bank-bindings.enc.json'), process.env.LUCKYCAT_IM_DATA_KEY ?? process.env.LUCKYCAT_SESSION_DATA_KEY)
-  if (process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') await migrateImBindingRevisions(store)
+  const directory = join(SESSION_DIR, STAFF_MODE ? 'staff-im' : 'im')
+  const store = await openImStore(join(directory, 'bank-bindings.enc.json'), (STAFF_MODE ? process.env.LUCKYCAT_STAFF_IM_DATA_KEY : undefined) ?? process.env.LUCKYCAT_IM_DATA_KEY ?? process.env.LUCKYCAT_SESSION_DATA_KEY,{audience:STAFF_MODE ? 'staff' : 'customer'})
+  const staffService=STAFF_MODE ? createStaffImService({baseUrl:process.env.LUCKYCAT_BANK_URL??'http://127.0.0.1:8080',secret:process.env.LUCKYCAT_STAFF_IM_SERVICE_KEY}) : undefined
+  if (STAFF_MODE && Buffer.byteLength(process.env.LUCKYCAT_STAFF_IM_SERVICE_KEY??'')<32) throw Error('Staff IM requires the same LUCKYCAT_STAFF_IM_SERVICE_KEY (at least 32 bytes) in the bank and staff Bridge')
+  if (!STAFF_MODE && process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') await migrateImBindingRevisions(store)
   imBank = createImBank({
-    store, publicUrl: process.env.LUCKYCAT_IM_PUBLIC_URL ?? `http://127.0.0.1:${PORT}`,
-    createSession: identity => createWebSession(identity), current: id => bankAgent.current(id), cancel: stopSession,
+    store, audience:STAFF_MODE ? 'staff' : 'customer',portalPath:STAFF_MODE ? '/staff-agent-api/im' : '/agent-api/im',
+    publicUrl: (STAFF_MODE ? process.env.LUCKYCAT_STAFF_IM_PUBLIC_URL : undefined) ?? process.env.LUCKYCAT_IM_PUBLIC_URL ?? `http://127.0.0.1:${PORT}`,
+    createSession: identity => createWebSession(identity), current: async id => {
+      const entry=await bankAgent.current(id)
+      if (STAFF_MODE) {
+        const route=Object.values(store.snapshot().routes).find(v=>v.sessionId===id&&v.ownerId===entry.ownerId)
+        if (!route) throw bankError('员工微信绑定已失效',401)
+        await staffService('validate-binding',{bindingId:route.id,revision:route.bindingRevision},`Bearer ${entry.bankToken}`)
+      }
+      return entry
+    }, cancel: stopSession,
+    onClaim:async(route,identity)=>{
+      if (!STAFF_MODE) return
+      await staffService('bind',{bindingId:route.id,revision:route.bindingRevision,recipientHash:createHash('sha256').update('staff\0'+route.channel+'\0'+route.key).digest('hex')},`Bearer ${identity.token}`)
+      for (const old of Object.values(store.snapshot().routes)) if (old.id!==route.id&&old.ownerId===identity.user.id) await imBank.revoke(old.id,identity.user.id)
+    },
+    onRevoke:async route=>{if(STAFF_MODE) await staffService('revoke',{bindingId:route.id,revision:route.bindingRevision})},
     run: (id, text) => {
       const entry = sessions.get(id)
       if (!entry || entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
-      const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感卡信息仍须在银行页面授权。】\n' + serviceSkillContext(undefined) + text)
+      const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感信息仍须在银行页面授权。】\n' + (STAFF_MODE ? '' : serviceSkillContext(undefined)) + text)
       activeTurns.add(turn)
       void turn.finally(() => activeTurns.delete(turn)).catch(() => {})
       return turn
@@ -1486,9 +1523,13 @@ if (!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') {
     onBindingChange: id => imReminders?.invalidateRoute(id),
   })
   imChannels = await createImChannels({ directory, credentials: store.credentials, harness: imBank.harness })
-  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', reminders: () => imReminders })
+  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', reminders: () => imReminders,audience:STAFF_MODE ? 'staff' : 'customer',staffService })
   await imChannels.initialize()
-  if (process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') {
+  if (STAFF_MODE && process.env.LUCKYCAT_STAFF_IM_NOTIFICATIONS_ENABLED === '1') {
+    staffImWorker=createStaffImWorker({service:staffService,routes:()=>imBank.reminderRoutes(),ready:route=>imChannels.deliveryReady(route),deliver:(route,text,options)=>imChannels.deliver(route,text,options),onError:()=>console.warn('[staff-im] 通知服务暂不可用，保留队列并等待恢复')})
+    staffImWorker.start()
+  }
+  if (!STAFF_MODE && process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') {
     imReminders = await createBankReminders({ directory: join(SESSION_DIR, 'bank-workbench'), routes: () => imBank.reminderRoutes(), ready: route => imChannels.reminderReady(route), deliver: (route, text, options) => imChannels.deliver(route, text, options) })
     imReminders.start()
   }
@@ -1506,6 +1547,7 @@ server.listen(PORT, '127.0.0.1', () => {
 async function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
+  clearInterval(sessionCacheTimer)
   eventPolling.close()
   bankAgent?.close()
   opsGate?.close()
@@ -1523,6 +1565,7 @@ async function shutdown() {
   streams.clear()
   server.close()
   try {
+    await staffImWorker?.close()
     await imReminders?.close()
     await imBank?.close()
     if (harness !== undefined) await harness.close()

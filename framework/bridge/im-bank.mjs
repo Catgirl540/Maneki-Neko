@@ -3,11 +3,11 @@ import { randomBytes, randomUUID } from 'node:crypto'
 const fail = (message, status = 400) => Object.assign(new Error(message), { status })
 const label = route => `${route.channel === 'weixin' ? '微信' : '企业微信'}私聊 · ${route.key.slice(-4)}`
 
-export function createImBank({ store, publicUrl, createSession, current, run, cancel, deliver, onBindingChange = () => {}, clock = Date.now, timeoutMs = 600_000 }) {
+export function createImBank({ store, publicUrl, createSession, current, run, cancel, deliver, onBindingChange = () => {}, onClaim = async () => {}, onRevoke = async () => {}, audience = 'customer', portalPath = '/agent-api/im', clock = Date.now, timeoutMs = 600_000 }) {
   const base = new URL(publicUrl)
   if (base.username || base.password || base.search || base.hash || !['https:', 'http:'].includes(base.protocol)
       || (base.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw Error('LUCKYCAT_IM_PUBLIC_URL must use HTTPS (HTTP is only allowed on loopback)')
-  const portal = new URL('agent-api/im', base.origin).href
+  const portal = new URL(portalPath, base.origin).href
   const pairings = new Map(), active = new Map(), live = new Set(), claiming = new Set()
   let closed = false
   function pairing(route) {
@@ -18,7 +18,9 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
     pairings.set(code, { routeId: route.id, expiresAt: clock() + 600_000 })
     return code
   }
-  const loginMessage = route => `请先在银行页面登录并绑定${label(route)}，再发送您的需求：\n${portal}#code=${pairing(route)}\n绑定码十分钟有效；登录密码和支付密码只在银行页面填写。`
+  const loginMessage = route => audience==='staff'
+    ? `请先在银行页面登录工作人员账户并绑定${label(route)}，再发送您的需求：\n${portal}#code=${pairing(route)}\n绑定码十分钟有效；密码和验证码只在银行页面填写。`
+    : `请先在银行页面登录并绑定${label(route)}，再发送您的需求：\n${portal}#code=${pairing(route)}\n绑定码十分钟有效；登录密码和支付密码只在银行页面填写。`
   const actionMessage = route => `有一项操作需要您在银行页面核对或补充信息：\n${portal}#session=${encodeURIComponent(route.sessionId)}\n请在页面中完成确认，我会继续办理并在这里回复结果。`
   function isLiveRoute(route) {
     const latest = store.snapshot().routes[route.id]
@@ -47,7 +49,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
           if (existing) return existing.id
           if (Object.keys(draft.routes).length >= 1000) throw fail('IM 会话数量已达上限', 429)
           const id = `im-${randomUUID()}`
-          draft.routes[id] = { id, channel, botId, key: conversationKey }
+          draft.routes[id] = { id, channel, botId, key: conversationKey, audience }
           return id
         })
       },
@@ -141,6 +143,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
       return { label: label(route), expiresAt: pending.expiresAt }
     },
     async claim(code, identity) {
+      if (audience === 'staff' && !['csr','supervisor'].includes(identity?.user?.role)) throw fail('仅客服和主管可绑定工作人员 IM', 403)
       this.preview(code)
       const { routeId } = pairings.get(code)
       const route = store.snapshot().routes[routeId]
@@ -156,8 +159,15 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
         await store.update(draft => {
           const latest = draft.routes[routeId]
           if (!latest || (latest.ownerId && latest.ownerId !== identity.user.id)) throw fail('此 IM 身份已更改，请重新连接', 409)
-          Object.assign(latest, { ownerId: identity.user.id, sessionId, bindingRevision: randomUUID() })
+          Object.assign(latest, { ownerId: identity.user.id, sessionId, audience,
+            bindingRevision: audience === 'staff' && latest.ownerId === identity.user.id && latest.bindingRevision ? latest.bindingRevision : randomUUID() })
         })
+        try { await onClaim(store.snapshot().routes[routeId], identity) }
+        catch (error) {
+          await store.update(draft => { delete draft.routes[routeId].ownerId; delete draft.routes[routeId].sessionId; delete draft.routes[routeId].bindingRevision })
+          await cancel(sessionId)
+          throw error
+        }
         live.add(routeId)
         return { id: routeId, sessionId, label: label(route) }
       } finally { claiming.delete(routeId) }
@@ -170,6 +180,7 @@ export function createImBank({ store, publicUrl, createSession, current, run, ca
       claiming.add(id)
       onBindingChange(id)
       try {
+        await onRevoke(route)
         live.delete(id)
         for (const [code, pending] of pairings) if (pending.routeId === id) pairings.delete(code)
         await cancel(route.sessionId)

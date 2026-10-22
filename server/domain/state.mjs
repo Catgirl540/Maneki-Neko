@@ -1037,9 +1037,11 @@ export const FPS_REGISTRY = [
     { idType: 'fpsid', id: '1002938', name: '黄敏仪', bankCode: '004', bankName: '香港上海汇丰银行', bankCount: 3 },
 ];
 /** Persisted customer registrations and external demo fixtures share one resolver. */
-export function lookupFpsRegistration(idType, id) {
+export async function lookupFpsRegistration(idType, id) {
     const value = id.replace(/\s/g, '').toLowerCase();
-    for (const profile of listAllProfiles()) {
+    const candidates = storage.profileStore ? await storage.profileStore.fpsProfiles(idType, value) : listAllProfiles();
+    for (const candidate of candidates) {
+        const profile = prepareLoadedProfile(candidate);
         const registration = profile.fpsRegistrations?.find(r => r.idType === idType && r.id === value);
         const account = registration && ledgerBalances(profile).find(a => a.id === registration.accountId && a.currency === 'HKD');
         if (account)
@@ -1587,9 +1589,20 @@ const PROFILES_KEY = 'luckycat.mock.user-profiles.v1';
 function profiles() {
     return storage.get(PROFILES_KEY, {});
 }
+function prepareLoadedProfile(profile) {
+    if (!profile || !storage.profileStore) return profile;
+    const ready = migrateProfile(profile);
+    normalizeFundingAccount(ready);
+    // A legacy recipient/staff target may not be the active customer. Migrate it
+    // before any business rule uses its balances; commit only this customer's
+    // changed projection, keeping the original history and frozen funds.
+    storage.set(PROFILES_KEY, { [ready.user.phone]: ready });
+    return ready;
+}
 /** 演示收款人也有自己的登录档案、资金账户和可收款银行卡。 */
 function ensureDemoRecipient() {
     if (process.env.NODE_ENV === 'production') return;
+    if (storage.profileStore && !storage.profileStore.initializing) return;
     const all = profiles();
     if (all['13600136000'])
         return;
@@ -1618,9 +1631,11 @@ function ensureDemoRecipient() {
     storage.set(PROFILES_KEY, { ...all, [demo.user.phone]: demo });
 }
 /** 按本行账户号或已激活银行卡号查收款账户，扫描所有演示用户档案。 */
-export function findRecipientByNumber(number) {
+export async function findRecipientByNumber(number) {
     const normalized = number.replace(/\D/g, '');
-    const all = { ...profiles(), [loadDb().user.phone]: loadDb() };
+    const candidates = storage.profileStore ? await storage.profileStore.recipientProfiles(normalized) : Object.values(profiles());
+    const all = Object.fromEntries(candidates.map(prepareLoadedProfile).map(profile => [profile.user.phone, profile]));
+    all[loadDb().user.phone] = loadDb();
     for (const profile of Object.values(all)) {
         const account = profile.accounts.find((row) => row.accountNo === normalized) ?? findBalance(profile, profile.accountNumberAliases?.[normalized]);
         if (account)
@@ -1649,15 +1664,17 @@ export function persistRelatedProfiles(related) {
     }
 }
 /** 按手机号找一个独立演示档案，不切换当前用户。 */
-export function findProfileByPhone(phone) {
+export async function findProfileByPhone(phone) {
     const normalized = phone.replace(/\D/g, '');
+    if (storage.profileStore) return prepareLoadedProfile(await storage.profileStore.findProfileByPhone(normalized));
     const current = loadDb();
     if (current.user.phone === normalized)
         return current;
     return profiles()[normalized] ?? null;
 }
 /** 按用户 id 找档案（员工端放行挂起转账用：指令里记的是 customerId，不是手机号）。 */
-export function findProfileByUserId(userId) {
+export async function findProfileByUserId(userId) {
+    if (storage.profileStore) return prepareLoadedProfile(await storage.profileStore.findProfileByUserId(userId));
     const current = loadDb();
     if (current.user.id === userId)
         return current;
@@ -1715,6 +1732,7 @@ function latestStoredProfile(userId) {
 export function activateDb(next) {
     const stored = latestStoredProfile(next.user.id);
     cache = migrateProfile(stored ?? next);
+    storage.profileStore?.activateProfile(cache);
     normalizeFundingAccount(cache);
     syncSeq(cache);
     for (const profile of Object.values(profiles()))

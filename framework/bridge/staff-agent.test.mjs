@@ -28,7 +28,7 @@ test('员工工具在独立 PostgreSQL HTTP 后端验证权限、确认与真实
     const ops = await backend.staffLogin('运维人员')
     for (const [id, who] of [['csr', csr], ['supervisor', supervisor], ['ops', ops]]) sessions.set(id, { ownerId: who.staff.id, bankToken: who.token, activity: { cancelled: false }, stopping: false })
     let customerId, cardId, ticketId, customerLogin
-    await t.test('配置只允许员工工具和提问工具', () => assert.equal(checkPolicy(join(root, 'framework/profiles/staff/cordis.patch.yml')), 16))
+    await t.test('配置只允许员工业务工具和提问工具', () => assert.equal(checkPolicy(join(root, 'framework/profiles/staff/cordis.patch.yml')), 21))
     await t.test('拒绝客户令牌和跨员工会话', async () => {
       const sms = await api('/api/auth/sms-code', null, { phone: '13800138000' })
       const customer = await api('/api/auth/login', null, { phone: '13800138000', password: '123456', smsCode: sms.demoCode })
@@ -144,6 +144,26 @@ test('员工工具在独立 PostgreSQL HTTP 后端验证权限、确认与真实
       assert(logs.some(l => l.actor_id === supervisor.staff.id && l.action === 'settings.transferThreshold.update'))
       const safe = sanitizeStaffResult({ token: 'secret', cvv: '123', accountNo: '12345', agentTranscript: ['secret'], note: '验证码：987654 密码：777777 电话 13800138000' })
       assert.deepEqual(Object.keys(safe), ['note']); assert(!safe.note.includes('987654')); assert(!safe.note.includes('777777')); assert(!safe.note.includes('13800138000'))
+    })
+    await t.test('新增 IM 工具覆盖统计、合法转派、额外客户提醒和创建审批',async()=>{
+      const summary=(await exec('csr','staff_get_workbench')).result
+      assert(Number.isSafeInteger(summary.pending));assert(summary.asOf)
+      const targets=(await exec('csr','staff_list_assignees')).result.items
+      assert(targets.length&&targets.every(person=>person.role==='supervisor'))
+      const task=(await exec('csr','staff_create_ticket',{customerId,reason:'IM 新增工具回归'})).result.ticketId
+      assert.equal((await exec('csr','staff_assign_ticket',{ticketId:task,assigneeId:supervisor.staff.id})).result.assigneeId,supervisor.staff.id)
+      await assert.rejects(exec('csr','staff_update_ticket_status',{ticketId:task,status:'processing'}),error=>error.status===403)
+      assert.equal((await exec('supervisor','staff_assign_ticket',{ticketId:task,assigneeId:csr.staff.id})).result.assigneeId,csr.staff.id)
+      await exec('csr','staff_update_ticket_status',{ticketId:task,status:'processing'})
+      await exec('csr','staff_post_ticket_message',{ticketId:task,text:'TEST ONLY IM 明确客户提醒',visibleToCustomer:true})
+      assert.equal((await api(`/staff-api/tickets/${task}`,csr.token)).messages.at(-1).visible_to_customer,1)
+      const approval=(await exec('csr','staff_create_approval',{customerId,bizType:'other',reason:'TEST ONLY IM 申请'})).result
+      assert.equal(approval.status,'pending');assert((await api(`/staff-api/approvals/${approval.approvalId}`,csr.token)).payload.customerId===customerId)
+      assert.equal((await exec('csr','staff_get_im_preferences')).result.enabled,false)
+      assert(Array.isArray((await exec('csr','staff_list_im_notifications')).result.items))
+      const query=input('csr','staff_get_workbench'),challenge=await agent.prepare(query)
+      assert.equal(await agent.approveRoutineQuery(challenge),true)
+      assert((await agent.execute(query)).result.asOf)
     })
     await t.test('登出后旧授权不能执行', async () => {
       const i = input('csr', 'staff_list_tickets'); await agent.approve(await agent.prepare(i)); await api('/staff-api/logout', csr.token, {})

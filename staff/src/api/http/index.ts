@@ -25,6 +25,8 @@ import { get, patch, post, put, setStaffToken } from './base'
 
 export function createHttpApi(): StaffApi {
   return {
+    listAssignees:()=>get<StaffUser[]>(routes.assignees()),
+    getWorkbench:()=>get(routes.workbench()),
     getOperationsOverview: () => get(routes.operations()),
     login: async (name, password) => {
       const result = await post<StaffLoginResult>(routes.login(), { name, password })
@@ -41,8 +43,8 @@ export function createHttpApi(): StaffApi {
     getTicket: (id) => get<TicketDetail>(routes.ticket(id)),
     createTicket: (req: CreateTicketRequest) =>
       post(routes.tickets(), req),
-    updateTicketStatus: (id: string, status: TicketStatus, assigneeId?: string) =>
-      patch<Ticket>(routes.ticketStatus(id), { status, assigneeId }),
+    updateTicketStatus: (id: string, status: TicketStatus, assigneeId?: string,expectedVersion?:number) =>
+      patch<Ticket>(routes.ticketStatus(id), { status, assigneeId,expectedVersion }),
     postTicketMessage: (id: string, text: string, opts?: { visibleToCustomer?: boolean }) =>
       post(routes.ticketMessages(id), { text, visibleToCustomer: opts?.visibleToCustomer ?? false }),
 

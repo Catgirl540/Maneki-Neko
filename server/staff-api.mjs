@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { hashPassword, verifyPassword, needsRehash, timingSafeTextEqual } from './passwords.mjs'
+import { Readable } from 'node:stream'
+import { createStaffIm, ensureStaffImSchema } from './staff-im.mjs'
 
 /**
  * 工作人员端 `/staff-api/*` —— Phase 0 骨架
@@ -119,8 +121,26 @@ export async function ensureStaffSchema(db) {
       ON approvals ((biz_payload::jsonb ->> 'transactionId'))
       WHERE biz_type = 'transfer' AND status = 'pending';
   `)
+  if (process.env.BANK_AUTO_MIGRATE !== 'false') await db.exec(`
+    ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS auth_version BIGINT NOT NULL DEFAULT 1;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1;
+    CREATE OR REPLACE FUNCTION staff_auth_version_update() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.role IS DISTINCT FROM OLD.role OR NEW.password_hash IS DISTINCT FROM OLD.password_hash THEN
+        NEW.auth_version := OLD.auth_version + 1;
+      END IF;
+      RETURN NEW;
+    END $$;
+    CREATE OR REPLACE TRIGGER staff_auth_version_before BEFORE UPDATE ON staff_users
+      FOR EACH ROW EXECUTE FUNCTION staff_auth_version_update();
+    CREATE OR REPLACE FUNCTION staff_ticket_version_update() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN NEW.version := OLD.version + 1; RETURN NEW; END $$;
+    CREATE OR REPLACE TRIGGER staff_ticket_version_before BEFORE UPDATE ON tickets
+      FOR EACH ROW EXECUTE FUNCTION staff_ticket_version_update();
+  `)
   const visibility = await db.prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'ticket_messages' AND column_name = 'visible_to_customer'").get()
   if (!visibility) await db.exec('ALTER TABLE ticket_messages ADD COLUMN visible_to_customer INTEGER NOT NULL DEFAULT 0')
+  await ensureStaffImSchema(db)
   // Existing employees are preserved. Production never creates default secrets.
   const seed = await db.prepare('SELECT COUNT(*) AS n FROM staff_users').get()
   const production = process.env.NODE_ENV === 'production'
@@ -244,6 +264,19 @@ export async function createStaffAuth(db) {
     return { actorType: 'staff', actorId: entry.id, role: entry.role, name: entry.name }
   }
 
+  async function resolveCurrent(req, options) {
+    const who = resolve(req, options)
+    if (who.actorType === 'agent') return who
+    const row = await db.prepare('SELECT * FROM staff_users WHERE name = ?').get(who.name)
+    const match = /^Bearer ([A-Za-z0-9_-]+)$/.exec(req.headers.authorization ?? '')
+    const entry = sessions.get(match?.[1])
+    if (!row || !entry || row.id !== who.actorId || row.role !== who.role || Number(row.auth_version ?? 1) !== entry.authVersion) {
+      if (match) revoke(match[1])
+      throw staffError(401, '员工权限已变化，请重新登录', 'UNAUTHORIZED')
+    }
+    return { ...who, authVersion: entry.authVersion }
+  }
+
   async function login(name, password, req) {
     if (typeof name !== 'string' || !name.trim() || name.length > 128 || typeof password !== 'string' || Buffer.byteLength(password) > 1024) {
       throw staffError(401, '员工账号或密码错误', 'BAD_CREDENTIALS')
@@ -270,11 +303,15 @@ export async function createStaffAuth(db) {
       peers.set(address, { startedAt: peerState?.startedAt ?? now, failures: (peerState?.failures ?? 0) + 1 })
       throw staffError(401, '员工账号或密码错误', 'BAD_CREDENTIALS')
     }
-    if (needsRehash(row.password_hash)) await db.prepare('UPDATE staff_users SET password_hash = ? WHERE id = ?').run(hashPassword(password), row.id)
+    if (needsRehash(row.password_hash)) {
+      await db.prepare('UPDATE staff_users SET password_hash = ? WHERE id = ?').run(hashPassword(password), row.id)
+      Object.assign(row, await db.prepare('SELECT * FROM staff_users WHERE name = ?').get(name))
+    }
     await db.prepare('DELETE FROM staff_login_attempts WHERE identifier = ?').run(identifier)
     const token = randomBytes(32).toString('base64url')
     sessions.set(token, {
       id: row.id, name: row.name, role: row.role,
+      authVersion: Number(row.auth_version ?? 1),
       expiresAt: Date.now() + STAFF_SESSION_HOURS * 3600_000,
     })
     return { token, staff: { id: row.id, name: row.name, role: row.role } }
@@ -290,7 +327,7 @@ export async function createStaffAuth(db) {
     for (const callback of logoutListeners) callback(`Bearer ${token}`)
   }
 
-  return { resolve, login, logout, revoke, onLogout(callback) { logoutListeners.add(callback); return () => logoutListeners.delete(callback) } }
+  return { resolve, resolveCurrent, login, logout, revoke, onLogout(callback) { logoutListeners.add(callback); return () => logoutListeners.delete(callback) } }
 }
 
 // —— 工单状态机（清单 §4.1，非法流转 400） ——————————————————
@@ -336,6 +373,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
   await ensureStaffSchema(db)
   const auth = await createStaffAuth(db)
   const writeAudit = makeWriteAudit(db)
+  const im = createStaffIm({ db, auth, writeAudit })
 
   const newId = (prefix) => `${prefix}_${randomBytes(8).toString('hex')}`
   const now = () => new Date().toISOString()
@@ -453,7 +491,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
     await db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?').run(now(), row.id)
   }
 
-  async function handle(req, res, url) {
+  async function handleCore(req, res, url) {
     const path = url.pathname
     if (!path.startsWith('/staff-api/')) return false
 
@@ -486,13 +524,13 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
       }
 
       if (path === '/staff-api/me' && req.method === 'GET') {
-        const who = auth.resolve(req, { roles: ['csr', 'supervisor', 'ops'] })
-        json(res, 200, { id: who.actorId, name: who.name, role: who.role })
+        const who = await auth.resolveCurrent(req, { roles: ['csr', 'supervisor', 'ops'] })
+        json(res, 200, { id: who.actorId, name: who.name, role: who.role, authVersion: who.authVersion })
         return true
       }
 
       if (path === '/staff-api/ops/overview') {
-        auth.resolve(req, { roles: ['ops'] })
+        await auth.resolveCurrent(req, { roles: ['ops'] })
         if (req.method !== 'GET') throw staffError(405, '运维模块当前仅支持查询', 'METHOD_NOT_ALLOWED')
         if (!operations) throw staffError(503, '运维监控未配置', 'OPERATIONS_UNAVAILABLE')
         json(res, 200, await operations.overview())
@@ -500,9 +538,23 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
       }
 
       // —— 工单（清单 §2 P0） ——
+      if (path === '/staff-api/assignees' && req.method === 'GET') {
+        const who = await auth.resolveCurrent(req)
+        const rows = await db.prepare(who.role === 'supervisor'
+          ? "SELECT id,name,role FROM staff_users WHERE role IN ('csr','supervisor') ORDER BY name"
+          : "SELECT id,name,role FROM staff_users WHERE role='supervisor' ORDER BY name").all()
+        json(res, 200, rows); return true
+      }
+      if (path === '/staff-api/workbench' && req.method === 'GET') {
+        const who = await auth.resolveCurrent(req)
+        const result = await db.prepare(`SELECT count(*) FILTER(WHERE status='open') AS pending,
+          count(*) FILTER(WHERE status IN ('processing','waiting') AND assignee_id=?) AS mine,
+          count(*) FILTER(WHERE status='waiting') AS waiting,count(*) FILTER(WHERE status='resolved') AS resolved FROM tickets`).get(who.actorId)
+        json(res, 200, { ...result, asOf: now(), scope: 'all-business-tickets' }); return true
+      }
       if (path === '/staff-api/tickets' && req.method === 'POST') {
         // agent 转人工入口：允许 agent 通道；员工也可以代建
-        const who = auth.resolve(req, { allowAgent: true })
+        const who = await auth.resolveCurrent(req, { allowAgent: true })
         const body = await readBody(req)
         requireFields(body, ['customerId', 'channel', 'reason'])
         const id = newId('T')
@@ -522,13 +574,15 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
 
       if (path === '/staff-api/tickets' && req.method === 'GET') {
         // agent 也允许列（但下面只给它看自己建的单，§5.5 约定 6）
-        const who = auth.resolve(req, { allowAgent: true })
+        const who = await auth.resolveCurrent(req, { allowAgent: true })
         // 筛选（清单 §2）：状态 / 渠道 / 关键词
         const where = []
         const params = []
         const status = url.searchParams.get('status')
         const channel = url.searchParams.get('channel')
         const keyword = url.searchParams.get('keyword')
+        const assignee = url.searchParams.get('assignee')
+        if (assignee) { where.push('assignee_id = ?'); params.push(assignee === 'me' ? who.actorId : assignee) }
         if (status) {
           where.push('status = ?')
           params.push(status)
@@ -548,23 +602,28 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
           params.push(who.actorId)
         }
         // 会员 VIP 工单优先，其次加急，同优先级按创建时间倒序
-        const sql = `SELECT * FROM tickets ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
-          ORDER BY CASE priority WHEN 'vip' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, created_at DESC LIMIT 100`
-        const rows = await db.prepare(sql).all(...params)
+        const page = Number(url.searchParams.get('page') ?? 1), paged = url.searchParams.has('page'), size=Number(url.searchParams.get('size')??100)
+        if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw staffError(400, '页码无效', 'BAD_PAGE')
+        if(!Number.isSafeInteger(size)||size<1||size>100) throw staffError(400,'每页条数无效','BAD_PAGE')
+        const clause = where.length ? 'WHERE ' + where.join(' AND ') : ''
+        const sql = `SELECT * FROM tickets ${clause}
+          ORDER BY CASE priority WHEN 'vip' THEN 0 WHEN 'high' THEN 1 ELSE 2 END, created_at DESC,id LIMIT ? OFFSET ?`
+        const rows = await db.prepare(sql).all(...params,size, (page-1)*size)
         await writeAudit({ actorId: who.actorId, action: 'ticket.list', result: 'ok' })
         const names = await readCustomerNames(db)
-        json(res, 200, rows.map((row) => mapTicket(row, names)))
+        json(res, 200, paged ? { items: rows.map(row => mapTicket(row,names)), page, size,
+          total: Number((await db.prepare(`SELECT count(*) AS n FROM tickets ${clause}`).get(...params)).n) } : rows.map(row => mapTicket(row,names)))
         return true
       }
 
       const ticketMatch = /^\/staff-api\/tickets\/([^/]+)(\/status|\/messages)?$/.exec(path)
       if (ticketMatch) {
         const [, id, sub] = ticketMatch
-        const ticket = await db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+        const ticket = await db.prepare(`SELECT * FROM tickets WHERE id = ?${['POST','PATCH'].includes(req.method) && bankHooks.runStaffUnitOfWork ? ' FOR UPDATE' : ''}`).get(id)
         if (!ticket) throw staffError(404, '工单不存在', 'NOT_FOUND')
 
         if (!sub && req.method === 'GET') {
-          const who = auth.resolve(req, { allowAgent: true })
+          const who = await auth.resolveCurrent(req, { allowAgent: true })
           // agent 只能查自己建的单（§5.5 约定 6）
           if (who.role === 'agent' && ticket.created_by !== who.actorId) {
             throw staffError(403, '只能查看自己创建的工单', 'FORBIDDEN')
@@ -575,36 +634,45 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
         }
 
         if (sub === '/status' && req.method === 'PATCH') {
-          const who = auth.resolve(req, {})
+          const who = await auth.resolveCurrent(req, {})
           const body = await readBody(req)
           requireFields(body, ['status'])
-          // 纯转派：状态不变、只换负责人（「转给主管」），不走状态机（contract v1.1 注释）
-          if (body.status === ticket.status) {
-            requireFields(body, ['assigneeId'])
-            await db.prepare('UPDATE tickets SET assignee_id = ?, updated_at = ? WHERE id = ?')
-              .run(body.assigneeId, now(), id)
-            await writeAudit({ actorId: who.actorId, action: 'ticket.reassign', targetType: 'ticket', targetId: id, reason: body.assigneeId })
-            json(res, 200, mapTicket(await db.prepare('SELECT * FROM tickets WHERE id = ?').get(id), await readCustomerNames(db)))
-            return true
-          }
-          assertTicketTransition(ticket.status, body.status)
-          const assignee = body.status === 'processing' ? (body.assigneeId ?? who.actorId) : ticket.assignee_id
-          await db.prepare('UPDATE tickets SET status = ?, assignee_id = ?, updated_at = ? WHERE id = ?')
-            .run(body.status, assignee, now(), id)
-          await writeAudit({ actorId: who.actorId, action: 'ticket.status', targetType: 'ticket', targetId: id, reason: body.status })
-          json(res, 200, mapTicket(await db.prepare('SELECT * FROM tickets WHERE id = ?').get(id), await readCustomerNames(db)))
+          const updated = await db.transaction(async () => {
+            const fresh = await db.prepare('SELECT * FROM tickets WHERE id = ? FOR UPDATE').get(id)
+            if (fresh.status === 'resolved') throw staffError(409, '工单已解决', 'TICKET_CLOSED')
+            if ((body.expectedVersion ?? Number(ticket.version)) !== Number(fresh.version)) throw staffError(409, '工单状态已变化，请刷新后确认', 'STATE_CHANGED')
+            if (who.role !== 'supervisor' && fresh.assignee_id && fresh.assignee_id !== who.actorId) throw staffError(403, '请由负责人或主管处理此工单', 'NOT_ASSIGNEE')
+            const reassign = body.status === fresh.status
+            if (reassign) requireFields(body, ['assigneeId'])
+            else assertTicketTransition(fresh.status, body.status)
+            let assignee = reassign ? body.assigneeId : body.status === 'processing' ? (fresh.assignee_id ?? who.actorId) : fresh.assignee_id
+            if (body.assigneeId && body.assigneeId !== assignee) throw staffError(400, '请使用转派操作修改负责人', 'BAD_ASSIGNEE')
+            if (reassign || assignee) {
+              const target = await db.prepare('SELECT id,role FROM staff_users WHERE id = ?').get(assignee)
+              if (!target || !['csr','supervisor'].includes(target.role) || (reassign && who.role !== 'supervisor' && target.role !== 'supervisor')) throw staffError(400, '请选择有效的业务接收人员', 'BAD_ASSIGNEE')
+            }
+            const changed = await db.prepare('UPDATE tickets SET status = ?,assignee_id = ?,updated_at = ? WHERE id = ? AND version = ?')
+              .run(body.status, assignee, now(), id, fresh.version)
+            if (!changed.changes) throw staffError(409, '工单已被其他员工接手或更新', 'STATE_CHANGED')
+            await writeAudit({ actorId: who.actorId, action: reassign ? 'ticket.reassign' : 'ticket.status', targetType: 'ticket', targetId: id, reason: reassign ? assignee : body.status })
+            return mapTicket(await db.prepare('SELECT * FROM tickets WHERE id = ?').get(id), await readCustomerNames(db))
+          })
+          json(res, 200, updated)
           return true
         }
 
         if (sub === '/messages' && req.method === 'POST') {
           // sender 由登录态生成，不信任请求体（清单 §5.5 / 不变量 10）
-          const who = auth.resolve(req, { allowAgent: true })
+          const who = await auth.resolveCurrent(req, { allowAgent: true })
           // agent 只能回写自己建的单（§5.5 约定 6）
           if (who.role === 'agent' && ticket.created_by !== who.actorId) {
             throw staffError(403, '只能回复自己创建的工单', 'FORBIDDEN')
           }
           const body = await readBody(req)
           requireFields(body, ['text'])
+          if (typeof body.text !== 'string' || !body.text.trim() || body.text.length > 5000) throw staffError(400, '回复正文无效', 'INVALID_TEXT')
+          if (body.expectedVersion !== undefined && body.expectedVersion !== Number(ticket.version)) throw staffError(409, '工单已变化，请刷新', 'STATE_CHANGED')
+          if (who.role === 'csr' && ticket.assignee_id && ticket.assignee_id !== who.actorId) throw staffError(403, '只能回复本人负责的工单', 'NOT_ASSIGNEE')
           if (ticket.status === 'resolved') throw staffError(409, '工单已解决，不能继续回复', 'TICKET_CLOSED')
           const sender = who.actorType === 'agent' ? 'system' : 'staff'
           // 契约 v1.3：勾了「发给客户」才投递；agent 走 system 一律不外发，
@@ -647,9 +715,10 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
 
       // —— 审批（清单 §2 P0 / §9.4） ——
       if (path === '/staff-api/approvals' && req.method === 'POST') {
-        const who = auth.resolve(req, { allowAgent: true })
+        const who = await auth.resolveCurrent(req, { allowAgent: true })
         const body = await readBody(req)
         requireFields(body, ['customerId', 'bizType'])
+        if(!['transfer','card_lock','limit_adjust','wealth_subscribe','other'].includes(body.bizType))throw staffError(400,'审批类型无效','BAD_APPROVAL_TYPE')
 
         // transfer 类防伪造（清单 §5.2）：只能提**已挂起的转账指令**，
         // 金额/收款方/风险摘要由服务端从指令读取，不采信 agent 自述。
@@ -693,27 +762,35 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
       }
 
       if (path === '/staff-api/approvals' && req.method === 'GET') {
-        const who = auth.resolve(req, {})
-        const rows = await db.prepare('SELECT * FROM approvals ORDER BY created_at DESC LIMIT 100').all()
-        json(res, 200, rows.map(mapApproval))
+        const who = await auth.resolveCurrent(req, {})
+        const status = url.searchParams.get('status'), page = Number(url.searchParams.get('page') ?? 1),size=Number(url.searchParams.get('size')??100)
+        if (!Number.isSafeInteger(page) || page < 1 || page > 100000) throw staffError(400, '页码无效', 'BAD_PAGE')
+        if(!Number.isSafeInteger(size)||size<1||size>100) throw staffError(400,'每页条数无效','BAD_PAGE')
+        const transferId=url.searchParams.get('transferId'),clauses=[],params=[]
+        if(status){clauses.push('status=?');params.push(status)}
+        if(transferId){clauses.push("biz_type='transfer' AND biz_payload::jsonb ->> 'transactionId'=?");params.push(transferId)}
+        const where=clauses.length?'WHERE '+clauses.join(' AND '):''
+        const rows = await db.prepare(`SELECT * FROM approvals ${where} ORDER BY created_at DESC,id LIMIT ? OFFSET ?`).all(...params,size,(page-1)*size)
+        json(res, 200, url.searchParams.has('page') ? { items: rows.map(mapApproval), page, size,
+          total: Number((await db.prepare(`SELECT count(*) AS n FROM approvals ${where}`).get(...params)).n) } : rows.map(mapApproval))
         return true
       }
 
       const approvalMatch = /^\/staff-api\/approvals\/([^/]+)(\/decide)?$/.exec(path)
       if (approvalMatch) {
         const [, id, sub] = approvalMatch
-        const approval = await db.prepare('SELECT * FROM approvals WHERE id = ?').get(id)
+        const approval = await db.prepare(`SELECT * FROM approvals WHERE id = ?${req.method==='POST' && bankHooks.runStaffUnitOfWork ? ' FOR UPDATE' : ''}`).get(id)
         if (!approval) throw staffError(404, '审批单不存在', 'NOT_FOUND')
 
         if (!sub && req.method === 'GET') {
           // agent 轮询裁决结果（清单 §5.3）
-          auth.resolve(req, { allowAgent: true })
+          await auth.resolveCurrent(req, { allowAgent: true })
           json(res, 200, mapApproval(approval))
           return true
         }
 
         if (sub === '/decide' && req.method === 'POST') {
-          const who = auth.resolve(req, { roles: ['supervisor'] })
+          const who = await auth.resolveCurrent(req, { roles: ['supervisor'] })
           if (approval.status !== 'pending') {
             throw staffError(409, '该记录已处置，不能重复操作', 'ALREADY_DECIDED')
           }
@@ -795,7 +872,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
       // —— 运行时参数（清单 §9.1，2026-10-12 起可在员工端随时改） ——
       // 只给主管改：阈值是风控参数，客服能看见但不能随手拧。
       if (path === '/staff-api/settings/transfer-threshold' && req.method === 'GET') {
-        auth.resolve(req, {})
+        await auth.resolveCurrent(req, {})
         json(res, 200, {
           transferReviewCents: await getTransferReviewCents(db),
           maxTransferReviewCents: REVIEW_THRESHOLD_MAX_CENTS,
@@ -803,7 +880,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
         return true
       }
       if (path === '/staff-api/settings/transfer-threshold' && req.method === 'PUT') {
-        const who = auth.resolve(req, { roles: ['supervisor'] })
+        const who = await auth.resolveCurrent(req, { roles: ['supervisor'] })
         const body = await readBody(req)
         const before = await getTransferReviewCents(db)
         const next = await setTransferReviewCents(db, body.transferReviewCents, who.actorId)
@@ -823,7 +900,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
 
       // —— 客户查询（清单 §2 P0，乙模块） ——
       if (path === '/staff-api/customers' && req.method === 'GET') {
-        const who = auth.resolve(req, {})
+        const who = await auth.resolveCurrent(req, {})
         if (typeof bankHooks.searchCustomers !== 'function') {
           throw staffError(503, '银行侧未接入，无法查询客户', 'BANK_HOOK_MISSING')
         }
@@ -836,7 +913,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
 
       const customerProfileMatch = /^\/staff-api\/customers\/([^/]+)\/profile$/.exec(path)
       if (customerProfileMatch && req.method === 'GET') {
-        const who = auth.resolve(req, {})
+        const who = await auth.resolveCurrent(req, {})
         const reason = (url.searchParams.get('reason') ?? '').trim()
         if (!reason) {
           throw staffError(400, '查看完整资料必须填写事由', 'REASON_REQUIRED')
@@ -857,7 +934,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
       // —— 代客办理（清单 §2 P1，乙模块）：白名单动作 + 客户核验 ——
       const customerActionMatch = /^\/staff-api\/customers\/([^/]+)\/actions\/([^/]+)$/.exec(path)
       if (customerActionMatch && req.method === 'POST') {
-        const who = auth.resolve(req, {})
+        const who = await auth.resolveCurrent(req, {})
         const [, customerId, action] = customerActionMatch
         const WHITELIST = ['lockCard', 'unlockCard', 'updateCardSettings', 'patchAutodebit']
         if (!WHITELIST.includes(action)) {
@@ -865,6 +942,12 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
         }
         const body = await readBody(req)
         requireFields(body, ['ticketId', 'verificationMethod', 'verificationResult', 'reason'])
+        const linked = await db.prepare(`SELECT * FROM tickets WHERE id = ?${bankHooks.runStaffUnitOfWork ? ' FOR UPDATE' : ''}`).get(body.ticketId)
+        if (!linked || linked.customer_id !== customerId) throw staffError(403, '工单不属于该客户', 'TICKET_CUSTOMER_MISMATCH')
+        if (!['open','processing','waiting'].includes(linked.status)) throw staffError(409, '需要正在受理的工单', 'TICKET_CLOSED')
+        if (who.role === 'csr' && linked.assignee_id && linked.assignee_id !== who.actorId) throw staffError(403, '请由工单负责人办理', 'NOT_ASSIGNEE')
+        if (body.verificationResult !== 'passed' || !['phone','sms','face'].includes(body.verificationMethod)) throw staffError(403, '请完成真实客户身份核验', 'VERIFICATION_REQUIRED')
+        if (action === 'patchAutodebit' && body.enabled !== false) throw staffError(400, '代客仅支持停用已有自动扣款', 'BAD_ACTION')
         if (body.verificationResult === 'failed') {
           throw staffError(403, '客户核验未通过，不能办理', 'VERIFICATION_FAILED')
         }
@@ -906,7 +989,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
 
       // —— 审计（清单 §2 P2，只给主管看） ——
       if (path === '/staff-api/audit-logs' && req.method === 'GET') {
-        const who = auth.resolve(req, { roles: ['supervisor'] })
+        const who = await auth.resolveCurrent(req, { roles: ['supervisor'] })
         const rows = await db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200').all()
         json(res, 200, rows)
         return true
@@ -924,11 +1007,58 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
     }
   }
 
+  async function handle(req, res, url) {
+    try {
+      if (await im.handle(req,res,url)) return true
+      const explicitRequestId=req.headers['x-staff-request-id']
+      if ((!explicitRequestId&&!bankHooks.runStaffUnitOfWork) || !url.pathname.startsWith('/staff-api/') || !['POST','PATCH','PUT'].includes(req.method) || ['/staff-api/login','/staff-api/logout'].includes(url.pathname)) return handleCore(req,res,url)
+      const requestId=explicitRequestId??randomBytes(24).toString('base64url')
+      if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,128}$/.test(requestId)) throw staffError(400,'请求编号无效','BAD_REQUEST_ID')
+      const who = await auth.resolveCurrent(req,{allowAgent:true})
+      const data = await readBody(req), raw = JSON.stringify(data)
+      const fingerprint = createHash('sha256').update(req.method+'\n'+url.pathname+'\n'+raw).digest('hex')
+      const work = () => db.transaction(async () => {
+        await db.prepare('SELECT pg_advisory_xact_lock(hashtextextended(?,0))').get(`staff-write:${who.actorId}:${requestId}`)
+        const previous = await db.prepare('SELECT * FROM staff_write_requests WHERE staff_id=? AND request_id=?').get(who.actorId,requestId)
+        if (previous) { if (previous.fingerprint !== fingerprint) throw staffError(409,'请求编号已用于其他操作','REQUEST_CONFLICT'); return previous }
+        const replay = Object.assign(Readable.from([Buffer.from(raw)]), { headers:req.headers,method:req.method,url:req.url,socket:req.socket })
+        const capture = { status:200,response:'',writableEnded:false,writeHead(status){this.status=status},end(value){this.response=value;this.writableEnded=true} }
+        await handleCore(replay,capture,url)
+        if (capture.status >= 400) throw Object.assign(Error('Business rejected'),{captured:capture})
+        await db.prepare('INSERT INTO staff_write_requests(staff_id,request_id,fingerprint,status,response) VALUES(?,?,?,?,?)').run(who.actorId,requestId,fingerprint,capture.status,capture.response)
+        return capture
+      })
+      const saved=await (bankHooks.runStaffUnitOfWork ? bankHooks.runStaffUnitOfWork(work,`staff:${who.actorId}:${requestId}`) : work())
+      res.writeHead(saved.status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(saved.response);return true
+    } catch (error) {
+      // Profile persistence happens at the outer financial commit. A commit
+      // failure must be reported after rollback, never by writing into an
+      // already-aborted transaction or returning the prepared success body.
+      const failedDecision=/^\/staff-api\/approvals\/([^/]+)\/decide$/.exec(url.pathname)
+      if(failedDecision && (!error.captured || error.captured.status>=500)) {
+        try {
+          const pending=await db.prepare('SELECT * FROM approvals WHERE id = ?').get(failedDecision[1])
+          if(pending?.biz_type==='transfer'&&pending.status==='pending') {
+            const who=await auth.resolveCurrent(req,{roles:['supervisor']})
+            await db.transaction(async()=>{
+              await db.prepare("UPDATE approvals SET execution_error=? WHERE id=? AND status='pending'").run('资金操作已回滚，原指令仍待处理',pending.id)
+              await writeAudit({actorId:who.actorId,action:'approval.error',targetType:'approval',targetId:pending.id,reason:'SETTLEMENT_FAILED'})
+            })
+            json(res,503,{message:'资金操作失败，审批仍待处理，请核查后重新确认',code:'SETTLEMENT_FAILED'});return true
+          }
+        }catch{/* Preserve the failure response if diagnostic storage is also unavailable. */}
+      }
+      if (error.captured) { res.writeHead(error.captured.status,{'content-type':'application/json; charset=utf-8','cache-control':'no-store'});res.end(error.captured.response) }
+      else json(res,error.status??500,{message:error.message??'服务异常',code:error.code??'INTERNAL_ERROR'})
+      return true
+    }
+  }
   return { handle, writeAudit, auth, createTransferApproval, closeTransferApproval }
 }
 
 function mapTicket(row, customerNames = new Map()) {
   return {
+    version: Number(row.version ?? 1),
     ticketId: row.id,
     customerId: row.customer_id,
     customerName: customerNames.get(row.customer_id) ?? null,

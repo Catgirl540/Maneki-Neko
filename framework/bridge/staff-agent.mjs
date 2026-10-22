@@ -29,10 +29,10 @@ export function createStaffAgent({ baseUrl, sessions, publish, opsOnly = false, 
   if (base.protocol !== 'https:' && !(base.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname))) throw bankError('员工服务必须使用 HTTPS 或本机回环地址')
   const grants = new Map()
   const key = c => `${c.sessionId}\0${c.callId}`
-  async function call(token, path, body, method = body === undefined ? 'GET' : 'POST') {
+  async function call(token, path, body, method = body === undefined ? 'GET' : 'POST', requestId) {
     if (!path.startsWith('/staff-api/')) throw bankError('员工工具不能访问客户接口', 403)
     let response
-    try { response = await fetch(new URL(path, base), { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(12_000) }) }
+    try { response = await fetch(new URL(path, base), { method, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json',...(requestId ? {'x-staff-request-id':requestId} : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(12_000) }) }
     catch { throw bankError('无法连接员工业务服务', 503, 'STAFF_UNREACHABLE') }
     let data
     try { data = await response.json() } catch { throw bankError('员工接口响应无效', 502) }
@@ -88,7 +88,12 @@ export function createStaffAgent({ baseUrl, sessions, publish, opsOnly = false, 
     const ticketPath = () => `/staff-api/tickets/${enc(text(a.ticketId, '工单编号'))}`
     const customerPath = reason => `/staff-api/customers/${enc(text(a.customerId, '客户编号'))}/profile?reason=${enc(reason)}`
     const filter = (key, values) => a[key] === undefined ? '' : choice(a[key], values, key)
+    const page = () => { const n=a.page??1; if(!Number.isSafeInteger(n)||n<1||n>100000) throw bankError('页码无效');return n }
     switch (tool.name) {
+      case 'staff_get_workbench':path='/staff-api/workbench';fields=[field('统计范围','当前全部业务工单与本人待办')];break
+      case 'staff_list_assignees':path='/staff-api/assignees';fields=[field('查询内容','当前角色可转派的有效业务员工')];break
+      case 'staff_list_im_notifications':path=`/staff-api/im/notifications?page=${page()}`;fields=[field('查询内容','本人任务提醒投递记录')];break
+      case 'staff_get_im_preferences':path='/staff-api/im/notification-preferences';fields=[field('查询内容','本人微信任务提醒设置')];break
       case 'staff_search_customers':
         path = `/staff-api/customers?keyword=${enc(text(a.keyword, '查询关键词'))}`
         fields = [field('查询关键词', a.keyword)]; break
@@ -96,7 +101,7 @@ export function createStaffAgent({ baseUrl, sessions, publish, opsOnly = false, 
         path = customerPath(text(a.reason, '查询理由'))
         fields = [field('客户编号', a.customerId), field('查询理由', a.reason)]; break
       case 'staff_list_tickets':
-        path = `/staff-api/tickets?status=${enc(filter('status', ticketStatuses))}&keyword=${enc(a.keyword ?? '')}`
+        path = `/staff-api/tickets?status=${enc(filter('status', ticketStatuses))}&keyword=${enc(a.keyword ?? '')}&assignee=${enc(a.assignee??'')}&page=${page()}&size=30`
         fields = [field('工单状态', a.status ?? '全部'), field('关键词', a.keyword || '全部')]; break
       case 'staff_get_ticket':
         path = ticketPath(); fields = [field('工单编号', a.ticketId)]; break
@@ -106,17 +111,48 @@ export function createStaffAgent({ baseUrl, sessions, publish, opsOnly = false, 
         body = { customerId: customer.customerId, reason: text(a.reason, '工单事由'), channel: choice(a.channel ?? 'web', ['app', 'im', 'web'], '渠道'), priority: choice(a.priority ?? 'normal', ['normal', 'high'], '优先级') }
         fields = [field('客户', `${customer.name} · ${customer.customerId}`), field('事由', body.reason), field('渠道', body.channel), field('优先级', body.priority)]; break
       }
+      case 'staff_assign_ticket': {
+        const ticket=await snapshot(ticketPath(),t=>({id:t.ticketId,status:t.status,assigneeId:t.assigneeId,version:t.version,updatedAt:t.updatedAt}))
+        if(ticket.status==='resolved') throw bankError('已解决工单不能转派',409)
+        const targets=await get('/staff-api/assignees'),target=targets.find(v=>v.id===a.assigneeId)
+        if(!target) throw bankError('请选择真实可转派的员工',403)
+        path=`${ticketPath()}/status`;method='PATCH';body={status:ticket.status,assigneeId:target.id,expectedVersion:ticket.version}
+        fields=[field('工单',a.ticketId),field('原负责人',ticket.assigneeId??'未分配'),field('新负责人',`${target.name} · ${roles[target.role]}`,true)];break
+      }
       case 'staff_update_ticket_status':
       case 'staff_post_ticket_message': {
-        const ticket = await snapshot(ticketPath(), t => ({ id: t.ticketId, customerId: t.customerId, status: t.status, assigneeId: t.assigneeId, updatedAt: t.updatedAt }))
+        const ticket = await snapshot(ticketPath(), t => ({ id: t.ticketId, customerId: t.customerId, status: t.status, assigneeId: t.assigneeId, version:t.version,updatedAt: t.updatedAt }))
         path = `${ticketPath()}/${tool.name === 'staff_post_ticket_message' ? 'messages' : 'status'}`
         method = tool.name === 'staff_post_ticket_message' ? 'POST' : 'PATCH'
-        body = method === 'POST' ? { text: text(a.text, '回复正文') } : { status: choice(a.status, ticketStatuses, '目标状态') }
+        body = method === 'POST' ? { text: text(a.text, '回复正文'),visibleToCustomer:a.visibleToCustomer??false,expectedVersion:ticket.version } : { status: choice(a.status, ticketStatuses, '目标状态'),expectedVersion:ticket.version }
         if (method === 'PATCH' && ticket.status === body.status) throw bankError('工单已经处于目标状态，不需要重复更新', 409)
-        fields = [field('工单', a.ticketId), field('客户', ticket.customerName ?? ticket.customerId), field('当前状态', ticket.status), field(method === 'POST' ? '回复正文' : '目标状态', body.text ?? body.status, true)]; break
+        fields = [field('工单', a.ticketId), field('客户', ticket.customerName ?? ticket.customerId), field('当前状态', ticket.status), field(method === 'POST' ? '回复正文' : '目标状态', body.text ?? body.status, true),...(method==='POST'?[field('对话可见范围','客户自建工单对话对客户可见；员工内部工单整单不公开'),field('额外客户端收件箱提醒',body.visibleToCustomer?'发送':'不发送（不代表私密留言）')]:[])]; break
+      }
+      case 'staff_create_approval': {
+        const customer=await get(customerPath('核对审批申请客户'))
+        const bizType=choice(a.bizType,['transfer','card_lock','limit_adjust','wealth_subscribe','other'],'审批类型')
+        const payload={customerId:customer.customerId,reason:text(a.reason,'申请事由')}
+        if(['card_lock','limit_adjust'].includes(bizType)) {
+          if(!customer.cards?.some(v=>v.id===a.cardId)) throw bankError('卡片不存在或不属于客户',404)
+          payload.cardId=a.cardId
+          if(bizType==='limit_adjust') payload.dailyLimit=choice(a.dailyLimit,[200000,500000,1000000,5000000],'限额')
+        }
+        if(bizType==='wealth_subscribe') {payload.productId=text(a.productId,'产品编号');if(!Number.isSafeInteger(a.amount)||a.amount<=0)throw bankError('申请金额必须为正整数分');payload.amount=a.amount}
+        body={customerId:customer.customerId,bizType,payload}
+        let transferFields=[]
+        if(bizType==='transfer') {
+          body.transferId=text(a.transferId,'在途指令编号')
+          const records=await get(`/staff-api/approvals?status=pending&transferId=${enc(body.transferId)}`)
+          const existing=records.find(v=>v.bizType==='transfer'&&v.payload?.transactionId===body.transferId&&v.payload?.customerId===customer.customerId)
+          if(!existing)throw bankError('未找到该客户有效的在途处置记录，请刷新后再申请',409)
+          const frozen=await snapshot(`/staff-api/approvals/${enc(existing.approvalId)}`)
+          if(frozen.status!=='pending'||!Number.isFinite(Date.parse(frozen.payload?.holdUntil))||Date.parse(frozen.payload.holdUntil)<=Date.now())throw bankError('在途处置窗口已结束',409)
+          transferFields=[field('原在途指令',body.transferId),field('冻结业务参数',JSON.stringify(sanitizeStaffResult(frozen.payload))),field('处置截止',frozen.payload.holdUntil)]
+        }
+        path='/staff-api/approvals';method='POST';fields=[field('客户',`${customer.name} · ${customer.customerId}`),field('业务类型',bizType),field('申请信息',JSON.stringify(payload)),...transferFields,field('结果','仅创建审批申请，不执行资金业务')];break
       }
       case 'staff_list_approvals':
-        path = `/staff-api/approvals?status=${enc(filter('status', ['pending', 'approved', 'rejected', 'settled', 'intercepted', 'recalled']))}`
+        path = `/staff-api/approvals?status=${enc(filter('status', ['pending', 'approved', 'rejected', 'settled', 'intercepted', 'recalled']))}&page=${page()}&size=30`
         fields = [field('处置状态', a.status ?? '全部')]; break
       case 'staff_get_approval':
         path = `/staff-api/approvals/${enc(text(a.approvalId, '处置编号'))}`
@@ -177,7 +213,7 @@ export function createStaffAgent({ baseUrl, sessions, publish, opsOnly = false, 
     const prepared = { challenge: { challengeId: challenge.challengeId, sessionId: challenge.sessionId, callId: challenge.callId, toolName: tool.name, kind: tool.kind,
       createdAt: Date.now(), expiresAt, fields: [field('操作员工', `${entry.staff.name} · ${roles[entry.staff.role]}`), ...fields], requiresCustomerVerification,
       consequence: tool.write ? '确认后提交员工业务后台，以实际回执为准。' : '查询结果会显示在本次员工对话中。' },
-      path, method, body, checks, fingerprint: digest(a), ownerId: entry.ownerId, role: entry.staff.role, activity: entry.activity, approved: false }
+      path, method, body, checks, fingerprint: digest(a), ownerId: entry.ownerId, role: entry.staff.role,authVersion:entry.staff.authVersion, activity: entry.activity, approved: false }
     const k = key(challenge)
     if (grants.has(k)) throw bankError('工具调用已存在确认', 409)
     prepared.timer = setTimeout(() => grants.delete(k), expiresAt - Date.now()); prepared.timer.unref()
@@ -190,7 +226,7 @@ export function createStaffAgent({ baseUrl, sessions, publish, opsOnly = false, 
     authorize(entry, challenge.toolName)
     const g = grants.get(key(challenge))
     if (!g || g.challenge.challengeId !== challenge.challengeId || g.challenge.expiresAt <= Date.now()) throw bankError('确认已过期', 404)
-    if (g.approved || g.activity !== entry.activity || g.role !== entry.staff.role || entry.stopping || entry.activity?.cancelled) throw bankError('本轮确认已处理或失效', 409)
+    if (g.approved || g.activity !== entry.activity || g.role !== entry.staff.role || g.authVersion!==entry.staff.authVersion || entry.stopping || entry.activity?.cancelled) throw bankError('本轮确认已处理或失效', 409)
     if (g.challenge.requiresCustomerVerification) {
       if (!verification || verification.result !== 'passed' || !['phone', 'sms', 'face'].includes(verification.method)) throw bankError('请由员工在确认卡中完成客户身份核验', 400, 'CUSTOMER_VERIFICATION_REQUIRED')
       g.body.verificationMethod = verification.method; g.body.verificationResult = 'passed'
@@ -211,14 +247,21 @@ export function createStaffAgent({ baseUrl, sessions, publish, opsOnly = false, 
     // Revalidate employee identity immediately before submitting after metadata lookups.
     await current(input.sessionId); authorize(entry, input.toolName)
     if (g.role !== entry.staff.role || entry.stopping || g.activity?.cancelled || g.activity !== entry.activity) throw bankError('员工角色或运行状态已变化，未提交操作', 409)
-    const data = await call(entry.bankToken, g.path, g.body, g.method)
+    if(g.authVersion!==entry.staff.authVersion) throw bankError('员工权限版本已变化，请重新确认',409)
+    const data = await call(entry.bankToken, g.path, g.body, g.method, tool.write ? digest({session:input.sessionId,call:input.callId}) : undefined)
     if (tool.write) publish(input.sessionId, { type: 'bank-updated' })
     let result = sanitizeStaffResult(data)
+    if (Array.isArray(result?.items) && result.items.length>30) result={...result,items:result.items.slice(0,30),returned:30,truncated:true,notice:'此页仅展示前30项，保留后台总数与页码；不是完整业务历史。'}
     if (Array.isArray(result)) result = { items: result.slice(0, 30), returned: Math.min(result.length, 30), truncated: result.length > 30, notice: '仅返回后台有限的最近记录；请缩小查询范围，不代表完整业务历史。' }
     else if (tool.name === 'staff_get_ticket' && result.messages) result.messages = result.messages.slice(-30)
     return { dataSource: 'http', audience: 'staff', result }
   }
   function forgetSession(sessionId) { for (const g of grants.values()) if (g.challenge.sessionId === sessionId) forget(g.challenge) }
   function close() { for (const g of grants.values()) clearTimeout(g.timer); grants.clear() }
-  return { authenticate, owned, current, context, prepare, approve, execute, forget, forgetSession, close }
+  async function approveRoutineQuery(challenge) {
+    const g=grants.get(key(challenge))
+    if(!g || g.challenge.challengeId!==challenge.challengeId || g.challenge.toolName!==challenge.toolName || g.method!=='GET' || g.body!==undefined || g.challenge.requiresCustomerVerification || !STAFF_TOOLS.some(v=>v.name===challenge.toolName&&!v.write&&v.roles.some(r=>['csr','supervisor'].includes(r)))) return false
+    await approve(challenge);return true
+  }
+  return { authenticate, owned, current, context, prepare, approve, approveRoutineQuery, execute, forget, forgetSession, close }
 }

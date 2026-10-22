@@ -42,6 +42,9 @@ reference/
 
 # 独立本地 PostgreSQL 测试容器的连接配置与随机测试密码
 /.generated/local-postgres/
+/.generated/staff-im-test-runtime/
+/.generated/staff-im-checks/
+/.generated/backend-memory-lab/
 
 # 安卓客户端（android/）
 # local.properties 写的是本机 SDK 路径（这台机器的 SDK 在 /data 那个盘上），不进仓库

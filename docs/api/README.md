@@ -1,6 +1,7 @@
 # 招财猫银行 · 客户端接口文档（HTTP）
 
 微信、企业微信机器人与银行助手接入见 [IM 接入说明](im-agent.md)。
+客服与主管微信机器人、客户任务自动提醒见 [工作人员 IM](staff-im.md)。
 
 本目录是网页客户端（`app/`）与银行后端之间的**接口契约**说明。项目前后端分离：
 客户端只依赖 `app/src/api/contract.ts` 的 `BankApi` 与 `routes` 路径表，
@@ -20,6 +21,8 @@
 再更新本目录与根 `README.md` 的接口清单；`node tools/check-contract.mjs`、`node tools/check-routes.mjs` 用于校验一致性。
 
 ## 基本约定
+
+后端内存治理保持 HTTP 合约和单账户模型不变；事务投影、增量历史写回、缓存回收与本地容量验证见 [内存维护说明](../backend-memory-20261022.md)。
 
 | 项 | 约定 |
 | --- | --- |

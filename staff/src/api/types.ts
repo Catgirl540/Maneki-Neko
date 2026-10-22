@@ -22,6 +22,7 @@ export interface OperationsOverview {
 }
 
 export interface StaffUser {
+  authVersion?: number
   id: string
   name: string
   role: StaffRole
@@ -42,6 +43,7 @@ export interface TranscriptEntry {
 }
 
 export interface Ticket {
+  version?: number
   ticketId: string
   customerId: string
   /** 展示用客户名（可选，拿不到就回落显示 customerId） */

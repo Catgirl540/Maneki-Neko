@@ -7,7 +7,7 @@ import { createCustomerSupportApi } from './support-api.mjs'
 import { createSecurityGateway } from './security-gateway.mjs'
 import { createOperations } from './operations.mjs'
 process.env.BANK_AUTO_MIGRATE = 'true'
-const bank = await openBankDatabase(process.env.BANK_DATABASE_URL, { autoMigrate: true })
+const bank = await openBankDatabase(process.env.BANK_DATABASE_URL, { autoMigrate: true, profileProjection: 'scoped', max: 2 })
 try {
   await ensureStaffSchema(bank.db)
   const auth = await createCustomerAuth(bank.db)

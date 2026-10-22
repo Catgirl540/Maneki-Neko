@@ -80,8 +80,13 @@
       - staff_get_transfer_threshold
       - staff_set_transfer_threshold
       - staff_audit_logs
-      - staff_operations_overview
-    secretEnv: [OPENROUTER_API_KEY, LOCAL_API_KEY, LUCKYCAT_INTERNAL_TOKEN]
+      - staff_get_workbench
+      - staff_list_assignees
+      - staff_assign_ticket
+      - staff_create_approval
+      - staff_list_im_notifications
+      - staff_get_im_preferences
+    secretEnv: [OPENROUTER_API_KEY, LOCAL_API_KEY, LUCKYCAT_INTERNAL_TOKEN, LUCKYCAT_STAFF_IM_SERVICE_KEY, LUCKYCAT_STAFF_IM_DATA_KEY, LUCKYCAT_SESSION_DATA_KEY]
     redactTelemetry: true
 - id: luckycat-ask
   config:

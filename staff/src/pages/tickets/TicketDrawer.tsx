@@ -8,9 +8,7 @@ import { TICKET_STATUS_LABEL, formatTime } from './labels'
  * 状态流转严格照 §4.1 状态机；非法流转后端会 400，这里只把文案透出来。
  */
 
-// 演示用主管账号（ensureStaffSchema 预置）。转派接口 Phase 1 后端步骤接通后
-// 这里改成从员工列表选人；demo 先写死一个转派对象，保证「转给主管」是真改负责人。
-const DEMO_SUPERVISOR_ID = 'staff_li'
+// 转派对象来自后端当前角色允许的员工目录，提交时再次校验工单版本。
 
 interface Action {
   label: string
@@ -26,25 +24,25 @@ function actionsFor(status: TicketStatus): Action[] {
       return [
         { label: '接手', to: 'processing' },
         { label: '挂起', to: 'suspended', danger: true },
-        { label: '转给主管', to: status, reassignTo: DEMO_SUPERVISOR_ID },
+        { label: '转派', to: status, reassignTo: 'select' },
       ]
     case 'processing':
       return [
         { label: '等客户', to: 'waiting' },
         { label: '解决', to: 'resolved' },
         { label: '挂起', to: 'suspended', danger: true },
-        { label: '转给主管', to: status, reassignTo: DEMO_SUPERVISOR_ID },
+        { label: '转派', to: status, reassignTo: 'select' },
       ]
     case 'waiting':
       return [
         { label: '继续处理', to: 'processing' },
         { label: '解决', to: 'resolved' },
-        { label: '转给主管', to: status, reassignTo: DEMO_SUPERVISOR_ID },
+        { label: '转派', to: status, reassignTo: 'select' },
       ]
     case 'suspended':
       return [
         { label: '恢复处理', to: 'processing' },
-        { label: '转给主管', to: status, reassignTo: DEMO_SUPERVISOR_ID },
+        { label: '转派', to: status, reassignTo: 'select' },
       ]
     case 'resolved':
       return [] // 终态，不可再改（§4.1）
@@ -71,12 +69,15 @@ export function TicketDrawer({
   // 注意：客户自己开的单，对话流本来就整条对客户公开；这个勾只是再推一条提醒。
   // 员工主动开的内部单客户整单看不到，这个勾是唯一能触达客户的通道。
   const [visibleToCustomer, setVisibleToCustomer] = useState(false)
+  const [assignees,setAssignees]=useState<import('@/api').StaffUser[]>([])
+  const [assigneeId,setAssigneeId]=useState('')
 
   const load = useCallback(async () => {
     if (loading.current) return
     loading.current = true
     try {
       setTicket(await api.getTicket(ticketId))
+      setAssignees(await api.listAssignees())
       setLoadError(null)
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : '工单加载失败')
@@ -106,12 +107,14 @@ export function TicketDrawer({
   }
 
   function applyAction(action: Action) {
+    if(action.reassignTo && !assigneeId) {setError('请先选择转派接收人');return}
     return run(() =>
       api.updateTicketStatus(
         ticketId,
         action.to,
         // 接手时负责人 = 当前员工；转派时 = 目标人
-        action.reassignTo ?? (action.to === 'processing' ? user?.id : undefined),
+        action.reassignTo ? assigneeId : undefined,
+        ticket?.version,
       ),
     )
   }
@@ -175,6 +178,7 @@ export function TicketDrawer({
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-ink-mute)]">
                 <span>渠道：{ticket.channel}</span>
                 <span>负责人：{ticket.assigneeId ?? '未接手'}</span>
+                <label>转派接收人<select value={assigneeId} onChange={event=>setAssigneeId(event.target.value)}><option value="">请选择</option>{assignees.filter(person=>person.id!==user?.id).map(person=><option key={person.id} value={person.id}>{person.name} · {person.role==='supervisor'?'主管':'客服'}</option>)}</select></label>
                 {ticket.transferId && (
                   <span className="font-mono">转账 {ticket.transferId}</span>
                 )}

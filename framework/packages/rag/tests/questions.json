@@ -400,5 +400,6 @@
   { "query": "重复扣款和金额突增候选能认定欺诈吗", "source": "kb-analysis#transaction-review", "critical": true },
   { "query": "查指定月份的支出环比，上月没花钱有基数吗", "source": "kb-analysis#spending", "critical": true },
   { "query": "本月支出与上月全月相比是等天数环比吗", "source": "kb-analysis#spending", "critical": true },
-  { "query": "撤回美元在途转账会释放其他指令冻结吗", "source": "kb-transfers#recall", "critical": true }
+  { "query": "撤回美元在途转账会释放其他指令冻结吗", "source": "kb-transfers#recall", "critical": true },
+  { "query": "客户提交任务后会通过微信提醒工作人员吗", "source": "kb-assistant#staff-im-notification", "critical": true }
 ]

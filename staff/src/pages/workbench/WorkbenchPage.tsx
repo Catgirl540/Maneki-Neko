@@ -13,22 +13,22 @@ export function WorkbenchPage() {
   const { user } = useSession()
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loaded, setLoaded] = useState(false)
+  const [summary,setSummary]=useState<Awaited<ReturnType<typeof api.getWorkbench>>|null>(null)
   const [error, setError] = useState<string | null>(null)
   const refresh = useCallback(async () => {
-    try { setTickets(await api.listTickets()); setLoaded(true); setError(null) }
+    try { const [items,stats]=await Promise.all([api.listTickets(),api.getWorkbench()]);setTickets(items);setSummary(stats); setLoaded(true); setError(null) }
     catch (e) { setError(e instanceof ApiError ? e.message : '工单列表加载失败，请稍后重试') }
   }, [])
   useEffect(() => { void refresh(); const timer = setInterval(refresh, 3000); return () => clearInterval(timer) }, [refresh])
   const pending = tickets.filter(t => t.status === 'open')
-  const mine = tickets.filter(t => (t.status === 'processing' || t.status === 'waiting') && t.assigneeId === user?.id)
   const now = useStaffClock()
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hourCycle: 'h23' }).format(now))
   const greeting = hour < 12 ? '上午好' : hour < 18 ? '下午好' : '晚上好'
   const metrics = [
-    { label: '待处理工单', value: pending.length, note: `其中 ${pending.filter(t => t.priority !== 'normal').length} 项优先`, to: '/tickets?status=open', Icon: ReceiptIcon },
-    { label: '我的待办', value: mine.length, note: '由我负责的进行中工单', to: '/tickets?assignee=me', Icon: UserIcon },
-    { label: '等待客户', value: tickets.filter(t => t.status === 'waiting').length, note: '等待客户补充信息', to: '/tickets?status=waiting', Icon: ChatIcon },
-    { label: '已解决', value: tickets.filter(t => t.status === 'resolved').length, note: '当前工单列表中的已解决项', to: '/tickets?status=resolved', Icon: CheckIcon },
+    { label: '待处理工单', value: summary?.pending??0, note: '全部待处理工单', to: '/tickets?status=open', Icon: ReceiptIcon },
+    { label: '我的待办', value: summary?.mine??0, note: '由我负责的进行中工单', to: '/tickets?assignee=me', Icon: UserIcon },
+    { label: '等待客户', value: summary?.waiting??0, note: '等待客户补充信息', to: '/tickets?status=waiting', Icon: ChatIcon },
+    { label: '已解决', value: summary?.resolved??0, note: '全部已解决工单', to: '/tickets?status=resolved', Icon: CheckIcon },
   ]
 
   return <div className="staff-page">

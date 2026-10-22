@@ -29,13 +29,18 @@ export async function createImChannels({ directory, credentials, harness, vendor
     group: api.createAccessPolicyScope(),
   }) }
   const wx = weixinApi ?? api.createWeixinApi()
+  const weixinStates = new Map()
   let freshLogin = false, starting = false
   const wxConfig = await new api.WeixinConfigStore(join(directory, 'weixin.json')).load()
   const controllers = {
     weixin: new api.WeixinController({
       api: { ...wx, beginLogin: options => wx.beginLogin({ ...options, ...(freshLogin ? { localTokens: [] } : {}) }) }, credentials, logger,
       configStore: wxConfig,
-      createRuntime: async ({ botId, config, token }) => new api.WeixinRuntime({ api: wx, config, token, logger, accessPolicy, harness: harness('weixin', botId), state: await new api.WeixinStateStore(join(directory, `${botId}-state.json`)).load() }),
+      createRuntime: async ({ botId, config, token }) => {
+        const state = await new api.WeixinStateStore(join(directory, `${botId}-state.json`)).load()
+        weixinStates.set(botId, state)
+        return new api.WeixinRuntime({ api: wx, config, token, logger, accessPolicy, harness: harness('weixin', botId), state })
+      },
     }),
     wecom: new api.WecomController({
       qrAuth: wecomQr ?? new api.WecomQrAuth(), credentials, logger,
@@ -75,6 +80,8 @@ export async function createImChannels({ directory, credentials, harness, vendor
     remove: (channel, id) => controller(channel).deleteBot(id),
     deliver: (route, text, options) => controller(route.channel).sendProactiveText(route.botId, { kind: 'user', route: route.channel === 'weixin' ? { toUserId: route.key.slice(4) } : { chatId: route.key.slice(7) } }, text, options),
     reminderReady: route => route.channel === 'weixin' && controllers.weixin.status().bots.some(item => item.botId === route.botId && item.connected),
+    deliveryReady: route => route.channel === 'weixin' && controllers.weixin.status().bots.some(item => item.botId === route.botId && item.connected)
+      && Boolean(weixinStates.get(route.botId)?.contextTokenFor?.(route.key.slice(4))),
     close: () => Promise.allSettled(Object.values(controllers).map(item => item.close())),
   }
 }

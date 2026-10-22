@@ -67,6 +67,67 @@ test('repeated snapshots keep sequence identity and post balance deltas once', o
   assert.equal((await reconcileDatabase(bank.db)).ok, true)
 }))
 
+test('scoped projection loads only requested customers and preserves unrelated bindings and historical rows', options, () => scratch(async (bank, schema) => {
+  const profiles = [sample(), sample('u2', '13000000002'), sample('u3', '13000000003')]
+  bank.storage.setItemsAtomically([[CURRENT_KEY, JSON.stringify(profiles[0])], [PROFILES_KEY, JSON.stringify(Object.fromEntries(profiles.map(p => [p.user.phone, p])))]] )
+  await bank.storage.flush()
+  const before = (await bank.db.query('SELECT owner_id,id,seq,ordinal,updated_at FROM bank_transactions ORDER BY owner_id,id')).rows
+  const scoped = await openBankDatabase(url, { schema, autoMigrate: false, profileProjection: 'scoped' })
+  try {
+    assert.throws(() => scoped.storage.setValuesAtomically([[CURRENT_KEY, profiles[0]]]), /unit of work/)
+    assert.throws(() => scoped.storage.removeItem('outside-request'), /unit of work/)
+    await scoped.storage.beginUnitOfWork()
+    assert.equal(Object.keys(scoped.storage.getValue(PROFILES_KEY)).length, 1)
+    const target = await scoped.storage.findProfileByUserId('u2')
+    assert.equal(Object.keys(scoped.storage.getValue(PROFILES_KEY)).length, 2)
+    target.accounts[0].balance -= 100; target.accounts[0].available -= 100
+    scoped.storage.setValuesAtomically([[PROFILES_KEY, { [target.user.phone]: target }]])
+    await scoped.storage.commitUnitOfWork()
+    assert.deepEqual((await bank.db.query('SELECT owner_id,id,seq,ordinal,updated_at FROM bank_transactions ORDER BY owner_id,id')).rows, before, 'balance-only writes must never rewrite transaction history')
+    assert.equal((await bank.db.query('SELECT count(*) n FROM profile_bindings WHERE storage_key=$1', [PROFILES_KEY])).rows[0].n, 3)
+    await scoped.storage.beginUnitOfWork()
+    const current = await scoped.storage.findProfileByUserId('u2')
+    current.transactions.unshift({ ...current.transactions[0], id: 'new', createdAt: '2026-02-01T00:00:00.000Z' })
+    scoped.storage.setValuesAtomically([[PROFILES_KEY, { [current.user.phone]: current }]])
+    await scoped.storage.commitUnitOfWork()
+    assert.deepEqual((await bank.db.query("SELECT owner_id,id,seq,ordinal,updated_at FROM bank_transactions WHERE id='t1' ORDER BY owner_id,id")).rows, before, 'prepending one transaction must not shift or rewrite older rows')
+    await scoped.storage.beginUnitOfWork()
+    const reread = await scoped.storage.findProfileByUserId('u2')
+    assert.deepEqual(reread.transactions.map(tx => tx.id), ['new', 't1'])
+    reread.user.phone = '13000000009'
+    scoped.storage.setValuesAtomically([[PROFILES_KEY, { [reread.user.phone]: reread }]])
+    await scoped.storage.commitUnitOfWork()
+    assert.equal((await bank.db.query('SELECT count(*) n FROM profile_bindings WHERE storage_key=$1', [PROFILES_KEY])).rows[0].n, 3)
+    assert.equal((await bank.db.query('SELECT member_key FROM profile_bindings WHERE storage_key=$1 AND owner_id=$2', [PROFILES_KEY, 'u2'])).rows[0].member_key, '13000000009')
+    assert.equal((await reconcileDatabase(bank.db)).ok, true)
+    scoped.storage.releaseProjection()
+    assert.equal(Object.keys(scoped.storage.getValue(PROFILES_KEY)).length, 0)
+  } finally { await scoped.close() }
+}))
+
+test('scoped projection rolls back financial identity changes and refreshes after cross-process locking', options, () => scratch(async (bank, schema) => {
+  await seed(bank)
+  const first = await openBankDatabase(url, { schema, autoMigrate: false, profileProjection: 'scoped' })
+  const second = await openBankDatabase(url, { schema, autoMigrate: false, profileProjection: 'scoped' })
+  try {
+    await first.storage.beginUnitOfWork()
+    const invalid = first.storage.getValue(CURRENT_KEY)
+    invalid.transactions[0].amount += 1
+    first.storage.setValuesAtomically([[CURRENT_KEY, invalid]])
+    await assert.rejects(first.storage.commitUnitOfWork())
+    assert.equal(first.storage.getValue(CURRENT_KEY).transactions[0].amount, 1_000)
+    await first.storage.beginUnitOfWork()
+    const waiting = second.storage.beginUnitOfWork()
+    const original = first.storage.getValue(CURRENT_KEY)
+    original.accounts[0].balance -= 100; original.accounts[0].available -= 100
+    first.storage.setValuesAtomically([[CURRENT_KEY, original]])
+    await first.storage.commitUnitOfWork(); await waiting
+    assert.equal(second.storage.getValue(CURRENT_KEY).accounts[0].balance, 99_900)
+    await second.storage.rollbackUnitOfWork()
+    assert.equal((await reconcileDatabase(bank.db)).ok, true)
+  } finally { await first.close(); await second.close() }
+}))
+
 test('single funding migration preserves frozen money, original transaction identity and retired ledger history across restart', options, () => scratch(async (bank, schema) => {
   const profile = sample()
   profile.accounts.push({ ...profile.accounts[0], id: 'old-cny', accountNo: '8820990000000002', balance: 25_000, available: 20_000 },

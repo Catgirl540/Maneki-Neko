@@ -412,7 +412,7 @@ export function createBankBusinessApi(options) {
             if (!/^\d{11}$/.test(phone)) {
                 throw new ApiError('请输入 11 位手机号', 400, 'INVALID_PHONE');
             }
-            const target = findProfileByPhone(phone);
+            const target = await findProfileByPhone(phone);
             if (target === null || !verifyPassword(password, target.passwordDigest)) {
                 throw new ApiError('手机号或密码不正确', 401, 'BAD_CREDENTIALS');
             }
@@ -440,7 +440,7 @@ export function createBankBusinessApi(options) {
             const phone = digitsOnly(req.phone);
             if (!/^1[3-9]\d{9}$/.test(phone))
                 throw new ApiError('请输入 11 位手机号', 400, 'INVALID_PHONE');
-            if (findProfileByPhone(phone) !== null)
+            if (await findProfileByPhone(phone) !== null)
                 throw new ApiError('该手机号已注册', 409, 'PHONE_EXISTS');
             if (req.password.length < 6 || req.password.length > 20) {
                 throw new ApiError('登录密码需为 6–20 个字符', 400, 'WEAK_PASSWORD');
@@ -462,7 +462,7 @@ export function createBankBusinessApi(options) {
             let newAccountNo;
             do {
                 newAccountNo = `882000${String(Math.floor(1e12 + Math.random() * 9e12))}`;
-            } while (findRecipientByNumber(newAccountNo));
+            } while (await findRecipientByNumber(newAccountNo));
             const account = {
                 id: `acc_${Date.now()}`,
                 kind: 'savings',
@@ -731,7 +731,7 @@ export function createBankBusinessApi(options) {
         async resolveFps(idType, fpsId) {
             await delay(620);
             const value = (fpsId ?? '').replace(/\s/g, '');
-            const hit = lookupFpsRegistration(idType, value);
+            const hit = await lookupFpsRegistration(idType, value);
             if (!hit) {
                 return {
                     registered: false,
@@ -758,7 +758,7 @@ export function createBankBusinessApi(options) {
             const id = req.id.replace(/\s/g, '').toLowerCase();
             if ((req.idType === 'mobile' && !/^[4-9]\d{7}$/.test(id)) || (req.idType === 'fpsid' && !/^\d{7}$/.test(id)))
                 throw new ApiError('FPS 标识格式无效', 400, 'INVALID_FPS_ID');
-            if (lookupFpsRegistration(req.idType, id))
+            if (await lookupFpsRegistration(req.idType, id))
                 throw new ApiError('该标识已登记', 409, 'FPS_DUPLICATE');
             verifyPayPassword(req.paymentPassword);
             db.fpsRegistrations.push({ idType: req.idType, id, accountId: account.id, region: 'HK', currency: 'HKD', registeredAt: new Date().toISOString() });
@@ -807,7 +807,7 @@ export function createBankBusinessApi(options) {
             if (error)
                 throw new ApiError(error, 400, 'INVALID_ACCOUNT_NO');
             if (req.bankCode === 'LCB' && req.bankRegion === 'CN') {
-                const found = findRecipientByNumber(digits);
+                const found = await findRecipientByNumber(digits);
                 if (!found)
                     throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND');
                 if (req.payeeName?.trim() && req.payeeName.trim() !== found.profile.user.name) {
@@ -856,7 +856,7 @@ export function createBankBusinessApi(options) {
                 const err = validateFpsValue(method, req.fpsId ?? '');
                 if (err)
                     throw new ApiError(err, 400, 'INVALID_FPS_ID');
-                const registered = lookupFpsRegistration(method, req.fpsId ?? '');
+                const registered = await lookupFpsRegistration(method, req.fpsId ?? '');
                 if (!registered)
                     throw new ApiError('该标识未登记转数快', 400, 'FPS_NOT_REGISTERED');
                 if (registered.bankCode !== req.payeeBankCode || req.payeeBankRegion !== 'HK' || hideMiddle(registered.name) !== req.payeeName)
@@ -879,7 +879,7 @@ export function createBankBusinessApi(options) {
         const quotedFx = buildFxQuote(db, account.currency, req.payeeCurrency ?? account.currency, req.amount);
         assertTransferConfirmation(req, fee, account.currency, quotedFx, options?.acceptedQuote);
         if (req.confirmedRecipient) {
-            const registered = req.fpsMethod && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod, req.fpsId ?? '') : undefined;
+            const registered = req.fpsMethod && req.fpsMethod !== 'account' ? await lookupFpsRegistration(req.fpsMethod, req.fpsId ?? '') : undefined;
             if (!isFps || req.fpsMethod === 'account' || !registered ||
                 hideMiddle(registered.name) !== req.confirmedRecipient.name || registered.bankCode !== req.confirmedRecipient.bankCode ||
                 req.confirmedRecipient.bankRegion !== 'HK' || req.payeeName !== req.confirmedRecipient.name ||
@@ -898,12 +898,12 @@ export function createBankBusinessApi(options) {
         // 不会出现「到点没钱」这种用户完全控制不了的失败。
         // 窗口内用户可撤销、员工可拦截；都没人动 → 自动到账。
         // 到账走 submitTransfer 同一条业务路（删占位后重提交），不复制业务规则。
-        const fpsRecipient = isFps && req.fpsMethod !== 'account' ? lookupFpsRegistration(req.fpsMethod ?? 'mobile', req.fpsId ?? '') : undefined;
-        const fpsProfile = fpsRecipient?.customerId ? findProfileByUserId(fpsRecipient.customerId) : null;
+        const fpsRecipient = isFps && req.fpsMethod !== 'account' ? await lookupFpsRegistration(req.fpsMethod ?? 'mobile', req.fpsId ?? '') : undefined;
+        const fpsProfile = fpsRecipient?.customerId ? await findProfileByUserId(fpsRecipient.customerId) : null;
         const fpsBalance = fpsProfile && fpsRecipient?.balanceId ? findBalance(fpsProfile, fpsRecipient.balanceId) : null;
         if (fpsRecipient?.customerId && (!fpsProfile || !fpsBalance))
             throw new ApiError('收款币种余额不可用', 409, 'RECIPIENT_NOT_FOUND');
-        const recipient = fpsProfile && fpsBalance ? { profile: fpsProfile, account: fpsBalance, card: null } : !isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN' ? findRecipientByNumber(req.payeeAccountNo ?? '') : null;
+        const recipient = fpsProfile && fpsBalance ? { profile: fpsProfile, account: fpsBalance, card: null } : !isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' && req.payeeBankRegion === 'CN' ? await findRecipientByNumber(req.payeeAccountNo ?? '') : null;
         if (!isFps && req.scope === 'domestic' && req.payeeBankCode === 'LCB' &&
             req.payeeBankRegion === 'CN' && !recipient) {
             throw new ApiError('本行未找到该收款账户或已激活银行卡', 404, 'RECIPIENT_NOT_FOUND');
@@ -1625,7 +1625,7 @@ async getSecurityOverview() {
             if (next === db.user.phone) {
                 throw new ApiError('新手机号与当前登录手机号相同', 400, 'SAME_PHONE');
             }
-            if (findProfileByPhone(next) !== null) {
+            if (await findProfileByPhone(next) !== null) {
                 throw new ApiError('该手机号已注册', 409, 'PHONE_EXISTS');
             }
             // 换号是高危操作：先核身

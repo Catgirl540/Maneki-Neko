@@ -26,6 +26,7 @@ await sessionDb.query(await readFile(new URL('../framework/bridge/session-schema
 const sessionKey = randomBytes(32).toString('base64')
 const agentPort = await free(), providerPort = await free()
 const processes=[]; let agentLog='';let modelRequests=[];let fixtures={};const counters={}; let vite, browser
+let initialStreamObserved = false
 const provider=http(async(req,res)=>{
  let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body);modelRequests.push(data)
  const content=JSON.stringify(data.messages); const which=Object.keys(fixtures).find(x=>content.includes(x))
@@ -40,8 +41,16 @@ const provider=http(async(req,res)=>{
  res.writeHead(200,{'content-type':'text/event-stream'})
  const send=(delta,finish_reason=null)=>res.write(`data: ${JSON.stringify({id:'chatcmpl-test',object:'chat.completion.chunk',created:1,model:'luckycat-test',choices:[{index:0,delta,finish_reason}]})}\n\n`)
  const useTool = first && !!tool.name
- send({role:'assistant',...(useTool?{tool_calls:[{index:0,id:`call_${which}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]}:{content:'已根据账户服务返回的结果'})})
- if (!useTool) { await new Promise(r => setTimeout(r, 100)); send({content:'完成处理。'}) }
+ send({role:'assistant'})
+ send(useTool?{tool_calls:[{index:0,id:`call_${which}`,type:'function',function:{name:tool.name,arguments:JSON.stringify(tool.args)}}]}:{content:'已根据账户服务返回的结果'})
+ if (!useTool) {
+   // Keep this fixture open until the real client observes its first streamed
+   // update. A fixed 100ms delay races the event loop on a busy/limited host.
+   if (which === 'fixture_balance' && !initialStreamObserved) {
+     for (let n = 0; n < 100 && !initialStreamObserved; n++) await new Promise(r => setTimeout(r, 50))
+   } else await new Promise(r => setTimeout(r, 100))
+   send({content:'完成处理。'})
+ }
  send({},useTool?'tool_calls':'stop');res.end('data: [DONE]\n\n')
 }); await new Promise(r=>provider.listen(providerPort,'127.0.0.1',r))
 const start=(file,env)=>{const c=spawn(process.execPath,[file],{cwd:root,env:{...process.env,...env},stdio:['ignore','pipe','pipe']});processes.push(c);c.stdout.on('data',x=>agentLog+=x);c.stderr.on('data',x=>agentLog+=x);return c}
@@ -64,7 +73,7 @@ try{
  console.log('PASS Agent HTTP 登录与会话归属、内部通道访问限制')
  const events=[];const c=new AbortController();controllers.push(c)
  const stream=await fetch(agent+`/agent-api/sessions/${session}/stream`,{headers:{authorization:`Bearer ${a.token}`},signal:c.signal});const reader=stream.body.getReader();let buffer=''
- const pump=(async()=>{try{for(;;){const {done,value}=await reader.read();if(done)break;buffer+=new TextDecoder().decode(value);let i;while((i=buffer.indexOf('\n\n'))>=0){const block=buffer.slice(0,i);buffer=buffer.slice(i+2);const data=block.split('\n').find(x=>x.startsWith('data:'));if(data)events.push(JSON.parse(data.slice(5)))}}}catch(e){if(!c.signal.aborted)throw e}})()
+ const pump=(async()=>{try{for(;;){const {done,value}=await reader.read();if(done)break;buffer+=new TextDecoder().decode(value);let i;while((i=buffer.indexOf('\n\n'))>=0){const block=buffer.slice(0,i);buffer=buffer.slice(i+2);const data=block.split('\n').find(x=>x.startsWith('data:'));if(data){const event=JSON.parse(data.slice(5));events.push(event);if(event.type==='assistant-update'&&event.text)initialStreamObserved=true}}}}catch(e){if(!c.signal.aborted)throw e}})()
  const wait=async(fn)=>{for(let n=0;n<500;n++){const e=events.find(fn);if(e)return e;if(events.some(e=>e.type==='error'))throw new Error(JSON.stringify(events)+'\n'+agentLog);await new Promise(r=>setTimeout(r,100))}throw new Error('timed out '+JSON.stringify(events)+'\n'+agentLog)}
  await api(agent,`/agent-api/sessions/${session}/messages`,a.token,{text:'fixture_balance'})
  const challenge=(await wait(e=>e.type==='consent')).challenge
