@@ -19,13 +19,13 @@ async function sha256(file) {
 }
 async function check(data) {
   assert.equal(data.schemaVersion, 1, '元数据版本错误')
-  assert.equal(data.packageName, 'cn.waveflow.luckycat', '不是招财猫安装包')
+  assert.equal(data.packageName, 'com.moneymeow.bank', '不是招财猫安装包')
   assert.match(data.versionName, /^[\w.+-]{1,40}$/)
   assert(Number.isSafeInteger(data.versionCode) && data.versionCode >= 1)
   assert(Number.isSafeInteger(data.minSdk) && data.minSdk >= 26)
   assert.equal(typeof data.debuggable, 'boolean')
   assert(data.releaseNotes === undefined || (typeof data.releaseNotes === 'string' && data.releaseNotes.length <= 2000), '更新说明太长或格式不正确')
-  assert(Array.isArray(data.abis) && data.abis.length && data.abis.every(abi => ['arm64-v8a', 'armeabi-v7a', 'x86_64'].includes(abi)))
+  assert(Array.isArray(data.abis) && data.abis.length && data.abis.every(abi => ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'].includes(abi)))
   assert.match(data.fileName, /^luckycat-android-[a-f0-9]{12}\.apk$/)
   assert.match(data.sha256, /^[a-f0-9]{64}$/)
   assert.equal(data.fileName, `luckycat-android-${data.sha256.slice(0, 12)}.apk`)
@@ -75,9 +75,13 @@ try {
       bytes: (await stat(source)).size, sha256: hash,
       debuggable: /^application-debuggable/m.test(badging),
       releaseNotes,
-      abis: [...(badging.match(/^native-code: (.+)$/m)?.[1] ?? '').matchAll(/'([^']+)'/g)].map(match => match[1]),
+      // 无 native-code 的 APK 是纯 Kotlin/Java 包，跑在全部支持的 ABI 上
+      abis: (() => {
+        const native = [...(badging.match(/^native-code: (.+)$/m)?.[1] ?? '').matchAll(/'([^']+)'/g)].map(match => match[1])
+        return native.length ? native : ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+      })(),
     }
-    assert.equal(data.packageName, 'cn.waveflow.luckycat', '拒绝发布其他应用的安装包')
+    assert.equal(data.packageName, 'com.moneymeow.bank', '拒绝发布其他应用的安装包')
     await mkdir(destination, { recursive: true })
     const target = path.join(destination, data.fileName)
     await copyFile(source, target + '.tmp')

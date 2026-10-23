@@ -15,7 +15,7 @@ export interface AndroidDownload {
 export function parseAndroidDownload(value: unknown): AndroidDownload {
   if (!value || typeof value !== 'object') throw new Error('安装包信息暂不可用')
   const data = value as Record<string, unknown>
-  if (data.schemaVersion !== 1 || data.packageName !== 'cn.waveflow.luckycat'
+  if (data.schemaVersion !== 1 || data.packageName !== 'com.moneymeow.bank'
     || typeof data.fileName !== 'string' || !/^luckycat-android-[a-f0-9]{12}\.apk$/.test(data.fileName)
     || typeof data.versionName !== 'string' || !/^[\w.+-]{1,40}$/.test(data.versionName)
     || !Number.isSafeInteger(data.versionCode) || Number(data.versionCode) < 1
@@ -25,7 +25,7 @@ export function parseAndroidDownload(value: unknown): AndroidDownload {
     || !data.fileName.includes(data.sha256.slice(0, 12))
     || typeof data.debuggable !== 'boolean'
     || !Array.isArray(data.abis) || !data.abis.length
-    || !data.abis.every(abi => ['arm64-v8a', 'armeabi-v7a', 'x86_64'].includes(abi))) {
+    || !data.abis.every(abi => ['arm64-v8a', 'armeabi-v7a', 'x86', 'x86_64'].includes(abi))) {
     throw new Error('安装包信息暂不可用')
   }
   return data as unknown as AndroidDownload

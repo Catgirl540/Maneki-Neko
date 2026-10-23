@@ -31,7 +31,7 @@ try {
   assert.equal(manifest.response.status, 200, '安装包元数据不可达')
   assert.match(manifest.type, /application\/json/, '安装包元数据返回了网页')
   const android = JSON.parse(manifest.text)
-  assert.equal(android.packageName, 'cn.waveflow.luckycat')
+  assert.equal(android.packageName, 'com.moneymeow.bank')
   assert.match(android.sha256, /^[a-f0-9]{64}$/)
   assert.equal(android.fileName, `luckycat-android-${android.sha256.slice(0, 12)}.apk`)
   const apk = await fetch(new URL(`downloads/${android.fileName}`, base), {
