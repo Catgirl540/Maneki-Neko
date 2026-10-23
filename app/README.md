@@ -183,8 +183,10 @@ Agent 健康、语音能力和会话恢复探测允许 12 秒公网响应，并�
 
 ```bash
 # 首次发布或更新安卓版时，先构建 APK 并准备官网静态下载文件
-cd mobile
-flutter build apk --debug --dart-define-from-file=config/public-server.json
+cd android-app
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
+  ~/.gradle/wrapper/dists/gradle-8.14-all/8mguqc37c200i71ledpgw8n5m/gradle-8.14/bin/gradle \
+  :app:assembleDebug
 cd ..
 npm --prefix app run prepare:android
 npm --prefix app run build:server
@@ -194,7 +196,7 @@ npm --prefix app run build:server
 
 `tools/package-android-download.mjs` 从 APK 读取版本、包名、最低系统与架构，验证签名，再生成 `app/public/downloads/android.json` 和带哈希名的安装包。可用 `node tools/package-android-download.mjs /绝对路径/app-release.apk` 替换为正式包。APK 与元数据不进 Git；部署时必须上传整个 `app/dist/`，包括 `downloads/`。`build:server` 会核对 APK 是否存在、大小及 SHA-256，缺失时直接失败。新版本使用新的文件名，避免浏览器缓存旧包。
 
-该 `android.json` 也是安卓版应用内更新源。新包必须增加 Flutter 的 build 数字并沿用签名；`mobile/releases/<version>.md` 的可选说明会写入元数据，不能手动伪造版本。更新流程见 [安卓版维护说明](../mobile/README.md#5-应用内更新)。
+该 `android.json` 也是安卓版应用内更新源。新包必须增加 `android-app` 工程的 versionCode 并沿用签名；`android-app/releases/<version>.md` 的可选说明会写入元数据，不能手动伪造版本。更新流程见 [android-app/README.md](../android-app/README.md)。
 
 下载页的加载、错误重试和安装说明在 `src/pages/DownloadPage.tsx`；安装包信息读取失败时不展示下载按钮。运行 `npm --prefix tools ci` 后执行 `node tools/check-android-download.mjs`，验证生产 `/bank/` 构建的桌面入口、手机深链接、完整文件下载校验和故障重试；`CHROME_PATH` 可指定 Chromium。
 

@@ -59,7 +59,7 @@
 
 - `a42ebda`：客服工作循环视频、空会话头像过渡、Agent 健康失败自动恢复、重复客服目录项移除。
 - `7fda5ed`：隔离演示环境与新 VPS 部署资料。
-- `52b92ef`：Flutter 重设计前只读归档；当前 Flutter 仍在 `mobile/`。
+- `52b92ef`：Flutter 重设计前只读归档；该 Flutter 工程已于 2026-10-23 清理删除。
 
 DSH 升级前 `0.1.6-alpha.2` 源码另见 [旧版框架归档](../../archive/2026-10-19/dsh-before-0.2.1/README.md)。当前框架实际安装及客户/员工/运维 profile 已核对为 `0.2.1-rc.2`；不要把截图中的旧版本、全局 `dsh` 或其他目录当作本工作区版本。接手时执行 `npm --prefix framework run check:dsh` 重新核实。
 
@@ -93,6 +93,6 @@ npm --prefix server run check:integration
 ## 7. 接手边界
 
 - 不修改或提交 `.arch/`；归档不参与默认源码搜索、构建和部署。
-- 网页维护 `app/`，桌面验收；安卓维护 Flutter `mobile/`，不回到旧 Kotlin 或旧网页风格。
+- 网页维护 `app/`，桌面验收；安卓维护 `android-app/`（Kotlin + Compose），不回到旧 Kotlin 或旧网页风格。
 - 继续使用 PostgreSQL、匹配的数据及会话密钥；不清空客户库，不用演示快照覆盖线上数据。
 - 本次文档没有联系其他 Agent、没有新增任务、没有实施分级或执行公网发布。由用户安排接手对象。

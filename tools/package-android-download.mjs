@@ -1,4 +1,4 @@
-/** 将 Flutter APK 及从 APK 读取的元数据放入官网静态目录；不上传、不连接银行。 */
+/** 将 Android APK 及从 APK 读取的元数据放入官网静态目录；不上传、不连接银行。 */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -46,7 +46,7 @@ try {
   if (args[0] === '--check') {
     await check(JSON.parse(await readFile(manifest, 'utf8')))
   } else {
-    const source = path.resolve(root, args[0] ?? 'mobile/build/app/outputs/flutter-apk/app-debug.apk')
+    const source = path.resolve(root, args[0] ?? 'android-app/app/build/outputs/apk/debug/app-debug.apk')
     await access(source)
     const sdk = process.env.ANDROID_SDK_ROOT ?? process.env.ANDROID_HOME ?? path.join(homedir(), 'Android/Sdk')
     const versions = (await readdir(path.join(sdk, 'build-tools'))).filter(v => /^\d+\.\d+\.\d+$/.test(v)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
@@ -64,7 +64,7 @@ try {
     assert.match(releaseVersion, /^[\w.+-]{1,40}$/)
     let releaseNotes = ''
     try {
-      releaseNotes = (await readFile(path.join(root, 'mobile/releases', `${releaseVersion}.md`), 'utf8')).replace(/^# [^\n]+\n/, '').trim()
+      releaseNotes = (await readFile(path.join(root, 'android-app/releases', `${releaseVersion}.md`), 'utf8')).replace(/^# [^\n]+\n/, '').trim()
     } catch (error) { if (error.code !== 'ENOENT') throw error }
     const data = {
       schemaVersion: 1,
@@ -86,7 +86,7 @@ try {
     await writeFile(manifest + '.tmp', JSON.stringify(data, null, 2) + '\n')
     await rename(manifest + '.tmp', manifest)
     // 旧包留在本机构建目录供回滚，不让每次网页构建携带所有历史 APK。
-    const archive = path.join(root, 'mobile/build/download-archive')
+    const archive = path.join(root, 'android-app/build/download-archive')
     await mkdir(archive, { recursive: true })
     for (const name of await readdir(destination)) {
       if (/^luckycat-android-[a-f0-9]{12}\.apk$/.test(name) && name !== data.fileName) {
@@ -96,6 +96,6 @@ try {
     console.log('已准备官网静态下载文件，构建时会一并复制到 app/dist/downloads/')
   }
 } catch (error) {
-  console.error(`FAIL ${error.message}\n先构建 Flutter APK，再运行 npm --prefix app run prepare:android；不会生成无效下载链接。`)
+  console.error(`FAIL ${error.message}\n先构建 Android APK（android-app 的 :app:assembleDebug），再运行 npm --prefix app run prepare:android；不会生成无效下载链接。`)
   process.exitCode = 1
 }

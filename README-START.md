@@ -2,7 +2,7 @@
 
 2026-10-20 隔夜成果、演示入口和测试范围见 [交付说明](docs/overnight-20261020-delivery.md)，逐批调试记录见 [进展文档](docs/overnight-20261020.md)。代码 `df39575` 已于北京时间 09:28 部署到 `https://bank.waveflow.men`，验收与限制见 [部署记录](docs/bank-deployment-20261020.json)。
 
-客户端版本见 [CLIENTS.md](CLIENTS.md)，账户关系见 [单资金账户约束](docs/product/account-model.md)。当前网页在 `app/`，员工端在 `staff/`，安卓新版为 Flutter `mobile/`。以下从仓库根目录运行，示例使用 PowerShell。
+客户端版本见 [CLIENTS.md](CLIENTS.md)，账户关系见 [单资金账户约束](docs/product/account-model.md)。当前网页在 `app/`，员工端在 `staff/`，安卓客户端为 Kotlin `android-app/`。以下从仓库根目录运行，示例使用 PowerShell。
 
 可选的个人日历/任务工作台已安装到独立本地 profile，启动命令 `npm --prefix framework run workbench:start`；入口、提醒开关和微信适配边界见 [工作台说明](docs/agent-workbench.md)。银行微信提醒通过独立的客户隔离适配层接入现有 IM 页面，配置和状态见 [银行提醒说明](docs/api/im-reminders.md)。
 
@@ -82,10 +82,13 @@ npm --prefix app run build
 
 ## 6. 安卓客户端
 
-```powershell
-cd mobile
-flutter pub get
-flutter run --dart-define-from-file=config/local-emulator.json
+```bash
+cd android-app
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
+  ~/.gradle/wrapper/dists/gradle-8.14-all/8mguqc37c200i71ledpgw8n5m/gradle-8.14/bin/gradle \
+  :app:assembleDebug
 ```
 
-构建、签名及接口配置见 [Flutter 维护说明](mobile/README.md)。根目录 `android/` 仅为归档提示，不能用于构建新版 App。
+产物 `android-app/app/build/outputs/apk/debug/app-debug.apk`。签名、模拟器与结构说明见 [android-app/README.md](android-app/README.md)。根目录 `android/` 仅为归档提示，没有可构建工程。
+
+打包官网下载入口用 `node tools/package-android-download.mjs <APK 路径>`，默认取上面的 debug 包，功能说明见 [app/README.md](app/README.md)。

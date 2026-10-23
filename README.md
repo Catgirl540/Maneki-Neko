@@ -1,10 +1,12 @@
+> **简化归档版 · 2026-10-23**：本版本保存当前工作区快照，已清理旧 Flutter `mobile/` 工程。当前客户端位置见 [CLIENTS.md](CLIENTS.md)，历史实现可从 Git 提交记录查阅。
+
 > 当前后端为 PostgreSQL 16；SQLite 文档与旧演示脚本只保留迁移历史。启动、测试和生产模式以 [当前后端说明](server/README.md) 及 [启动指引](README-START.md) 为准。
 
 > 当前账户模型：[一个资金账户、多币种余额、多张卡](docs/product/account-model.md)。历史设计与演示快照不能覆盖该约束。
 
 # Maneki-Neko（招财猫）
 
-> **先核对客户端版本**：[CLIENTS.md](CLIENTS.md)。网页用户端维护 `app/`；安卓新版为 Flutter `mobile/`。旧 Kotlin 工程与旧网页视觉资料已移入 [archive/](archive/README.md)。本文部分业务与历史演进记录保留原文，当前视觉与导航以 [网页维护手册](app/README.md) 为准。
+> **先核对客户端版本**：[CLIENTS.md](CLIENTS.md)。网页用户端维护 `app/`；安卓客户端为 Kotlin `android-app/`。旧 Kotlin 工程与旧网页视觉资料已移入 [archive/](archive/README.md)。本文部分业务与历史演进记录保留原文，当前视觉与导航以 [网页维护手册](app/README.md) 为准。
 
 > 本地启动前端、PostgreSQL 后端与隔离演示登录，请先看 [简洁启动说明](README-START.md)。
 
@@ -375,7 +377,7 @@ Agent 重启后，新版会话会按登录客户恢复原生文字、图片和�
 | 发图：校验/隔离/413/415、界面选图→预览→发送、以及**助手真的看见了图**（需两个服务 + 联网 + 密钥） | `node tools/check-image.mjs` |
 | 问用户：单选/多选/自由输入、防钓鱼守卫、模型真的弹卡片（需两个服务 + 联网 + 密钥） | `node tools/check-ask.mjs` |
 | 人设与隐藏模型名：人设四条硬规矩、health 不夹带模型、**追问也不自报**（需两个服务 + 联网 + 密钥） | `node --import ./tools/ts-resolve-hook.mjs tools/check-persona.mjs` |
-| 安卓客户端 | Flutter 工程 `mobile/` 的验证步骤见目标分支 `mobile/README.md`；旧 Kotlin 门禁已归档，不再作为当前验收 |
+| 安卓客户端 | Kotlin 工程 `android-app/` 的构建与验证见 `android-app/README.md`；原 Flutter 工程已删除，旧 Kotlin 门禁已归档，不再作为当前验收 |
 | 公网部署自检：站点活着、**网页真的连上 agent（不是回落固定话术）**、语音流真的出帧（会真调一次模型） | `node tools/check-deployed.mjs` |
 | 占位银行后端：把网页版指向它，用现有那批数据门禁去跑（需桥接 + dev server，见 `framework/design/P15-DEMO-BANK.md`） | `cd app && VITE_USE_MOCK=false VITE_PROXY_TARGET=http://127.0.0.1:8788 npm run dev` 另开终端跑各 `check-*.mjs` |
 

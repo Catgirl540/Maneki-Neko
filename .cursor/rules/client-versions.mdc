@@ -6,7 +6,7 @@ alwaysApply: true
 先读仓库根目录 `CLIENTS.md` 与 `AGENTS.md`，核对目标版本。
 
 - 网页用户端：`app/`；设计依据：`docs/design/exports/2026-10-15/`，已取消双模式。
-- 安卓新版：`mobile/` 的 Flutter 工程；若目录不存在，先定位正确分支，不使用旧 Kotlin 版代替。
+- 安卓客户端：`android-app/` 的 Kotlin + Jetpack Compose 工程；原 Flutter `mobile/` 已删除，需要历史对照时从 git 取，不使用旧 Kotlin 版代替。
 - 根目录 `android/` 只有迁移提示，不是构建入口。
 - `archive/` 只用于历史对照，默认排除在代码修改、测试、打包和部署之外。
 - 不从归档路径或旧 Kotlin 构建目录挑选 APK 发布。

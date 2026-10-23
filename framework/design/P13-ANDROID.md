@@ -1,4 +1,4 @@
-> **历史文档：旧 Kotlin 安卓版已归档。** 当前安卓客户端为 Flutter `mobile/`；版本入口见仓库根目录 `CLIENTS.md`。下文保留原始迁移记录，其中 `android/` 命令不再适用于当前工作区。
+> **历史文档：旧 Kotlin 安卓版已归档。** 当前安卓客户端为 `android-app/`（Kotlin + Compose）；版本入口见仓库根目录 `CLIENTS.md`。下文保留原始迁移记录，其中 `android/` 命令不再适用于当前工作区。
 
 # P13 · 安卓客户端（原生 Kotlin + Compose）
 
