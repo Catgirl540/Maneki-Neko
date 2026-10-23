@@ -15,6 +15,7 @@ export function ImConnectView() {
   const [bindings, setBindings] = useState<ImBinding[] | null>(null)
   const [error, setError] = useState<ImError | null>(null)
   const [loading, setLoading] = useState(true)
+  const [rebinding, setRebinding] = useState(false)
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -34,10 +35,12 @@ export function ImConnectView() {
   const live = bindings?.filter(item => item.connected) ?? []
   const bound = live.length > 0
   const stale = (bindings?.length ?? 0) > 0 && !bound
+  // 一个账户只绑一个微信：已连接就不再出二维码；未绑定、会话失效或主动换绑时才给扫码入口。
+  const showQr = !loading && !error && (!bound || rebinding)
   return <div className="im-page flex flex-col gap-6">
     <Card className="im-status-card">
       <CardHeader title={<span className="im-section-title"><span className="im-section-icon"><ChatIcon size={18} /></span>连接状态</span>}
-        action={bound ? <Tag tone="gold">已连接</Tag> : loading ? null : <Tag tone="neutral">未连接</Tag>} />
+        action={bound ? <span className="im-status-actions"><Tag tone="gold">已连接</Tag><Button size="sm" variant="ghost" onClick={() => setRebinding(value => !value)}>{rebinding ? '取消换绑' : '换绑'}</Button></span> : loading ? null : <Tag tone="neutral">未连接</Tag>} />
       {loading && <Skeleton className="im-status-skeleton" />}
       {!loading && error && (
         <div className="im-status-error">
@@ -67,7 +70,8 @@ export function ImConnectView() {
         </div>
       )}
     </Card>
-    <WeixinQrBinding onBound={load} />
+    {bound && rebinding && <p className="im-rebind-note">重新扫码并确认后，将替换当前绑定的微信。</p>}
+    {showQr && <WeixinQrBinding onBound={async () => { setRebinding(false); await load() }} />}
     <p className="im-security-note"><ShieldIcon size={16} />银行登录密码、支付密码仅在银行页面填写；资金操作仍需单独确认。</p>
   </div>
 }
