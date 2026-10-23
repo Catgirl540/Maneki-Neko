@@ -20,6 +20,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +36,13 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
+    // 会员档位与持卡数量取真实接口，未加载时不显示编造的数字。
+    var membership by remember { mutableStateOf<MembershipDto?>(null) }
+    var cardCount by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching { BankApi.membership() }.onSuccess { membership = it }
+        runCatching { BankApi.cards() }.onSuccess { cardCount = it.size }
+    }
     Column(Modifier.fillMaxSize()) {
         TabBar("我的")
         Column(
@@ -64,9 +76,14 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                 }
                 Spacer(Modifier.size(14.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("陈先生", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Text(
+                        SessionStore.name().ifEmpty { "我的账户" },
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Tokens.Ink,
+                    )
                     Spacer(Modifier.height(3.dp))
-                    Text("138 **** 8000", fontSize = 12.sp, color = Tokens.Muted)
+                    Text(maskPhone(SessionStore.phone()), fontSize = 12.sp, color = Tokens.Muted)
                 }
                 Row(
                     Modifier
@@ -77,7 +94,7 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                         .padding(horizontal = 9.dp, vertical = 5.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("普通会员", fontSize = 11.5.sp, color = Tokens.Ink2)
+                    Text(membership?.tierLabel ?: "—", fontSize = 11.5.sp, color = Tokens.Ink2)
                     Icon(Icons.Chevron, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(12.dp))
                 }
             }
@@ -90,9 +107,16 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                     Hairline()
                     IconRow(Icons.Lock, "安全中心") { onOpen("安全中心") }
                     Hairline()
-                    IconRow(Icons.Card, "银行卡管理", "2 张") { onOpen("银行卡") }
+                    IconRow(Icons.Card, "银行卡管理", cardCount?.let { "$it 张" } ?: "—") { onOpen("银行卡") }
                     Hairline()
-                    IconRow(Icons.Wealth, "会员等级", "距金卡差 ¥12,480") { onOpen("会员等级") }
+                    IconRow(
+                        Icons.Wealth,
+                        "会员等级",
+                        membership?.let {
+                            val gap = it.nextThreshold - it.aum
+                            if (gap > 0) "距${tierLabel(it.nextTier)}差 " + formatCents(gap) else it.tierLabel
+                        } ?: "—",
+                    ) { onOpen("会员等级") }
                 }
             }
 
@@ -131,3 +155,16 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
         }
     }
 }
+
+/** 会员档位中文名，与网页 `shared/membership.mjs` 一致。 */
+private fun tierLabel(code: String): String = when (code) {
+    "standard" -> "标准会员"
+    "gold" -> "金卡"
+    "platinum" -> "白金卡"
+    "diamond" -> "钻石卡"
+    else -> code
+}
+
+/** 手机号打码：13800138000 → 138 **** 8000。 */
+private fun maskPhone(phone: String): String =
+    if (phone.length >= 7) phone.take(3) + " **** " + phone.takeLast(4) else phone

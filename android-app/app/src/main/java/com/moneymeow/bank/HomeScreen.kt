@@ -21,7 +21,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,17 +57,31 @@ private data class Txn(
     val icon: ImageVector,
 )
 
-private val recent = listOf(
-    Txn("星巴克咖啡", "09:12 · 餐饮", "-38.00", false, Icons.Food),
-    Txn("转入 · 他行卡", "08:40 · 转账", "+5,000.00", true, Icons.DownIn),
-    Txn("地铁出行", "07:48 · 交通", "-6.00", false, Icons.Transfer),
-    Txn("转出 · 陈嘉禾", "昨天 15:26 · 转账", "-500.00", false, Icons.UpOut),
-)
-
 @Composable
 fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
     var balanceVisible by remember { mutableStateOf(true) }
     var transferInOpen by remember { mutableStateOf(false) }
+    // 真实数据：登录后从 server/ 拉账户与最近流水；没有数据就显示空态，不用占位数字。
+    var account by remember { mutableStateOf<AccountDto?>(null) }
+    var recentRows by remember { mutableStateOf<List<TransactionDto>>(emptyList()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
+    var attempt by remember { mutableIntStateOf(0) }
+    LaunchedEffect(attempt) {
+        loading = true
+        loadError = null
+        runCatching { BankApi.accounts() }
+            .onSuccess { list ->
+                account = list.firstOrNull()
+                recentRows = emptyList()
+                account?.let { acc ->
+                    runCatching { BankApi.transactions(acc.id, 6) }
+                        .onSuccess { recentRows = it }
+                }
+            }
+            .onFailure { loadError = it.message }
+        loading = false
+    }
 
     Column(
         Modifier
@@ -73,13 +89,13 @@ fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(bottom = 12.dp),
     ) {
-        Greeting(onNotify = { onSwitchTab(3) })
+        Greeting(SessionStore.name(), onNotify = { onSwitchTab(3) })
         Spacer(Modifier.height(12.dp))
-        AssetCard(balanceVisible) { balanceVisible = !balanceVisible }
+        AssetCard(balanceVisible, account, loading, loadError, onRetry = { attempt++ }) { balanceVisible = !balanceVisible }
         Spacer(Modifier.height(12.dp))
         EntryGrid(onOpen, onSwitchTab) { transferInOpen = true }
         Spacer(Modifier.height(4.dp))
-        RecentTransactions(onOpen)
+        RecentTransactions(onOpen, recentRows, loading, loadError)
     }
 
     if (transferInOpen) {
@@ -88,7 +104,14 @@ fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
 }
 
 @Composable
-private fun Greeting(onNotify: () -> Unit) {
+private fun Greeting(name: String, onNotify: () -> Unit) {
+    val hour = java.time.LocalTime.now().hour
+    val period = when (hour) {
+        in 5..8 -> "早上好"
+        in 9..11 -> "上午好"
+        in 12..17 -> "下午好"
+        else -> "晚上好"
+    }
     Row(
         Modifier
             .fillMaxWidth()
@@ -97,8 +120,8 @@ private fun Greeting(onNotify: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column {
-            Text("上午好", fontSize = 12.sp, color = Tokens.Muted)
-            Text("陈先生", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Text(period, fontSize = 12.sp, color = Tokens.Muted)
+            Text(name.ifEmpty { "我的账户" }, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
         }
         Box(
             Modifier
@@ -123,7 +146,14 @@ private fun Greeting(onNotify: () -> Unit) {
 }
 
 @Composable
-private fun AssetCard(visible: Boolean, onToggle: () -> Unit) {
+private fun AssetCard(
+    visible: Boolean,
+    account: AccountDto?,
+    loading: Boolean,
+    loadError: String?,
+    onRetry: () -> Unit,
+    onToggle: () -> Unit,
+) {
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -139,7 +169,27 @@ private fun AssetCard(visible: Boolean, onToggle: () -> Unit) {
                 )
             }
             VSpacer(6)
-            AmountText(if (visible) "¥86,320.00" else "¥••••••")
+            val cny = account?.currencyBalances?.firstOrNull { it.currency == "CNY" }?.balance
+                ?: account?.balance
+            when {
+                cny != null -> AmountText(if (visible) formatCents(cny) else "¥••••••")
+                loading -> AmountText("加载中…", 27)
+                loadError != null -> AmountText("加载失败", 27)
+                else -> AmountText("暂无账户", 27)
+            }
+            if (loadError != null) {
+                VSpacer(6)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(loadError, fontSize = 11.sp, color = Tokens.Coral, modifier = Modifier.weight(1f))
+                    Text(
+                        "重试",
+                        fontSize = 11.sp,
+                        color = Tokens.Ink2,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable { onRetry() },
+                    )
+                }
+            }
             VSpacer(12)
             Hairline()
             VSpacer(10)
@@ -147,9 +197,13 @@ private fun AssetCard(visible: Boolean, onToggle: () -> Unit) {
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text("人民币活期", fontSize = 12.sp, color = Tokens.Muted)
+                Text(account?.label?.ifEmpty { "储蓄账户" } ?: "储蓄账户", fontSize = 12.sp, color = Tokens.Muted)
                 Text(
-                    if (visible) "¥86,320.00" else "••••••",
+                    when {
+                        !visible -> "••••••"
+                        cny != null -> formatCents(cny)
+                        else -> "—"
+                    },
                     fontSize = 12.sp,
                     color = Tokens.Ink2,
                     fontWeight = FontWeight.Medium,
@@ -200,7 +254,12 @@ private fun EntryGrid(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onTr
 }
 
 @Composable
-private fun RecentTransactions(onOpen: (String) -> Unit) {
+private fun RecentTransactions(
+    onOpen: (String) -> Unit,
+    rows: List<TransactionDto>,
+    loading: Boolean,
+    loadError: String?,
+) {
     Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
         Row(
             Modifier.fillMaxWidth(),
@@ -219,7 +278,36 @@ private fun RecentTransactions(onOpen: (String) -> Unit) {
         VSpacer(6)
         HairlineCard {
             Column(Modifier.padding(horizontal = 14.dp)) {
-                recent.forEachIndexed { index, txn ->
+                val shown = rows.take(4).map { dto ->
+                    Txn(
+                        name = dto.counterparty.ifEmpty { dto.memo.ifEmpty { "交易" } },
+                        meta = dto.createdAt.take(16).replace('T', ' ') + " · " + BankApi.categoryLabel(dto.category),
+                        amount = (if (dto.direction == "in") "+" else "-") +
+                            formatCents(dto.amount).removePrefix("¥").removePrefix("HK$"),
+                        income = dto.direction == "in",
+                        icon = when (dto.category) {
+                            "dining" -> Icons.Food
+                            "shopping" -> Icons.Shop
+                            "transport" -> Icons.Transfer
+                            "housing" -> Icons.Receipt
+                            "salary" -> Icons.DownIn
+                            else -> Icons.Receipt
+                        },
+                    )
+                }
+                if (shown.isEmpty()) {
+                    Text(
+                        when {
+                            loading -> "加载中…"
+                            loadError != null -> "加载失败"
+                            else -> "暂无交易记录"
+                        },
+                        fontSize = 12.sp,
+                        color = Tokens.Muted,
+                        modifier = Modifier.padding(vertical = 16.dp),
+                    )
+                }
+                shown.forEachIndexed { index, txn ->
                     if (index > 0) Hairline()
                     Row(
                         Modifier

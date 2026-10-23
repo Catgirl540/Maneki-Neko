@@ -19,11 +19,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -41,16 +44,9 @@ private data class Product(
     val term: String,
     val meta: String,
     val matched: Boolean,
+    val code: String = "",
 )
 
-private val products = listOf(
-    Product("招财猫现金添利 A", "R1", "七日年化", "1.86%", "¥1.00", "随时赎回", "现金管理 · 开放式", true),
-    Product("招财猫稳盈 90 天", "R2", "单位净值", "1.0064", "¥10,000", "90 天", "固定收益 · 封闭期内不可赎回", true),
-    Product("招财猫稳盈 365 天", "R2", "单位净值", "1.0128", "¥10,000", "365 天", "固定收益 · 白金优先购中", true),
-    Product("招财猫平衡配置 180 天", "R3", "单位净值", "0.9984", "¥10,000", "180 天", "混合 · 封闭期内不可赎回", true),
-    Product("招财猫沪深 300 指数增强", "R4", "单位净值", "1.0342", "¥10,000", "随时赎回", "权益 · 开放式", false),
-    Product("招财猫黄金挂钩 365 天", "R5", "单位净值", "1.0571", "¥50,000", "365 天", "商品及衍生品 · 封闭期内不可赎回", false),
-)
 
 private data class Holding(
     val name: String,
@@ -63,25 +59,34 @@ private data class Holding(
     val redeemable: Boolean,
 )
 
-private val holdings = listOf(
-    Holding("招财猫现金添利 A", "R1", "¥20,014.50", "19,985.02", "+14.50", true, "确认日 2026-10-18", true),
-    Holding("招财猫稳盈 90 天", "R2", "¥10,032.00", "9,968.21", "+32.00", true, "封闭期至 2027-01-18", false),
-    Holding("招财猫沪深 300 指数增强", "R4", "¥12,410.40", "12,000.00", "-589.60", false, "确认日 2026-09-28", true),
-)
 
-private data class WealthRecord(val title: String, val tag: String, val meta: String, val amount: String, val income: Boolean)
 
-private val records = listOf(
-    WealthRecord("申购 · 招财猫现金添利 A", "申购", "2026-10-18 14:32 · 份额 19,985.02", "-¥20,000.00", false),
-    WealthRecord("赎回 · 招财猫稳盈 90 天", "赎回", "2026-10-12 10:05 · 预计 T+1 到账", "+¥10,032.00", true),
-    WealthRecord("申购 · 招财猫沪深 300 指数增强", "申购", "2026-09-28 09:41 · 份额 12,000.00", "-¥13,000.00", false),
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: () -> Unit) {
+fun WealthTab(
+    onOpenProduct: (String) -> Unit,
+    onOpenPlans: () -> Unit,
+    onRedeemed: (productName: String, amount: Long) -> Unit,
+) {
     var tab by remember { mutableIntStateOf(0) }
-    var redeemOpen by remember { mutableStateOf(false) }
+    var redeemTarget by remember { mutableStateOf<HoldingDto?>(null) }
+    var redeeming by remember { mutableStateOf(false) }
+    var redeemError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    // 真实理财数据
+    var overview by remember { mutableStateOf<WealthOverviewDto?>(null) }
+    var catalog by remember { mutableStateOf<List<WealthProductDto>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        if (!BankApi.hasToken()) return@LaunchedEffect
+        runCatching { BankApi.wealthOverview() }
+            .onSuccess { overview = it }
+            .onFailure { error = it.message }
+        runCatching { BankApi.wealthProducts() }
+            .onSuccess { catalog = it }
+            .onFailure { if (error == null) error = it.message }
+    }
     Column(Modifier.fillMaxSize()) {
         TabBar("理财")
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -94,26 +99,27 @@ fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: ()
                 .padding(bottom = 16.dp),
         ) {
             when (tab) {
-                0 -> WealthOverview(onOpenPlans) { tab = it }
-                1 -> WealthProducts(onOpenProduct)
-                2 -> WealthHoldings { redeemOpen = true }
+                0 -> WealthOverview(overview, error, onOpenPlans) { tab = it }
+                1 -> WealthProducts(catalog, error, onOpenProduct)
+                2 -> WealthHoldings(overview, onRedeem = { redeemTarget = it })
                 else -> WealthRecords()
             }
         }
     }
 
 
-    if (redeemOpen) {
+    val target = redeemTarget
+    if (target != null) {
         androidx.compose.material3.ModalBottomSheet(
-            onDismissRequest = { redeemOpen = false },
+            onDismissRequest = { redeemTarget = null },
             sheetState = androidx.compose.material3.rememberModalBottomSheetState(),
             containerColor = Tokens.Surface,
         ) {
             Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-                Text("赎回 · 招财猫现金添利 A", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                Text("赎回 · ${target.productName}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                 Spacer(Modifier.height(12.dp))
-                KvRow("持有份额", "19,985.02")
-                KvRow("本次赎回", "19,985.02（全部）")
+                KvRow("持有市值", formatCents(target.marketValue))
+                KvRow("本次赎回", formatCents(target.marketValue) + "（全部）")
                 KvRow("预计到账", "T+1 个工作日")
                 Spacer(Modifier.height(12.dp))
                 Box(
@@ -124,16 +130,31 @@ fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: ()
                         .padding(12.dp)
                 ) {
                     Text(
-                        "赎回到账时间为回执文案，演示环境即时记账；份额与金额以确认结果为准。",
+                        "赎回金额按确认时的净值计算，以银行确认结果为准。",
                         fontSize = 11.5.sp,
                         color = Tokens.Ink2,
                         lineHeight = 18.sp,
                     )
                 }
+                if (redeemError != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(redeemError!!, fontSize = 11.sp, color = Tokens.Coral)
+                }
                 Spacer(Modifier.height(16.dp))
-                PrimaryButton("确认赎回", {
-                    redeemOpen = false
-                    onRedeemed()
+                PrimaryButton(if (redeeming) "赎回中…" else "确认赎回", {
+                    if (redeeming) return@PrimaryButton
+                    redeeming = true
+                    redeemError = null
+                    scope.launch {
+                        runCatching { BankApi.redeemWealth(target.id) }
+                            .onSuccess {
+                                redeemTarget = null
+                                runCatching { BankApi.wealthOverview() }.onSuccess { overview = it }
+                                onRedeemed(target.productName, target.marketValue)
+                            }
+                            .onFailure { redeemError = it.message }
+                        redeeming = false
+                    }
                 })
                 Spacer(Modifier.height(12.dp))
             }
@@ -143,7 +164,7 @@ fun WealthTab(onOpenProduct: () -> Unit, onOpenPlans: () -> Unit, onRedeemed: ()
 }
 
 @Composable
-private fun WealthOverview(onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
+private fun WealthOverview(overview: WealthOverviewDto?, error: String?, onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -152,13 +173,24 @@ private fun WealthOverview(onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
                 Icon(Icons.Eye, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(15.dp))
             }
             Spacer(Modifier.height(6.dp))
-            AmountText("¥42,456.90", 27)
+            AmountText(
+                when {
+                    overview != null -> formatCents(overview.totalValue)
+                    error != null -> "加载失败"
+                    else -> "加载中…"
+                },
+                27,
+            )
             Spacer(Modifier.height(12.dp))
             Hairline()
             Spacer(Modifier.height(10.dp))
-            KvInline("投入本金", "¥42,999.00")
-            KvInline("累计盈亏", "-542.10", Tokens.Coral)
-            KvInline("昨日盈亏", "+18.40")
+            KvInline("投入本金", overview?.let { formatCents(it.totalPrincipal) } ?: "—")
+            KvInline(
+                "累计盈亏",
+                overview?.let { formatCents(it.totalProfit) } ?: "—",
+                if ((overview?.totalProfit ?: 0) < 0) Tokens.Coral else Tokens.Ink2,
+            )
+            KvInline("昨日盈亏", overview?.let { formatCents(it.yesterdayProfit) } ?: "—")
         }
     }
     Spacer(Modifier.height(10.dp))
@@ -171,7 +203,16 @@ private fun WealthOverview(onOpenPlans: () -> Unit, onSwitch: (Int) -> Unit) {
         ) {
             Icon(Icons.Check, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
             Spacer(Modifier.size(8.dp))
-            Text("风险测评 R3 · 有效至 2027-05-12", fontSize = 12.sp, color = Tokens.Ink2)
+            Text(
+                when {
+                    overview == null -> "风险测评加载中…"
+                    !overview.riskDone -> "尚未完成风险测评 · 申购前需先测评"
+                    overview.riskLevel != null -> "风险测评 ${overview.riskLevel} · 有效至 ${overview.riskExpiresAt.take(10)}"
+                    else -> "风险测评已完成"
+                },
+                fontSize = 12.sp,
+                color = Tokens.Ink2,
+            )
         }
     }
     Spacer(Modifier.height(10.dp))
@@ -224,17 +265,51 @@ private fun QuickCard(label: String, icon: androidx.compose.ui.graphics.vector.I
     }
 }
 
+/** 产品分类中文名，与网页筛选口径一致。 */
+private fun wealthCategoryLabel(code: String): String = when (code) {
+    "cash" -> "现金管理"
+    "fixed" -> "固定收益"
+    "mixed" -> "混合"
+    "equity" -> "权益"
+    "derivative" -> "商品及衍生品"
+    else -> code.ifEmpty { "理财" }
+}
+
 @Composable
-private fun WealthProducts(onOpenProduct: () -> Unit) {
+private fun WealthProducts(catalog: List<WealthProductDto>, error: String?, onOpenProduct: (String) -> Unit) {
     var chip by remember { mutableIntStateOf(0) }
     ChipRow(listOf("全部", "现金管理", "固定收益", "混合", "权益", "商品"), chip) { chip = it }
     Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        products.forEach { product ->
+        val shownProducts = if (catalog.isNotEmpty()) {
+            catalog.map { dto ->
+                Product(
+                    name = dto.name,
+                    risk = dto.risk,
+                    metricLabel = if (dto.sevenDayYield != null) "七日年化" else "单位净值",
+                    metric = if (dto.sevenDayYield != null) {
+                        String.format("%.2f%%", dto.sevenDayYield * 100)
+                    } else {
+                        String.format("%.4f", dto.nav)
+                    },
+                    minAmount = formatCents(dto.minAmount),
+                    term = dto.term.ifEmpty { if (dto.openEnded) "随时赎回" else "封闭期" },
+                    meta = wealthCategoryLabel(dto.category) + " · " + if (dto.openEnded) "开放式" else "封闭期内不可赎回",
+                    matched = true,
+                    code = dto.code,
+                )
+            }
+        } else {
+            emptyList()
+        }
+        if (error != null && catalog.isEmpty()) {
+            Text("产品目录加载失败：$error", fontSize = 11.sp, color = Tokens.Coral, modifier = Modifier.padding(bottom = 8.dp))
+        }
+        shownProducts.forEach { product ->
             HairlineCard {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenProduct() }
+                        .clickable { onOpenProduct(product.code) }
                         .padding(14.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -302,11 +377,31 @@ fun RiskBadge(risk: String) {
 }
 
 @Composable
-private fun WealthHoldings(onRedeem: () -> Unit) {
+private fun WealthHoldings(overview: WealthOverviewDto?, onRedeem: (HoldingDto) -> Unit) {
     var chip by remember { mutableIntStateOf(0) }
     ChipRow(listOf("全部", "可赎回", "封闭期"), chip) { chip = it }
     Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        holdings.forEach { holding ->
+        val shownHoldings = overview?.holdings?.map { dto ->
+            Holding(
+                name = dto.productName,
+                risk = "—",
+                marketValue = formatCents(dto.marketValue),
+                shares = formatCents(dto.shares).removePrefix("¥"),
+                pnl = formatCents(dto.profit),
+                pnlUp = dto.profit >= 0,
+                note = if (dto.closed) "封闭期内不可赎回" else "可赎回",
+                redeemable = !dto.closed,
+            ) to dto
+        }.orEmpty()
+        if (shownHoldings.isEmpty()) {
+            Text(
+                if (overview == null) "加载中…" else "暂无持仓",
+                fontSize = 12.sp,
+                color = Tokens.Muted,
+                modifier = Modifier.padding(vertical = 16.dp),
+            )
+        }
+        shownHoldings.forEach { (holding, dto) ->
             HairlineCard {
                 Column(Modifier.padding(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -348,7 +443,7 @@ private fun WealthHoldings(onRedeem: () -> Unit) {
                                 Modifier
                                     .clip(RoundedCornerShape(15.dp))
                                     .background(Tokens.Primary)
-                                    .clickable { onRedeem() }
+                                    .clickable { onRedeem(dto) }
                                     .padding(horizontal = 14.dp, vertical = 6.dp),
                             ) {
                                 Text("赎回", fontSize = 12.sp, color = Color.White)
@@ -368,34 +463,6 @@ private fun WealthRecords() {
     var chip by remember { mutableIntStateOf(0) }
     ChipRow(listOf("全部", "申购", "赎回"), chip) { chip = it }
     Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        records.forEach { record ->
-            HairlineCard {
-                Column(Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            record.title,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Tokens.Ink,
-                            modifier = Modifier.weight(1f),
-                        )
-                        RiskBadge(record.tag)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(record.meta, fontSize = 11.sp, color = Tokens.Muted)
-                        Text(
-                            record.amount,
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = if (record.income) Tokens.Ink else Tokens.Coral,
-                        )
-                    }
-                }
-            }
-        }
+        EmptyNote("暂无理财记录\n申购与赎回成功后会出现在这里")
     }
 }

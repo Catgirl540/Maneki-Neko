@@ -61,12 +61,27 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        SessionStore.init(applicationContext)
+        // 没有令牌就必须先登录；令牌过期（401）时统一清态回登录页。
+        AuthState.loggedIn = BankApi.hasToken()
+        BankApi.onUnauthorized = {
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                SessionStore.clear()
+                AuthState.loggedIn = false
+            }
+        }
+        AgentApi.bindToken { BankApi.currentToken() }
         setContent {
             MoneyMeowTheme {
                 BankApp()
             }
         }
     }
+}
+
+/** 登录态：进程内唯一来源，退出登录与令牌失效都走这里。 */
+object AuthState {
+    var loggedIn by mutableStateOf(false)
 }
 
 /** 底栏五个位置：总览 / 理财 / 猫钮 / 通知 / 我的。 */
@@ -89,6 +104,11 @@ private data class NavState(
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun BankApp() {
+    // 未登录一律先登录，避免用界面里的静态占位数据冒充账户数据。
+    if (!AuthState.loggedIn) {
+        AuthGate(onLoggedIn = { AuthState.loggedIn = true })
+        return
+    }
     var tab by remember { mutableIntStateOf(0) }
     val stack = remember { mutableStateListOf<String>() }
     val push: (String) -> Unit = { stack.add(it) }
@@ -98,6 +118,11 @@ fun BankApp() {
         if (stack.isNotEmpty()) pop() else tab = 0
     }
     val goHome: () -> Unit = { stack.clear(); tab = 0 }
+    var transferDraft by remember { mutableStateOf(TransferDraft()) }
+    var transferResult by remember { mutableStateOf<TransferResultDto?>(null) }
+    var selectedTxId by remember { mutableStateOf<String?>(null) }
+    var selectedProductCode by remember { mutableStateOf<String?>(null) }
+    var redeemedInfo by remember { mutableStateOf<Pair<String, Long>?>(null) }
 
     val navState = NavState(tab = tab, route = stack.lastOrNull(), depth = stack.size)
     val showBottomBar = navState.route == null && navState.tab != 2
@@ -180,13 +205,19 @@ fun BankApp() {
                     when (state.tab) {
                         0 -> HomeScreen(onOpen = push, onSwitchTab = { tab = it })
                         1 -> WealthTab(
-                            onOpenProduct = { push("产品详情") },
+                            onOpenProduct = { code -> selectedProductCode = code; push("产品详情") },
                             onOpenPlans = { push("储蓄与计划") },
-                            onRedeemed = { push("赎回受理") },
+                            onRedeemed = { name, amount ->
+                                redeemedInfo = name to amount
+                                push("赎回受理")
+                            },
                         )
                         2 -> AssistantScreen(onBack = { tab = 0 })
                         3 -> NotifyTab(onOpenFilter = { push("筛选") })
-                        else -> MeTab(onOpen = push, onLogout = { push("登录") })
+                        else -> MeTab(onOpen = push, onLogout = {
+                            SessionStore.clear()
+                            AuthState.loggedIn = false
+                        })
                     }
                 } else {
                     when (route) {
@@ -198,7 +229,10 @@ fun BankApp() {
                         "交易记录" -> TransactionsScreen(
                             onBack = pop,
                             onAnalysis = { push("消费分析") },
-                            onOpenTx = { push("交易详情") },
+                            onOpenTx = { id ->
+                                selectedTxId = id
+                                push("交易详情")
+                            },
                         )
                         "更多服务" -> MoreScreen(onBack = pop) { target ->
                             when (target) {
@@ -223,7 +257,7 @@ fun BankApp() {
                             onTransferOut = { push("转出") },
                         )
                         "换汇" -> ExchangeScreen(onBack = pop)
-                        "交易详情" -> TxDetailScreen(onBack = pop)
+                        "交易详情" -> TxDetailScreen(onBack = pop, transactionId = selectedTxId)
                         "寄送信息" -> DeliveryScreen(onBack = pop)
                         "会员等级" -> MembershipScreen(onBack = pop)
                         "储蓄与计划" -> PlansScreen(onBack = pop)
@@ -267,26 +301,51 @@ fun BankApp() {
                             headline = "赎回已受理",
                             note = "回执标注预计 T+1 个工作日到账",
                             rows = listOf(
-                                "产品" to "招财猫现金添利 A",
-                                "赎回份额" to "19,985.02",
-                                "赎回金额" to "¥20,014.50",
+                                "产品" to (redeemedInfo?.first ?: "—"),
+                                "赎回金额" to (redeemedInfo?.let { formatCents(it.second) } ?: "—"),
                                 "赎回费" to "¥0.00",
                             ),
                             actionLabel = "回到理财",
                             onBack = pop,
                             onAction = goHome,
                         )
-                        "转出" -> TransferSelectScreen(onBack = pop) { push(it) }
-                        "手机号转账", "银行卡号转账", "跨境支付通" ->
-                            TransferFormScreen(route, onBack = pop, onNext = { push("填写金额") })
-                        "填写金额" -> AmountScreen(onBack = pop, onDone = { push("转账结果") })
-                        "转账结果" -> TransferResultScreen(onBack = pop, onHome = goHome)
-                        "产品详情" -> ProductDetailScreen(onBack = pop)
+                        "转出" -> TransferSelectScreen(
+                            onBack = pop,
+                            onPick = { push(it) },
+                            onPickPayee = { draft ->
+                                transferDraft = draft
+                                push("填写金额")
+                            },
+                        )
+                        "手机号转账", "银行卡号转账", "跨境支付通" -> TransferFormScreen(
+                            title = route,
+                            onBack = pop,
+                            draft = transferDraft,
+                            onDraftChange = { transferDraft = it },
+                            onNext = { push("填写金额") },
+                        )
+                        "填写金额" -> AmountScreen(
+                            onBack = pop,
+                            draft = transferDraft,
+                            onSubmitted = { result ->
+                                transferResult = result
+                                push("转账结果")
+                            },
+                        )
+                        "转账结果" -> TransferResultScreen(
+                            result = transferResult,
+                            onBack = pop,
+                            onHome = goHome,
+                        )
+                        "产品详情" -> ProductDetailScreen(onBack = pop, productCode = selectedProductCode)
                         else -> SimplePushScreen(route, pop)
                     }
                 }
                 }
             }
+
+            // 启动时检查一次更新（有新版本弹窗）
+            UpdatePromptHost()
 
             // 底栏固定叠在底部（不改 Scaffold 布局高度，避免页面切换时上下抖动或切掉上浮的猫耳朵）
             if (showBottomBar) {

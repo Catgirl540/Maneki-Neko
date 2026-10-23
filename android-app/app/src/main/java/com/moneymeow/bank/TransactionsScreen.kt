@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 private data class Tx(
+    val id: String? = null,
     val name: String,
     val meta: String,
     val amount: String,
@@ -38,27 +40,28 @@ private data class Tx(
     val icon: ImageVector,
 )
 
-private val txToday = listOf(
-    Tx("星巴克咖啡", "09:12 · 餐饮", "-38.00", false, Icons.Food),
-    Tx("转入 · 他行卡", "08:40 · 转账", "+5,000.00", true, Icons.DownIn),
-    Tx("地铁出行", "07:48 · 交通", "-6.00", false, Icons.Transfer),
-)
-private val txYesterday = listOf(
-    Tx("转出 · 陈嘉禾", "15:26 · 转账", "-500.00", false, Icons.UpOut),
-    Tx("永辉超市", "12:05 · 购物", "-126.50", false, Icons.Shop),
-    Tx("视频会员续费", "10:00 · 订阅服务", "-25.00", false, Icons.Receipt),
-)
-private val txEarlier = listOf(
-    Tx("换汇 · 人民币 → 港币", "16:42 · 其他", "-8,000.00", false, Icons.Globe),
-    Tx("工资入账", "10:00 · 工资入账", "+18,000.00", true, Icons.DownIn),
-    Tx("房租", "09:00 · 房租", "-4,500.00", false, Icons.Receipt),
-)
-
 @Composable
-fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: () -> Unit) {
+fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (String?) -> Unit) {
     var chip by remember { mutableIntStateOf(0) }
     var filterOpen by remember { mutableStateOf(false) }
     var filterCount by remember { mutableIntStateOf(0) }
+    // 真实流水：登录后按分类筛选向服务端查询
+    var rows by remember { mutableStateOf<List<TransactionDto>>(emptyList()) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(chip) {
+        if (!BankApi.hasToken()) return@LaunchedEffect
+        loadError = null
+        runCatching {
+            val account = BankApi.accounts().firstOrNull() ?: return@runCatching emptyList()
+            BankApi.transactions(account.id, 30)
+        }
+            .onSuccess { rows = it }
+            .onFailure { loadError = it.message }
+    }
+    val categoryKeys = listOf("all", "dining", "shopping", "housing", "transport", "subscription")
+    val visible = remember(rows, chip) {
+        if (chip == 0) rows else rows.filter { it.category == categoryKeys.getOrNull(chip) }
+    }
 
     Box(Modifier.fillMaxWidth()) {
         Column {
@@ -67,8 +70,12 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: () 
                     Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    SummaryCard("本月支出", "¥3,486.50", true, Modifier.weight(1f))
-                    SummaryCard("本月收入", "¥23,000.00", false, Modifier.weight(1f))
+                    val month = java.time.LocalDate.now().toString().take(7)
+                    val monthRows = rows.filter { it.createdAt.startsWith(month) }
+                    val expense = monthRows.filter { it.direction == "out" }.sumOf { it.amount }
+                    val income = monthRows.filter { it.direction == "in" }.sumOf { it.amount }
+                    SummaryCard("本月支出", formatCents(expense), true, Modifier.weight(1f))
+                    SummaryCard("本月收入", formatCents(income), false, Modifier.weight(1f))
                 }
                 ChipRow(
                     listOf("全部", "餐饮", "购物", "房租", "交通", "订阅"),
@@ -93,11 +100,27 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: () 
                     },
                 ) { chip = it }
                 Column(Modifier.padding(horizontal = 14.dp)) {
-                    TxGroup("今天", txToday, onOpenTx)
-                    Spacer(Modifier.height(10.dp))
-                    TxGroup("昨天", txYesterday, onOpenTx)
-                    Spacer(Modifier.height(10.dp))
-                    TxGroup("10月18日", txEarlier, onOpenTx)
+                    when {
+                        loadError != null -> Text(
+                            "加载失败：$loadError",
+                            fontSize = 12.sp,
+                            color = Tokens.Coral,
+                            modifier = Modifier.padding(vertical = 16.dp),
+                        )
+                        rows.isEmpty() -> Text(
+                            "暂无流水",
+                            fontSize = 12.sp,
+                            color = Tokens.Muted,
+                            modifier = Modifier.padding(vertical = 16.dp),
+                        )
+                        else -> {
+                            val grouped = visible.groupBy { it.createdAt.take(10) }
+                            grouped.forEach { (day, list) ->
+                                TxGroup(day, list.map { it.toRow() }, onOpenTx)
+                                Spacer(Modifier.height(10.dp))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -143,7 +166,7 @@ private fun SummaryCard(label: String, value: String, negative: Boolean, modifie
 }
 
 @Composable
-private fun TxGroup(title: String, rows: List<Tx>, onOpenTx: () -> Unit) {
+private fun TxGroup(title: String, rows: List<Tx>, onOpenTx: (String?) -> Unit) {
     Text(title, fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(start = 2.dp, bottom = 4.dp))
     HairlineCard {
         Column(Modifier.padding(horizontal = 14.dp)) {
@@ -152,7 +175,7 @@ private fun TxGroup(title: String, rows: List<Tx>, onOpenTx: () -> Unit) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenTx() }
+                        .clickable { onOpenTx(tx.id) }
                         .padding(vertical = 11.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -265,3 +288,20 @@ fun MoreScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
         Spacer(Modifier.height(16.dp))
     }
 }
+
+/** 后端流水转成列表行。 */
+private fun TransactionDto.toRow(): Tx = Tx(
+    id = id,
+    name = counterparty.ifEmpty { memo.ifEmpty { "交易" } },
+    meta = createdAt.substringAfter('T').take(5) + " · " + BankApi.categoryLabel(category),
+    amount = (if (direction == "in") "+" else "-") + formatCents(amount).substringAfter('¥').substringAfter("HK$"),
+    income = direction == "in",
+    icon = when (category) {
+        "dining" -> Icons.Food
+        "shopping" -> Icons.Shop
+        "transport" -> Icons.Transfer
+        "housing" -> Icons.Receipt
+        "salary" -> Icons.DownIn
+        else -> Icons.Receipt
+    },
+)

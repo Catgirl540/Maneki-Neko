@@ -3,6 +3,7 @@ package com.moneymeow.bank
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +14,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +24,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,11 +44,10 @@ import androidx.compose.ui.unit.sp
 /**
  * 登录与开户共用的骨架：顶部返回栏、可滚动内容、**底部固定主按钮**
  * （截图里「登入 / 下一步 / 完成开户」都贴底）。
- */
-@Composable
+ */@Composable
 private fun AuthScaffold(
     title: String,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
     footer: @Composable ColumnScope.() -> Unit,
 ) {
@@ -68,15 +76,29 @@ private fun AuthScaffold(
 /* ───────────────── 60 登录 ───────────────── */
 
 @Composable
-fun LoginScreen(onBack: () -> Unit, onLogin: () -> Unit, onRegister: () -> Unit) {
+fun LoginScreen(
+    onBack: () -> Unit,
+    onLogin: () -> Unit,
+    onRegister: () -> Unit,
+    root: Boolean = false,
+) {
+    var phone by remember { mutableStateOf("13800138000") }
+    var password by remember { mutableStateOf("123456") }
+    var smsCode by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var submitting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var hint by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
     AuthScaffold(
         title = "登录",
-        onBack = onBack,
+        onBack = if (root) null else onBack,
         content = {
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 22.dp),
+                    .padding(vertical = 18.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Image(painterResource(R.drawable.brand_cat), null, Modifier.size(62.dp), contentScale = ContentScale.Fit)
@@ -84,29 +106,93 @@ fun LoginScreen(onBack: () -> Unit, onLogin: () -> Unit, onRegister: () -> Unit)
                 Text("招财猫银行", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
             }
             Column(Modifier.padding(horizontal = 20.dp)) {
-                Field("手机号", "138 0013 8000")
+                TextFieldRow(
+                    label = "手机号",
+                    value = phone,
+                    onValueChange = { phone = it.filter(Char::isDigit).take(11) },
+                    placeholder = "请输入手机号",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone,
+                )
                 Spacer(Modifier.height(14.dp))
-                Field("登录密码", "········")
+                TextFieldRow(
+                    label = "登录密码",
+                    value = password,
+                    onValueChange = { password = it },
+                    placeholder = "请输入登录密码",
+                    password = true,
+                )
                 Spacer(Modifier.height(14.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { Field("短信验证码", "6 位验证码") }
-                    Spacer(Modifier.size(8.dp))
-                    Box(
-                        Modifier
-                            .height(46.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Tokens.Surface)
-                            .border(1.dp, Tokens.Border, RoundedCornerShape(8.dp))
-                            .padding(horizontal = 13.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("获取验证码", fontSize = 12.5.sp, color = Tokens.Ink2)
-                    }
+                TextFieldRow(
+                    label = "短信验证码",
+                    value = smsCode,
+                    onValueChange = { smsCode = it.filter(Char::isDigit).take(6) },
+                    placeholder = "6 位验证码",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                    trailing = {
+                        Box(
+                            Modifier
+                                .height(46.dp)
+                                .clip(CircleShape)
+                                .background(Tokens.Surface)
+                                .border(1.dp, Tokens.Border, CircleShape)
+                                .clickable(enabled = !sending) {
+                                    if (phone.length < 11) {
+                                        error = "请先输入 11 位手机号"
+                                        return@clickable
+                                    }
+                                    sending = true
+                                    error = null
+                                    scope.launch {
+                                        runCatching { BankApi.sendSmsCode(phone) }
+                                            .onSuccess { demo ->
+                                                hint = if (demo != null) "演示验证码：$demo" else "验证码已发送"
+                                            }
+                                            .onFailure { error = it.message }
+                                        sending = false
+                                    }
+                                }
+                                .padding(horizontal = 15.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                if (sending) "发送中…" else "获取验证码",
+                                fontSize = 12.5.sp,
+                                color = Tokens.Ink2,
+                            )
+                        }
+                    },
+                )
+                if (hint != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(hint!!, fontSize = 11.sp, color = Tokens.Ink2)
+                }
+                if (error != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(error!!, fontSize = 11.sp, color = Tokens.Coral)
                 }
             }
         },
         footer = {
-            PrimaryButton("登入", onLogin)
+            PrimaryButton(
+                if (submitting) "登录中…" else "登入",
+                onClick = {
+                    if (submitting) return@PrimaryButton
+                    error = null
+                    submitting = true
+                    scope.launch {
+                        runCatching { BankApi.login(phone, password, smsCode) }
+                            .onSuccess { result ->
+                                SessionStore.save(result)
+                                submitting = false
+                                onLogin()
+                            }
+                            .onFailure {
+                                error = it.message ?: "登录失败"
+                                submitting = false
+                            }
+                    }
+                },
+            )
             Spacer(Modifier.height(18.dp))
             Column(
                 Modifier.fillMaxWidth(),
@@ -316,5 +402,38 @@ fun OpenDoneScreen(onBack: () -> Unit, onHome: () -> Unit) {
         ) {
             PrimaryButton("进入首页", onHome)
         }
+    }
+}
+
+/* ───────────────── 未登录根流程 ───────────────── */
+
+/**
+ * 未登录时的唯一入口：登录页 + 开户四步，全部在这一层内切换。
+ * 开户流程是演示表单，完成后回到登录页，不会伪造登录态。
+ */
+@Composable
+fun AuthGate(onLoggedIn: () -> Unit) {
+    var route by remember { mutableStateOf<String?>(null) }
+    // 根页面不在 Scaffold 内，需要自己让开状态栏与导航条。
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Tokens.Page)
+            .statusBarsPadding()
+            .navigationBarsPadding(),
+    ) {
+    when (route) {
+        null -> LoginScreen(
+            root = true,
+            onBack = {},
+            onLogin = onLoggedIn,
+            onRegister = { route = "开户·手机号" },
+        )
+        "开户·手机号" -> OpenPhoneScreen(onBack = { route = null }, onNext = { route = "开户·实名" })
+        "开户·实名" -> OpenRealNameScreen(onBack = { route = "开户·手机号" }, onNext = { route = "开户·核验" })
+        "开户·核验" -> OpenFaceScreen(onBack = { route = "开户·实名" }, onNext = { route = "开户·支付密码" })
+        "开户·支付密码" -> OpenPasswordScreen(onBack = { route = "开户·核验" }, onDone = { route = "开户完成" })
+        else -> OpenDoneScreen(onBack = { route = "开户·支付密码" }, onHome = { route = null })
+    }
     }
 }

@@ -25,6 +25,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,40 +48,71 @@ private val limitPresets = listOf("¥2,000", "¥5,000", "¥10,000", "¥50,000")
 @Composable
 fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit) {
     var applyOpen by remember { mutableStateOf(false) }
-    var locked by remember { mutableStateOf(false) }
-    var online by remember { mutableStateOf(true) }
-    var overseas by remember { mutableStateOf(false) }
+    // 真实卡片：从 server/ 拉取，锁卡写回
+    var cards by remember { mutableStateOf<List<CardDto>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val primary = cards.firstOrNull()
+    val locked = primary?.status == "locked"
+    var online by remember { mutableStateOf(primary?.onlinePayment ?: true) }
+    var overseas by remember { mutableStateOf(primary?.overseasPayment ?: false) }
     var limit by remember { mutableStateOf(3) }
+    var balanceCents by remember { mutableStateOf(0L) }
+    var hkdCents by remember { mutableStateOf(0L) }
     var panShown by remember { mutableStateOf(false) }
     var balanceShown by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        if (!BankApi.hasToken()) return@LaunchedEffect
+        runCatching { BankApi.cards() }
+            .onSuccess { cards = it }
+            .onFailure { error = it.message }
+        runCatching { BankApi.accounts().firstOrNull() }
+            .onSuccess { acc ->
+                balanceCents = acc?.currencyBalances?.firstOrNull { it.currency == "CNY" }?.balance ?: acc?.balance ?: 0L
+                hkdCents = acc?.currencyBalances?.firstOrNull { it.currency == "HKD" }?.balance ?: 0L
+            }
+    }
 
     PushScreen(title = "银行卡", onBack = onBack) {
-        SectionHeader("我的卡片", "2 张")
+        SectionHeader("我的卡片", if (cards.isEmpty()) "—" else "${cards.size} 张")
         LazyRow(
             Modifier.fillMaxWidth(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
-                CardFace(
-                    name = "招财猫借记卡",
-                    last4 = "8821",
-                    status = if (locked) "已锁定" else "使用中",
-                    color = Color(0xFF5840C4),
-                    panShown = panShown,
-                    onTogglePan = { panShown = !panShown },
-                )
-            }
-            item {
-                CardFace(
-                    name = "招财猫白金卡",
-                    last4 = "4417",
-                    status = "待激活",
-                    color = Color(0xFF08233E),
-                    panShown = false,
-                    onTogglePan = {},
-                    dimmed = true,
-                )
+            if (cards.isEmpty()) {
+                item {
+                    CardFace(
+                        name = error?.let { "加载失败" } ?: "暂无卡片",
+                        last4 = "----",
+                        status = "",
+                        color = Color(0xFF5840C4),
+                        panShown = false,
+                        onTogglePan = {},
+                    )
+                }
+            } else {
+                items(cards) { card ->
+                    CardFace(
+                        name = card.productName,
+                        last4 = card.last4,
+                        status = when (card.status) {
+                            "active" -> "使用中"
+                            "locked" -> "已锁定"
+                            "pending" -> "待激活"
+                            "replaced" -> "已换卡"
+                            else -> card.status
+                        },
+                        color = when {
+                            card.network == "unionpay" -> Color(0xFF126B62)
+                            card.theme == "ink" -> Color(0xFF08233E)
+                            else -> Color(0xFF5840C4)
+                        },
+                        panShown = panShown && card == primary,
+                        onTogglePan = { panShown = !panShown },
+                        dimmed = card.status == "replaced" || card.status == "pending",
+                    )
+                }
             }
             item {
                 Box(
@@ -118,7 +152,19 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
         }
         // 三个动作
         Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ActionTile(if (locked) "解锁卡片" else "立即锁卡", Icons.Lock, Modifier.weight(1f)) { locked = !locked }
+            ActionTile(if (locked) "解锁卡片" else "立即锁卡", Icons.Lock, Modifier.weight(1f)) {
+                val card = primary ?: return@ActionTile
+                val next = card.status != "locked"
+                scope.launch {
+                    runCatching { BankApi.setCardLock(card.id, next) }
+                        .onSuccess {
+                            cards = cards.map {
+                                if (it.id == card.id) it.copy(status = if (next) "locked" else "active") else it
+                            }
+                        }
+                        .onFailure { error = it.message }
+                }
+            }
             ActionTile("换卡", Icons.Transfer, Modifier.weight(1f)) { applyOpen = true }
             ActionTile("寄送信息", Icons.Receipt, Modifier.weight(1f)) { onDelivery() }
         }
@@ -133,7 +179,7 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text("人民币 CNY", fontSize = 12.5.sp, color = Tokens.Muted)
-                    Text(if (balanceShown) "¥86,320.00" else "••••••", fontSize = 12.5.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                    Text(if (balanceShown) formatCents(balanceCents) else "••••••", fontSize = 12.5.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
                 }
                 Hairline()
                 Row(
@@ -145,7 +191,7 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
                 ) {
                     Text("港币 HKD", fontSize = 12.5.sp, color = Tokens.Muted)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(if (balanceShown) "HK$8,720.00" else "••••••", fontSize = 12.5.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                        Text(if (balanceShown) formatCents(hkdCents, "HKD") else "••••••", fontSize = 12.5.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.size(8.dp))
                         Icon(
                             Icons.Eye,
@@ -317,7 +363,11 @@ private fun CardFace(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Bottom,
             ) {
-                Text("陈嘉禾", fontSize = 12.sp, color = Color.White.copy(alpha = 0.85f))
+                Text(
+                    SessionStore.name().ifEmpty { "持卡人" },
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                )
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     Column(horizontalAlignment = Alignment.End) {
                         Text("VALID THRU", fontSize = 8.5.sp, color = Color.White.copy(alpha = 0.7f))

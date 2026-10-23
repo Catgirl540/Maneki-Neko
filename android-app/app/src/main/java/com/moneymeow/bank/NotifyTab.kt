@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,23 +37,69 @@ private data class Notice(
     val title: String,
     val body: String,
     val time: String,
+    val day: String,
     val icon: ImageVector,
     val unread: Boolean,
 )
 
-private val notices = listOf(
-    Notice("转入到账", "他行卡尾号 6633 转入 ¥5,000.00 已到账，当前余额 ¥86,320.00。", "09:12", Icons.DownIn, true),
-    Notice("银行卡已寄出", "你申请的招财猫借记卡（尾号 8821）已通过审核并寄出，请注意签收。", "08:40", Icons.Card, true),
-    Notice("自动扣款预告", "「话费月缴」将于 10月21日 从人民币活期扣款 ¥98.00。", "19:05", Icons.Receipt, false),
-    Notice("转出成功", "向陈嘉禾（招财猫银行 ··8821）转出 ¥500.00 已到账。", "15:26", Icons.UpOut, false),
-    Notice("新设备登录", "你的账户于 10月18日 在 Android 设备登录。", "10月18日", Icons.Phone, false),
-)
+/** 通知由真实流水与自动扣款推导，不预置示例消息。 */
+private fun buildNotices(transactions: List<TransactionDto>, debits: List<AutoDebitDto>): List<Notice> {
+    val today = java.time.LocalDate.now()
+    fun dayLabel(date: java.time.LocalDate): String = when {
+        date == today -> "今天"
+        date == today.minusDays(1) -> "昨天"
+        else -> "${date.monthValue}月${date.dayOfMonth}日"
+    }
+    val fromTx = transactions.mapIndexed { index, dto ->
+        val incoming = dto.direction == "in"
+        val when_ = runCatching { java.time.LocalDateTime.parse(dto.createdAt.take(19)) }.getOrNull()
+        val date = when_?.toLocalDate() ?: today
+        Notice(
+            title = if (incoming) "转入到账" else BankApi.categoryLabel(dto.category) + "消费",
+            body = dto.counterparty.ifEmpty { dto.memo.ifEmpty { "交易" } } +
+                " " + (if (incoming) "+" else "-") + formatCents(dto.amount),
+            time = when_?.let { "%02d:%02d".format(it.hour, it.minute) } ?: date.toString(),
+            day = dayLabel(date),
+            icon = if (incoming) Icons.DownIn else Icons.UpOut,
+            unread = index < 2,
+        )
+    }
+    val fromDebits = debits.filter { it.enabled }.mapNotNull { dto ->
+        // 只看还没发生的扣款；已过期的 nextRunAt 不当作预告。
+        val next = runCatching { java.time.LocalDateTime.parse(dto.nextRunAt.take(19)) }.getOrNull() ?: return@mapNotNull null
+        if (next.toLocalDate().isBefore(today)) return@mapNotNull null
+        Notice(
+            title = "自动扣款预告",
+            body = "「${dto.merchant}」将于 ${next.monthValue}月${next.dayOfMonth}日 扣款 ${formatCents(dto.amount)}（${dto.cycle}）。",
+            time = "${next.monthValue}月${next.dayOfMonth}日",
+            day = "待扣款提醒",
+            icon = Icons.Receipt,
+            unread = false,
+        )
+    }
+    // 待扣款是“还没发生的事”，放最前面；其余按流水时间顺序。
+    return fromDebits + fromTx
+}
 
 @Composable
 fun NotifyTab(onOpenFilter: () -> Unit) {
     var chip by remember { mutableIntStateOf(0) }
     var filterOpen by remember { mutableStateOf(false) }
     var filterCount by remember { mutableIntStateOf(0) }
+    var notices by remember { mutableStateOf<List<Notice>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching {
+            val account = BankApi.accounts().firstOrNull()
+            val txns = account?.let { BankApi.transactions(it.id, 10) }.orEmpty()
+            val debits = runCatching { BankApi.autoDebits() }.getOrDefault(emptyList())
+            buildNotices(txns, debits)
+        }
+            .onSuccess { notices = it }
+            .onFailure { error = it.message }
+        loading = false
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -86,10 +133,24 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 16.dp),
             ) {
-                notices.forEachIndexed { index, notice ->
-                    if (index == 0) GroupLabel("今天")
-                    if (index == 2) GroupLabel("昨天")
-                    if (index == 4) GroupLabel("更早")
+                if (notices.isEmpty()) {
+                    Text(
+                        when {
+                            loading -> "加载中…"
+                            error != null -> "加载失败：$error"
+                            else -> "暂无通知"
+                        },
+                        fontSize = 12.sp,
+                        color = if (error != null) Tokens.Coral else Tokens.Muted,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
+                    )
+                }
+                var lastDay: String? = null
+                notices.forEach { notice ->
+                    if (notice.day != lastDay) {
+                        GroupLabel(notice.day)
+                        lastDay = notice.day
+                    }
                     HairlineCard(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
                         Row(
                             Modifier

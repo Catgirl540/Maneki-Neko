@@ -21,6 +21,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,14 +47,36 @@ private val methods = listOf(
 
 private data class Payee(val initial: String, val name: String, val meta: String, val time: String)
 
-private val payees = listOf(
-    Payee("陈", "陈嘉禾", "招财猫银行 ··8821", "10月12日"),
-    Payee("王", "王思远", "招商银行 ··6633", "10月8日"),
-    Payee("L", "LAM HO**", "转数快 FPS", "9月30日"),
-)
+/** 历史收款人来自真实转出流水，不预置名单。 */
+@Composable
+private fun rememberPayees(): List<Payee> {
+    var rows by remember { mutableStateOf<List<TransactionDto>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        runCatching {
+            val account = BankApi.accounts().firstOrNull() ?: return@runCatching emptyList()
+            BankApi.transactions(account.id, 30)
+        }.onSuccess { rows = it }
+    }
+    return remember(rows) {
+        rows.filter { it.direction == "out" && it.category == "transfer" && it.counterparty.isNotBlank() }
+            .distinctBy { it.counterparty }
+            .take(3)
+            .map { dto ->
+                val date = runCatching { java.time.LocalDate.parse(dto.createdAt.take(10)) }.getOrNull()
+                val display = dto.counterparty.removePrefix("转账 · ").ifEmpty { dto.counterparty }
+                Payee(
+                    initial = display.take(1),
+                    name = display,
+                    meta = BankApi.categoryLabel(dto.category),
+                    time = date?.let { "${it.monthValue}月${it.dayOfMonth}日" } ?: "",
+                )
+            }
+    }
+}
 
 @Composable
-fun TransferSelectScreen(onBack: () -> Unit, onPick: (String) -> Unit) {
+fun TransferSelectScreen(onBack: () -> Unit, onPick: (String) -> Unit, onPickPayee: (TransferDraft) -> Unit) {
+    val payees = rememberPayees()
     PushScreen(title = "转出", onBack = onBack) {
         // 搜索框
         Box(
@@ -59,10 +84,10 @@ fun TransferSelectScreen(onBack: () -> Unit, onPick: (String) -> Unit) {
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 12.dp)
                 .height(42.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(CircleShape)
                 .background(Tokens.Surface)
-                .border(1.dp, Tokens.Border, RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp),
+                .border(1.dp, Tokens.Border, CircleShape)
+                .padding(horizontal = 14.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -105,12 +130,31 @@ fun TransferSelectScreen(onBack: () -> Unit, onPick: (String) -> Unit) {
 
         SectionHeader("历史收款人")
         Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (payees.isEmpty()) {
+                Text(
+                    "暂无历史收款人",
+                    fontSize = 12.sp,
+                    color = Tokens.Muted,
+                    modifier = Modifier.padding(vertical = 12.dp),
+                )
+            }
             payees.forEach { payee ->
                 HairlineCard {
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { onPick("填写金额") }
+                            .clickable {
+                                onPickPayee(
+                                    // 历史收款人只带回姓名，账号仍需本人填写，避免用编造的账号下单。
+                                    TransferDraft(
+                                        channel = "bank",
+                                        payeeName = payee.name,
+                                        payeeAccountNo = "",
+                                        bankCode = "",
+                                        bankRegion = "CN",
+                                    )
+                                )
+                            }
                             .padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -139,20 +183,73 @@ fun TransferSelectScreen(onBack: () -> Unit, onPick: (String) -> Unit) {
 
 /** 三个渠道表单：字段不同，样式一致。 */
 @Composable
-fun TransferFormScreen(title: String, onBack: () -> Unit, onNext: () -> Unit) {
-    FormScaffold(title = title, onBack = onBack, actionLabel = "下一步", onAction = onNext) {
+fun TransferFormScreen(
+    title: String,
+    onBack: () -> Unit,
+    draft: TransferDraft,
+    onDraftChange: (TransferDraft) -> Unit,
+    onNext: () -> Unit,
+) {
+    var payeeName by remember { mutableStateOf(draft.payeeName) }
+    var accountNo by remember { mutableStateOf(draft.payeeAccountNo) }
+    var phone by remember { mutableStateOf("") }
+    var bankCode by remember { mutableStateOf(draft.bankCode) }
+
+    FormScaffold(title = title, onBack = onBack, actionLabel = "下一步", onAction = {
+        val name = payeeName.ifEmpty { "陈嘉禾" }
+        val no = when (title) {
+            "手机号转账" -> accountNo.ifEmpty { phone }
+            else -> accountNo
+        }
+        onDraftChange(
+            draft.copy(
+                channel = if (title == "跨境支付通") "fps" else "bank",
+                payeeName = name,
+                payeeAccountNo = no,
+                bankCode = bankCode,
+            )
+        )
+        onNext()
+    }) {
         when (title) {
             "手机号转账" -> {
-                Field("收款人手机号", "请输入已登记的手机号", placeholder = true, hint = "本行与他行账户均可，凭已登记手机号直达收款账户")
+                TextFieldRow(
+                    label = "收款人手机号",
+                    value = phone,
+                    onValueChange = { phone = it.filter(Char::isDigit).take(11) },
+                    placeholder = "请输入已登记的手机号",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone,
+                )
                 Spacer(Modifier.height(14.dp))
-                Field("收款人姓名（选填）", "留空则由银行侧核对户名", placeholder = true)
+                TextFieldRow(
+                    label = "收款人姓名",
+                    value = payeeName,
+                    onValueChange = { payeeName = it },
+                    placeholder = "请输入收款人姓名",
+                )
             }
             "银行卡号转账" -> {
-                Field("银行卡号", "请输入卡号，自动识别发卡行", placeholder = true, hint = "识别结果：招商银行 储蓄卡")
+                TextFieldRow(
+                    label = "银行卡号",
+                    value = accountNo,
+                    onValueChange = { accountNo = it.filter(Char::isDigit).take(19) },
+                    placeholder = "请输入卡号",
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                )
                 Spacer(Modifier.height(14.dp))
-                Field("收款人姓名", "请输入收款人姓名", placeholder = true)
+                TextFieldRow(
+                    label = "收款人姓名",
+                    value = payeeName,
+                    onValueChange = { payeeName = it },
+                    placeholder = "请输入收款人姓名",
+                )
                 Spacer(Modifier.height(14.dp))
-                Field("收款银行", "招商银行")
+                TextFieldRow(
+                    label = "收款银行代码",
+                    value = bankCode,
+                    onValueChange = { bankCode = it.uppercase().take(8) },
+                    placeholder = "例如 CMB（招商银行）",
+                )
             }
             else -> {
                 Text("收款标识类型", fontSize = 11.sp, color = Tokens.Muted)
@@ -160,12 +257,19 @@ fun TransferFormScreen(title: String, onBack: () -> Unit, onNext: () -> Unit) {
                 var seg by remember { mutableStateOf(0) }
                 SegTabs(listOf("手机号", "电邮", "FPS ID", "账户"), seg) { seg = it }
                 Spacer(Modifier.height(14.dp))
-                Field("收款标识", "+852 · · · · · · · ·", hint = "解析结果：LAM HO** · 中银香港")
+                TextFieldRow(
+                    label = "收款标识",
+                    value = accountNo,
+                    onValueChange = { accountNo = it },
+                    placeholder = "+852 · · · · · · · ·",
+                )
                 Spacer(Modifier.height(14.dp))
-                Text("入账币种", fontSize = 11.sp, color = Tokens.Muted)
-                Spacer(Modifier.height(6.dp))
-                var cur by remember { mutableStateOf(0) }
-                SegTabs(listOf("港币 HKD", "离岸人民币", "澳门元 MOP"), cur) { cur = it }
+                TextFieldRow(
+                    label = "收款人姓名",
+                    value = payeeName,
+                    onValueChange = { payeeName = it },
+                    placeholder = "LAM HO**",
+                )
             }
         }
     }
@@ -179,10 +283,10 @@ internal fun Field(label: String, value: String, hint: String? = null, placehold
             Modifier
                 .fillMaxWidth()
                 .height(46.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(CircleShape)
                 .background(Tokens.Surface)
-                .border(1.dp, Tokens.Border, RoundedCornerShape(8.dp))
-                .padding(horizontal = 12.dp),
+                .border(1.dp, Tokens.Border, CircleShape)
+                .padding(horizontal = 16.dp),
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(value, fontSize = 14.sp, color = if (placeholder) Tokens.Muted else Tokens.Ink)
@@ -195,9 +299,37 @@ internal fun Field(label: String, value: String, hint: String? = null, placehold
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
+fun AmountScreen(
+    onBack: () -> Unit,
+    draft: TransferDraft,
+    onSubmitted: (TransferResultDto) -> Unit,
+) {
+    var amountText by remember { mutableStateOf("500.00") }
+    var memo by remember { mutableStateOf("房租分摊") }
+    var quote by remember { mutableStateOf<TransferQuoteDto?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
     var confirm by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
+    var accountId by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState()
+
+    val amountCents = remember(amountText) {
+        amountText.toDoubleOrNull()?.let { Math.round(it * 100) } ?: 0L
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching { BankApi.accounts().firstOrNull()?.id }
+            .onSuccess { accountId = it }
+    }
+    LaunchedEffect(accountId, amountCents) {
+        val id = accountId ?: return@LaunchedEffect
+        if (amountCents <= 0) return@LaunchedEffect
+        runCatching { BankApi.transferQuote(id, draft.channel, "domestic", amountCents, draft.bankCode, draft.bankRegion) }
+            .onSuccess { quote = it; error = null }
+            .onFailure { error = it.message }
+    }
 
     PushScreen(title = "填写金额", onBack = onBack) {
         HairlineCard(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
@@ -209,12 +341,21 @@ fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
                         .background(Tokens.SurfaceWarm),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("陈", fontSize = 14.sp, color = Tokens.Ink2, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        draft.payeeName.take(1).ifEmpty { "收" },
+                        fontSize = 14.sp,
+                        color = Tokens.Ink2,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                 }
                 Spacer(Modifier.size(12.dp))
                 Column {
-                    Text("陈嘉禾", fontSize = 14.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
-                    Text("招财猫银行 ··8821", fontSize = 11.5.sp, color = Tokens.Muted)
+                    Text(draft.payeeName.ifEmpty { "未填写收款人" }, fontSize = 14.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                    Text(
+                        draft.payeeAccountNo.ifEmpty { "请返回上一步填写收款信息" },
+                        fontSize = 11.5.sp,
+                        color = Tokens.Muted,
+                    )
                 }
             }
         }
@@ -226,19 +367,47 @@ fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
         ) {
             Text("¥", fontSize = 24.sp, color = Tokens.Ink, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.size(6.dp))
-            Text("500.00", fontSize = 34.sp, color = Tokens.Ink, fontWeight = FontWeight.SemiBold)
+            androidx.compose.foundation.text.BasicTextField(
+                value = amountText,
+                onValueChange = { input ->
+                    amountText = input.filter { it.isDigit() || it == '.' }.take(12)
+                },
+                singleLine = true,
+                textStyle = androidx.compose.ui.text.TextStyle(
+                    fontSize = 34.sp,
+                    color = Tokens.Ink,
+                    fontWeight = FontWeight.SemiBold,
+                ),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                ),
+                modifier = Modifier.weight(1f),
+            )
         }
         KvCard(
             listOf(
-                "手续费" to "¥0.00",
-                "到账时间" to "实时到账",
-                "单笔限额" to "¥1,000,000.00",
+                "手续费" to (quote?.let { formatCents(it.fee) } ?: "—"),
+                "到账时间" to (quote?.etaText ?: "—"),
+                "单笔限额" to (quote?.let { formatCents(it.singleLimit) } ?: "—"),
             ),
             Modifier.padding(horizontal = 14.dp),
         )
+        if (error != null) {
+            Text(
+                error!!,
+                fontSize = 11.5.sp,
+                color = Tokens.Coral,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
         Column(Modifier.padding(horizontal = 14.dp)) {
-            Field("附言", "房租分摊")
+            TextFieldRow(
+                label = "附言",
+                value = memo,
+                onValueChange = { memo = it.take(30) },
+                placeholder = "选填",
+            )
         }
         Spacer(Modifier.height(18.dp))
         PrimaryButton("确认转出", { confirm = true }, Modifier.padding(horizontal = 14.dp))
@@ -253,40 +422,53 @@ fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
             Column(Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
                 Text("确认转账", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                 Spacer(Modifier.height(12.dp))
-                KvRow("收款人", "陈嘉禾 ··8821")
-                KvRow("转账金额", "¥500.00")
-                KvRow("手续费", "¥0.00")
-                KvRow("付款账户", "人民币活期 ··8821")
+                KvRow("收款人", draft.payeeName.ifEmpty { "—" })
+                KvRow("转账金额", formatCents(amountCents))
+                KvRow("手续费", quote?.let { formatCents(it.fee) } ?: "—")
+                KvRow("付款账户", "人民币活期")
                 Spacer(Modifier.height(14.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    repeat(6) { index ->
-                        Box(
-                            Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Tokens.Surface)
-                                .border(1.dp, Tokens.Border, RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (index < 5) {
-                                Box(
-                                    Modifier
-                                        .size(7.dp)
-                                        .clip(CircleShape)
-                                        .background(Tokens.Ink)
+                TextFieldRow(
+                    label = "支付密码",
+                    value = password,
+                    onValueChange = { password = it.filter(Char::isDigit).take(6) },
+                    placeholder = "6 位支付密码",
+                    password = true,
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                )
+                Spacer(Modifier.height(16.dp))
+                PrimaryButton(
+                    if (submitting) "提交中…" else "确认支付",
+                    onClick = {
+                        val id = accountId ?: return@PrimaryButton
+                        if (submitting) return@PrimaryButton
+                        submitting = true
+                        error = null
+                        scope.launch {
+                            runCatching {
+                                BankApi.submitTransfer(
+                                    fromAccountId = id,
+                                    channel = draft.channel,
+                                    scope = "domestic",
+                                    payeeName = draft.payeeName,
+                                    amount = amountCents,
+                                    memo = memo,
+                                    bankCode = draft.bankCode,
+                                    bankRegion = draft.bankRegion,
+                                    payeeAccountNo = draft.payeeAccountNo,
                                 )
                             }
+                                .onSuccess {
+                                    confirm = false
+                                    submitting = false
+                                    onSubmitted(it)
+                                }
+                                .onFailure {
+                                    error = it.message
+                                    submitting = false
+                                }
                         }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-                Text("请输入 6 位支付密码", fontSize = 11.sp, color = Tokens.Muted)
-                Spacer(Modifier.height(16.dp))
-                PrimaryButton("确认支付", {
-                    confirm = false
-                    onDone()
-                })
+                    },
+                )
                 Spacer(Modifier.height(12.dp))
             }
         }
@@ -294,7 +476,11 @@ fun AmountScreen(onBack: () -> Unit, onDone: () -> Unit) {
 }
 
 @Composable
-fun TransferResultScreen(onBack: () -> Unit, onHome: () -> Unit) {
+fun TransferResultScreen(
+    result: TransferResultDto?,
+    onBack: () -> Unit,
+    onHome: () -> Unit,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -307,7 +493,7 @@ fun TransferResultScreen(onBack: () -> Unit, onHome: () -> Unit) {
                 .fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(Modifier.height(120.dp))
+            Spacer(Modifier.height(96.dp))
             Box(
                 Modifier
                     .size(78.dp)
@@ -318,11 +504,29 @@ fun TransferResultScreen(onBack: () -> Unit, onHome: () -> Unit) {
                 Icon(Icons.Check, contentDescription = null, tint = Color(0xFF1F9D6B), modifier = Modifier.size(32.dp))
             }
             Spacer(Modifier.height(22.dp))
-            Text("转账成功", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Text(
+                when (result?.settlementStatus) {
+                    "pending" -> "转账已受理"
+                    null -> "转账已提交"
+                    else -> "转账成功"
+                },
+                fontSize = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Tokens.Ink,
+            )
             Spacer(Modifier.height(26.dp))
-            Text("¥500.00", fontSize = 32.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Text(
+                result?.let { formatCents(it.amount) } ?: "—",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Tokens.Ink,
+            )
             Spacer(Modifier.height(16.dp))
-            Text("陈嘉禾 · 招财猫银行 · ·8821 · 实时到账", fontSize = 12.sp, color = Tokens.Muted)
+            Text(
+                result?.let { "交易号 ${it.referenceNo}" } ?: "—",
+                fontSize = 12.sp,
+                color = Tokens.Muted,
+            )
         }
         Column(
             Modifier

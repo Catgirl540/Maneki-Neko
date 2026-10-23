@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -43,9 +45,25 @@ private val months = listOf("2026-10", "2026-09", "2026-08")
 @Composable
 fun AnalysisScreen(onBack: () -> Unit) {
     var month by remember { mutableIntStateOf(0) }
+    var spending by remember { mutableStateOf<SpendingDto?>(null) }
+    var cash by remember { mutableStateOf<CashFlowDto?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val monthsList = remember {
+        val now = java.time.LocalDate.now()
+        List(3) { now.minusMonths(it.toLong()).toString().take(7) }
+    }
+    LaunchedEffect(month) {
+        if (!BankApi.hasToken()) return@LaunchedEffect
+        runCatching { BankApi.spending(monthsList[month]) }
+            .onSuccess { spending = it; error = null }
+            .onFailure { error = it.message }
+    }
+    LaunchedEffect(Unit) {
+        runCatching { BankApi.cashFlow(30) }.onSuccess { cash = it }
+    }
     PushScreen(title = "消费分析", onBack = onBack) {
         Box(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            SegTabs(months, month) { month = it }
+            SegTabs(monthsList, month) { month = it }
         }
         Row(
             Modifier.padding(horizontal = 14.dp),
@@ -55,18 +73,39 @@ fun AnalysisScreen(onBack: () -> Unit) {
                 Column(Modifier.padding(13.dp)) {
                     Text("本月支出", fontSize = 11.sp, color = Tokens.Muted)
                     Spacer(Modifier.height(5.dp))
-                    Text("¥3,486.50", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Text(
+                        spending?.let { formatCents(it.total) } ?: (error?.let { "—" } ?: "…"),
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Tokens.Ink,
+                    )
                     Spacer(Modifier.height(4.dp))
-                    Text("较 2026-09 ↓ 12.0%", fontSize = 11.sp, color = Tokens.Muted)
+                    Text(
+                        spending?.let { s ->
+                            if (s.comparable && s.monthOverMonth != null) {
+                                "较 ${s.previousMonth} " + (if (s.monthOverMonth >= 0) "↑ " else "↓ ") +
+                                    String.format("%.1f%%", kotlin.math.abs(s.monthOverMonth) * 100)
+                            } else {
+                                "环比口径暂不可用"
+                            }
+                        } ?: "—",
+                        fontSize = 11.sp,
+                        color = Tokens.Muted,
+                    )
                 }
             }
             HairlineCard(Modifier.weight(1f)) {
                 Column(Modifier.padding(13.dp)) {
+                    val top = spending?.categories?.maxByOrNull { it.amount }
                     Text("最大支出分类", fontSize = 11.sp, color = Tokens.Muted)
                     Spacer(Modifier.height(5.dp))
-                    Text("房租", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Text(top?.label ?: "—", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                     Spacer(Modifier.height(4.dp))
-                    Text("¥1,120.00 · 占比 32%", fontSize = 11.sp, color = Tokens.Muted)
+                    Text(
+                        top?.let { formatCents(it.amount) + " · 占比 " + String.format("%.0f%%", it.ratio * 100) } ?: "—",
+                        fontSize = 11.sp,
+                        color = Tokens.Muted,
+                    )
                 }
             }
         }
@@ -74,10 +113,17 @@ fun AnalysisScreen(onBack: () -> Unit) {
         SectionHeader("支出构成")
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                DonutChart()
+                DonutChart(spending)
                 Spacer(Modifier.size(16.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    slices.forEach { slice ->
+                    val slices = spending?.categories?.map { c ->
+                        Slice(c.label, formatCents(c.amount), c.ratio.toFloat(), Tokens.Ink2)
+                    } ?: slices
+                    (spending?.categories?.map { it.ratio.toFloat() }?.let { ratios ->
+                slices.mapIndexed { index, slice ->
+                    slice.copy(percent = ratios.getOrElse(index) { slice.percent })
+                }
+            } ?: slices).forEach { slice ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Box(
                                 Modifier
@@ -128,9 +174,9 @@ fun AnalysisScreen(onBack: () -> Unit) {
         SectionHeader("现金流 · 近 30 天", "人民币 CNY")
         KvCard(
             listOf(
-                "收入" to "+¥23,000.00",
-                "支出" to "-¥12,486.50",
-                "净流入" to "+¥10,513.50",
+                "收入" to (cash?.let { "+" + formatCents(it.totalIncome) } ?: "—"),
+                "支出" to (cash?.let { "-" + formatCents(it.totalExpense) } ?: "—"),
+                "净流入" to (cash?.let { formatCents(it.totalIncome - it.totalExpense) } ?: "—"),
             ),
             Modifier.padding(horizontal = 14.dp),
         )
@@ -138,12 +184,16 @@ fun AnalysisScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun DonutChart() {
+private fun DonutChart(spending: SpendingDto?) {
     Box(Modifier.size(118.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(118.dp)) {
             val stroke = Stroke(width = 34f)
             var start = -90f
-            slices.forEach { slice ->
+            (spending?.categories?.map { it.ratio.toFloat() }?.let { ratios ->
+                slices.mapIndexed { index, slice ->
+                    slice.copy(percent = ratios.getOrElse(index) { slice.percent })
+                }
+            } ?: slices).forEach { slice ->
                 val sweep = slice.percent * 360f
                 drawArc(
                     color = slice.color,
@@ -157,8 +207,13 @@ private fun DonutChart() {
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("10 月合计", fontSize = 9.5.sp, color = Tokens.Muted)
-            Text("¥3,486.50", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Text(spending?.month?.takeLast(2)?.plus(" 月合计") ?: "本月合计", fontSize = 9.5.sp, color = Tokens.Muted)
+            Text(
+                spending?.let { formatCents(it.total) } ?: "—",
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Tokens.Ink,
+            )
         }
     }
 }
