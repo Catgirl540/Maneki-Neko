@@ -21,7 +21,6 @@ import { InvitationsPage } from '@/pages/InvitationsPage'
 import { MembershipPage } from '@/pages/MembershipPage'
 import { ExchangePage } from '@/pages/ExchangePage'
 import { CashflowPage } from '@/pages/CashflowPage'
-import { ImPage } from '@/pages/ImPage'
 import { CreditPage } from '@/pages/CreditPage'
 import { CashManagementPage } from '@/pages/CashManagementPage'
 import { InsurancePage } from '@/pages/InsurancePage'
@@ -59,6 +58,12 @@ function ClientEntry({ children }: { children: ReactNode }) {
  * 于是"登录后回到你刚才想去的页面"这件事从来没生效过。
  * （这个 bug 原来就在，只是当时两边都指向 `/`，看不出来。）
  */
+/** 微信里带 #code= 的旧链接落到助手页的 IM 视图，hash 原样带过去。 */
+function RemindersRedirect() {
+  const { hash } = useLocation()
+  return <Navigate to={{ pathname: '/assistant', search: '?view=im', hash }} replace />
+}
+
 function LoginRoute() {
   const { user } = useSession()
   const location = useLocation()
@@ -116,7 +121,7 @@ export default function App() {
                 <Route path="/wealth/insurance" element={<InsurancePage />} />
                 <Route path="/exchange" element={<ExchangePage />} />
                 <Route path="/cashflow" element={<CashflowPage />} />
-                <Route path="/reminders" element={<ImPage />} />
+                <Route path="/reminders" element={<RemindersRedirect />} />
                 <Route path="/credit" element={<CreditPage />} />
                 <Route path="/security" element={<SecurityPage />} />
                 <Route path="/security/invitations" element={<InvitationsPage />} />
