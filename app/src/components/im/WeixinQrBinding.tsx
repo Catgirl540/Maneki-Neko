@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { startWeixinQr, getWeixinQr, verifyWeixinQr, cancelWeixinQr, confirmWeixinQr, type WeixinQr } from '@/api/im'
+import './im-page.css'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Field } from '@/components/ui/Field'
@@ -11,18 +12,32 @@ const labels: Record<string, string> = {
   expired: '二维码已过期，请重新生成', failed: '微信连接未完成，请重新生成或稍后重试', cancelled: '本次扫码已取消',
 }
 const active = new Set(['starting', 'pending', 'scanned', 'needs_verification', 'connecting'])
+// 扫码尝试 5 分钟有效：切视图/刷新不该丢掉进行中的扫码，attemptId 落 sessionStorage 断点续扫。
+const ATTEMPT_KEY = 'luckycat.im.wx-attempt'
+const storedAttempt = () => { try { return sessionStorage.getItem(ATTEMPT_KEY) } catch { return null } }
+const saveAttempt = (id: string | null) => { try { if (id) sessionStorage.setItem(ATTEMPT_KEY, id); else sessionStorage.removeItem(ATTEMPT_KEY) } catch {} }
 export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
   const [qr, setQr] = useState<WeixinQr | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [code, setCode] = useState('')
-  const [now, setNow] = useState(Date.now())
+  const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (!qr || qr.binding) return
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [qr?.attemptId, qr?.binding]) // eslint-disable-line react-hooks/exhaustive-deps
   const expired = qr !== null && !qr.binding && qr.expiresAt <= now
+  // 断点续扫：挂载时若留有进行中的尝试，取回服务端最新状态接着轮询。
+  useEffect(() => {
+    const id = storedAttempt()
+    if (!id || qr) return
+    getWeixinQr(id).then(value => { setQr(value); setNow(Date.now()) }).catch(() => saveAttempt(null))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!qr) return
+    if (qr.binding || ['failed', 'expired', 'cancelled'].includes(qr.status) || qr.expiresAt <= Date.now()) saveAttempt(null)
+  }, [qr])
   useEffect(() => {
     if (!qr || expired || !active.has(qr.status)) return
     let stopped = false
@@ -70,7 +85,7 @@ export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
               <small>{qr?.binding ? '已绑定当前银行账户' : connected ? '请完成下方银行绑定确认' : finished ? '请生成新的连接二维码' : '点击下方按钮生成连接二维码'}</small>
             </div>}
         </div>
-        {(!qr || finished) && <Button className="im-qr-generate" variant="ink" loading={busy} onClick={() => void act(async () => { setNow(Date.now()); setQr(await startWeixinQr()) })}>
+        {(!qr || finished) && <Button className="im-qr-generate" variant="ink" loading={busy} onClick={() => void act(async () => { setNow(Date.now()); const next = await startWeixinQr(); saveAttempt(next.attemptId); setQr(next) })}>
           {qr ? '重新生成二维码' : '生成微信连接二维码'}
         </Button>}
         {qr && <>

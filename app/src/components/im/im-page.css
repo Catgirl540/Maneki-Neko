@@ -53,6 +53,18 @@
 .im-page .im-history-heading button { margin-top: -6px; }
 .im-page .im-history-empty { min-height: 280px; }
 .im-page .im-reminder-footnote { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--color-line); color: var(--color-ink-mute); font-size: 11px; line-height: 1.7; }
+/* ── 助手页内嵌 IM 视图：居中窄列，状态卡 + 扫码卡 ─────────────────── */
+.im-page { width: 100%; max-width: 720px; margin: 0 auto; }
+.im-page .im-status-card { padding-bottom: 18px; }
+.im-page .im-status-lines { display: grid; gap: 10px; margin-top: 16px; }
+.im-page .im-status-line { display: flex; align-items: center; gap: 12px; }
+.im-page .im-status-mark { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border: 1px solid var(--color-line); border-radius: 50%; background: var(--color-sunk); color: var(--color-ink-mute); }
+.im-page .im-status-mark.is-live { border-color: var(--color-gold); background: var(--color-gold); color: #fff; }
+.im-page .im-status-main { display: grid; gap: 2px; min-width: 0; }
+.im-page .im-status-main b { color: var(--color-ink); font-size: 13px; font-weight: 500; }
+.im-page .im-status-main small { color: var(--color-ink-mute); font-size: 11px; line-height: 1.6; }
+.im-page .im-status-skeleton { height: 30px; margin-top: 16px; }
+.im-page .im-status-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; }
 @media (min-width: 1024px) {
   .im-page .im-reminders-layout { grid-template-columns: minmax(260px, .85fr) minmax(0, 1.35fr); }
   .im-page .im-reminder-history { border-left: 1px solid var(--color-line); padding-left: 28px; }

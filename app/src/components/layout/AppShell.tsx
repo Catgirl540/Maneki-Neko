@@ -4,8 +4,8 @@ import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 import { serviceForPath, smartServices, type SmartServiceId } from './services'
 import { SupportPage } from '@/pages/SupportPage'
-import { WeixinQrBinding } from '@/components/im/WeixinQrBinding'
-import { BellIcon, ChatIcon, ShieldIcon } from '@/components/ui/icons'
+import { ImConnectView } from '@/components/im/ImConnectView'
+import { BellIcon, ChatIcon } from '@/components/ui/icons'
 
 /** 助手与输入草稿跨业务页面保活；只有业务内容随路由切换。 */
 export function AppShell() {
@@ -66,12 +66,7 @@ export function AppShell() {
         )}
         {imView && (
           <div className="business-scroll min-h-0 flex-1 overflow-y-auto">
-            <div className="business-content">
-              <div className="im-page flex flex-col gap-6">
-                <WeixinQrBinding onBound={async () => {}} />
-                <p className="im-security-note"><ShieldIcon size={16} />银行登录密码、支付密码仅在银行页面填写；资金操作仍需单独确认。</p>
-              </div>
-            </div>
+            <div className="business-content"><ImConnectView /></div>
           </div>
         )}
         <SupportPage hidden={imView} workbench={{ docked: !home, tasks: services, focusRequest, highlightTaskId,
