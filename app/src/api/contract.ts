@@ -31,6 +31,8 @@ import type {
   ReceiptFile,
   SecurityOverview,
   SmsCodeResult,
+  SpendReceipt,
+  SpendRequest,
   SpendingAnalysis,
   SupportMessage,
   SupportReply,
@@ -137,6 +139,8 @@ export const routes = {
   cardLock: (id: string) => `/api/cards/${id}/lock`,
   cardReplace: (id: string) => `/api/cards/${id}/replace`,
   cardSettings: (id: string) => `/api/cards/${id}/settings`,
+  cardSpend: (id: string) => `/api/cards/${id}/spend`,
+  cardActivate: (id: string) => `/api/cards/${id}/activate`,
   /** 卡安全码：单独验支付密码后取，不进卡列表接口 */
   cardSecrets: (id: string) => `/api/cards/${id}/secrets`,
 
@@ -299,6 +303,10 @@ export interface BankApi {
       >
     > & CardLimitPatch,
   ): Promise<BankCard>
+  /** 模拟消费：预设商户刷卡，从卡绑定账户扣款；分类由服务端分类器判定 */
+  spendOnCard(id: string, req: SpendRequest): Promise<SpendReceipt>
+  /** 激活卡片：收到实体卡后启用（待激活 → 使用中），需支付密码 */
+  activateCard(id: string, paymentPassword: string): Promise<BankCard>
 
   // —— 理财（投资与资产）——
   listWealthProducts(): Promise<WealthProduct[]>

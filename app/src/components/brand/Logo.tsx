@@ -1,3 +1,5 @@
+import brandCat from '../../assets/design/brand-cat.png'
+import { cn } from '../../lib/cn'
 import { WorkbenchBrand } from './WorkbenchBrand'
 import { CAT_MARK, CAT_MARK_VIEW_BOX } from './cat-mark'
 
@@ -61,15 +63,16 @@ export function Logo({
 }
 
 /** App Icon：金色圆角方 + 负空间猫脸（对应 logo-c-negative-cat.png） */
+/**
+ * 应用图标 —— 与安卓启动图标同一套：白底圆角 + 品牌猫头，不加金色描边。
+ *
+ * 之前这里是手绘 SVG（金底白猫），与安卓端图标不一致；现在直接用品牌猫素材，
+ * 网页下载页与手机桌面看到的图标保持一致。
+ */
 export function AppIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 64 64" className={className} role="presentation" aria-hidden="true">
-      <rect width="64" height="64" rx="16" fill="currentColor" />
-      <path d="M17 22.5 L19.5 10 L30 19.5 Z" fill="var(--color-surface)" />
-      <path d="M47 22.5 L44.5 10 L34 19.5 Z" fill="var(--color-surface)" />
-      <circle cx="24" cy="36" r="3.4" fill="var(--color-surface)" />
-      <circle cx="40" cy="36" r="3.4" fill="var(--color-surface)" />
-      <path d="M32 42.5 L36 48 H28 Z" fill="var(--color-surface)" />
-    </svg>
+    <span className={cn('app-icon', className)} role="presentation" aria-hidden="true">
+      <img src={brandCat} alt="" />
+    </span>
   )
 }

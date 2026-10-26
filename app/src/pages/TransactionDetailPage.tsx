@@ -344,7 +344,7 @@ interface InfoField {
 function rowsOf(tx: TransactionRecord, detail: TransactionDetail): InfoField[] {
   const fields: InfoField[] = [
     { label: '交易状态', value: statusText(tx.status, tx.pendingReason) },
-    { label: '交易类型', value: CATEGORY_LABEL[tx.category] },
+    { label: '交易类型', value: tx.classificationState === 'pending' ? `${CATEGORY_LABEL[tx.category]} · 正在分类` : tx.classificationState === 'failed' ? `${CATEGORY_LABEL[tx.category]} · 分类暂不可用` : CATEGORY_LABEL[tx.category] },
     { label: '交易渠道', value: CHANNEL_LABEL[detail.channel] },
     { label: '交易时间', value: formatDateTimeFull(tx.createdAt) },
   ]

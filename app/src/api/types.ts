@@ -101,6 +101,13 @@ export interface Transaction {
   createdAt: string
   status: TransactionStatus
   /**
+   * 后台分类状态。
+   * `pending` = 分类器还在判定（页面显示「正在分类」），`done` = 已回写分类，
+   * `failed` = 模型链全部重试失败，分类保持 other。
+   * 没有该字段的老数据视为已分类。
+   */
+  classificationState?: 'pending' | 'done' | 'failed'
+  /**
    * pending 的原因：`inflight` = 在途（大额转账延迟到账窗口，期间可撤销/可被拦截）；
    * `clearing` = 外行汇款模拟清算。服务端填，前端只渲染（清单 §9.2）。
    * 没有这个字段的 pending 是老数据，按「处理中」显示。
@@ -142,6 +149,12 @@ export interface TransactionDetail {
   counterpartyName?: string
   /** 商户编号（收单机构分配） */
   merchantId?: string
+  /**
+   * 卡类交易所属的卡 id。
+   * 单日限额按卡累计，没有这个字段就只能从支付方式字符串里猜尾号 —— 不可靠。
+   * 老数据没有该字段，按「不计入按卡限额」处理。
+   */
+  cardId?: string
   /** 商户注册国家或地区 */
   merchantCountry?: string
   /** 商户注册城市 */
@@ -698,6 +711,29 @@ export interface SpendingCategory {
 export interface SpendingTrendPoint {
   month: string
   amount: Cents
+}
+
+/** 模拟消费请求：平台与金额，扣哪张卡由路径里的卡 id 决定 */
+export interface SpendRequest {
+  /** 预设平台 id（见 shared/spend-platforms.mjs） */
+  platform: string
+  amount: Cents
+}
+
+/**
+ * 模拟消费回执。
+ *
+ * 分类由服务端分类器判定后随回执返回 —— 前端不猜，页面按它显示「已计入餐饮」这类提示。
+ * 分类器不可用时是 other，与既有自动分类的降级口径一致。
+ */
+export interface SpendReceipt {
+  transaction: Transaction
+  category: TransactionCategory
+  /** 后台分类状态：pending 时页面显示「正在分类」并轮询交易详情 */
+  classificationState?: 'pending' | 'done' | 'failed'
+  /** 扣款后的账户余额快照（该卡绑定账户的币种分区） */
+  available: Cents
+  currency: Currency
 }
 
 /** 现金流图表的单日数据点 */

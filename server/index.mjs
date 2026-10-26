@@ -37,8 +37,15 @@ const holdWindowMs = Number(process.env.BANK_TRANSFER_HOLD_SECONDS ?? 300) * 100
 // staffApi 依赖 bank 的资金钩子，bank 的回调又要回写 staffApi 的记录，
 // 所以用前向引用解开环：先建 bank，回调触发时 staffApi 已就位。
 let staffApi
-// 交易自动分类：OpenRouter 模型按对方户名/摘要归入消费分类；无 OPENROUTER_API_KEY 时禁用
-const categorizer = createCategorizer({ apiKey: process.env.OPENROUTER_API_KEY, model: process.env.BANK_CATEGORIZE_MODEL })
+// 交易自动分类：OpenRouter 模型按对方户名/摘要归入消费分类；无 OPENROUTER_API_KEY 时禁用。
+// 模型链：BANK_CATEGORIZE_MODEL 可用逗号指定首选，后面自动接默认回退模型；
+// 每个模型最多重试 3 次，全失败才降级 other（后台任务据此标记 failed）。
+const categorizeModels = (process.env.BANK_CATEGORIZE_MODEL ?? '')
+  .split(',').map((item) => item.trim()).filter(Boolean)
+const categorizer = createCategorizer({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  models: categorizeModels.length > 0 ? categorizeModels : undefined,
+})
 const classify = categorizer.enabled
   ? async (tx) => {
       const category = await categorizer.classify(tx)
@@ -46,6 +53,10 @@ const classify = categorizer.enabled
       return category
     }
   : categorizer.classify
+// 后台分类任务要区分「失败」与「判定为 other」，用带失败标记的版本
+classify.detailed = (tx) => categorizer.enabled
+  ? categorizer.classifyDetailed(tx)
+  : Promise.resolve({ category: 'other', failed: false })
 const bank = await createBankApi({
   security,
   database,

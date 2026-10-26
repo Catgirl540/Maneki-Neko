@@ -42,6 +42,8 @@ export const routes = {
     cardLock: (id) => `/api/cards/${id}/lock`,
     cardReplace: (id) => `/api/cards/${id}/replace`,
     cardSettings: (id) => `/api/cards/${id}/settings`,
+    cardSpend: (id) => `/api/cards/${id}/spend`,
+    cardActivate: (id) => `/api/cards/${id}/activate`,
     /** 卡安全码：单独验支付密码后取，不进卡列表接口 */
     cardSecrets: (id) => `/api/cards/${id}/secrets`,
     wealthProducts: () => '/api/wealth/products',

@@ -13,6 +13,7 @@ import { useReveal } from '@/lib/useReveal'
 import { RevealToggle } from '@/components/ui/Reveal'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
+import { PinInput } from '@/components/ui/PinInput'
 import { Card } from '@/components/ui/Card'
 import { EmptyState, Skeleton, Tag } from '@/components/ui/Segmented'
 import { Row, Toggle } from '@/components/ui/Toggle'
@@ -63,6 +64,10 @@ export function CardsPage() {
   /** 正在查看安全码的卡；null 表示弹窗关闭 */
   const [secretsFor, setSecretsFor] = useState<BankCard | null>(null)
   const [deliveryFor, setDeliveryFor] = useState<BankCard | null>(null)
+  /** 正在激活的待激活卡；null 表示弹窗关闭 */
+  const [activateFor, setActivateFor] = useState<BankCard | null>(null)
+  const [activatePin, setActivatePin] = useState('')
+  const [activating, setActivating] = useState(false)
   /**
    * 已解锁的安全码，按卡记，**带时限**。
    * 放在页面而不是卡片组件里：解锁弹窗挂在页面上，而且切卡回来时这个状态不该丢。
@@ -279,6 +284,8 @@ export function CardsPage() {
                         ...(locking ? { onlinePayment: false, overseasPayment: false } : {}),
                       }), () => api.setCardLock(card.id, locking), locking ? '卡片已锁定，所有交易将被拦截' : '卡片已解锁')
                     }}>{card.status === 'locked' ? '解锁卡片' : '立即锁卡'}</Button>
+                  {card.status === 'pending' && <Button size="sm" variant="primary"
+                    onClick={() => { setActivatePin(''); setActivateFor(card) }}>激活卡片</Button>}
                   <Button size="sm" icon={<RefreshIcon size={16} />} disabled={busy || card.status === 'replaced'}
                     onClick={() => setApplication({ mode: 'replace', card })}>换卡</Button>
                   {(card.shippingAddress || card.issuingFee) && <Button size="sm" variant="ghost" onClick={() => setDeliveryFor(card)}>寄送信息</Button>}
@@ -316,6 +323,27 @@ export function CardsPage() {
           </section>
         </div>
       )}
+
+      <Modal open={activateFor !== null} onClose={() => setActivateFor(null)} title="激活卡片">
+        {activateFor && <div className="space-y-4 text-[14px]">
+          <p className="text-ink-soft">确认已收到 <strong className="text-ink">{activateFor.productName}</strong>（尾号 {activateFor.last4}）并立即启用。激活需要验证支付密码。</p>
+          <PinInput label="支付密码" value={activatePin} onChange={setActivatePin} />
+          <Button block variant="primary" loading={activating} disabled={!/^\d{6}$/.test(activatePin)}
+            onClick={() => {
+              const card = activateFor
+              if (!card) return
+              setActivating(true); setError(null)
+              void api.activateCard(card.id, activatePin)
+                .then(fresh => {
+                  cards.setData((cards.data ?? []).map(c => c.id === fresh.id ? fresh : c))
+                  toast.show('卡片已激活，可以开始使用', 'success')
+                  setActivateFor(null)
+                })
+                .catch(err => setError(err instanceof ApiError ? err.message : '激活失败，请稍后重试'))
+                .finally(() => setActivating(false))
+            }}>确认激活</Button>
+        </div>}
+      </Modal>
 
       <Modal open={deliveryFor !== null} onClose={() => setDeliveryFor(null)} title="寄送信息">
         {deliveryFor && <dl className="space-y-5 text-[14px]">

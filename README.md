@@ -145,7 +145,7 @@ Agent 需要服务端 `OPENROUTER_API_KEY`；模型与知识库配置仍由框�
 
 OpenRouter 主模型由 `LUCKYCAT_MODEL` 指定；设置 `LUCKYCAT_FALLBACK_MODELS=deepseek/deepseek-v4.1-flash,z-ai/glm-5.3-flash` 后，主模型失败时按顺序回落。回落由 OpenRouter 在单次模型请求内处理，工具和确认流程保持原有校验。运行 `node tools/check-model-fallbacks.mjs` 验证请求适配层。
 
-银行后端复用 `OPENROUTER_API_KEY` 做交易自动分类：记账时对未指定分类的支出流水调用 OpenRouter 决策模型（默认 `perplexity/pplx-decider-flash-v1.2`，`BANK_CATEGORIZE_MODEL` 可换）归入消费分类；未配置密钥、超时或响应无效时回落 `other`，不影响记账。详见 `server/README.md`。
+银行后端复用 `OPENROUTER_API_KEY` 做交易自动分类：对未指定分类的支出流水调用 OpenRouter 决策模型（默认链 `perplexity/pplx-decider-flash-v1.2` → `respan/span-02`，每模型重试 3 次，`BANK_CATEGORIZE_MODEL` 可用逗号指定首选）归入消费分类；未配置密钥或全部重试失败时回落 `other`，不影响记账。模拟消费先记账、后台分类，前端显示「正在分类」。详见 `server/README.md`。
 
 登录后可以查询余额、流水、交易详情、理财产品与持仓。转账必须明确付款账户、收款人、**完整收款账号**及银行代码/地区；不能仅凭尾号扣款。确认卡展示后端核对的信息和费用，支付密码由当前银行账户校验，返回同一 PostgreSQL 后端的业务回执。当前 Agent 转账支持境内人民币银行转账，FPS、跨境与换汇请使用账户总览的转出弹窗。
 
@@ -438,6 +438,8 @@ POST   /api/cards/open              申请新卡（扣制卡费 + 邮寄地址 +
 POST   /api/cards/:id/lock          锁卡 / 解锁
 POST   /api/cards/:id/replace       换卡
 PATCH  /api/cards/:id/settings      消费开关（paymentEnabled）与渠道 / 商户限额
+POST   /api/cards/:id/spend         模拟消费：预设商户刷卡，从卡绑定账户扣款，分类由分类器判定
+POST   /api/cards/:id/activate      激活卡片（待激活 → 使用中，需支付密码）
 GET    /api/cards/:id/secrets       查看完整卡号与安全码（需支付密码；见 §12.4）
 POST   /api/cards/:id/virtual       动态一次性卡号（单笔限额 + 有效期；仅创建时返回卡号）
 

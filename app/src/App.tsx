@@ -10,6 +10,7 @@ import { AnalysisPage } from '@/pages/AnalysisPage'
 import { BillsPage } from '@/pages/BillsPage'
 import { AutoDebitsPage } from '@/pages/AutoDebitsPage'
 import { CardsPage } from '@/pages/CardsPage'
+import { SpendPage } from '@/pages/SpendPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { OverviewPage } from '@/pages/OverviewPage'
 import { LandingPage } from '@/pages/LandingPage'
@@ -102,6 +103,7 @@ export default function App() {
                   <Route path="/dashboard" element={<OverviewPage />} />
                   <Route path="/accounts" element={<DashboardPage />} />
                   <Route path="/cards" element={<CardsPage />} />
+                  <Route path="/spend" element={<SpendPage />} />
                   <Route path="/receiving" element={<Navigate to="/accounts?flow=in" replace />} />
                   <Route path="/analysis" element={<BillsPage />} />
                   <Route path="/analysis/statistics" element={<AnalysisPage />} />
