@@ -1613,6 +1613,11 @@ export function createMockApi(options?: {
       const amount = input?.amount
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ApiError('消费金额必须大于 0', 400, 'INVALID_AMOUNT')
       if (amount > SPEND_MAX_CENTS) throw new ApiError(`单笔模拟消费上限 ¥${formatAmount(SPEND_MAX_CENTS)}`, 400, 'LIMIT_EXCEEDED')
+      // 账单详情：与生产实现同一口径——单行、去首尾空白、最多 80 字
+      const note = typeof input?.note === 'string' ? input.note.trim() : ''
+      if (note.length > 80 || [...note].some(ch => (ch.codePointAt(0) ?? 0) < 32 || ch.codePointAt(0) === 127))
+        throw new ApiError('账单详情最多 80 字，且不能包含换行或控制字符', 400, 'INVALID_NOTE')
+      const memo = note ? `${platform.name} · ${note}` : `${platform.name} 消费`
       const balance = findBalance(db, card.accountId)
       if (!balance) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
       const onlineLimit = card.channelLimits?.online
@@ -1638,7 +1643,7 @@ export function createMockApi(options?: {
         amount,
         signedAmount: -amount,
         counterparty: platform.name,
-        memo: `${platform.name} 消费`,
+        memo,
         category: 'other',
         classificationState,
         createdAt: new Date().toISOString(),
@@ -1655,7 +1660,8 @@ export function createMockApi(options?: {
         merchantCity: platform.city,
         location: platform.location,
         counterpartyBank: platform.counterpartyBank,
-        remark: `模拟消费 · ${platform.name}`,
+        merchantNote: note || undefined,
+        remark: `模拟消费 · ${platform.name}${note ? ` · ${note}` : ''}`,
       }, false)
       persist()
       if (classificationState === 'pending' && classify) {
@@ -1663,7 +1669,7 @@ export function createMockApi(options?: {
         void Promise.resolve()
           .then(() => classify({
             counterparty: platform.name,
-            memo: `${platform.name} 消费`,
+            memo,
             direction: 'out',
             channel: 'card',
             amount,

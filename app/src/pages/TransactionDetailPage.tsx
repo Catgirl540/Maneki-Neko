@@ -369,6 +369,9 @@ function rowsOf(tx: TransactionRecord, detail: TransactionDetail): InfoField[] {
   if (detail.location) {
     fields.push({ label: '交易地点', value: detail.location })
   }
+  if (detail.merchantNote) {
+    fields.push({ label: '商品', value: detail.merchantNote })
+  }
   if (detail.counterpartyAccountNo) {
     fields.push({ label: '对方账号', value: detail.counterpartyAccountNo })
   }

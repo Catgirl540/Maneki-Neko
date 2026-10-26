@@ -49,6 +49,8 @@ export function SpendPage() {
   const [platformId, setPlatformId] = useState<string>(preset?.id ?? SPEND_PLATFORMS[0].id)
   const [cardId, setCardId] = useState<string | null>(null)
   const [amountText, setAmountText] = useState('38.50')
+  /** 账单详情：店铺/商品说明，可留空 */
+  const [noteText, setNoteText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [receipt, setReceipt] = useState<SpendReceipt | null>(null)
   /** 后台分类完成后回填的最终分类；null 表示还没拿到 */
@@ -102,7 +104,8 @@ export function SpendPage() {
     if (!selectedCard || amount === null || overCap) return
     setSubmitting(true); setError(null)
     try {
-      const result = await api.spendOnCard(selectedCard.id, { platform: platform.id, amount })
+      const note = noteText.trim()
+      const result = await api.spendOnCard(selectedCard.id, { platform: platform.id, amount, ...(note ? { note } : {}) })
       setClassified(result.classificationState === 'pending' ? null : result.category)
       setReceipt(result)
       cards.reload()
@@ -131,9 +134,13 @@ export function SpendPage() {
             const active = item.id === platform.id
             return (
               <button key={item.id} type="button" onClick={() => setPlatformId(item.id)}
-                className={`rounded-card border px-3 py-2.5 text-left transition-colors ${active ? 'border-gold bg-gold-tint text-ink' : 'border-line bg-surface text-ink-soft hover:bg-sunk'}`}>
-                <span className="block text-[13px] font-medium">{item.name}</span>
-                <span className="num mt-0.5 block text-[11px] text-ink-mute">{item.city} · {item.merchantId}</span>
+                className={`flex items-center gap-2.5 rounded-card border px-3 py-2.5 text-left transition-colors ${active ? 'border-gold bg-gold-tint text-ink' : 'border-line bg-surface text-ink-soft hover:bg-sunk'}`}>
+                <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-[10px] text-[15px] font-semibold"
+                  style={{ background: item.tone, color: item.ink ?? '#fff' }}>{item.glyph}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium">{item.name}</span>
+                  <span className="num mt-0.5 block truncate text-[11px] text-ink-mute">{item.city} · {item.merchantId}</span>
+                </span>
               </button>
             )
           })}
@@ -173,6 +180,12 @@ export function SpendPage() {
           </div>
         </div>
 
+        <div className="mt-4">
+          <Field label="账单详情（可选）" value={noteText} maxLength={80} placeholder={platform.noteHint}
+            onChange={e => setNoteText(e.target.value)} />
+          <p className="mt-1 text-[11px] text-ink-mute">写进流水摘要，如店铺名与商品；留空则记为「{platform.name} 消费」。</p>
+        </div>
+
         {error && <p role="alert" className="mt-4 text-[13px] text-coral">{error}</p>}
         <Button block size="lg" className="mt-5" variant="primary" loading={submitting}
           disabled={!selectedCard || amount === null || overCap} onClick={() => void submit()}>
@@ -186,6 +199,7 @@ export function SpendPage() {
           <p className="mt-4 text-[13px] text-ink-soft">在「{receipt.transaction.counterparty}」的模拟消费已记账。</p>
           <dl className="mt-4 flex flex-col gap-3 text-[14px]">
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">商户</dt><dd className="text-right text-ink">{receipt.transaction.counterparty}</dd></div>
+            <div className="flex justify-between gap-4"><dt className="text-ink-soft">账单详情</dt><dd className="text-right text-ink">{receipt.transaction.memo}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">金额</dt><dd className="num text-right text-ink">¥{formatAmount(receipt.transaction.amount)}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">分类</dt><dd className="text-right text-ink">
               {receipt.classificationState === 'pending'
@@ -204,6 +218,7 @@ export function SpendPage() {
             <li className="flex gap-2"><ReceiptIcon size={15} className="mt-0.5 shrink-0 text-ink-mute" />扣的是卡绑定的资金账户余额，不新建账户；多张卡共享同一个账户。</li>
             <li className="flex gap-2"><CardIcon size={15} className="mt-0.5 shrink-0 text-ink-mute" />锁定、待激活、已换发的卡不能消费；关闭线上支付的卡同样拒绝。</li>
             <li className="flex gap-2"><ReceiptIcon size={15} className="mt-0.5 shrink-0 text-ink-mute" />单笔上限 ¥{formatAmount(SPEND_MAX_CENTS)}，并受单日限额、渠道限额与商户类别限额约束。</li>
+            <li className="flex gap-2"><ReceiptIcon size={15} className="mt-0.5 shrink-0 text-ink-mute" />账单详情可写店铺与商品（如「嗉泰面（大朗店）· 猪扒包」），会写进流水摘要。</li>
             <li className="flex gap-2"><ReceiptIcon size={15} className="mt-0.5 shrink-0 text-ink-mute" />链接带标记可直接进入并预选平台：<span className="num">/spend?merchant=meituan</span></li>
           </ul>
         </Card>}

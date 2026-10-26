@@ -165,6 +165,8 @@ export interface TransactionDetail {
   counterpartyBank?: string
   /** 交易发生地点 */
   location?: string
+  /** 模拟消费时填写的账单详情（店铺 · 商品），与摘要同源 */
+  merchantNote?: string
   /** 附言 */
   remark?: string
   /** 卡类 / 快捷支付的授权码 */
@@ -718,6 +720,8 @@ export interface SpendRequest {
   /** 预设平台 id（见 shared/spend-platforms.mjs） */
   platform: string
   amount: Cents
+  /** 账单详情（可选）：店铺/商品说明，写进流水摘要，如「嗉泰面（大朗店）· 猪扒包」 */
+  note?: string
 }
 
 /**

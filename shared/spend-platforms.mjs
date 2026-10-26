@@ -1,7 +1,8 @@
 /**
  * 模拟消费的预设平台目录。
  *
- * 只描述**商户身份**（商户名、收单机构、城市、商户号）——分类不在这里写死。
+ * 只描述**商户身份**（商户名、收单机构、城市、商户号）与展示用的图标元数据
+ * （glyph 字形、tone 品牌底色、noteHint 账单详情示例）——分类不在这里写死。
  * 交易分类由服务端的分类器按商户名与摘要判定，和真实刷卡消费走同一条路径；
  * 分类器不可用时保持 other，与既有 `pushTransaction` 的约定一致。
  *
@@ -15,6 +16,10 @@ export const SPEND_PLATFORMS = [
   {
     id: 'meituan',
     name: '美团外卖',
+    glyph: '美',
+    tone: '#FFD100',
+    ink: '#1F1F1F',
+    noteHint: '店铺 · 商品，如：嗉泰面（大朗店）· 猪扒包',
     merchantId: 'M3101150001',
     country: '中国',
     city: '北京市',
@@ -24,6 +29,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'taobao',
     name: '淘宝',
+    glyph: '淘',
+    tone: '#FF5000',
+    noteHint: '商品名称，如：无线耳机',
     merchantId: 'M3301060002',
     country: '中国',
     city: '杭州市',
@@ -33,6 +41,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'jd',
     name: '京东',
+    glyph: '京',
+    tone: '#E1251B',
+    noteHint: '商品名称，如：机械键盘',
     merchantId: 'M1101080003',
     country: '中国',
     city: '北京市',
@@ -42,6 +53,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'pinduoduo',
     name: '拼多多',
+    glyph: '拼',
+    tone: '#E02E24',
+    noteHint: '商品名称，如：抽纸 24 包',
     merchantId: 'M3101040004',
     country: '中国',
     city: '上海市',
@@ -51,6 +65,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'didi',
     name: '滴滴出行',
+    glyph: '滴',
+    tone: '#FF7F41',
+    noteHint: '行程，如：机场 → 公司',
     merchantId: 'M1101050005',
     country: '中国',
     city: '北京市',
@@ -60,6 +77,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'luckin',
     name: '瑞幸咖啡',
+    glyph: '瑞',
+    tone: '#002D62',
+    noteHint: '门店 · 饮品，如：望京 SOHO 店 · 生椰拿铁',
     merchantId: 'M1101010006',
     country: '中国',
     city: '北京市',
@@ -69,6 +89,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'starbucks',
     name: '星巴克',
+    glyph: '星',
+    tone: '#00754A',
+    noteHint: '门店 · 饮品，如：国贸店 · 燕麦拿铁',
     merchantId: 'M3101010007',
     country: '中国',
     city: '上海市',
@@ -78,6 +101,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'hema',
     name: '盒马鲜生',
+    glyph: '盒',
+    tone: '#1A66FF',
+    noteHint: '门店 · 商品，如：世纪大道店 · 车厘子',
     merchantId: 'M3101150008',
     country: '中国',
     city: '上海市',
@@ -87,6 +113,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'iqiyi',
     name: '爱奇艺会员',
+    glyph: '奇',
+    tone: '#00BE06',
+    noteHint: '会员套餐，如：黄金会员月卡',
     merchantId: 'M1101080009',
     country: '中国',
     city: '北京市',
@@ -96,6 +125,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'china-mobile',
     name: '中国移动话费',
+    glyph: '移',
+    tone: '#0085D0',
+    noteHint: '充值号码，如：138****8000',
     merchantId: 'M1101010010',
     country: '中国',
     city: '北京市',
@@ -105,6 +137,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'ziroom',
     name: '自如房租',
+    glyph: '自',
+    tone: '#1F1F1F',
+    noteHint: '房源 · 期数，如：朝阳公园店 A 座 · 第 3 期',
     merchantId: 'M1101050011',
     country: '中国',
     city: '北京市',
@@ -114,6 +149,9 @@ export const SPEND_PLATFORMS = [
   {
     id: 'maoyan',
     name: '猫眼电影',
+    glyph: '猫',
+    tone: '#E60012',
+    noteHint: '影片 · 影院，如：流浪地球 3 · 万达影城',
     merchantId: 'M1101010012',
     country: '中国',
     city: '北京市',

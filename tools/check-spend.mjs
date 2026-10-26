@@ -78,6 +78,16 @@ const didiTx = await waitClassified(didi.transaction.id)
 assert.equal(didiTx.category, 'transport')
 ok('分类随商户变化（didi → transport）')
 
+// 2b. 账单详情：写进摘要与明细，空详情回落到默认摘要
+const detailed = await api.spendOnCard(card.id, { platform: 'meituan', amount: 1150, note: '  嗉泰面（大朗店）· 猪扒包  ' })
+assert.equal(detailed.transaction.memo, '美团外卖 · 嗉泰面（大朗店）· 猪扒包', '详情应去首尾空白后写进摘要')
+assert.equal(detailed.transaction.detail.merchantNote, '嗉泰面（大朗店）· 猪扒包', '详情应落明细供回单展示')
+const plain = await api.spendOnCard(card.id, { platform: 'meituan', amount: 1150 })
+assert.equal(plain.transaction.memo, '美团外卖 消费', '未填详情时用默认摘要')
+await rejects(() => api.spendOnCard(card.id, { platform: 'meituan', amount: 100, note: '第一行\n第二行' }), 'INVALID_NOTE', '含换行的详情被拒')
+await rejects(() => api.spendOnCard(card.id, { platform: 'meituan', amount: 100, note: 'x'.repeat(81) }), 'INVALID_NOTE', '超长详情被拒')
+ok('账单详情：去空白写入摘要与明细，换行/超长被拒')
+
 // 3. 拒绝路径
 await rejects(() => api.spendOnCard('card_nope', { platform: 'meituan', amount: 100 }), 'CARD_NOT_FOUND', '不存在的卡被拒')
 await rejects(() => api.spendOnCard(card.id, { platform: 'nope', amount: 100 }), 'SPEND_PLATFORM_NOT_FOUND', '未知平台被拒')

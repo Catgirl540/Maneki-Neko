@@ -10,6 +10,14 @@ export interface SpendPlatform {
   location: string
   /** 收单机构 */
   counterpartyBank: string
+  /** 图标字形（一个汉字），网页与回单上显示 */
+  glyph: string
+  /** 图标底色（品牌色） */
+  tone: string
+  /** 字形颜色；省略表示白色 */
+  ink?: string
+  /** 账单详情输入示例（按平台给出更贴近真实的提示） */
+  noteHint: string
 }
 
 export const SPEND_MAX_CENTS: number
