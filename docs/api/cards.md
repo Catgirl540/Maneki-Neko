@@ -25,6 +25,8 @@
 
 ## 消费开关与限额
 
+> 演示用的「模拟消费」（`POST /api/cards/:id/spend`，含自定义商家与 Stripe 收单）见 [spend.md](./spend.md)。
+
 `PATCH /api/cards/:id/settings` ← `CardLimitPatch`（扩展字段，配合原有设置项）
 
 ```json

@@ -102,8 +102,10 @@
 | POST | `/api/cards/:id/secrets` | 查看卡安全码（需支付密码） | 已实现 |
 | PATCH | `/api/cards/:id/settings` | 消费开关与限额 | 已实现 |
 | POST | `/api/cards/:id/virtual` | 动态一次性卡号 | 已实现 |
+| POST | `/api/cards/:id/spend` | 模拟消费（演示刷卡，含自定义商家 / Stripe 收单） | 已实现 |
+| POST | `/api/cards/:id/activate` | 激活待激活卡（需支付密码） | 已实现 |
 
-详见 [cards.md](./cards.md)。
+详见 [cards.md](./cards.md)；模拟消费的平台目录、校验链、后台分类与页面交互见 [spend.md](./spend.md)。
 
 ### 4 我的（邀请 / 会员 / 身份）
 

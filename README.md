@@ -438,7 +438,8 @@ POST   /api/cards/open              申请新卡（扣制卡费 + 邮寄地址 +
 POST   /api/cards/:id/lock          锁卡 / 解锁
 POST   /api/cards/:id/replace       换卡
 PATCH  /api/cards/:id/settings      消费开关（paymentEnabled）与渠道 / 商户限额
-POST   /api/cards/:id/spend         模拟消费：预设商户刷卡，从卡绑定账户扣款，分类由分类器判定
+POST   /api/cards/:id/spend         模拟消费：预设商户或自由商家（自定义 / Stripe 收单）刷卡，
+                                    从卡绑定账户扣款，分类由分类器判定；详见 docs/api/spend.md
 POST   /api/cards/:id/activate      激活卡片（待激活 → 使用中，需支付密码）
 GET    /api/cards/:id/secrets       查看完整卡号与安全码（需支付密码；见 §12.4）
 POST   /api/cards/:id/virtual       动态一次性卡号（单笔限额 + 有效期；仅创建时返回卡号）
