@@ -9,6 +9,7 @@
   border-radius: 10px;
 }
 
+/* 品牌标：白底留白展示 */
 .spend-icon.is-color {
   border: 1px solid var(--color-line);
   background: #fff;
@@ -20,16 +21,11 @@
   object-fit: contain;
 }
 
-.spend-icon-mask {
-  width: 68%;
-  height: 68%;
-  background: #fff;
-  mask-repeat: no-repeat;
-  mask-position: center;
-  mask-size: contain;
-  -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
-  -webkit-mask-size: contain;
+/* 应用图标：整块铺满，圆角由外框裁切 */
+.spend-icon.is-app img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .spend-icon-glyph {

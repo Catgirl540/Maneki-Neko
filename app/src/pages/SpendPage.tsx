@@ -16,17 +16,34 @@ import meituanIcon from '@/assets/spend/meituan.svg'
 import taobaoIcon from '@/assets/spend/taobao.svg'
 import starbucksIcon from '@/assets/spend/starbucks.svg'
 import chinaMobileIcon from '@/assets/spend/china-mobile.png'
+import jdIcon from '@/assets/spend/jd.png'
+import pinduoduoIcon from '@/assets/spend/pinduoduo.png'
+import didiIcon from '@/assets/spend/didi.png'
+import luckinIcon from '@/assets/spend/luckin.png'
+import hemaIcon from '@/assets/spend/hema.png'
+import iqiyiIcon from '@/assets/spend/iqiyi.png'
+import ziroomIcon from '@/assets/spend/ziroom.png'
+import maoyanIcon from '@/assets/spend/maoyan.png'
 import '@/styles/spend.css'
 
 /**
- * 平台真实图标（白底圆角块内展示）。
+ * 平台真实图标。
+ * app：整块应用图标，铺满圆角块；logo：白底留白的品牌标。
  * 缺素材的平台不出现在这里，回落成品牌色字形块；补图时按平台 id 加一行即可。
  */
-const PLATFORM_ICON: Record<string, string> = {
-  meituan: meituanIcon,
-  taobao: taobaoIcon,
-  starbucks: starbucksIcon,
-  'china-mobile': chinaMobileIcon,
+const PLATFORM_ICON: Record<string, { src: string; kind: 'app' | 'logo' }> = {
+  meituan: { src: meituanIcon, kind: 'logo' },
+  taobao: { src: taobaoIcon, kind: 'logo' },
+  starbucks: { src: starbucksIcon, kind: 'logo' },
+  'china-mobile': { src: chinaMobileIcon, kind: 'logo' },
+  jd: { src: jdIcon, kind: 'app' },
+  pinduoduo: { src: pinduoduoIcon, kind: 'app' },
+  didi: { src: didiIcon, kind: 'app' },
+  luckin: { src: luckinIcon, kind: 'app' },
+  hema: { src: hemaIcon, kind: 'app' },
+  iqiyi: { src: iqiyiIcon, kind: 'app' },
+  ziroom: { src: ziroomIcon, kind: 'app' },
+  maoyan: { src: maoyanIcon, kind: 'app' },
 }
 
 function PlatformIcon({ id, tone, ink, glyph, size = 36 }: {
@@ -37,10 +54,11 @@ function PlatformIcon({ id, tone, ink, glyph, size = 36 }: {
   size?: number
 }) {
   const icon = PLATFORM_ICON[id]
-  return <span aria-hidden="true" className={`spend-icon${icon ? ' is-color' : ''}`}
+  return <span aria-hidden="true"
+    className={`spend-icon${icon ? (icon.kind === 'app' ? ' is-app' : ' is-color') : ''}`}
     style={{ width: size, height: size, background: icon ? undefined : tone }}>
     {icon
-      ? <img src={icon} alt="" />
+      ? <img src={icon.src} alt="" />
       : <span className="spend-icon-glyph" style={{ color: ink ?? '#fff' }}>{glyph}</span>}
   </span>
 }
