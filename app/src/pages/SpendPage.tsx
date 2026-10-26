@@ -201,7 +201,7 @@ export function SpendPage() {
             return (
               <button key={item.id} type="button" onClick={() => setPlatformId(item.id)}
                 className={`flex items-center gap-2.5 rounded-card border px-3 py-2.5 text-left transition-colors ${active ? 'border-gold bg-gold-tint text-ink' : 'border-line bg-surface text-ink-soft hover:bg-sunk'}`}>
-                <PlatformIcon id={item.id} tone={item.tone} ink={'ink' in item ? item.ink : undefined} glyph={item.glyph} />
+                <PlatformIcon id={item.id} tone={item.tone} ink={(item as { ink?: string }).ink} glyph={item.glyph} />
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium">{item.name}</span>
                   <span className="num mt-0.5 block truncate text-[11px] text-ink-mute">{subtitle}</span>
@@ -272,7 +272,7 @@ export function SpendPage() {
         {receipt ? <Card className="bg-gold-tint">
           <CardHeader title="消费成功" />
           <p className="mt-4 flex items-center gap-2.5 text-[13px] text-ink-soft">
-            <PlatformIcon id={platform.id} tone={platform.tone} ink={platform.ink} glyph={platform.glyph} size={30} />
+            <PlatformIcon id={platform.id} tone={platform.tone} ink={(platform as { ink?: string }).ink} glyph={platform.glyph} size={30} />
             在「{receipt.transaction.counterparty}」的模拟消费已记账。
           </p>
           <dl className="mt-4 flex flex-col gap-3 text-[14px]">

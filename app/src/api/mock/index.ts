@@ -1612,18 +1612,17 @@ export function createMockApi(options?: {
       const free = preset ? null : findFreeMerchant(input?.platform)
       if (!preset && !free) throw new ApiError('消费平台不存在', 404, 'SPEND_PLATFORM_NOT_FOUND')
       // 自由商家（自定义/Stripe）：商户名由请求给出，单行、2–40 字
-      let merchantName = preset?.name
-      if (free) {
+      const merchantName = preset ? preset.name : (() => {
         const raw = typeof input?.merchant === 'string' ? input.merchant.trim() : ''
         if (raw.length < 2 || raw.length > FREE_MERCHANT_NAME_MAX
           || [...raw].some(ch => (ch.codePointAt(0) ?? 0) < 32 || ch.codePointAt(0) === 127))
           throw new ApiError(`商户名称需为 2–${FREE_MERCHANT_NAME_MAX} 字的单行文本`, 400, 'INVALID_MERCHANT')
-        merchantName = raw
-      }
+        return raw
+      })()
       const platform = preset ?? {
-        ...free,
+        ...free!,
         name: merchantName,
-        merchantId: `${free.merchantIdPrefix}${String(Date.now()).slice(-9)}`,
+        merchantId: `${free!.merchantIdPrefix}${String(Date.now()).slice(-9)}`,
       }
       const amount = input?.amount
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ApiError('消费金额必须大于 0', 400, 'INVALID_AMOUNT')
