@@ -328,10 +328,15 @@ export async function createBankApi({
   // createBankBusinessApi 在构造时恢复上次未分完的流水并落库（resumePendingClassifications）：
   // scoped 投影下这是写操作，必须在单元工作里执行，否则启动即抛「Scoped writes require…」。
   await storage.beginUnitOfWork()
+  // exclusive 在下面才定义（构造期就调用会 TDZ）：先留引用，未就位时直接执行
+  // （此时本身已处在上面这段单元工作里）。
+  let exclusiveRef = null
   let api
   try {
     api = createBankBusinessApi(
-      { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn },
+      // 后台分类任务要写库：走 exclusive 的单元工作，避免 scoped 投影下在事务外 persist
+      { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn,
+        runInUnit: (work) => exclusiveRef ? exclusiveRef(work) : work() },
     )
     await storage.commitUnitOfWork()
   }
@@ -381,6 +386,7 @@ export async function createBankApi({
     requestQueue = next.catch(() => {})
     return next
   }
+  exclusiveRef = exclusive
 
 
   async function activateRequestProfile(req, routeName) {

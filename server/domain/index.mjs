@@ -231,6 +231,8 @@ function newCardCvv() {
     return String(randomInt(100, 1000));
 }
 let txClassifier = null;
+/** 后台任务落库要开单元工作（scoped 投影）；由 createBankApi 注入，缺省直接执行。 */
+let unitRunner = (work) => work();
 /**
  * 后台分类：记账与响应都不等分类器 —— 流水先以 other 落库并标 pending，
  * 分类完成后回写 category 并把状态改成 done；全部模型重试失败标 failed（分类保持 other）。
@@ -254,7 +256,7 @@ function scheduleClassification(txId, input) {
     }
     if (classifying.has(txId))
         return;
-    const task = (async () => {
+    const task = unitRunner(async () => {
         try {
             const detail = typeof txClassifier.detailed === 'function'
                 ? await txClassifier.detailed(input)
@@ -264,7 +266,7 @@ function scheduleClassification(txId, input) {
         catch {
             applyClassification(txId, 'other', true);
         }
-    })().finally(() => classifying.delete(txId));
+    }).catch(() => {}).finally(() => classifying.delete(txId));
     classifying.set(txId, task);
 }
 /** 进程重启后接着分没分完的流水；分类器不可用时直接标 failed，不留永久「分类中」 */
@@ -457,6 +459,7 @@ export function createBankBusinessApi(options) {
     const security = options?.security;
     // 交易自动分类器（OpenRouter），未注入时全部保持调用方给的分类
     txClassifier = options?.classify ?? null;
+    unitRunner = typeof options?.runInUnit === 'function' ? options.runInUnit : (work) => work();
     // 重启恢复：把上次没分完的流水接着分（或标 failed），不让它们永远停在「分类中」
     resumePendingClassifications();
     const thresholdSource = options?.reviewThreshold;
