@@ -15,27 +15,18 @@ import { ArrowRightIcon, CardIcon, ReceiptIcon } from '@/components/ui/icons'
 import meituanIcon from '@/assets/spend/meituan.svg'
 import taobaoIcon from '@/assets/spend/taobao.svg'
 import starbucksIcon from '@/assets/spend/starbucks.svg'
-import jdIcon from '@/assets/spend/jd.svg'
-import pinduoduoIcon from '@/assets/spend/pinduoduo.svg'
-import didiIcon from '@/assets/spend/didi.svg'
-import luckinIcon from '@/assets/spend/luckin.svg'
-import hemaIcon from '@/assets/spend/hema.svg'
-import iqiyiIcon from '@/assets/spend/iqiyi.svg'
-import chinaMobileIcon from '@/assets/spend/china-mobile.svg'
+import chinaMobileIcon from '@/assets/spend/china-mobile.png'
 import '@/styles/spend.css'
 
-/** 平台真实图标：彩色品牌标（colored）放白底，单色标用品牌色底反白；没有素材的回落字形块。 */
-const PLATFORM_ICON: Record<string, { src: string; colored: boolean }> = {
-  meituan: { src: meituanIcon, colored: true },
-  taobao: { src: taobaoIcon, colored: true },
-  starbucks: { src: starbucksIcon, colored: true },
-  jd: { src: jdIcon, colored: false },
-  pinduoduo: { src: pinduoduoIcon, colored: false },
-  didi: { src: didiIcon, colored: false },
-  luckin: { src: luckinIcon, colored: false },
-  hema: { src: hemaIcon, colored: false },
-  iqiyi: { src: iqiyiIcon, colored: false },
-  'china-mobile': { src: chinaMobileIcon, colored: false },
+/**
+ * 平台真实图标（白底圆角块内展示）。
+ * 缺素材的平台不出现在这里，回落成品牌色字形块；补图时按平台 id 加一行即可。
+ */
+const PLATFORM_ICON: Record<string, string> = {
+  meituan: meituanIcon,
+  taobao: taobaoIcon,
+  starbucks: starbucksIcon,
+  'china-mobile': chinaMobileIcon,
 }
 
 function PlatformIcon({ id, tone, ink, glyph, size = 36 }: {
@@ -46,12 +37,10 @@ function PlatformIcon({ id, tone, ink, glyph, size = 36 }: {
   size?: number
 }) {
   const icon = PLATFORM_ICON[id]
-  return <span aria-hidden="true" className={`spend-icon${icon?.colored ? ' is-color' : ''}`}
-    style={{ width: size, height: size, background: icon?.colored ? undefined : tone }}>
+  return <span aria-hidden="true" className={`spend-icon${icon ? ' is-color' : ''}`}
+    style={{ width: size, height: size, background: icon ? undefined : tone }}>
     {icon
-      ? icon.colored
-        ? <img src={icon.src} alt="" />
-        : <span className="spend-icon-mask" style={{ maskImage: `url(${icon.src})`, WebkitMaskImage: `url(${icon.src})` }} />
+      ? <img src={icon} alt="" />
       : <span className="spend-icon-glyph" style={{ color: ink ?? '#fff' }}>{glyph}</span>}
   </span>
 }
