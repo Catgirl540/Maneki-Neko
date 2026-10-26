@@ -12,6 +12,49 @@ import { CATEGORY_LABEL } from '@/lib/categories'
 import { formatAmount, formatCurrency } from '@/lib/format'
 import { SPEND_MAX_CENTS, SPEND_PLATFORMS, findSpendPlatform } from '../../../shared/spend-platforms.mjs'
 import { ArrowRightIcon, CardIcon, ReceiptIcon } from '@/components/ui/icons'
+import meituanIcon from '@/assets/spend/meituan.svg'
+import taobaoIcon from '@/assets/spend/taobao.svg'
+import starbucksIcon from '@/assets/spend/starbucks.svg'
+import jdIcon from '@/assets/spend/jd.svg'
+import pinduoduoIcon from '@/assets/spend/pinduoduo.svg'
+import didiIcon from '@/assets/spend/didi.svg'
+import luckinIcon from '@/assets/spend/luckin.svg'
+import hemaIcon from '@/assets/spend/hema.svg'
+import iqiyiIcon from '@/assets/spend/iqiyi.svg'
+import chinaMobileIcon from '@/assets/spend/china-mobile.svg'
+import '@/styles/spend.css'
+
+/** 平台真实图标：彩色品牌标（colored）放白底，单色标用品牌色底反白；没有素材的回落字形块。 */
+const PLATFORM_ICON: Record<string, { src: string; colored: boolean }> = {
+  meituan: { src: meituanIcon, colored: true },
+  taobao: { src: taobaoIcon, colored: true },
+  starbucks: { src: starbucksIcon, colored: true },
+  jd: { src: jdIcon, colored: false },
+  pinduoduo: { src: pinduoduoIcon, colored: false },
+  didi: { src: didiIcon, colored: false },
+  luckin: { src: luckinIcon, colored: false },
+  hema: { src: hemaIcon, colored: false },
+  iqiyi: { src: iqiyiIcon, colored: false },
+  'china-mobile': { src: chinaMobileIcon, colored: false },
+}
+
+function PlatformIcon({ id, tone, ink, glyph, size = 36 }: {
+  id: string
+  tone: string
+  ink?: string
+  glyph: string
+  size?: number
+}) {
+  const icon = PLATFORM_ICON[id]
+  return <span aria-hidden="true" className={`spend-icon${icon?.colored ? ' is-color' : ''}`}
+    style={{ width: size, height: size, background: icon?.colored ? undefined : tone }}>
+    {icon
+      ? icon.colored
+        ? <img src={icon.src} alt="" />
+        : <span className="spend-icon-mask" style={{ maskImage: `url(${icon.src})`, WebkitMaskImage: `url(${icon.src})` }} />
+      : <span className="spend-icon-glyph" style={{ color: ink ?? '#fff' }}>{glyph}</span>}
+  </span>
+}
 
 const AMOUNT_PRESETS: Cents[] = [2_000, 5_000, 10_000, 30_000]
 
@@ -135,8 +178,7 @@ export function SpendPage() {
             return (
               <button key={item.id} type="button" onClick={() => setPlatformId(item.id)}
                 className={`flex items-center gap-2.5 rounded-card border px-3 py-2.5 text-left transition-colors ${active ? 'border-gold bg-gold-tint text-ink' : 'border-line bg-surface text-ink-soft hover:bg-sunk'}`}>
-                <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-[10px] text-[15px] font-semibold"
-                  style={{ background: item.tone, color: item.ink ?? '#fff' }}>{item.glyph}</span>
+                <PlatformIcon id={item.id} tone={item.tone} ink={item.ink} glyph={item.glyph} />
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium">{item.name}</span>
                   <span className="num mt-0.5 block truncate text-[11px] text-ink-mute">{item.city} · {item.merchantId}</span>
@@ -196,7 +238,10 @@ export function SpendPage() {
       <div className="flex flex-col gap-5">
         {receipt ? <Card className="bg-gold-tint">
           <CardHeader title="消费成功" />
-          <p className="mt-4 text-[13px] text-ink-soft">在「{receipt.transaction.counterparty}」的模拟消费已记账。</p>
+          <p className="mt-4 flex items-center gap-2.5 text-[13px] text-ink-soft">
+            <PlatformIcon id={platform.id} tone={platform.tone} ink={platform.ink} glyph={platform.glyph} size={30} />
+            在「{receipt.transaction.counterparty}」的模拟消费已记账。
+          </p>
           <dl className="mt-4 flex flex-col gap-3 text-[14px]">
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">商户</dt><dd className="text-right text-ink">{receipt.transaction.counterparty}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">账单详情</dt><dd className="text-right text-ink">{receipt.transaction.memo}</dd></div>
