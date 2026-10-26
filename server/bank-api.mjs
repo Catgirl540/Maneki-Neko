@@ -325,9 +325,18 @@ export async function createBankApi({
   catch (error) { await storage.rollbackUnitOfWork(); throw error }
   finally { storage.initializing = false; dbModule.discardCache(); storage.releaseProjection?.() }
 
-  const api = createBankBusinessApi(
-    { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn },
-  )
+  // createBankBusinessApi 在构造时恢复上次未分完的流水并落库（resumePendingClassifications）：
+  // scoped 投影下这是写操作，必须在单元工作里执行，否则启动即抛「Scoped writes require…」。
+  await storage.beginUnitOfWork()
+  let api
+  try {
+    api = createBankBusinessApi(
+      { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn },
+    )
+    await storage.commitUnitOfWork()
+  }
+  catch (error) { await storage.rollbackUnitOfWork(); throw error }
+  finally { dbModule.discardCache(); storage.releaseProjection?.() }
   // reviewThreshold 允许是函数：mock 内部每笔转账现读，员工端改完立刻生效。
   const patterns = compilePatterns(routes)
   // mock 原本是单标签页内存对象。HTTP 桥接会同时服务多个用户，
