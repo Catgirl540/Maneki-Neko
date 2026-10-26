@@ -20,6 +20,26 @@ export interface SpendPlatform {
   noteHint: string
 }
 
+export interface FreeSpendMerchant {
+  id: string
+  /** 选项名（自定义商家 / Stripe） */
+  name: string
+  glyph: string
+  tone: string
+  /** 商户名输入示例 */
+  noteHint: string
+  country: string
+  city: string
+  location: string
+  /** 收单机构（回单对方机构） */
+  counterpartyBank: string
+  /** 生成商户编号用的前缀 */
+  merchantIdPrefix: string
+}
+
 export const SPEND_MAX_CENTS: number
+export const FREE_MERCHANT_NAME_MAX: number
 export const SPEND_PLATFORMS: SpendPlatform[]
+export const FREE_SPEND_MERCHANTS: FreeSpendMerchant[]
 export function findSpendPlatform(id: unknown): SpendPlatform | null
+export function findFreeMerchant(id: unknown): FreeSpendMerchant | null

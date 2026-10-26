@@ -1,7 +1,7 @@
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../../../shared/account-model.mjs'
 import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../../../shared/invest-plan.mjs'
 import { supportGuidance } from '../../../../shared/support-guidance.mjs'
-import { SPEND_MAX_CENTS, findSpendPlatform } from '../../../../shared/spend-platforms.mjs'
+import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../../../shared/spend-platforms.mjs'
 /* ==========================================================================
    Mock BankApi —— 纯前端模拟后端
    特性：人为网络延迟、真实的业务校验（余额不足 / 大额二次确认 / 风控）、
@@ -1608,8 +1608,23 @@ export function createMockApi(options?: {
       if (card.status === 'replaced') throw new ApiError('这张卡已换发，旧卡不再消费', 409, 'CARD_REPLACED')
       if (card.paymentEnabled === false) throw new ApiError('该卡已关闭消费，请在卡片设置中开启', 409, 'CARD_PAYMENT_DISABLED')
       if (!card.onlinePayment) throw new ApiError('该卡已关闭线上支付，请先在卡片设置中开启', 409, 'CARD_ONLINE_PAYMENT_DISABLED')
-      const platform = findSpendPlatform(input?.platform)
-      if (!platform) throw new ApiError('消费平台不存在', 404, 'SPEND_PLATFORM_NOT_FOUND')
+      const preset = findSpendPlatform(input?.platform)
+      const free = preset ? null : findFreeMerchant(input?.platform)
+      if (!preset && !free) throw new ApiError('消费平台不存在', 404, 'SPEND_PLATFORM_NOT_FOUND')
+      // 自由商家（自定义/Stripe）：商户名由请求给出，单行、2–40 字
+      let merchantName = preset?.name
+      if (free) {
+        const raw = typeof input?.merchant === 'string' ? input.merchant.trim() : ''
+        if (raw.length < 2 || raw.length > FREE_MERCHANT_NAME_MAX
+          || [...raw].some(ch => (ch.codePointAt(0) ?? 0) < 32 || ch.codePointAt(0) === 127))
+          throw new ApiError(`商户名称需为 2–${FREE_MERCHANT_NAME_MAX} 字的单行文本`, 400, 'INVALID_MERCHANT')
+        merchantName = raw
+      }
+      const platform = preset ?? {
+        ...free,
+        name: merchantName,
+        merchantId: `${free.merchantIdPrefix}${String(Date.now()).slice(-9)}`,
+      }
       const amount = input?.amount
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new ApiError('消费金额必须大于 0', 400, 'INVALID_AMOUNT')
       if (amount > SPEND_MAX_CENTS) throw new ApiError(`单笔模拟消费上限 ¥${formatAmount(SPEND_MAX_CENTS)}`, 400, 'LIMIT_EXCEEDED')

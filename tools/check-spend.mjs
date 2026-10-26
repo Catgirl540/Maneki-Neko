@@ -88,6 +88,19 @@ await rejects(() => api.spendOnCard(card.id, { platform: 'meituan', amount: 100,
 await rejects(() => api.spendOnCard(card.id, { platform: 'meituan', amount: 100, note: 'x'.repeat(81) }), 'INVALID_NOTE', '超长详情被拒')
 ok('账单详情：去空白写入摘要与明细，换行/超长被拒')
 
+// 2c. 自由商家：自定义收单 / Stripe 收单
+const custom = await api.spendOnCard(card.id, { platform: 'custom', merchant: '街角咖啡', amount: 1800 })
+assert.equal(custom.transaction.counterparty, '街角咖啡', '自定义商家名即对方户名')
+assert.equal(custom.transaction.detail.counterpartyBank, '自定义收单')
+const stripe = await api.spendOnCard(card.id, { platform: 'stripe', merchant: 'OpenAI', amount: 2000 })
+assert.equal(stripe.transaction.counterparty, 'OpenAI')
+assert.equal(stripe.transaction.detail.counterpartyBank, 'Stripe Payments', 'Stripe 收单记 Stripe Payments')
+assert.equal(stripe.transaction.memo, 'OpenAI 消费')
+await rejects(() => api.spendOnCard(card.id, { platform: 'stripe', amount: 100 }), 'INVALID_MERCHANT', 'Stripe 未填商户名被拒')
+await rejects(() => api.spendOnCard(card.id, { platform: 'custom', merchant: 'x', amount: 100 }), 'INVALID_MERCHANT', '商户名过短被拒')
+await rejects(() => api.spendOnCard(card.id, { platform: 'custom', merchant: '第一行\n第二行', amount: 100 }), 'INVALID_MERCHANT', '含换行的商户名被拒')
+ok('自由商家：自定义/Stripe 收单元数据正确，缺失/过短/换行商户名被拒')
+
 // 3. 拒绝路径
 await rejects(() => api.spendOnCard('card_nope', { platform: 'meituan', amount: 100 }), 'CARD_NOT_FOUND', '不存在的卡被拒')
 await rejects(() => api.spendOnCard(card.id, { platform: 'nope', amount: 100 }), 'SPEND_PLATFORM_NOT_FOUND', '未知平台被拒')
@@ -103,11 +116,12 @@ row.onlinePayment = false; persist()
 await rejects(() => api.spendOnCard(row.id, { platform: 'meituan', amount: 100 }), 'CARD_ONLINE_PAYMENT_DISABLED', '未开线上支付被拒')
 row.onlinePayment = true; persist()
 
-row.dailyLimit = 10_000; persist()
 const usedToday = loadDb().transactions
   .filter(t => t.detail?.cardId === row.id && t.direction === 'out' && t.status === 'success')
   .reduce((sum, t) => sum + t.amount, 0)
-await rejects(() => api.spendOnCard(row.id, { platform: 'meituan', amount: row.dailyLimit - usedToday + 1 }), 'DAILY_LIMIT_EXCEEDED', '超单日限额被拒')
+// 限额按「今日已用 + 1000」设，再花 1001：与前面用例的消费额无关，不会退化成金额非法
+row.dailyLimit = usedToday + 1_000; persist()
+await rejects(() => api.spendOnCard(row.id, { platform: 'meituan', amount: 1_001 }), 'DAILY_LIMIT_EXCEEDED', '超单日限额被拒')
 row.dailyLimit = 2_000_000; persist()
 ok('限额恢复后不影响后续消费')
 

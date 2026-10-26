@@ -165,3 +165,43 @@ export function findSpendPlatform(id) {
   if (typeof id !== 'string') return null;
   return SPEND_PLATFORMS.find((item) => item.id === id) ?? null;
 }
+
+/**
+ * 自由商家：商户名由请求传入（`merchant`），这里只固定收单侧的元数据。
+ * - custom：自定义收单，商户名任意
+ * - stripe：Stripe 收单，回单对方机构记 Stripe Payments
+ */
+export const FREE_SPEND_MERCHANTS = [
+  {
+    id: 'custom',
+    name: '自定义商家',
+    glyph: '店',
+    tone: '#6B7280',
+    noteHint: '商户名称，如：街角咖啡',
+    country: '中国',
+    city: '线上',
+    location: '线上商户',
+    counterpartyBank: '自定义收单',
+    merchantIdPrefix: 'MC',
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe',
+    glyph: 'S',
+    tone: '#635BFF',
+    noteHint: 'Stripe 收单商户，如：OpenAI',
+    country: '美国',
+    city: '旧金山',
+    location: '线上商户 · 境外收单',
+    counterpartyBank: 'Stripe Payments',
+    merchantIdPrefix: 'MS',
+  },
+];
+
+/** 自由商家名长度上限（字符） */
+export const FREE_MERCHANT_NAME_MAX = 40;
+
+export function findFreeMerchant(id) {
+  if (typeof id !== 'string') return null;
+  return FREE_SPEND_MERCHANTS.find((item) => item.id === id) ?? null;
+}

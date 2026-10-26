@@ -722,6 +722,8 @@ export interface SpendRequest {
   amount: Cents
   /** 账单详情（可选）：店铺/商品说明，写进流水摘要，如「嗉泰面（大朗店）· 猪扒包」 */
   note?: string
+  /** 自由商家（platform 为 custom/stripe 时必填）：商户名称，2–40 字单行 */
+  merchant?: string
 }
 
 /**

@@ -10,7 +10,7 @@ import { useAsync } from '@/lib/useAsync'
 import { useToast } from '@/components/ui/toast-context'
 import { CATEGORY_LABEL } from '@/lib/categories'
 import { formatAmount, formatCurrency } from '@/lib/format'
-import { SPEND_MAX_CENTS, SPEND_PLATFORMS, findSpendPlatform } from '../../../shared/spend-platforms.mjs'
+import { FREE_MERCHANT_NAME_MAX, FREE_SPEND_MERCHANTS, SPEND_MAX_CENTS, SPEND_PLATFORMS, findFreeMerchant, findSpendPlatform } from '../../../shared/spend-platforms.mjs'
 import { ArrowRightIcon, CardIcon, ReceiptIcon } from '@/components/ui/icons'
 import meituanIcon from '@/assets/spend/meituan.svg'
 import taobaoIcon from '@/assets/spend/taobao.svg'
@@ -24,6 +24,8 @@ import hemaIcon from '@/assets/spend/hema.png'
 import iqiyiIcon from '@/assets/spend/iqiyi.png'
 import ziroomIcon from '@/assets/spend/ziroom.png'
 import maoyanIcon from '@/assets/spend/maoyan.png'
+import stripeIcon from '@/assets/spend/stripe.svg'
+import customMerchantIcon from '@/assets/spend/custom-merchant.svg'
 import '@/styles/spend.css'
 
 /**
@@ -44,6 +46,8 @@ const PLATFORM_ICON: Record<string, { src: string; kind: 'app' | 'logo' }> = {
   iqiyi: { src: iqiyiIcon, kind: 'app' },
   ziroom: { src: ziroomIcon, kind: 'app' },
   maoyan: { src: maoyanIcon, kind: 'app' },
+  stripe: { src: stripeIcon, kind: 'logo' },
+  custom: { src: customMerchantIcon, kind: 'logo' },
 }
 
 function PlatformIcon({ id, tone, ink, glyph, size = 36 }: {
@@ -101,6 +105,8 @@ export function SpendPage() {
   const [amountText, setAmountText] = useState('38.50')
   /** 账单详情：店铺/商品说明，可留空 */
   const [noteText, setNoteText] = useState('')
+  /** 自由商家（自定义/Stripe）的商户名称 */
+  const [merchantText, setMerchantText] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [receipt, setReceipt] = useState<SpendReceipt | null>(null)
   /** 后台分类完成后回填的最终分类；null 表示还没拿到 */
@@ -117,7 +123,11 @@ export function SpendPage() {
     ? cardId
     : usable[0]?.id ?? null
   const selectedCard = usable.find(card => card.id === effectiveCardId) ?? null
-  const platform = findSpendPlatform(platformId) ?? SPEND_PLATFORMS[0]
+  const presetPlatform = findSpendPlatform(platformId)
+  const freePlatform = presetPlatform ? null : findFreeMerchant(platformId)
+  const platform = presetPlatform ?? freePlatform ?? SPEND_PLATFORMS[0]
+  const merchantName = merchantText.trim()
+  const merchantValid = !freePlatform || (merchantName.length >= 2 && merchantName.length <= FREE_MERCHANT_NAME_MAX)
   const amount = parseAmount(amountText)
   const overCap = amount !== null && amount > SPEND_MAX_CENTS
 
@@ -155,7 +165,12 @@ export function SpendPage() {
     setSubmitting(true); setError(null)
     try {
       const note = noteText.trim()
-      const result = await api.spendOnCard(selectedCard.id, { platform: platform.id, amount, ...(note ? { note } : {}) })
+      const result = await api.spendOnCard(selectedCard.id, {
+        platform: platform.id,
+        amount,
+        ...(note ? { note } : {}),
+        ...(freePlatform ? { merchant: merchantName } : {}),
+      })
       setClassified(result.classificationState === 'pending' ? null : result.category)
       setReceipt(result)
       cards.reload()
@@ -180,15 +195,16 @@ export function SpendPage() {
       <Card>
         <CardHeader title="1. 选择消费平台" />
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {SPEND_PLATFORMS.map(item => {
+          {[...SPEND_PLATFORMS, ...FREE_SPEND_MERCHANTS].map(item => {
             const active = item.id === platform.id
+            const subtitle = 'merchantId' in item ? `${item.city} · ${item.merchantId}` : item.counterpartyBank
             return (
               <button key={item.id} type="button" onClick={() => setPlatformId(item.id)}
                 className={`flex items-center gap-2.5 rounded-card border px-3 py-2.5 text-left transition-colors ${active ? 'border-gold bg-gold-tint text-ink' : 'border-line bg-surface text-ink-soft hover:bg-sunk'}`}>
-                <PlatformIcon id={item.id} tone={item.tone} ink={item.ink} glyph={item.glyph} />
+                <PlatformIcon id={item.id} tone={item.tone} ink={'ink' in item ? item.ink : undefined} glyph={item.glyph} />
                 <span className="min-w-0">
                   <span className="block truncate text-[13px] font-medium">{item.name}</span>
-                  <span className="num mt-0.5 block truncate text-[11px] text-ink-mute">{item.city} · {item.merchantId}</span>
+                  <span className="num mt-0.5 block truncate text-[11px] text-ink-mute">{subtitle}</span>
                 </span>
               </button>
             )
@@ -229,6 +245,16 @@ export function SpendPage() {
           </div>
         </div>
 
+        {freePlatform && <div className="mt-4">
+          <Field label="商户名称" value={merchantText} maxLength={FREE_MERCHANT_NAME_MAX}
+            placeholder={freePlatform.noteHint}
+            error={merchantText.length > 0 && !merchantValid ? `商户名称需为 2–${FREE_MERCHANT_NAME_MAX} 字` : undefined}
+            onChange={e => setMerchantText(e.target.value)} />
+          <p className="mt-1 text-[11px] text-ink-mute">
+            {freePlatform.id === 'stripe' ? '回单对方机构记为 Stripe Payments（境外收单）。' : '商户名任意，回单对方机构记为「自定义收单」。'}
+          </p>
+        </div>}
+
         <div className="mt-4">
           <Field label="账单详情（可选）" value={noteText} maxLength={80} placeholder={platform.noteHint}
             onChange={e => setNoteText(e.target.value)} />
@@ -237,7 +263,7 @@ export function SpendPage() {
 
         {error && <p role="alert" className="mt-4 text-[13px] text-coral">{error}</p>}
         <Button block size="lg" className="mt-5" variant="primary" loading={submitting}
-          disabled={!selectedCard || amount === null || overCap} onClick={() => void submit()}>
+          disabled={!selectedCard || amount === null || overCap || !merchantValid} onClick={() => void submit()}>
           模拟刷卡 ¥{amount !== null ? formatAmount(amount) : '—'}
         </Button>
       </Card>
