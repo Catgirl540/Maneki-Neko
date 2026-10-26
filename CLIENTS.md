@@ -19,12 +19,13 @@
 
 安卓安装包从 `android-app/app/build/outputs/apk/debug/app-debug.apk`（调试）获取并核对提交与版本；不从归档的旧 `android/` 工程取包。
 
-## 已归档版本
+## 历史归档
 
-归档入口：[archive/README.md](archive/README.md)。
+历史工程已于 2026-10-26 从工作区删除，仅保留在 git 历史（删除前提交 `f865b18`）中：
 
-- `archive/2026-10-15/android-kotlin/`：旧 Kotlin / Jetpack Compose 安卓工程，退出日常开发和发布。
+- `archive/2026-10-15/android-kotlin/`：旧 Kotlin / Jetpack Compose 安卓工程。
 - `archive/2026-10-15/web-before-redesign/`：网页改版前源码压缩快照、金蓝配色规范、旧截图与已弃用的双模式原型。
+- `archive/2026-10-19/dsh-before-0.2.1/`：DSH 升级前框架源码。
 - 根目录 `android/` 只保留迁移提示，没有可构建工程。
 
-归档只用于回溯和对照；不作为新功能、视觉规范、构建或发布的默认来源。当前网页仍复用的接口与业务组件继续保留在 `app/`，不随旧设计一起移走。
+需要回溯时用 `git show f865b18:<路径>` 或 `git checkout f865b18 -- <路径>`；历史版本不作为新功能、视觉规范、构建或发布的默认来源。当前网页仍复用的接口与业务组件继续保留在 `app/`，不随旧设计一起移走。

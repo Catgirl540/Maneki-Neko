@@ -78,6 +78,7 @@ import { openImStore, migrateImBindingRevisions } from './im-store.mjs'
 import { createImBank } from './im-bank.mjs'
 import { createImChannels } from './im-channels.mjs'
 import { createImHttp } from './im-http.mjs'
+import { createImReminderChat } from './im-reminder-chat.mjs'
 import { createBankReminders } from './bank-reminders.mjs'
 import { createStaffImService, createStaffImWorker } from './staff-im-worker.mjs'
 
@@ -368,7 +369,7 @@ const pendingConsents = new Map()
 /** 每个会话的 SSE 订阅者：sessionId → Set<res>。 */
 const streams = new Map()
 const eventPolling = createEventPolling()
-let imBank, imChannels, imHttp, imReminders, staffImWorker
+let imBank, imChannels, imHttp, imReminders, imReminderChat, staffImWorker
 
 /** 把一条 SSE 事件推给某个会话的所有订阅者。 */
 let persistenceFailureLogged = false
@@ -1493,6 +1494,7 @@ if ((!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') || (STAFF_MODE && !
   const staffService=STAFF_MODE ? createStaffImService({baseUrl:process.env.LUCKYCAT_BANK_URL??'http://127.0.0.1:8080',secret:process.env.LUCKYCAT_STAFF_IM_SERVICE_KEY}) : undefined
   if (STAFF_MODE && Buffer.byteLength(process.env.LUCKYCAT_STAFF_IM_SERVICE_KEY??'')<32) throw Error('Staff IM requires the same LUCKYCAT_STAFF_IM_SERVICE_KEY (at least 32 bytes) in the bank and staff Bridge')
   if (!STAFF_MODE && process.env.LUCKYCAT_IM_REMINDERS_ENABLED === '1') await migrateImBindingRevisions(store)
+  if (!STAFF_MODE) imReminderChat = createImReminderChat({ reminders: () => imReminders })
   imBank = createImBank({
     store, audience:STAFF_MODE ? 'staff' : 'customer',portalPath:STAFF_MODE ? '/staff-agent-api/im' : '/agent-api/im',
     publicUrl: (STAFF_MODE ? process.env.LUCKYCAT_STAFF_IM_PUBLIC_URL : undefined) ?? process.env.LUCKYCAT_IM_PUBLIC_URL ?? `http://127.0.0.1:${PORT}`,
@@ -1520,10 +1522,12 @@ if ((!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') || (STAFF_MODE && !
       return turn
     },
     deliver: (route, text) => imChannels.deliver(route, text),
-    onBindingChange: id => imReminders?.invalidateRoute(id),
+    handleReminder: !STAFF_MODE ? (route, content, context) => imReminderChat.handle(route, content, context) : undefined,
+    onBindingChange: id => { imReminders?.invalidateRoute(id); imReminderChat?.invalidateRoute(id) },
   })
   imChannels = await createImChannels({ directory, credentials: store.credentials, harness: imBank.harness })
-  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', reminders: () => imReminders,audience:STAFF_MODE ? 'staff' : 'customer',staffService })
+  imHttp = createImHttp({ bank: imBank, channels: imChannels, bankUrl: process.env.LUCKYCAT_BANK_URL ?? 'http://127.0.0.1:8080', reminders: () => imReminders,
+    audience:STAFF_MODE ? 'staff' : 'customer',staffService })
   await imChannels.initialize()
   if (STAFF_MODE && process.env.LUCKYCAT_STAFF_IM_NOTIFICATIONS_ENABLED === '1') {
     staffImWorker=createStaffImWorker({service:staffService,routes:()=>imBank.reminderRoutes(),ready:route=>imChannels.deliveryReady(route),deliver:(route,text,options)=>imChannels.deliver(route,text,options),onError:()=>console.warn('[staff-im] 通知服务暂不可用，保留队列并等待恢复')})
@@ -1547,6 +1551,7 @@ server.listen(PORT, '127.0.0.1', () => {
 async function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
+  imReminderChat?.close()
   clearInterval(sessionCacheTimer)
   eventPolling.close()
   bankAgent?.close()

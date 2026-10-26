@@ -8,4 +8,4 @@
 - 当前网页标志与客服头像：`app/src/assets/design/`。客服原图：`mascot/support-cat-v1.png`。
 - `logo-proposal/` 为标志探索过程，不能直接替换已采用资源；`opendesign-recovery.md` 为本机工具恢复记录。
 
-已弃用的双模式需求、原型截图及金蓝风格已移入 [旧网页归档](../../archive/2026-10-15/web-before-redesign/README.md)。当前网页为「总览 + 独立智能助手」工作台（`/dashboard` 总览、`/assistant` 助手，拆分草稿见 [drafts/2026-10-20-overview-and-assistant.html](drafts/2026-10-20-overview-and-assistant.html)），只验收桌面端。完整版本指引见 [CLIENTS.md](../../CLIENTS.md)。
+已弃用的双模式需求、原型截图及金蓝风格已于 2026-10-26 从工作区删除，需要回溯时从 git 历史（删除前提交 `f865b18`）取。当前网页为「总览 + 独立智能助手」工作台（`/dashboard` 总览、`/assistant` 助手，拆分草稿见 [drafts/2026-10-20-overview-and-assistant.html](drafts/2026-10-20-overview-and-assistant.html)），只验收桌面端。完整版本指引见 [CLIENTS.md](../../CLIENTS.md)。

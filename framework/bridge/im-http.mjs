@@ -122,7 +122,12 @@ export function createImHttp({ bank, channels, bankUrl, fetchImpl = fetch, autho
           } else throw Object.assign(Error('请求方式不支持'), { status: 405 })
         }
       }
-      else if (pathname === '/agent-api/im/preview' && req.method === 'POST') result = bank.preview((await readJson(req, 8192)).code)
+      else if (pathname === '/agent-api/im/preview' && req.method === 'POST') result = bank.preview((await readJson(req, 8192)).code, identity.user.id)
+      else if (pathname === '/agent-api/im/continue' && req.method === 'POST' && audience === 'customer') {
+        const body = await readJson(req, 8192)
+        if (body.confirmed !== true || typeof body.token !== 'string' || !/^[\w-]{32}$/.test(body.token)) throw Object.assign(Error('请明确选择继续这次请求'), { status: 400 })
+        result = await bank.continueRequest(body.token, identity.user.id)
+      }
       else if (pathname === '/agent-api/im/claim' && req.method === 'POST') {
         const body=await readJson(req,8192)
         if (audience==='staff' && body.confirmed!==true) throw Object.assign(Error('请明确确认员工绑定和任务提醒'),{status:400})

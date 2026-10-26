@@ -76,6 +76,46 @@ test('authenticated customer QR: same-page lifecycle, no automatic claim, scoped
     states.get(bob.data.attemptId).alreadyConnected = true
     assert.equal((await call('bob', '/' + bob.data.attemptId + '/confirm', { confirmed: true })).status, 409)
     assert.equal(sessions.length, 1)
+
+    // A completed QR receipt must not resurrect a binding revoked through the bank API.
+    const originalBinding = confirms[0].data
+    assert.equal((await call('alice', '/' + id + '/confirm', { confirmed: true })).data.id, originalBinding.id)
+    assert.equal(sessions.length, 1)
+    await bank.revoke(originalBinding.id, 'alice')
+    assert.equal(bank.list('alice').length, 0)
+    assert.equal((await call('alice', '/' + id)).status, 410)
+    assert.equal((await call('alice', '/' + id + '/confirm', { confirmed: true })).status, 410)
+    assert.equal((await call('bob', '/' + id + '/confirm', { confirmed: true })).status, 404)
+    assert.equal(bank.list('alice').length, 0); assert.equal(sessions.length, 1)
+
+    const restarted = await call('alice', '', {})
+    assert.equal(restarted.status, 200)
+    assert.notEqual(restarted.data.attemptId, id)
+    assert.equal(restarted.data.binding, undefined)
+    Object.assign(states.get(restarted.data.attemptId), { status: 'connected', botId: 'new-verified-bot-after-revoke' })
+    const rebound = await Promise.all([
+      call('alice', '/' + restarted.data.attemptId + '/confirm', { confirmed: true }),
+      call('alice', '/' + restarted.data.attemptId + '/confirm', { confirmed: true }),
+    ])
+    assert(rebound.every(result => result.status === 200))
+    assert.equal(rebound[0].data.id, rebound[1].data.id)
+    assert.notEqual(rebound[0].data.id, originalBinding.id)
+    assert.equal(sessions.length, 2); assert.equal(bank.list('alice').length, 1)
+    assert.equal((await call('bob', '/' + restarted.data.attemptId)).status, 404)
+
+    // Starting another scan after success must also generate a fresh QR without creating a bank session.
+    const another = await call('alice', '', {})
+    assert.equal(another.status, 200)
+    assert.notEqual(another.data.attemptId, restarted.data.attemptId)
+    assert.equal(another.data.binding, undefined)
+    assert.equal(sessions.length, 2); assert.equal(bank.list('alice').length, 1)
+    Object.assign(states.get(another.data.attemptId), { status: 'connected', botId: 'new-verified-bot-after-revoke' })
+    const renewed = await call('alice', '/' + another.data.attemptId + '/confirm', { confirmed: true })
+    assert.equal(renewed.status, 200); assert.equal(renewed.data.id, rebound[0].data.id)
+    assert.notEqual(renewed.data.sessionId, rebound[0].data.sessionId)
+    assert.equal(sessions.length, 3); assert.equal(bank.list('alice').length, 1)
+    assert.equal((await call('alice', '/' + restarted.data.attemptId + '/confirm', { confirmed: true })).status, 410)
+    assert.equal((await call('alice', '/' + restarted.data.attemptId)).status, 410)
   } finally { await bank.close(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }) }
 })
 
@@ -95,6 +135,28 @@ test('customer QR expiry, cancellation, generation quota and concurrent global s
   for (let i = 0; i < 2; i++) { const qr = await service.start(identity); await service.cancel(identity, qr.attemptId) }
   await assert.rejects(service.start(identity), error => error.status === 429)
   assert.equal(calls, 3)
+
+  let busy = true, issued = 0
+  const busyService = createCustomerQr({ bank: {}, clock: () => now, channels: {
+    provision: async () => {
+      if (busy) throw Object.assign(Error('已有扫码任务进行中，请稍后再试'), { status: 409 })
+      issued++
+      return { attemptId: 'after-busy', status: 'pending', qrImage: png, expiresAt: now + 300000 }
+    },
+  } })
+  for (let i = 0; i < 5; i++) await assert.rejects(busyService.start(identity), error => error.status === 409)
+  busy = false
+  assert.equal((await busyService.start(identity)).attemptId, 'after-busy')
+  assert.equal(issued, 1)
+
+  // An upstream error that happens to use 409 is still a real generation attempt.
+  let providerCalls = 0
+  const failedService = createCustomerQr({ bank: {}, clock: () => now, channels: {
+    provision: async () => { providerCalls++; throw Object.assign(Error('上游登录请求失败'), { status: 409 }) },
+  } })
+  for (let i = 0; i < 3; i++) await assert.rejects(failedService.start(identity), error => error.status === 409)
+  await assert.rejects(failedService.start(identity), error => error.status === 429)
+  assert.equal(providerCalls, 3)
 })
 
 test('real pinned controller fresh customer QR excludes existing credentials; pending QR cannot be stolen by another start', async () => {

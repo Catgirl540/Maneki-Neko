@@ -20,11 +20,18 @@ export function createCustomerQr({ bank, channels, clock = Date.now }) {
     if (!result) throw fail('扫码任务已结束，请重新生成', 410)
     return result
   }
+  function confirmedBinding(record) {
+    if (!record.binding) return undefined
+    const current = bank.list(record.owner).find(binding => binding.id === record.binding.id)
+    if (!current || current.sessionId !== record.binding.sessionId) throw fail('银行绑定已解除或已更改，请重新生成二维码', 410)
+    return record.binding
+  }
   function view(record, current = state(record)) {
+    const binding = confirmedBinding(record)
     return { attemptId: record.id, status: current.status, qrImage: record.image,
       expiresAt: record.expiresAt, verificationRequired: current.status === 'needs_verification',
       ...(current.error ? { error: { message: current.error.message } } : {}),
-      ...(record.binding ? { binding: record.binding } : {}) }
+      ...(binding ? { binding } : {}) }
   }
   return {
     async start(identity) {
@@ -34,14 +41,16 @@ export function createCustomerQr({ bank, channels, clock = Date.now }) {
         const fresh = times.filter(time => time > clock() - 3600000)
         if (fresh.length) history.set(id, fresh); else history.delete(id)
       }
-      for (const record of records.values()) if (record.owner === customer) {
+      // Completed logins are receipts, not resumable scans: a later connection needs a fresh QR.
+      for (const record of records.values()) if (record.owner === customer && !record.binding) {
         const current = state(record)
         if (!terminal.has(current.status)) return view(record, current)
       }
       if (starting) throw fail('已有扫码任务进行中，请稍后再试', 409)
       if (records.size >= 1000 || history.size >= 1000 || (history.get(customer)?.length ?? 0) >= 3) throw fail('二维码生成过于频繁，请稍后重试', 429)
       starting = true
-      history.set(customer, [...(history.get(customer) ?? []), clock()])
+      const previousAttempts = history.get(customer) ?? []
+      history.set(customer, [...previousAttempts, clock()])
       let result
       try {
         result = await channels.provision('weixin', { fresh: true })
@@ -52,6 +61,12 @@ export function createCustomerQr({ bank, channels, clock = Date.now }) {
         records.set(record.id, record)
         return view(record, result)
       } catch (error) {
+        // The channel's explicit busy guard never starts a provider login; keep its quota available.
+        // Other provider failures, including unrelated 409 responses, still count toward the limit.
+        if (!result?.attemptId && error?.status === 409 && error.message === '已有扫码任务进行中，请稍后再试') {
+          if (previousAttempts.length) history.set(customer, previousAttempts)
+          else history.delete(customer)
+        }
         if (result?.attemptId) await channels.cancelProvision('weixin', result.attemptId).catch(() => {})
         throw error
       } finally { starting = false }
@@ -73,7 +88,7 @@ export function createCustomerQr({ bank, channels, clock = Date.now }) {
     async confirm(identity, id, confirmed) {
       const record = get(identity, id)
       if (confirmed !== true) throw fail('请先核对并确认绑定当前银行账户')
-      if (record.binding) return record.binding
+      if (record.binding) return confirmedBinding(record)
       const current = state(record)
       if (current.status !== 'connected' || !current.botId || current.alreadyConnected) throw fail('请完成本次二维码登录；已有连接请从本人微信获取绑定码', 409)
       if (!channels.status().channels.weixin.bots.some(bot => bot.botId === current.botId && bot.connected)) throw fail('微信连接尚未就绪，请稍后重试', 409)

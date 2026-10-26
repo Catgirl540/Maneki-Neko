@@ -22,6 +22,8 @@ import { AUTH_EXPIRED_EVENT, forgetSession, getAuthToken } from '@/lib/authToken
  */
 const AGENT_BASE = (import.meta.env.VITE_AGENT_URL ?? '/agent-api').trim().replace(/\/+$/, '')
 const IM_BASE = `${AGENT_BASE === '' ? '/agent-api' : AGENT_BASE}/im`
+/** The existing authenticated portal handles IM business confirmation, not the QR panel. */
+export const imSessionPortalUrl = (id: string) => `${IM_BASE}#session=${encodeURIComponent(id)}`
 export interface WeixinQr {
   attemptId: string
   status: string
@@ -56,6 +58,7 @@ export interface ImBinding {
   sessionId?: string
   /** 服务端是否仍持有这条私聊的可用会话；否则需要回到 IM 取新绑定码。 */
   connected: boolean
+  continuation?: ImContinuation
 }
 
 /** 提醒可用的接收私聊（后端只列本人、且仅微信渠道）。 */
@@ -90,6 +93,7 @@ export interface ImReminderList {
 /** 绑定码核对结果：只说明来源与有效期，不产生任何绑定。 */
 export interface ImCodePreview {
   label: string
+  request?: string
   /** 服务端给的是毫秒时间戳；`new Date()` 两种都认。 */
   expiresAt: number | string
 }
@@ -99,7 +103,10 @@ export interface ImClaimResult {
   id: string
   sessionId: string
   label: string
+  continuation?: ImContinuation
 }
+export interface ImContinuation { token: string; request: string; expiresAt: number }
+export const continueImRequest = (token: string) => post<{ id: string; sessionId: string; started: boolean }>('/continue', { token, confirmed: true })
 
 /** 带 HTTP 状态码的失败：页面要按 401/404/503 分别处理。 */
 export class ImError extends Error {
@@ -145,7 +152,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (!response.ok) {
       const body = payload as { message?: string; error?: string; code?: string } | null
       // 这些路由全部需要登录态，401 一律按会话失效处理（与 `api/http.ts` 同口径）。
-      if (response.status === 401 && token) {
+      if (response.status === 401 && token && getAuthToken() === token) {
         forgetSession()
         window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
       }

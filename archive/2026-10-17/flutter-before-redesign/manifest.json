@@ -1,9 +1,0 @@
-{
-  "archive_date": "2026-10-17",
-  "source_commit": "9f0656f",
-  "source_path": "mobile/",
-  "archive_file": "flutter-before-redesign.tar.gz",
-  "purpose": "rollback and functional reference",
-  "visual_style_status": "superseded; do not use as redesign visual reference",
-  "active_source_remains": "mobile/"
-}

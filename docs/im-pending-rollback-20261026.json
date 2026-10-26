@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-26T16:46:18+08:00",
+  "status": "rolled-back-and-verified",
+  "reason": "User reported the cross-device pending-action release did not work and explicitly requested the previous version.",
+  "from": "20261026-im-pending-f865b18-r2",
+  "to": "20261026-web-im-f865b18-r1",
+  "source": "/srv/maneki-bank/releases/20261026-web-im-f865b18-r1",
+  "web": "/var/www/bank.waveflow.men/releases/20261026-web-im-f865b18-r1",
+  "backup": "/var/backups/maneki-im-pending-rollback-20261026T084615Z",
+  "checks": {
+    "previousReleaseFileHashesMatched": 525,
+    "customerAgentActive": true,
+    "otherFourServiceStatesAndPidsUnchanged": true,
+    "environmentFileHashesPreserved": true,
+    "bothBankHealthEndpoints": 200,
+    "homeImRemindersStaffAndDownloads": 200,
+    "unauthenticatedBankAndImApis": 401,
+    "nginxConfiguration": "passed"
+  },
+  "currentCustomerStatePreserved": true,
+  "oldStateBackupRestored": false,
+  "bankDatabaseChanged": false,
+  "localSourceReset": false,
+  "notes": [
+    "Only deployment pointers and the customer Agent process were changed. Current bindings, reminder databases and bank data were not replaced by a historical snapshot.",
+    "The withdrawn local implementation remains available for inspection; it was not committed or pushed and must not be automatically redeployed.",
+    "Cross-device pending-action synchronization remains unresolved after rollback."
+  ]
+}

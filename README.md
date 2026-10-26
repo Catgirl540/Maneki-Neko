@@ -6,7 +6,7 @@
 
 # Maneki-Neko（招财猫）
 
-> **先核对客户端版本**：[CLIENTS.md](CLIENTS.md)。网页用户端维护 `app/`；安卓客户端为 Kotlin `android-app/`。旧 Kotlin 工程与旧网页视觉资料已移入 [archive/](archive/README.md)。本文部分业务与历史演进记录保留原文，当前视觉与导航以 [网页维护手册](app/README.md) 为准。
+> **先核对客户端版本**：[CLIENTS.md](CLIENTS.md)。网页用户端维护 `app/`；安卓客户端为 Kotlin `android-app/`。历史 Kotlin 工程与旧网页视觉资料已于 2026-10-26 从工作区删除，需要回溯时从 git 历史（删除前提交 `f865b18`）取。本文部分业务与历史演进记录保留原文，当前视觉与导航以 [网页维护手册](app/README.md) 为准。
 
 > 本地启动前端、PostgreSQL 后端与隔离演示登录，请先看 [简洁启动说明](README-START.md)。
 
@@ -64,7 +64,6 @@
 │   ── .env.development        环境开关
 ├── docs/design/                当前设计依据、客服资源与验证截图
 ├── design/                     运维交接、审查及工作人员端资料
-├── archive/2026-10-15/          旧 Kotlin 工程与旧网页设计（不维护、不发布）
 ├── android/README.md            旧工程迁移提示（没有可构建工程）
 ├── CLIENTS.md                  客户端版本核对入口
 ├── scripts/

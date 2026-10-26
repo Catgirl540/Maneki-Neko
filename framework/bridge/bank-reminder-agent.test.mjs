@@ -65,6 +65,13 @@ test('bank reminder tools keep normal one-use consent; portal authenticates owne
     assert.equal((await request('/reminders', 'alice-token', body)).data.id, fromPortal.data.id)
     assert.equal((await request('/reminders/' + fromPortal.data.id, 'bob-token', { confirmed: true, requestId: 'cancel-bob' }, 'DELETE')).status, 404)
     assert.equal((await request('/reminders/' + fromPortal.data.id, 'alice-token', { confirmed: true, requestId: 'cancel-alice' }, 'DELETE')).data.status, 'cancelled')
+    const parallelRaw = challenge('bank_create_im_reminder', { ...args, title: 'two-device approval' }, 'create-parallel')
+    const parallel = await agent.prepare(parallelRaw)
+    const approvals = await Promise.allSettled([agent.approve(parallel), agent.approve(parallel)])
+    assert.equal(approvals.filter(r => r.status === 'fulfilled').length, 1)
+    const executions = await Promise.allSettled([agent.execute(parallelRaw), agent.execute(parallelRaw)])
+    assert.equal(executions.filter(r => r.status === 'fulfilled').length, 1)
+    assert.equal(reminders.list('alice').reminders.filter(r => r.title === 'two-device approval').length, 1)
     assert.equal(transportCalls, 0)
   } finally { agent.close(); await reminders.close(); await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }) }
 })

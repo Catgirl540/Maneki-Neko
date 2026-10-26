@@ -13,6 +13,7 @@
 <body><main>
   <header><div><h1>IM 连接</h1><small>招财猫银行 · 微信与企业微信</small></div><nav><button id="customer-tab" class="secondary">账户连接</button><button id="admin-tab" class="secondary">机器人管理</button></nav></header>
   <div id="notice" role="status" hidden></div>
+  <section id="handoff-panel" class="pairing" hidden><h2 id="handoff-title">微信请求</h2><p id="handoff-description"></p><article id="handoff-request" hidden></article><button id="handoff-continue" type="button" hidden>继续这次请求</button><p id="handoff-state" role="status"></p></section>
   <section id="connection-test-notice" hidden><h2>本地 IM 连接验证</h2><p>本次仅验证机器人扫码和私聊文字收发。收到消息后会明确回复连接测试成功，未启用模型或银行业务。管理权限仅对本次本机访问有效。</p></section>
   <section id="login-panel">
     <h2 id="login-title">登录银行账户</h2><p class="muted">在此完成账户绑定与业务确认。账号密码、支付密码不会发送到 IM 对话。</p>

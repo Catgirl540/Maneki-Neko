@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!--
-      继承 Compose 需要的主题即可。界面全部由 Compose 画，这里只负责
-      "窗口本身"（状态栏、背景），所以内容刻意留空。
-    -->
-    <style name="Theme.LuckyCat" parent="android:Theme.Material.Light.NoActionBar" />
-</resources>

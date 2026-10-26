@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { startWeixinQr, getWeixinQr, verifyWeixinQr, cancelWeixinQr, confirmWeixinQr, type WeixinQr } from '@/api/im'
+import { ImError, startWeixinQr, getWeixinQr, verifyWeixinQr, cancelWeixinQr, confirmWeixinQr, type WeixinQr } from '@/api/im'
+import { useSession } from '@/store/session-context'
 import './im-page.css'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
@@ -14,11 +15,13 @@ const labels: Record<string, string> = {
 const active = new Set(['starting', 'pending', 'scanned', 'needs_verification', 'connecting'])
 // 扫码尝试 5 分钟有效：切视图/刷新不该丢掉进行中的扫码，attemptId 落 sessionStorage 断点续扫。
 const ATTEMPT_KEY = 'luckycat.im.wx-attempt'
-const storedAttempt = () => { try { return sessionStorage.getItem(ATTEMPT_KEY) } catch { return null } }
-const saveAttempt = (id: string | null) => { try { if (id) sessionStorage.setItem(ATTEMPT_KEY, id); else sessionStorage.removeItem(ATTEMPT_KEY) } catch {} }
 export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
+  const { user } = useSession()
+  const attemptKey = `${ATTEMPT_KEY}:${encodeURIComponent(user?.id ?? '')}`
+  const saveAttempt = (id: string | null) => { try { if (id) sessionStorage.setItem(attemptKey, id); else sessionStorage.removeItem(attemptKey) } catch {} }
   const [qr, setQr] = useState<WeixinQr | null>(null)
   const [busy, setBusy] = useState(false)
+  const [restoring, setRestoring] = useState(true)
   const [error, setError] = useState('')
   const [code, setCode] = useState('')
   const [now, setNow] = useState(() => Date.now())
@@ -30,14 +33,26 @@ export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
   const expired = qr !== null && !qr.binding && qr.expiresAt <= now
   // 断点续扫：挂载时若留有进行中的尝试，取回服务端最新状态接着轮询。
   useEffect(() => {
-    const id = storedAttempt()
-    if (!id || qr) return
-    getWeixinQr(id).then(value => { setQr(value); setNow(Date.now()) }).catch(() => saveAttempt(null))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+    let stopped = false
+    setQr(null); setCode(''); setError(''); setRestoring(true)
+    let id: string | null = null
+    try { sessionStorage.removeItem(ATTEMPT_KEY); id = sessionStorage.getItem(attemptKey) } catch { /* Storage is optional. */ }
+    if (!id) { setRestoring(false); return }
+    void getWeixinQr(id).then(value => {
+      if (stopped) return
+      if (value.binding) { saveAttempt(null); return } // A completed receipt is not a resumable login.
+      setQr(value); setNow(Date.now())
+    }).catch(cause => {
+      if (stopped) return
+      if (cause instanceof ImError && [404, 410].includes(cause.status)) saveAttempt(null)
+      else setError(cause instanceof Error ? cause.message : '扫码状态暂时无法读取')
+    }).finally(() => { if (!stopped) setRestoring(false) })
+    return () => { stopped = true }
+  }, [attemptKey]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!qr) return
     if (qr.binding || ['failed', 'expired', 'cancelled'].includes(qr.status) || qr.expiresAt <= Date.now()) saveAttempt(null)
-  }, [qr])
+  }, [qr, expired]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!qr || expired || !active.has(qr.status)) return
     let stopped = false
@@ -49,7 +64,7 @@ export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
     return () => { stopped = true; window.clearTimeout(timer) }
   }, [qr, expired])
   async function act(work: () => Promise<void>) {
-    if (busy) return
+    if (busy || restoring) return
     setBusy(true); setError('')
     try { await work() } catch (cause) { setError(cause instanceof Error ? cause.message : '微信连接失败，请重试') }
     finally { setBusy(false) }
@@ -85,7 +100,7 @@ export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
               <small>{qr?.binding ? '已绑定当前银行账户' : connected ? '请完成下方银行绑定确认' : finished ? '请生成新的连接二维码' : '点击下方按钮生成连接二维码'}</small>
             </div>}
         </div>
-        {(!qr || finished) && <Button className="im-qr-generate" variant="ink" loading={busy} onClick={() => void act(async () => { setNow(Date.now()); const next = await startWeixinQr(); saveAttempt(next.attemptId); setQr(next) })}>
+        {(!qr || finished) && <Button className="im-qr-generate" variant="ink" loading={busy || restoring} onClick={() => void act(async () => { setNow(Date.now()); const next = await startWeixinQr(); saveAttempt(next.binding ? null : next.attemptId); setQr(next) })}>
           {qr ? '重新生成二维码' : '生成微信连接二维码'}
         </Button>}
         {qr && <>
@@ -105,7 +120,7 @@ export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
         <p className="text-[13px] text-ink-soft">请确认本次扫码使用的是本人微信。确认后可在微信中办理本人查询及接收提醒；资金操作仍需单独确认。</p>
         <Button className="mt-3" variant="ink" loading={busy} onClick={() => void act(async () => {
           const binding = await confirmWeixinQr(qr.attemptId)
-          setQr({ ...qr, binding }); await onBound()
+          saveAttempt(null); setQr({ ...qr, binding }); await onBound()
         })}>确认绑定此微信到当前账户</Button>
       </div>}
       {qr.binding && <p className="im-confirm-panel text-[13px] text-ink-soft">现在去微信 ClawBot 私聊发送一条消息，即可开始查询或接收提醒。</p>}

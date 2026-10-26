@@ -2,11 +2,13 @@
 const $ = id => document.getElementById(id)
 const staffMode = document.documentElement.dataset.audience === 'staff'
 const apiPrefix = staffMode ? '/staff-agent-api' : '/agent-api'
-let token = '', admin = false, sessionId = '', cursor = '0', pollTimer, provisionTimer, pendingId = '', previewCode = ''
+let token = '', admin = false, sessionId = '', cursor = null, pollTimer, provisionTimer, pendingId = '', previewCode = ''
 const messages = new Map()
 const smsCooldowns = new Map()
 let smsBusy = false, smsTimer
 let reminderDraft
+let continuation
+let sessionGeneration = 0
 const reminderTime = value => new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(new Date(value))
 function renderSmsButton() {
   clearTimeout(smsTimer)
@@ -20,7 +22,23 @@ const localTicket = fragment.get('local')
 const connectionTest = new URLSearchParams(location.search).get('mode') === 'connection-test'
 $('pair-code').value = fragment.get('code') ?? ''
 sessionId = fragment.get('session') ?? ''
+let linkedSession = sessionId
 history.replaceState(null, '', location.pathname + location.search) // Pairing codes do not remain in browser history.
+function showHandoff(title, description, request) {
+  $('handoff-panel').hidden = false; $('handoff-title').textContent = title; $('handoff-description').textContent = description
+  $('handoff-request').hidden = !request; $('handoff-request').textContent = request ?? ''
+}
+if (sessionId) showHandoff('查看微信待确认操作', '登录后将直接打开本次微信会话，显示仍有效的确认卡或需补充的信息。')
+else if ($('pair-code').value) showHandoff('恢复微信银行连接', '这是一条登录恢复链接。登录后会显示本次请求，恢复连接后可继续；涉及资金的操作仍需独立确认。')
+window.addEventListener('hashchange', () => {
+  const next = new URLSearchParams(location.hash.slice(1)), code = next.get('code'), target = next.get('session')
+  if (!code && !target) return
+  clearTimeout(pollTimer); sessionGeneration++; sessionId = target ?? ''; linkedSession = sessionId
+  $('pair-code').value = code ?? ''; previewCode = ''; $('claim-button').hidden = true
+  history.replaceState(null, '', location.pathname + location.search)
+  showHandoff(code ? '恢复微信银行连接' : '查看微信待确认操作', '已切换到最新微信链接。登录后会核对本人连接及本次请求。')
+  if (token && !admin) void refreshBindings().then(previewPairing).catch(error => notice(error.message))
+})
 function notice(text = '') { $('notice').textContent = text; $('notice').hidden = !text }
 function element(tag, text, parent) { const item = document.createElement(tag); if (text !== undefined) item.textContent = text; parent?.append(item); return item }
 function button(text, handler, parent, style = '') { const item = element('button', text, parent); item.type = 'button'; item.className = style; item.addEventListener('click', () => task(item, handler)); return item }
@@ -29,13 +47,14 @@ async function request(path, body, method = body === undefined ? 'GET' : 'POST')
   const response = await fetch(`${apiPrefix}${path}`, { method, credentials: 'omit', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(30_000) })
   const data = await response.json()
   if (!response.ok) {
-    if (response.status === 401 && !path.startsWith('/im/auth/') && (!path.startsWith('/consent/') || data.code === 'UNAUTHORIZED')) logout()
+    if (response.status === 401 && !path.startsWith('/im/auth/') && (!path.startsWith('/consent/') || data.code === 'UNAUTHORIZED')) logout(true)
     throw Object.assign(Error(data.error ?? data.message ?? `请求失败（${response.status}）`), { status: response.status })
   }
   return data
 }
-function logout() {
-  token = ''; sessionId = ''; clearTimeout(pollTimer); clearTimeout(provisionTimer); pendingId = ''; previewCode = ''; messages.clear()
+function logout(preserveTarget = false) {
+  token = ''; sessionId = preserveTarget === true ? linkedSession : ''; clearTimeout(pollTimer); clearTimeout(provisionTimer); pendingId = ''; previewCode = ''; messages.clear()
+  continuation = undefined; $('handoff-continue').hidden = true
   $('login-panel').hidden = false; $('customer-panel').hidden = true; $('admin-panel').hidden = true
   $('password').value = ''; $('sms-code').value = ''; $('bot-secret').value = ''; $('pending').replaceChildren(); $('provisioning').replaceChildren()
   $('sms-hint').textContent = ''; $('sms-hint').hidden = true
@@ -55,8 +74,8 @@ if (staffMode) {
   $('pair-panel').querySelector('p').textContent='绑定后可接收客户任务提醒，退出网页仍持续提醒。业务查询需要有效员工登录，写操作仍须确认；代客操作另需客户核验。'
   $('reminder-panel').hidden=true
 }
-$('logout-button').onclick = logout
-$('admin-logout-button').onclick = logout
+$('logout-button').onclick = () => logout()
+$('admin-logout-button').onclick = () => logout()
 $('identity').addEventListener('input', () => { $('sms-code').value = ''; $('sms-hint').textContent = ''; $('sms-hint').hidden = true; renderSmsButton() })
 $('sms-button').onclick = async () => {
   const phone = $('identity').value.trim()
@@ -93,14 +112,16 @@ const expiredPairingHint = '此绑定链接已使用或已过期。请回到原�
 async function previewPairing() {
   previewCode = ''; $('claim-button').hidden = true
   const code = $('pair-code').value.trim()
+  if (code) { continuation = undefined; $('handoff-continue').hidden = true }
   $('preview-button').disabled = !code
   if (!code) { $('pair-preview').textContent = '要绑定新的私聊，请在微信中发送“绑定”，从机器人新回复的链接打开本页。已有连接可在下方查看。'; return }
   try {
     const result = await request('/im/preview', { code })
     if ($('pair-code').value.trim() !== code) return
     previewCode = code; $('pair-preview').textContent = `来源：${result.label}。请确认这是您正在使用的 IM 私聊。有效至 ${new Date(result.expiresAt).toLocaleTimeString()}。`
+    showHandoff('本次微信请求尚未开始办理', '先确认这是本人的私聊。恢复连接后，可点击“继续这次请求”；此绑定确认不会执行资金操作。', result.request)
     $('claim-button').hidden = false
-  } catch (error) { $('pair-preview').textContent = error.status === 404 ? expiredPairingHint : error.message }
+  } catch (error) { $('pair-preview').textContent = error.status === 404 ? expiredPairingHint : error.message; $('handoff-state').textContent = '未能核对本次链接，请查看绑定区的具体提示。' }
 }
 $('preview-button').disabled = !$('pair-code').value.trim()
 $('preview-button').onclick = () => task($('preview-button'), previewPairing)
@@ -113,9 +134,28 @@ $('claim-button').onclick = () => task($('claim-button'), async () => {
   previewCode = ''; $('pair-code').value = ''; $('claim-button').hidden = true; $('pair-preview').textContent = '绑定成功，请回到 IM 发送需求。'
   $('preview-button').disabled = true
   sessionId = result.sessionId; await refreshBindings()
+  continuation = result.continuation
+  if (continuation) {
+    showHandoff('连接已恢复，请继续本次请求', '点击继续后才开始办理。银行写操作仍须核对确认卡，支付密码仅在本页填写。', continuation.request)
+    $('handoff-continue').hidden = false; $('handoff-state').textContent = '本次请求尚未执行。'
+    $('handoff-panel').scrollIntoView({ block: 'start' })
+  }
+})
+$('handoff-continue').onclick = () => task($('handoff-continue'), async () => {
+  if (!continuation || continuation.expiresAt <= Date.now()) throw Error('这次请求已过期，请回微信重新发送。')
+  const result = await request('/im/continue', { token: continuation.token, confirmed: true })
+  continuation = undefined; $('handoff-continue').hidden = true; sessionId = result.sessionId
+  $('handoff-state').textContent = '请求已进入当前会话，下面会显示查询结果或仍需确认的操作。'
+  await refreshBindings()
 })
 async function refreshBindings() {
   const bindings = await request('/im/bindings')
+  const pendingRequest = !$('pair-code').value.trim() && bindings.find(item => item.continuation && (!sessionId || item.sessionId === sessionId))
+  if (pendingRequest) {
+    continuation = pendingRequest.continuation
+    showHandoff('连接已恢复，请继续本次请求', '本次请求尚未执行。点击继续后才开始办理，资金操作仍需单独确认。', continuation.request)
+    $('handoff-continue').hidden = false
+  } else { continuation = undefined; $('handoff-continue').hidden = true }
   $('bindings').replaceChildren()
   for (const binding of bindings) {
     const row = element('div', undefined, $('bindings')); row.className = 'card'
@@ -127,10 +167,12 @@ async function refreshBindings() {
     button('保留连接', () => { revokePanel.hidden = true }, revokePanel, 'secondary')
     button('解除连接', () => { revokePanel.hidden = false }, row, 'secondary')
   }
-  const selected = bindings.find(item => item.sessionId === sessionId)
+  const connected = bindings.filter(item => item.connected)
+  const selected = bindings.find(item => item.sessionId === sessionId) ?? (!sessionId && !$('pair-code').value.trim() && connected.length === 1 ? connected[0] : undefined)
   if (selected?.connected) await selectSession(selected)
-  else if (sessionId) { $('session-panel').hidden = true; notice('请回到原 IM 私聊获取绑定链接并重新连接。') }
+  else if (sessionId) { $('session-panel').hidden = true; showHandoff('原微信操作已失效或连接已变化', '没有继续执行这条旧指令。请回原微信重新发送需求，使用机器人最新回复的链接。'); notice('请回到原 IM 私聊获取绑定链接并重新连接。') }
   await refreshReminders()
+  if (pendingRequest) $('handoff-panel').scrollIntoView({ block: 'start' })
 }
 async function refreshReminders() {
   if (staffMode) return
@@ -188,9 +230,11 @@ $('reminder-submit').onclick = () => task($('reminder-submit'), async () => {
 })
 async function selectSession(binding) {
   clearTimeout(pollTimer)
-  sessionId = binding.sessionId; cursor = '0'; pendingId = ''; messages.clear(); $('messages').replaceChildren(); $('pending').replaceChildren()
+  sessionGeneration++
+  sessionId = binding.sessionId; cursor = null; pendingId = ''; messages.clear(); $('messages').replaceChildren(); $('pending').replaceChildren()
   $('session-panel').hidden = false; $('connection-label').textContent = binding.label
   await poll()
+  $(pendingId ? 'pending' : 'session-panel').scrollIntoView({ block: 'start' })
 }
 function renderMessages() { $('messages').replaceChildren(); for (const text of messages.values()) element('article', text, $('messages')) }
 function pendingCard(id, title, expiresAt) {
@@ -198,6 +242,7 @@ function pendingCard(id, title, expiresAt) {
   pendingId = id; $('pending').replaceChildren()
   const card = element('div', undefined, $('pending')); card.className = 'card pairing'
   element('h2', title, card); element('p', `有效至 ${new Date(expiresAt).toLocaleTimeString()}，过期后请回到 IM 重新发起。`, card)
+  card.scrollIntoView({ block: 'start' })
   return card
 }
 function consent(challenge) {
@@ -245,10 +290,22 @@ function question(value) {
 }
 async function poll() {
   const selected = sessionId
+  const generation = sessionGeneration
   if (!selected || !token || admin) return
   try {
-    const data = await request(`/sessions/${encodeURIComponent(selected)}/events?after=${encodeURIComponent(cursor)}`)
-    if (selected !== sessionId) return
+    const initial = cursor === null
+    const data = await request(`/sessions/${encodeURIComponent(selected)}/events${initial ? '' : `?after=${encodeURIComponent(cursor)}`}`)
+    if (!token || selected !== sessionId || generation !== sessionGeneration) return
+    if (initial) {
+      // Pending approvals/questions are authoritative live state, not replayable history.
+      // Load previous replies separately; keep the snapshot cursor so racing new events are read next.
+      try {
+        const history = await request(`/sessions/${encodeURIComponent(selected)}/events?after=0`)
+        if (!token || selected !== sessionId || generation !== sessionGeneration) return
+        data.events = [...history.events.filter(event => ['assistant', 'assistant-update', 'assistant-reset'].includes(event.type)), ...data.events,
+          ...history.events.filter(event => ['consent-resolved', 'question-resolved'].includes(event.type))]
+      } catch (error) { if (!token) return; notice('历史回复暂时无法读取；当前确认信息以本页下方显示为准。') }
+    }
     cursor = data.cursor
     for (const event of data.events) {
       if (event.type === 'assistant' || event.type === 'assistant-update') { messages.set(event.messageId ?? 'final', event.text); renderMessages() }
@@ -259,8 +316,9 @@ async function poll() {
       if ((event.type === 'consent-resolved' && event.challengeId === pendingId) || (event.type === 'question-resolved' && event.questionId === pendingId)) { pendingId = ''; $('pending').replaceChildren() }
       if (event.type === 'error') notice(event.message)
     }
+    $('session-status').textContent = pendingId ? '请在下方核对并确认本次操作' : data.events.some(event => event.type === 'status' && event.status === 'running') ? '正在处理本次微信请求…' : '当前没有仍有效的待确认操作。请查看下方回复；如未办理，请回微信重新发送。'
   } catch (error) { notice(error.message) }
-  if (token && selected === sessionId) pollTimer = setTimeout(poll, 2000)
+  if (token && selected === sessionId && generation === sessionGeneration) pollTimer = setTimeout(poll, 2000)
 }
 $('stop-button').onclick = () => task($('stop-button'), async () => { await request(`/sessions/${encodeURIComponent(sessionId)}/stop`, {}); notice('已请求停止。已提交银行的业务请核对实际记录。') })
 async function refreshBots() {
@@ -297,6 +355,20 @@ async function provision(channel) {
     } catch (error) { notice(error.message) }
   }
   provisionTimer = setTimeout(check, 1000)
+}
+// Reuse an existing customer-web login only after the server validates its ownership.
+// The portal never writes a token to storage and never restores staff/admin access this way.
+if (!staffMode && !connectionTest && new URLSearchParams(location.search).get('view') !== 'admin') {
+  let existing
+  try { existing = JSON.parse(sessionStorage.getItem('luckycat.token') ?? 'null') } catch {}
+  if (typeof existing === 'string' && existing) {
+    token = existing
+    void refreshBindings().then(async () => {
+      if (!token) return
+      $('login-panel').hidden = true; $('customer-panel').hidden = false
+      await previewPairing()
+    }).catch(error => { logout(true); notice(error.message) })
+  }
 }
 $('weixin-provision').onclick = () => task($('weixin-provision'), () => provision('weixin'))
 $('wecom-provision').onclick = () => task($('wecom-provision'), () => provision('wecom'))

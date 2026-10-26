@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-26T16:05:27+08:00",
+  "url": "https://bank.waveflow.men/assistant?view=im",
+  "status": "deployed-and-verified",
+  "release": "20261026-web-im-f865b18-r1",
+  "scope": "Current customer website and customer QR bridge fix; existing bank backend and staff website retained",
+  "customerWebBaseRevision": "f865b18",
+  "includesUncommittedImRepairs": true,
+  "bankBackendBaseRevision": "693c265",
+  "sourceRelease": "/srv/maneki-bank/releases/20261026-web-im-f865b18-r1",
+  "webRelease": "/var/www/bank.waveflow.men/releases/20261026-web-im-f865b18-r1",
+  "previousSourceRelease": "/srv/maneki-bank/releases/20261023-693c265",
+  "previousWebRelease": "/var/www/bank.waveflow.men/releases/20261023-693c265-apk104",
+  "artifactSha256": "848c7165f89124aa3068bdd8c9a7ec7777efab55a3f9e7224a8953dc1bad2251",
+  "backupLocation": "/var/backups/maneki-20261026-web-im-f865b18-r1",
+  "changes": [
+    "Publish the current customer workbench with its integrated IM view.",
+    "Restore confirmed reminder creation, cancellation, history and per-binding unlink controls, including stale bindings.",
+    "Restore pairing-code previews and legacy reminder/session deep links.",
+    "Scope QR resume state by customer and reject completed QR receipts after unbinding or session changes.",
+    "Preserve existing staff assets, Android downloads, model configuration and shared customer state."
+  ],
+  "checks": {
+    "productionBuildHttpBankAndAgentEnabled": "passed",
+    "lint": "passed with five warnings",
+    "accountModelChecks": "passed, including 42 maintenance documents",
+    "localCustomerQrTests": "3/3 passed, zero skips",
+    "stagedLinuxCustomerQrTests": "3/3 passed, zero skips",
+    "isolatedReminderTests": "10/10 passed, zero skips",
+    "localImBrowserFixtureRegression": "19 assertion groups passed; zero page errors",
+    "publishedAssetsImBrowserFixtureRegression": "19 assertion groups passed; zero page errors",
+    "publicCustomerWebHashesMatched": 207,
+    "homeAssistantRemindersLoginStaffAndDownloadEntrypoints": "200",
+    "unauthenticatedBankAgentBindingsRemindersAndQrStatus": "401",
+    "nginxConfiguration": "passed",
+    "fivePreviouslyActiveServices": "active",
+    "customerAgentRestartCount": 0,
+    "otherFourServicePids": "unchanged",
+    "existingEnvironmentFileHashes": "unchanged",
+    "bankDatabaseMigration": "not performed",
+    "bankBusinessOrCustomerDataWrittenByVerification": false,
+    "realWechatQrGeneratedByVerification": false,
+    "wechatMessageSentByVerification": false,
+    "paidModelCalledByVerification": false
+  },
+  "limits": [
+    "Published browser regression loads actual public HTML/CSS/JS but intercepts bank, IM and Agent APIs with isolated fixtures; it does not verify a real WeChat handshake or delivery.",
+    "This is a targeted customer web/QR release, not publication of every local bank/staff change or a database upgrade.",
+    "Only the customer Agent was restarted. Existing encrypted bindings and reminder databases remain at their original shared paths; in-memory business login may require login again.",
+    "The old live customer bridge was already absent/inactive before deployment; it was not started.",
+    "No GitHub commit or push was performed."
+  ],
+  "additionalBackendGateAttempt": {
+    "scope": "Independent disposable local PostgreSQL databases only; not the published bank backend",
+    "result": "81 passed, 6 failed out of 87; stopped before bridge/Agent stages",
+    "observation": "Staff notification tests left newly inserted events queued. PostgreSQL in WSL was approximately 1.4 seconds ahead of the Windows Node clock, while event next_route_at defaults to database now() and immediate sweep compares against application time.",
+    "status": "Clock-related diagnosis recorded; full backend integration was not revalidated and is not claimed passed."
+  }
+}

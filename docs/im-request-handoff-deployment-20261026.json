@@ -1,0 +1,99 @@
+{
+  "release": "20261026-im-handoff-r6",
+  "oldSource": "/srv/maneki-bank/releases/20261026-im-direct-421cd5c-r3",
+  "oldWeb": "/var/www/bank.waveflow.men/releases/20261026-im-direct-421cd5c-r3",
+  "source": "/srv/maneki-bank/releases/20261026-im-handoff-r6",
+  "web": "/var/www/bank.waveflow.men/releases/20261026-im-handoff-r6",
+  "unitsBefore": {
+    "luckycat-bank-demo": {
+      "MainPID": "202565",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-bank": {
+      "MainPID": "202518",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-agent-demo": {
+      "MainPID": "202567",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-staff-agent": {
+      "MainPID": "202520",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-ops-agent": {
+      "MainPID": "202519",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    }
+  },
+  "environmentHashes": {
+    "bank-live.env": "4da78afb04b16494fb8710ed0d26c5e9951c6a360a71aae2aa0e54cd911f54cb",
+    "agent-staff.env": "6559e16ee0cfdd3d42f239ba9cdf003c167d1971b4c03c4b95b177542dc683f5",
+    "bank.env": "06abd73c577e5b376f948bd462bcc0980743a4c32701ecedbaf05255c2894e8c",
+    "agent-demo.env": "4f3143c723dcb34e2063ddb76f303996cafde4a04d55d809576248878c4dce51",
+    "models.env": "06e67ae4a6ee0167cbcfdaa809448f8fee504e66549f743f06e0425233a61228",
+    "bank-demo.env": "419639a54cdaad8ee0c8bf1789aedb1e41f01b54442063b77c19538ef72033c4",
+    "agent-ops.env": "25d744099dfcfe78c6f13f67805fd0ab70d64738916636efb81c1ebb0c8dd5a0"
+  },
+  "artifactSha256": "764914886775efddb4f492cb178816f41745d28c8428962312d887f3d5c1e3a3",
+  "status": "active",
+  "time": "2026-10-26T14:48:11.404875+00:00",
+  "unitsAfter": {
+    "luckycat-bank-demo": {
+      "MainPID": "202565",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-bank": {
+      "MainPID": "202518",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-agent-demo": {
+      "MainPID": "205739",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-staff-agent": {
+      "MainPID": "202520",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    },
+    "luckycat-ops-agent": {
+      "MainPID": "202519",
+      "NRestarts": "0",
+      "ActiveState": "active"
+    }
+  },
+  "probes": {
+    "/api/accounts": 401,
+    "/agent-api/health": 401,
+    "/agent-api/im/bindings": 401,
+    "/agent-api/im/reminders": 401,
+    "/staff-api/me": 401,
+    "/staff-agent-api/health": 401,
+    "/staff-ops-agent-api/health": 401,
+    "/": 200,
+    "/assistant?view=im": 200,
+    "/reminders": 200,
+    "/staff/": 200,
+    "/downloads/android.json": 200
+  },
+  "backup": "/var/backups/maneki-20261026-im-handoff-r6",
+  "environmentHashesPreserved": true,
+  "otherServicePidsPreserved": true,
+  "bankDatabaseChanged": false,
+  "staffAndDownloadsPreserved": true,
+  "bankAndSharedSourcePreserved": true,
+  "publicAssetsVerified": [
+    "index.html",
+    "assets/index-iBKKpNWJ.js",
+    "assets/index-Csbq3_wb.css"
+  ],
+  "publicPortalVerified": true
+}

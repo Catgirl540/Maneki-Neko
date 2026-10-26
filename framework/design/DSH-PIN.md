@@ -93,7 +93,7 @@ workspace sandbox"（见 [P4-PACKAGING.md](P4-PACKAGING.md) §4）——所以�
 
 ## 旧版归档与版本核对
 
-升级前 `0.1.6-alpha.2` 的源码已归档到 [旧版框架归档](../../archive/2026-10-19/dsh-before-0.2.1/README.md)，只供显式回溯。日常维护、安装、构建和部署只使用当前根目录 `framework/`；银行 CLI 使用 `framework/node_modules/.bin/dsh`，不以用户全局 `dsh` 的版本替代。
+升级前 `0.1.6-alpha.2` 的源码已于 2026-10-26 从工作区删除，只保留在 git 历史（删除前提交 `f865b18` 的 `archive/2026-10-19/dsh-before-0.2.1/`）中，只供显式回溯。日常维护、安装、构建和部署只使用当前根目录 `framework/`；银行 CLI 使用 `framework/node_modules/.bin/dsh`，不以用户全局 `dsh` 的版本替代。
 
 先从实际工作区执行 `npm --prefix framework run check:dsh`。它校验声明、锁文件和实际安装，失败时再按锁文件安装；不能仅凭 `package.json` 宣称升级成功，也不能根据另一工作区、旧发布目录或全局工具的结果覆盖当前安装。客户、员工、运维 profile 都应解析到同一套当前依赖。
 
