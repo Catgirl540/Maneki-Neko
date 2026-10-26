@@ -1632,6 +1632,51 @@ function ensureDemoRecipient() {
     demo.pendingSms = null;
     storage.set(PROFILES_KEY, { ...all, [demo.user.phone]: demo });
 }
+/**
+ * 演示用「马斯克」账户：余额拉满，便于测试「从他行/他人提取资金」到本行账户。
+ *
+ * 只在允许演示种子时创建（`BANK_ALLOW_DEMO_SEED=true` 或非生产环境），
+ * 与演示收款人一样遵守单账户模型：一个资金账户 + 多币种余额 + 一张卡。
+ */
+function ensureDemoWhale() {
+    if (process.env.NODE_ENV === 'production' && process.env.BANK_ALLOW_DEMO_SEED !== 'true') return;
+    if (storage.profileStore && !storage.profileStore.initializing) return;
+    const all = profiles();
+    if (all['13900000000']) return;
+    const demo = seed();
+    demo.user = { id: 'u_demo_musk', name: '马斯克', phone: '13900000000', memberTier: 'diamond', avatarInitial: '马' };
+    const accountId = 'acc_demo_musk';
+    // 余额拉满：CNY 999.99 亿、USD 100 亿、HKD 500 亿（分）
+    demo.accounts = [{
+            id: accountId, kind: 'savings', label: '储蓄账户',
+            accountNo: '8820000000000001', currency: 'CNY',
+            balance: 9_999_999_999_999, available: 9_999_999_999_999,
+            interestRate: 0.0155, monthNetChange: 0,
+        }];
+    demo.currencyBalances = [
+        { id: 'bal_demo_musk_usd', kind: 'savings', label: 'USD 余额', accountNo: `ledger:u_demo_musk:USD`, currency: 'USD', balance: 1_000_000_000_000, available: 1_000_000_000_000, interestRate: 0.0155, monthNetChange: 0 },
+        { id: 'bal_demo_musk_hkd', kind: 'savings', label: 'HKD 余额', accountNo: `ledger:u_demo_musk:HKD`, currency: 'HKD', balance: 5_000_000_000_000, available: 5_000_000_000_000, interestRate: 0.0155, monthNetChange: 0 },
+    ];
+    demo.retiredBalances = []; demo.accountAliases = {}; demo.accountNumberAliases = {};
+    Object.assign(demo, emptyCustomerDomains(demo.user, accountId));
+    demo.transactions = [];
+    demo.cards = [{
+            id: 'card_demo_musk', accountId,
+            productName: '招财猫 · 黑金借记卡', last4: '0001',
+            cardholder: 'ELON MUSK', expiry: '12/32', theme: 'ink',
+            network: 'visa', kind: 'debit', status: 'active',
+            onlinePayment: true, overseasPayment: true,
+            dailyLimit: 1_000_000_000,
+            channelLimits: { online: 1_000_000_000, offline: 1_000_000_000, overseas: 1_000_000_000 },
+            merchantLimits: { dining: 1_000_000_000, shopping: 1_000_000_000, other: 1_000_000_000 },
+        }];
+    demo.cardSecrets = { card_demo_musk: { cvv: '001', pan: cardPan('visa', '0001') } };
+    demo.payees = [];
+    demo.holdings = [];
+    demo.autoDebits = [];
+    demo.pendingSms = null;
+    storage.set(PROFILES_KEY, { ...all, [demo.user.phone]: demo });
+}
 /** 按本行账户号或已激活银行卡号查收款账户，扫描所有演示用户档案。 */
 export async function findRecipientByNumber(number) {
     const normalized = number.replace(/\D/g, '');
@@ -1814,6 +1859,7 @@ export function loadDb() {
     }
     normalizeFundingAccount(cache);
     ensureDemoRecipient();
+    ensureDemoWhale();
     syncSeq(cache);
     for (const profile of Object.values(profiles()))
         syncSeq(profile);
@@ -1834,6 +1880,7 @@ export function resetDb() {
     storage.remove(PROFILES_KEY);
     cache = seed();
     ensureDemoRecipient();
+    ensureDemoWhale();
     persist();
     return cache;
 }
