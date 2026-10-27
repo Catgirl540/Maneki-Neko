@@ -1,5 +1,7 @@
 # 单机 VPS 部署
 
+当前发布补充（2026-10-27）：源码与网页均指向 `releases/20261027-function-fixes`，五项现行服务已验证，原 `luckycat-bridge` 仍停用。两库核心结构为 `2026102701`，目前两库均由 `maneki_owner` 持有，运行角色为 `maneki_app`；以实际运行配置为准，不套用下文历史角色名。详见 [本次部署验收](../../docs/bank-function-fixes-deployment-20261027.json)。下文为历史迁移记录。
+
 2026-10-19 起，`https://bank.waveflow.men/` 的网页、银行 API、客户/员工/运维 Agent 与 PostgreSQL 16 位于新 VPS `15.235.241.158`。原 guga 静态托管及 `120.48.123.112` 银行部署退出该域名的运行链路。旧机数据保留，但银行六项服务已停止并禁用自启动，禁止直接启动形成双写。
 
 ## 版本与路径

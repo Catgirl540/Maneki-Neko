@@ -1,5 +1,10 @@
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../../../shared/account-model.mjs'
+import { previewBirthdayPlan as previewBirthday, createBirthdayPlan as createBirthday, listBirthdayPlans as listBirthdays, cancelBirthdayPlan as cancelBirthday, confirmBirthdayOrder as confirmBirthday } from '../../../../shared/linked-plans.mjs'
+import { billingReport, exportBillingReport as buildBillingExport } from '../../../../shared/billing-reports.mjs'
+import { createPaymentPlans } from '../../../../shared/payment-plans.mjs'
+import { searchPayees, updatePayeeRemark as patchPayeeRemark, rememberInternalPayee } from '../../../../shared/payee-search.mjs'
 import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../../../shared/invest-plan.mjs'
+import { wealthHoldingLots, wealthHoldingState, wealthRedemptionQuote } from '../../../../shared/wealth-redemption.mjs'
 import { supportGuidance } from '../../../../shared/support-guidance.mjs'
 import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../../../shared/spend-platforms.mjs'
 import {
@@ -286,7 +291,7 @@ function withDerivedHoldings(db: ReturnType<typeof loadDb>): WealthHolding[] {
       marketValue,
       profit,
       profitRate: h.principal === 0 ? 0 : profit / h.principal,
-      closed: h.redeemableAt != null && Date.now() < new Date(h.redeemableAt).getTime(),
+      ...wealthHoldingState(h),
     }
   })
 }
@@ -595,7 +600,11 @@ export function createMockApi(options?: {
   const settleImmediately = options?.settleImmediately === true
   const classify = options?.classify ?? null
   const exchangeQuotes = new Map<string, { ownerId: string; accountId: string; amount: number; toCurrency: Currency; rate: number; expiresAt: number }>()
-  return {
+  let api: BankApi
+  const { settleScheduledTransfers: scanScheduledTransfers, ...publicPlans } = browserPaymentPlans(() => api)
+  void scanScheduledTransfers // Internal scanner is not part of the HTTP contract.
+  return api = {
+    ...publicPlans,
     async login(phone, password, smsCode) {
       await delay()
       const db = loadDb()
@@ -943,9 +952,13 @@ export function createMockApi(options?: {
       return lookupCardBin(loadDb().banks, digits, region)
     },
 
-    async listPayees(): Promise<Payee[]> {
+    async listPayees(keyword): Promise<Payee[]> {
       await delay(140)
-      return [...loadDb().payees].sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))
+      return searchPayees(loadDb().payees, keyword)
+    },
+    async updatePayeeRemark(id, remark) {
+      const row = patchPayeeRemark(loadDb().payees, id, remark)
+      persist(); return row
     },
 
     async deletePayee(id): Promise<void> {
@@ -1253,9 +1266,12 @@ export function createMockApi(options?: {
             remark: req.memo.trim() || undefined,
           },
         })
+        const priorPayees = structuredClone(db.payees)
         try {
+          if (!isFps) rememberInternalPayee(db, req, nextId)
           persistRelatedProfiles(isOwnAccount ? [] : [recipient.profile])
         } catch (error) {
+          db.payees = priorPayees
           sender.balance += req.amount
           sender.available += req.amount
           recipient.account.balance -= quotedFx?.toAmount ?? req.amount
@@ -1367,10 +1383,12 @@ export function createMockApi(options?: {
       if (existing) {
         existing.lastUsedAt = new Date().toISOString()
         existing.name = req.payeeName.trim()
+        existing.remark ??= req.memo.trim()
       } else {
         db.payees.unshift({
           id: nextId('pay'),
           name: req.payeeName.trim(),
+          remark: req.memo.trim(),
           channel: req.channel,
           scope: isFps ? 'overseas' : req.scope,
           lastUsedAt: new Date().toISOString(),
@@ -1498,12 +1516,44 @@ export function createMockApi(options?: {
     async setCardLock(id, locked) {
       await delay(300)
       const card = findCard(id)
+      if (typeof locked !== 'boolean') throw new ApiError('锁卡参数必须为布尔值', 400, 'INVALID_CARD_LOCK')
       if (card.status === 'replaced') throw new ApiError('该卡已换卡，无法操作', 400, 'CARD_REPLACED')
+      if (card.status === 'pending') throw new ApiError('请收到卡片后验证支付密码激活，待激活卡不能锁定或解锁', 409, 'CARD_NOT_DELIVERED')
+      if (card.status === 'lost') throw new ApiError('该卡已正式挂失，请验证支付密码解挂或办理补卡', 409, 'CARD_LOST')
+      if (!['active', 'locked'].includes(card.status)) throw new ApiError('卡片状态不允许锁定或解锁', 409, 'INVALID_CARD_STATE')
       card.status = locked ? 'locked' : 'active'
       if (locked) {
         card.onlinePayment = false
         card.overseasPayment = false
       }
+      persist()
+      return card
+    },
+
+    async reportCardLost(id, paymentPassword) {
+      const card = findCard(id)
+      verifyPayPassword(paymentPassword)
+      if (card.status === 'lost') return card
+      if (!['active', 'locked', 'pending'].includes(card.status)) throw new ApiError('该卡状态不允许挂失', 409, 'INVALID_CARD_STATE')
+      card.lostFromStatus = card.status as 'active' | 'locked' | 'pending'
+      card.reportedLostAt = new Date().toISOString()
+      card.status = 'lost'
+      card.onlinePayment = false
+      card.overseasPayment = false
+      persist()
+      return card
+    },
+
+    async recoverCard(id, paymentPassword) {
+      const card = findCard(id)
+      verifyPayPassword(paymentPassword)
+      if (card.status !== 'lost') throw new ApiError('仅已挂失卡可以解挂', 409, 'CARD_NOT_LOST')
+      if (!card.lostFromStatus || !['active', 'locked', 'pending'].includes(card.lostFromStatus)) throw new ApiError('挂失前状态不完整，请联系客服办理补卡', 409, 'INVALID_CARD_STATE')
+      card.status = card.lostFromStatus
+      card.lostFromStatus = null
+      card.reportedLostAt = null
+      card.onlinePayment = false
+      card.overseasPayment = false
       persist()
       return card
     },
@@ -1514,6 +1564,7 @@ export function createMockApi(options?: {
       const card = findCard(id)
       await verifyPayPassword(paymentPassword)
       if (card.status === 'replaced') throw new ApiError('该卡已换卡，无法激活', 409, 'CARD_REPLACED')
+      if (card.status === 'lost') throw new ApiError('该卡已挂失，请先解挂', 409, 'CARD_LOST')
       if (card.status !== 'pending') throw new ApiError('该卡已是使用中状态，无需激活', 409, 'CARD_ALREADY_ACTIVE')
       card.status = 'active'
       persist()
@@ -1553,6 +1604,8 @@ export function createMockApi(options?: {
         shippingAddress: req.address,
         issuingFee: fee,
         replacedFromId: card.id,
+        lostFromStatus: null,
+        reportedLostAt: null,
       }
       db.cards.push(fresh)
       // 换发的新卡是另一张卡，安全码必须重新生成，不能沿用旧卡的
@@ -1588,6 +1641,8 @@ export function createMockApi(options?: {
       if (card.status === 'replaced') {
         throw new ApiError('这张卡已换发，旧卡信息不再可用', 409, 'CARD_REPLACED')
       }
+      if (card.status === 'lost') throw new ApiError('该卡已挂失，卡安全信息不可用', 409, 'CARD_LOST')
+      if (!['active', 'locked'].includes(card.status)) throw new ApiError('卡片状态无效', 409, 'INVALID_CARD_STATE')
 
       const secret = db.cardSecrets[id]
       if (!secret) throw new ApiError('该卡暂无安全码记录', 404, 'CARD_SECRET_MISSING')
@@ -1603,9 +1658,23 @@ export function createMockApi(options?: {
     async updateCardSettings(id, patch) {
       await delay(240)
       const card = findCard(id)
-      if (card.status === 'locked' && (patch.onlinePayment || patch.overseasPayment)) {
-        throw new ApiError('卡片已锁定，请先解锁', 400, 'CARD_LOCKED')
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new ApiError('无效卡设置', 400, 'INVALID_CARD_SETTINGS')
+      if (card.status === 'locked' && ['onlinePayment', 'overseasPayment', 'paymentEnabled'].some(key => patch[key as 'onlinePayment' | 'overseasPayment' | 'paymentEnabled'] === true)) throw new ApiError('卡片已锁定，请先解锁再开启支付', 400, 'CARD_LOCKED')
+      if (card.status === 'pending') throw new ApiError('请先验证支付密码激活卡片', 409, 'CARD_NOT_DELIVERED')
+      if (card.status === 'lost') throw new ApiError('该卡已挂失，请先解挂', 409, 'CARD_LOST')
+      if (card.status === 'replaced') throw new ApiError('该卡已换发，不能修改设置', 409, 'CARD_REPLACED')
+      if (!['active', 'locked'].includes(card.status)) throw new ApiError('卡片状态无效', 409, 'INVALID_CARD_STATE')
+      const allowed = ['onlinePayment', 'overseasPayment', 'dailyLimit', 'paymentEnabled', 'channelLimits', 'merchantLimits']
+      if (Object.keys(patch).some(key => !allowed.includes(key))) throw new ApiError('卡设置包含不可修改字段', 400, 'INVALID_CARD_SETTINGS')
+      for (const key of ['onlinePayment', 'overseasPayment', 'paymentEnabled'] as const) {
+        if (patch[key] !== undefined && typeof patch[key] !== 'boolean') throw new ApiError('无效支付设置', 400, 'INVALID_CARD_SETTINGS')
       }
+      if (patch.dailyLimit !== undefined && (!Number.isSafeInteger(patch.dailyLimit) || patch.dailyLimit < 0)) throw new ApiError('无效限额', 400, 'INVALID_DAILY_LIMIT')
+      for (const limits of [patch.channelLimits, patch.merchantLimits]) {
+        if (limits !== undefined && (!limits || typeof limits !== 'object' || Array.isArray(limits) || Object.values(limits).length !== 3 || Object.values(limits).some(value => !Number.isSafeInteger(value) || value < 0))) throw new ApiError('无效渠道或商户类别限额', 400, 'INVALID_CARD_SETTINGS')
+      }
+      if (patch.channelLimits && !['online', 'offline', 'overseas'].every(key => Object.hasOwn(patch.channelLimits!, key))) throw new ApiError('无效渠道限额', 400, 'INVALID_CARD_SETTINGS')
+      if (patch.merchantLimits && !['dining', 'shopping', 'other'].every(key => Object.hasOwn(patch.merchantLimits!, key))) throw new ApiError('无效商户类别限额', 400, 'INVALID_CARD_SETTINGS')
       Object.assign(card, patch)
       persist()
       return card
@@ -1622,6 +1691,8 @@ export function createMockApi(options?: {
       if (card.status === 'locked') throw new ApiError('卡片已锁定，请先解锁再消费', 409, 'CARD_LOCKED')
       if (card.status === 'pending') throw new ApiError('卡还在寄送途中，收到并激活后才能消费', 409, 'CARD_NOT_DELIVERED')
       if (card.status === 'replaced') throw new ApiError('这张卡已换发，旧卡不再消费', 409, 'CARD_REPLACED')
+      if (card.status === 'lost') throw new ApiError('该卡已挂失，无法消费', 409, 'CARD_LOST')
+      if (card.status !== 'active') throw new ApiError('卡片状态无效，无法消费', 409, 'INVALID_CARD_STATE')
       if (card.paymentEnabled === false) throw new ApiError('该卡已关闭消费，请在卡片设置中开启', 409, 'CARD_PAYMENT_DISABLED')
       if (!card.onlinePayment) throw new ApiError('该卡已关闭线上支付，请先在卡片设置中开启', 409, 'CARD_ONLINE_PAYMENT_DISABLED')
       const preset = findSpendPlatform(input?.platform)
@@ -1744,12 +1815,13 @@ export function createMockApi(options?: {
     async listWealthProducts(): Promise<WealthProduct[]> {
       await delay(220)
       const today = dayKey(new Date())
-      return WEALTH_PRODUCTS.map((p) => ({ ...p, navDate: today }))
+      return WEALTH_PRODUCTS.map((p) => ({ ...p, navDate: today, priorityRestricted: Boolean(wealthPriorityGate(p, loadDb().membership.tier)) }))
     },
 
     async getWealthProduct(code): Promise<WealthProduct> {
       await delay(160)
-      return { ...productByCode(code), navDate: dayKey(new Date()) }
+      const product = productByCode(code)
+      return { ...product, navDate: dayKey(new Date()), priorityRestricted: Boolean(wealthPriorityGate(product, loadDb().membership.tier)) }
     },
 
     async getWealthOverview(): Promise<WealthOverview> {
@@ -1921,6 +1993,9 @@ export function createMockApi(options?: {
       const { fee } = oneOffFee(product, req.amount, '申购')
       const netAmount = req.amount - fee
       const shares = Number((netAmount / product.nav).toFixed(2))
+      const existing = db.holdings.find((h) => h.productCode === product.code)
+      const existingLots = existing ? wealthHoldingLots(existing) : []
+      if (!Number.isFinite(shares) || shares <= 0 || !Number.isSafeInteger(Math.round((shares + (existing?.shares ?? 0)) * 100)) || !Number.isSafeInteger((existing?.principal ?? 0) + req.amount)) throw new ApiError('持仓份额或本金超过有效范围', 400, 'INVALID_AMOUNT')
 
       applyBalance(account.id, -req.amount)
       pushTransaction(
@@ -1947,9 +2022,10 @@ export function createMockApi(options?: {
       )
 
       // 同一产品合并持仓，按加权平均重算买入净值
-      const existing = db.holdings.find((h) => h.productCode === product.code)
       const confirmedAt = new Date().toISOString()
+      const newLot = { shares, purchasedAt: confirmedAt, redeemableAt: product.openEnded ? null : inDaysFromNow(product.term) }
       if (existing) {
+        existing.lots = [...existingLots, newLot]
         const totalShares = existing.shares + shares
         existing.costNav =
           (existing.shares * existing.costNav + shares * product.nav) / totalShares
@@ -1969,6 +2045,7 @@ export function createMockApi(options?: {
           profit: 0,
           profitRate: 0,
           purchasedAt: confirmedAt,
+          lots: [newLot],
           redeemableAt: product.openEnded ? null : inDaysFromNow(product.term),
           closed: !product.openEnded,
         })
@@ -1996,12 +2073,10 @@ export function createMockApi(options?: {
       }
 
       const shares = req.shares == null ? holding.shares : req.shares
-      if (shares <= 0) throw new ApiError('赎回份额必须大于 0', 400, 'INVALID_SHARES')
-      if (shares > holding.shares) throw new ApiError('赎回份额超过持有份额', 400, 'EXCEED_SHARES')
-
-      const gross = Math.round(shares * product.nav)
-      const { fee } = oneOffFee(product, gross, '赎回')
-      const net = gross - fee
+      let quote
+      try { quote = wealthRedemptionQuote(product, holding, shares) }
+      catch (error) { const e = error as { message: string; status?: number; code?: string }; throw new ApiError(e.message, e.status ?? 400, e.code ?? 'INVALID_SHARES') }
+      const { fee, net, remainingLots } = quote
       const account = settlementAccount(db)
 
       applyBalance(account.id, net)
@@ -2031,22 +2106,21 @@ export function createMockApi(options?: {
       // 按份额比例扣减本金，剩下的继续持有
       const ratio = shares / holding.shares
       holding.principal = Math.round(holding.principal * (1 - ratio))
-      holding.shares = Number((holding.shares - shares).toFixed(2))
+      holding.lots = remainingLots
+      holding.shares = Number(remainingLots.reduce((sum, lot) => sum + lot.shares, 0).toFixed(8))
       if (holding.shares <= 0) {
         db.holdings = db.holdings.filter((h) => h.id !== holding.id)
       }
       persist()
 
-      return {
-        holdingId: holding.id,
-        acceptedAt: new Date().toISOString(),
-        shares,
-        estimatedAmount: net,
-        etaText: '预计 T+1 个工作日到账',
-      }
+      const settledAt = new Date().toISOString()
+      return { holdingId: holding.id, acceptedAt: settledAt, shares, estimatedAmount: net, fees: fee,
+        settlementMode: 'sandbox-immediate', settledAt, etaText: '演示资金已即时到账' }
     },
 
     async getSpending(month?: string): Promise<SpendingAnalysis> { return spendingStatistics(loadDb(), month, CATEGORY_LABEL) },
+    async getBillingReport(query) { return billingReport(loadDb(), query, CATEGORY_LABEL) },
+    async exportBillingReport(query) { return buildBillingExport(loadDb(), query, CATEGORY_LABEL) },
     async getCashFlow(days = 7): Promise<CashFlow> { return cashFlowStatistics(loadDb(), days) },
     async listBudgets(): Promise<BudgetsOverview> {
       await delay(180)
@@ -2803,6 +2877,17 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       return plan!
     },
 
+    async listBirthdayPlans() { return listBirthdays(loadDb()) },
+    async previewBirthdayPlan(req) { return previewBirthday(loadDb(), req) },
+    async createBirthdayPlan(req) {
+      if (req.confirmed !== true) throw new ApiError('请先核对并确认生日计划', 400, 'CONFIRMATION_REQUIRED')
+      verifyPayPassword(req.paymentPassword)
+      const plan = createBirthday(loadDb(), req)
+      persist()
+      return plan
+    },
+    async cancelBirthdayPlan(id, req) { const plan = cancelBirthday(loadDb(), id, req); persist(); return plan },
+    async confirmBirthdayOrder(id, req) { const plan = confirmBirthday(loadDb(), id, req); persist(); return plan },
     async getInsurance(): Promise<InsuranceOverview> {
       await delay(220)
       return loadDb().insurance
@@ -2883,6 +2968,26 @@ export interface HeldTransferInfo {
   holdUntil: string
   /** 冻结的原始转账指令（到账按它执行） */
   request: TransferRequest
+}
+
+function browserPaymentPlans(api: () => BankApi) {
+  return createPaymentPlans({ getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword,
+    resolveRecipient: async request => {
+      if (request.payeeBankCode === 'LCB') {
+        const found = findRecipientByNumber(request.payeeAccountNo ?? '')
+        if (!found) throw new ApiError('本行未找到收款账户', 404, 'RECIPIENT_NOT_FOUND')
+        if (found.profile.user.name !== request.payeeName) throw new ApiError('收款人姓名不匹配', 400, 'PAYEE_NAME_MISMATCH')
+        if (found.account.currency !== findBalance(loadDb(), request.fromAccountId)?.currency) throw new ApiError('收付款币种不一致', 400, 'CURRENCY_MISMATCH')
+        return { sameOwner: found.profile.user.id === loadDb().user.id }
+      }
+      return api().resolveTransferRecipient({ bankCode: request.payeeBankCode ?? '', bankRegion: request.payeeBankRegion ?? 'CN', accountOrCardNo: request.payeeAccountNo ?? '', payeeName: request.payeeName })
+    }, executeTransfer: request => api().submitTransfer(request) })
+}
+
+/** Browser demo requires this explicit scan; the HTTP server owns the durable background scanner. */
+export async function settleScheduledTransfers(existingApi?: BankApi) {
+  const api = existingApi ?? createMockApi()
+  return browserPaymentPlans(() => api).settleScheduledTransfers()
 }
 
 /** 解冻本次实际预留金额；兼容只冻结本金的旧指令。 */

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '@/api'
-import type { Currency } from '@/api/types'
+import type { Currency, BillingReportQuery } from '@/api/types'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Segmented, Tag } from '@/components/ui/Segmented'
@@ -10,12 +10,17 @@ import { CashFlowChart, CashFlowLegend } from '@/components/charts/CashFlowChart
 import { CATEGORY_COLOR } from '@/lib/categories'
 import { CURRENCY_LABEL, formatCurrency } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
+import { Button } from '@/components/ui/Button'
+import { toCsv } from '@/lib/csv'
+import { downloadText } from '@/lib/download'
 
 export function AnalysisPage() {
   const [currentMonth] = useState(() => new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 7))
   const [month, setMonth] = useState(currentMonth)
   const [currency, setCurrency] = useState<Currency>('CNY')
   const [range, setRange] = useState<'7' | '30'>('7')
+  const [reportPeriod, setReportPeriod] = useState<'month' | 'year'>('year')
+  const [reportYear, setReportYear] = useState(currentMonth.slice(0, 4))
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-[30px] leading-tight font-bold tracking-[-0.02em] text-ink">收支分析</h1>
@@ -29,12 +34,42 @@ export function AnalysisPage() {
       {/* Remount on month change so an old result cannot carry the new month label. */}
       <SpendingPanel key={month} month={month} currency={currency} />
       <Card>
+        <CardHeader title="账单报告" action={<Segmented value={reportPeriod} onChange={setReportPeriod} options={[{ value: 'month', label: '月度报告' }, { value: 'year', label: '年度报告' }]} />} />
+        {reportPeriod === 'year' && <label className="mt-4 flex items-center gap-3 text-[13px] text-ink-soft">报告年份<input aria-label="报告年份" type="number" min="1900" max={currentMonth.slice(0, 4)} value={reportYear} onChange={event => setReportYear(event.target.value)} className="min-h-11 w-28 rounded-field border border-line bg-surface px-3" /></label>}
+        <BillingReportPanel key={`${reportPeriod}:${reportYear}:${month}:${currency}`} query={{ period: reportPeriod, value: reportPeriod === 'year' ? reportYear : month, currency }} />
+      </Card>
+      <Card>
         <CardHeader title="现金流" action={<Segmented value={range} onChange={setRange} options={[{ value: '7', label: '近 7 天' }, { value: '30', label: '近 30 天' }]} />} />
         <p className="mt-3 text-[13px] text-ink-mute">最近自然日（含今天），独立于所选支出月份；{CURRENCY_LABEL[currency]}单独统计。</p>
         <CashFlowPanel key={range} days={Number(range)} currency={currency} />
       </Card>
     </div>
   )
+}
+
+function BillingReportPanel({ query }: { query: BillingReportQuery }) {
+  const request = useAsync(() => api.getBillingReport(query), [query.period, query.value, query.currency])
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+  if (request.error) return <DataUnavailable message={request.error} onRetry={request.reload} />
+  if (!request.data) return <DataLoading />
+  const report = request.data
+  if (report.period !== query.period || report.value !== query.value || report.currency !== query.currency) return <DataUnavailable message="银行未返回所选报告，请重试。" onRetry={request.reload} />
+  async function downloadReport() {
+    setExporting(true); setExportError('')
+    try { const dataset = await api.exportBillingReport(query); downloadText(dataset.fileName, toCsv(dataset.columns, dataset.rows)) }
+    catch (error) { setExportError(error instanceof Error ? error.message : '报告导出失败') }
+    finally { setExporting(false) }
+  }
+  return <div className="mt-4 flex flex-col gap-4" aria-label={`${query.value} ${query.currency} 账单报告`}>
+    <p className="text-[13px] text-ink-mute">{report.value} · {report.currency} · 北京时间 · {report.periodStatus === 'complete' ? '完整周期' : '截至查询时点'} · {report.transactionCount} 笔成功记账</p>
+    <p className="text-[13px] text-ink-mute">{report.scope}。查询时点 {new Date(report.asOf).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}。</p>
+    <div className="grid gap-4 sm:grid-cols-3">{[['收入', report.totalIncome], ['支出', report.totalExpense], ['净收支', report.net]].map(([label, value]) => <div key={label} className="rounded-field bg-surface-raised p-4"><p className="text-[13px] text-ink-mute">{label}</p><p className="num mt-2 text-xl font-semibold">{formatCurrency(Number(value), report.currency)}</p></div>)}</div>
+    <DateExclusions ignored={report.ignoredDates} />
+    <div className="overflow-x-auto"><table className="w-full text-left text-[13px]"><caption className="sr-only">报告各月收入与支出</caption><thead><tr><th className="py-2">月份</th><th>收入</th><th>支出</th><th>笔数</th></tr></thead><tbody>{report.months.map(row => <tr key={row.month} className="border-t border-line"><td className="py-2">{row.month}</td><td className="num">{formatCurrency(row.income, report.currency)}</td><td className="num">{formatCurrency(row.expense, report.currency)}</td><td>{row.count}</td></tr>)}</tbody></table></div>
+    {exportError && <p role="alert" className="text-[13px] text-danger">{exportError}</p>}
+    <div><Button variant="secondary" disabled={exporting} onClick={() => void downloadReport()}>{exporting ? '导出中…' : `导出${query.period === 'year' ? '年度' : '月度'}报告 CSV`}</Button></div>
+  </div>
 }
 
 function DateExclusions({ ignored }: { ignored?: { invalidDate: number; futureDate: number } }) {

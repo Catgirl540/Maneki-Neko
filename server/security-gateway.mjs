@@ -4,15 +4,19 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 const digest = value => createHash('sha256').update(value).digest('hex')
 const fail = (message, status, code) => { throw Object.assign(new Error(message), { status, code }) }
 const IDEMPOTENT_METHODS = new Set(['submitTransfer', 'recallTransfer', 'submitExchange', 'subscribeWealth', 'redeemWealth', 'applyLoan', 'repayLoan', 'deposit', 'spendOnCard', 'openCard', 'replaceCard', 'createInvestPlan', 'updateInvestPlan'])
+for (const method of ['createScheduledTransfer', 'cancelScheduledTransfer', 'createSplitCollection', 'cancelSplitCollection', 'confirmSplitPayment', 'remindSplitParticipant', 'reportCardLost', 'recoverCard', 'createBirthdayPlan', 'cancelBirthdayPlan', 'confirmBirthdayOrder', 'updatePayeeRemark']) IDEMPOTENT_METHODS.add(method)
 // These operations currently have sandbox implementations only. Live processing must
 // be routed to an approved partner adapter, never fall through to the local simulator.
 const PARTNER_OPERATIONS = new Set([
+  'createScheduledTransfer', 'cancelScheduledTransfer', 'createSplitCollection', 'confirmSplitPayment',
+  'remindSplitParticipant', 'cancelSplitCollection', 'reportCardLost', 'recoverCard',
+  'createBirthdayPlan', 'cancelBirthdayPlan', 'confirmBirthdayOrder',
   'submitTransfer', 'recallTransfer', 'submitExchange', 'subscribeWealth', 'redeemWealth',
   'openCard', 'replaceCard', 'createVirtualCard', 'activateOverdraft', 'applyLoan',
   'repayLoan', 'convertToInstallment', 'repayInstallment', 'updateCashSweep',
   'createInvestPlan', 'updateInvestPlan', 'enrollInsurance', 'subscribeMembership', 'cancelMembership',
   'registerFps', 'deposit', 'buyInsurance', 'claimInviteReward', 'setCardLock',
-  'updateCardSettings', 'revealCardSecrets', 'setAutoDebitEnabled', 'updateSavingsRoundup',
+  'updateCardSettings', 'revealCardSecrets', 'reportCardLost', 'recoverCard', 'setAutoDebitEnabled', 'updateSavingsRoundup',
 ])
 export async function createSecurityGateway(db, auth) {
   const context = new AsyncLocalStorage()

@@ -1,10 +1,8 @@
 /**
- * IM 连接页（`/reminders`）的浏览器回归：只启动网页前端，IM 与银行接口全用测试响应。
+ * 当前助手 IM 视图（`/assistant?view=im`）的浏览器回归，含 `/reminders` 跳转。
  *
- * 不启动桥接服务、不连微信、不连银行：`/agent-api/im/**` 由内存状态伪造（绑定码、
- * 绑定列表、提醒增删、未启用 503），壳层需要的 `/api/**` 只给最小集合。
- * 断言的是页面行为——绑定码核对与绑定、提醒创建与取消、解除绑定二次确认、
- * 未启用空态，以及全程没有页面运行异常。
+ * 所有 IM/银行接口使用内存夹具，验证扫码恢复、单独绑定确认、提醒核对/创建/取消、
+ * 换绑入口、未启用/服务故障、XSS文字和桌面布局，不连接真实渠道。
  *
  *   CHROME_PATH=/snap/bin/chromium node tools/check-im-page-ui.mjs
  */
@@ -32,13 +30,7 @@ const web = await createServer({
 
 const fixtureQrImage = await (await loadImVendor()).qrImage('fixture:weixin-test-only')
 const user = { id: 'fixture-user', name: '测试客户', phone: '13900139000', memberTier: 'standard', avatarInitial: '测' }
-/** 内存里的 IM 状态：绑定码 → 来源、绑定列表、提醒列表。 */
-const im = { codes: new Map(), bindings: [], reminders: [], disabled: false, outage: false, truncated: false, nextReminder: 0, qr: null, qrStarts: 0, writes: [] }
-const issueCode = label => {
-  const code = `fixture-code-${im.codes.size + 1}`
-  im.codes.set(code, { label, expiresAt: Date.now() + 600_000 })
-  return code
-}
+const im = { bindings: [], reminders: [], disabled: false, outage: false, truncated: false, nextReminder: 0, qr: null, qrStarts: 0, writes: [] }
 let browser
 const errors = []
 try {
@@ -101,19 +93,6 @@ try {
       im.bindings = im.bindings.filter(binding => binding.id !== id)
       return respond({ ok: true })
     }
-    if (method === 'POST' && path === '/preview') {
-      const pending = im.codes.get(body.code)
-      if (!pending || pending.expiresAt <= Date.now()) return respond({ error: '绑定码不存在或已过期' }, 404)
-      return respond(pending)
-    }
-    if (method === 'POST' && path === '/claim') {
-      const pending = im.codes.get(body.code)
-      if (!pending || pending.expiresAt <= Date.now()) return respond({ error: '绑定码不存在或已过期' }, 404)
-      im.codes.delete(body.code)
-      const binding = { id: `im-fixture-${im.bindings.length + 1}`, label: pending.label, sessionId: `s-${im.bindings.length + 1}`, connected: true }
-      im.bindings.push(binding)
-      return respond({ id: binding.id, sessionId: binding.sessionId, label: binding.label })
-    }
     if (path === '/reminders' && method === 'GET') return respond({
       bindings: im.bindings.map(({ id, label }) => ({ id, label })),
       reminders: im.reminders,
@@ -152,182 +131,95 @@ try {
   })
 
   await mkdir(path.join(root, '.generated/local-postgres'), { recursive: true })
-  await page.goto(`${base}/reminders`)
+  await page.goto(base + '/reminders')
+  await page.waitForURL(base + '/assistant?view=im')
+  assert.equal(await page.getByRole('tab', { name: 'IM 连接', exact: true }).getAttribute('aria-selected'), 'true')
   await page.getByRole('heading', { name: '微信扫码连接', exact: true }).waitFor()
-  const manualToggle = page.getByRole('button', { name: '使用绑定码连接', exact: false })
-  assert.equal(await manualToggle.getAttribute('aria-expanded'), 'false')
-  assert.equal(await page.getByLabel('绑定码', { exact: true }).isVisible(), false)
-  assert(await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).isVisible())
-  assert.equal(im.qrStarts, 0)
-  await capture('im-ui-idle')
-  await manualToggle.press('Enter')
-  assert(await page.getByLabel('绑定码', { exact: true }).isVisible())
-  await manualToggle.press('Space')
-  assert.equal(await page.getByLabel('绑定码', { exact: true }).isVisible(), false)
-  console.log('PASS 首次进入突出扫码入口，绑定码默认折叠且可键盘操作，不自动创建二维码')
-
-  const code = issueCode('微信私聊 · 8001')
-  // 从微信里的链接打开：`#code=` 预填并自动核对。
-  await page.goto(`${base}/reminders#code=${code}`)
-  await page.getByRole('heading', { name: 'IM 连接', exact: true }).first().waitFor()
-  await page.getByRole('heading', { name: '私聊绑定', exact: true }).waitFor()
   await page.getByRole('heading', { name: '提醒', exact: true }).waitFor()
-  assert.equal(
-    await page.getByRole('navigation', { name: '桌面主导航' }).getByRole('link', { name: 'IM 连接', exact: true }).getAttribute('aria-current'),
-    'page',
-  )
-  const codeInput = page.getByLabel('绑定码', { exact: true })
-  assert.equal(await codeInput.inputValue(), code)
-  assert.equal(await manualToggle.getAttribute('aria-expanded'), 'true')
-  await page.getByText('来源：微信私聊 · 8001', { exact: true }).waitFor()
-  const previewText = await page.locator('main').innerText()
-  assert(previewText.includes('有效至'))
-  assert(previewText.includes('（北京时间）'))
-  assert(previewText.includes('还没有绑定 IM 私聊'))
-  assert.equal(im.bindings.length, 0)
   assert.equal(im.qrStarts, 0)
+  assert(await page.getByRole('button', { name: '核对提醒', exact: true }).isDisabled())
+  console.log('PASS 当前 /assistant?view=im 路由，未连接不能建提醒，不自动创建扫码任务')
   await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).click()
-  const image = page.getByRole('img', { name: '微信连接二维码', exact: true })
-  await image.waitFor()
-  assert((await image.getAttribute('src')).startsWith('data:image/png;base64,'))
-  assert.equal(page.context().pages().length, 1)
-  assert.equal(im.bindings.length, 0)
-  await manualToggle.click()
-  await mkdir(path.join(root, '.generated/local-postgres'), { recursive: true })
-  await capture('weixin-inline-qr')
-  await manualToggle.click()
-  assert.equal(await codeInput.inputValue(), code)
+  const qr = page.getByRole('img', { name: '微信连接二维码', exact: true })
+  await qr.waitFor()
+  assert((await qr.getAttribute('src')).startsWith('data:image/png;base64,'))
+  await page.reload()
+  await qr.waitFor()
+  assert.equal(im.qrStarts, 1)
   im.qr.status = 'needs_verification'
   await page.getByLabel('扫码验证码', { exact: true }).fill('123456')
   await page.getByRole('button', { name: '提交扫码验证码', exact: true }).click()
   await page.getByText('已扫码，请在微信中确认登录', { exact: true }).waitFor()
   im.qr.status = 'connected'
-  await page.getByRole('button', { name: '确认绑定此微信到当前账户', exact: true }).waitFor()
+  const bind = page.getByRole('button', { name: '确认绑定此微信到当前账户', exact: true })
+  await bind.waitFor()
   assert.equal(im.bindings.length, 0)
-  await page.getByRole('button', { name: '确认绑定此微信到当前账户', exact: true }).click()
-  await page.getByText('微信已绑定到当前银行账户', { exact: true }).waitFor()
+  await bind.click()
+  await page.getByText('微信私聊 · QR01', { exact: true }).first().waitFor()
   assert.equal(im.bindings.length, 1)
   assert.equal(im.writes.filter(w => w.path.endsWith('/confirm')).length, 1)
   assert.equal(im.writes.filter(w => w.path.startsWith('/admin/')).length, 0)
-  await capture('im-ui-bound')
-  console.log('PASS 本页展示真实生成的夹具二维码：扫码验证码 → 手机确认 → 银行绑定确认；不跳转、不使用运维权限，不提前绑定')
-  // Reset only the memory fixture before exercising the independent legacy binding-code flow.
-  im.bindings = []
-  await page.goto(`${base}/reminders#code=${code}`)
-  await page.getByText('来源：微信私聊 · 8001', { exact: true }).waitFor()
-  console.log('PASS /reminders 渲染 IM 连接与提醒两块，侧栏一级入口高亮，hash 绑定码预填并自动核对来源')
+  console.log('PASS 二维码断点恢复、扫码验证、手机确认后仍需银行绑定确认')
 
-  await page.getByRole('button', { name: '确认绑定到当前银行账户', exact: true }).click()
-  await page.getByText('已连接', { exact: true }).waitFor()
-  assert.equal(im.bindings.length, 1)
-  assert.equal(await codeInput.inputValue(), '')
-  assert(!page.url().includes('code='))
-  await page.getByLabel('接收微信', { exact: true }).waitFor()
-  assert.equal(await page.getByLabel('接收微信', { exact: true }).locator('option').count(), 1)
-  console.log('PASS 确认绑定后列表出现该私聊，绑定码被清空且不留在地址栏，提醒表单随绑定出现')
-
-  await codeInput.fill('expired-fixture-code')
-  await page.getByRole('button', { name: '核对来源', exact: true }).click()
-  await page.getByRole('alert').filter({ hasText: '此绑定码已使用或已过期' }).waitFor()
-  assert.equal(im.bindings.length, 1)
-  console.log('PASS 无效绑定码就地提示已使用或已过期，不产生绑定')
-
-  const titleInput = page.getByLabel('提醒内容', { exact: true })
-  const whenInput = page.getByLabel('提醒时间（北京时间）', { exact: true })
-  assert.match(await whenInput.inputValue(), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
-  await titleInput.fill('查看理财到期情况')
+  const title = '<img src=x onerror=alert(1)> 核对续费'
+  await page.getByLabel('提醒内容', { exact: true }).fill(title)
   await page.getByRole('button', { name: '核对提醒', exact: true }).click()
-  await page.getByText('请核对这条提醒', { exact: true }).waitFor()
-  const reviewText = await page.locator('main').innerText()
-  assert(reviewText.includes('查看理财到期情况'))
-  assert(reviewText.includes('（北京时间）'))
-  assert(reviewText.includes('微信私聊 · 8001'))
-  assert(reviewText.includes('不查询账户或执行交易'))
+  const review = page.getByRole('dialog', { name: '请核对这条提醒', exact: true })
+  await review.waitFor()
+  assert((await review.innerText()).includes(title))
+  assert((await review.innerText()).includes('北京时间'))
   assert.equal(im.reminders.length, 0)
-  await page.getByRole('button', { name: '确认创建', exact: true }).click()
+  await review.getByRole('button', { name: '返回修改', exact: true }).click()
+  assert.equal(im.reminders.length, 0)
+  await page.getByRole('button', { name: '核对提醒', exact: true }).click()
+  await review.getByRole('button', { name: '确认创建', exact: true }).click()
   await page.getByText('等待发送', { exact: true }).waitFor()
   assert.equal(im.reminders.length, 1)
-  const created = im.writes.find(write => write.method === 'POST' && write.path === '/reminders').body
+  assert.equal(await page.locator('.im-reminder-row img').count(), 0)
+  const created = im.writes.find(w => w.method === 'POST' && w.path === '/reminders').body
   assert.equal(created.confirmed, true)
   assert.match(created.dueAt, /\+08:00$/)
   assert.match(created.requestId, /^[0-9a-f-]{36}$/)
-  console.log('PASS 核对后确认创建：请求带 confirmed/requestId 与东八区时间，列表显示「等待发送」')
-  await page.getByRole('heading', { name: '提醒', exact: true }).scrollIntoViewIfNeeded()
-  await capture('im-ui-reminder', '.im-reminders-card')
-
-  // 机器人离线仍在等待：附注说明尚未发送；历史被截断时提示只显示最近 100 条。
-  for (const width of [1920, 1440, 1280, 1024]) {
-    await page.setViewportSize({ width, height: 1100 })
-    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `/reminders 在 ${width}px 溢出`)
-  }
-  await page.setViewportSize({ width: 1440, height: 1100 })
-  console.log('PASS 1920/1440/1280/1024px 无横向溢出')
-
-  im.reminders[0].errorCode = 'BOT_OFFLINE'
-  im.truncated = true
   await page.reload()
-  await page.getByText('机器人离线，等待恢复；尚未发送。', { exact: true }).waitFor()
-  await page.getByText('仅显示最近 100 条提醒。', { exact: true }).waitFor()
-  await page.getByText('等待发送', { exact: true }).waitFor()
-  console.log('PASS 机器人离线附注「尚未发送」，截断字段提示只显示最近 100 条')
-
+  await page.getByText(title, { exact: true }).waitFor()
+  assert.equal(im.writes.filter(w => w.method === 'POST' && w.path === '/reminders').length, 1)
+  console.log('PASS 核对不写入、确认携带时区及幂等编号，标签按文字展示，刷新不重复创建')
+  im.reminders[0].errorCode = 'BOT_OFFLINE'; im.truncated = true
+  await page.getByRole('button', { name: '刷新提醒', exact: true }).click()
+  await page.getByText('机器人离线，尚未发送；服务恢复后将有限重试。', { exact: true }).waitFor()
+  await page.getByText('仅显示最近 100 条提醒，较早记录未显示。', { exact: true }).waitFor()
   await page.getByRole('button', { name: '取消提醒', exact: true }).click()
-  await page.getByText('确认取消这条未发送的提醒？此操作不取消银行交易或商户订阅。', { exact: true }).waitFor()
+  const cancel = page.getByRole('dialog', { name: '取消这条提醒', exact: true })
+  await cancel.waitFor()
   assert.equal(im.reminders[0].status, 'scheduled')
-  await page.getByRole('button', { name: '确认取消', exact: true }).click()
+  await cancel.getByRole('button', { name: '确认取消', exact: true }).click()
   await page.getByText('已取消', { exact: true }).waitFor()
   assert.equal(im.reminders[0].status, 'cancelled')
-  const cancelled = im.writes.filter(write => write.method === 'DELETE' && write.path.startsWith('/reminders/')).at(-1)
+  const cancelled = im.writes.filter(w => w.method === 'DELETE' && w.path.startsWith('/reminders/')).at(-1)
   assert.equal(cancelled.body.confirmed, true)
   assert.match(cancelled.body.requestId, /^[0-9a-f-]{36}$/)
-  console.log('PASS 取消提醒先出确认，二次确认后状态变「已取消」，DELETE 带 confirmed 与请求编号')
-
-  await page.getByRole('button', { name: '解除绑定', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: '解除 IM 绑定', exact: true })
-  await dialog.waitFor()
-  assert((await dialog.innerText()).includes('旧提醒也会停止发送'))
+  console.log('PASS 离线与历史截断提示、取消独立确认')
+  await page.getByRole('button', { name: '换绑', exact: true }).click()
+  await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).waitFor()
   assert.equal(im.bindings.length, 1)
-  await dialog.getByRole('button', { name: '确认解除', exact: true }).click()
-  await page.getByText('还没有绑定 IM 私聊', { exact: true }).waitFor()
-  assert.equal(im.bindings.length, 0)
-  await page.getByText('请先在上方绑定本人微信私聊，再创建提醒。', { exact: true }).waitFor()
-  console.log('PASS 解除绑定需二次确认，确认后列表移除该私聊，提醒表单回到先绑定提示')
-
+  assert.equal(im.qrStarts, 1)
+  await page.getByRole('button', { name: '取消换绑', exact: true }).click()
+  for (const width of [1024, 1280, 1440, 1920]) {
+    await page.setViewportSize({ width, height: 1100 })
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'IM 在 ' + width + 'px 溢出')
+  }
+  await page.screenshot({ path: path.join(root, '.generated/local-postgres/im-current-reminders-20261027.png'), animations: 'disabled' })
   im.disabled = true
-  await page.goto(`${base}/reminders`)
-  await page.getByText('提醒尚未启用', { exact: true }).waitFor()
-  assert.equal(await page.getByRole('alert').count(), 0)
-  assert((await page.locator('main').innerText()).includes('IM 连接'))
-  console.log('PASS 提醒接口 503 时显示「提醒尚未启用」空态，不出现错误红条')
-
+  await page.reload()
+  await page.getByText('微信提醒尚未启用，请稍后重试或联系客服。', { exact: true }).waitFor()
   im.disabled = false; im.outage = true
   await page.reload()
-  await page.getByText('IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。', { exact: true }).waitFor()
-  assert.equal(await page.getByText('IM 连接尚未启用', { exact: true }).count(), 0)
-  assert.equal(await page.getByText('提醒尚未启用', { exact: true }).count(), 0)
-  assert(await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).isVisible())
+  await page.getByText('会话持久化服务不可用，请稍后重试', { exact: true }).waitFor()
+  assert.equal(await page.getByText('尚未连接微信', { exact: true }).count(), 0)
   im.outage = false
-  await page.reload()
-  await page.getByRole('heading', { name: '私聊绑定', exact: true }).waitFor()
-  await page.getByText('还没有绑定 IM 私聊', { exact: true }).waitFor()
-  assert.equal(await page.getByText('IM 服务暂时不可用，连接与提醒状态尚未确认。请稍后重试。', { exact: true }).count(), 0)
-  console.log('PASS 会话库 503 显示服务故障，保留扫码入口，不谎报未启用；恢复后可重新加载')
-
-  await page.getByRole('button', { name: '生成微信连接二维码', exact: true }).click()
-  await page.getByRole('img', { name: '微信连接二维码', exact: true }).waitFor()
-  await page.getByRole('button', { name: '取消扫码', exact: true }).click()
-  await page.getByText('本次扫码已取消', { exact: true }).waitFor()
-  await page.getByRole('button', { name: '重新生成二维码', exact: true }).click()
-  im.qr.expiresAt = Date.now() - 1000
-  await page.getByText('二维码已过期，请重新生成', { exact: true }).waitFor()
-  assert.equal(await page.getByRole('img', { name: '微信连接二维码', exact: true }).count(), 0)
-  assert.equal(im.bindings.length, 0)
-  console.log('PASS 取消与过期均停止展示旧二维码，可重新生成，不产生银行绑定')
-
+  await page.getByRole('button', { name: '重试', exact: true }).click()
+  await page.getByRole('heading', { name: '提醒', exact: true }).waitFor()
   assert.deepEqual(errors, [])
-  console.log('ALL PASS IM 连接页：绑定码核对/绑定、提醒创建/取消、解除绑定、未启用空态，无页面运行异常')
-  console.log('未连接桥接服务、微信或真实银行；全部接口为测试夹具。')
-} finally {
-  await browser?.close()
-  await web.close()
-}
+  assert.equal(page.context().pages().length, 1)
+  console.log('PASS 换绑不提前写入，桌面宽度无溢出，故障与未启用可区分，恢复后可重试')
+} finally { await browser?.close(); await web.close() }

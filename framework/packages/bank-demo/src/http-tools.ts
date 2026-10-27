@@ -3,12 +3,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, validateArgs, type ParameterSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SensitiveOperationSpec } from '@luckycat/dsh-consent/types'
+import { extendedHttpTools } from './extended-http-tools.js'
 
 const str = (description: string, required = false) => ({ type: 'string' as const, description, ...(required ? { required: true as const } : {}) })
 const num = (description: string, required = false) => ({ type: 'number' as const, description, ...(required ? { required: true as const } : {}) })
 const bool = (description: string, required = false) => ({ type: 'boolean' as const, description, ...(required ? { required: true as const } : {}) })
 const address = { recipient: str('User supplied recipient name.', true), phone: str('11-digit recipient mobile.', true), region: str('Province.', true), city: str('City.', true), detail: str('Street/building/room, at least 5 characters.', true), postalCode: str('Optional 6-digit postal code.') }
 const definitions: { name: string; kind: string; description: string; parameters: ParameterSchemaSpec; verification?: 'payment-password' }[] = [
+  ...extendedHttpTools,
   { name: 'bank_list_im_reminders', kind: '查询微信提醒', description: 'List this customer\'s actual reminder records and eligible bound WeChat private chats. Status scheduled is not sent; sent means transport acknowledged, not read. unknown must not be auto-retried. This is not a bank transaction query.', parameters: {} },
   { name: 'bank_create_im_reminder', kind: '创建微信提醒', description: 'After explicit customer request, prepare one reminder for their bound WeChat private chat. Requires independent confirmation of text, absolute time and recipient. Clarify ambiguous dates and use Asia/Shanghai; dueAt must include timezone, e.g. 2026-10-21T15:00:00+08:00. Never create automatically from a quote or imply payment/investment execution. Do not include passwords or unqueried financial figures. Query bindings first if recipient is ambiguous.', parameters: { title: str('User-requested single-line reminder text, 1–160 characters.', true), dueAt: str('Explicit future ISO8601 timestamp with timezone; 15 seconds to 365 days.', true), bindingId: str('Owned WeChat binding ID from bank_list_im_reminders; omit only for current IM conversation or sole binding.') } },
   { name: 'bank_cancel_im_reminder', kind: '取消微信提醒', description: 'Cancel one owned scheduled reminder after customer confirmation. Query its actual reminderId first. Sending/sent/unknown reminders cannot be recalled; never claim to withdraw an already delivered WeChat message. Does not cancel subscriptions, transfers, or investment plans.', parameters: { reminderId: str('Owned reminder ID from bank_list_im_reminders.', true) } },

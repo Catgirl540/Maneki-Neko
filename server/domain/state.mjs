@@ -72,7 +72,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin.mjs';
  *  18 → 支出基金改称支出预算：funds / fundPointDays / fundPasses
  *       → budgets / budgetPointDays / budgetPasses
  */
-export const MOCK_SCHEMA = 23;
+export const MOCK_SCHEMA = 24;
 const DAY = 86_400_000;
 /** 借记卡的展示文案，与种子数据里的星享借记卡一致 */
 export const CARD_PAYMENT_METHOD = '招财猫 · 星享借记卡 尾号 8888';
@@ -794,7 +794,7 @@ export const WEALTH_PRODUCTS = [
         // 一次性收取、投资者额外承担 —— 与按日计提的那几项性质不同，要分开列
         transactionFees: [
             { label: '申购费', rate: 0.0015 },
-            { label: '赎回费（持有不满 7 天）', rate: 0.005 },
+            { label: '赎回费（持有不满 7 天）', rate: 0.005, holdingDaysLessThan: 7 },
         ],
         navHistory: navSeries(67, 30, 0.08, 0.018),
         topHoldings: [
@@ -1796,6 +1796,8 @@ function syncSeq(db) {
     const ids = [
         ...ledgerBalances(db).map((row) => row.id), ...db.cards.map((row) => row.id),
         ...db.transactions.map((row) => row.id), ...db.payees.map((row) => row.id),
+        ...(db.scheduledTransfers ?? []).map(row => row.id),
+        ...(db.splitCollections ?? []).flatMap(row => [row.id, ...row.participants.map(participant => participant.id)]),
     ];
     for (const id of ids) {
         const match = /_(\d+)$/.exec(id);
@@ -1837,6 +1839,9 @@ export function migrateProfile(profile) {
     if (profile.schema === MOCK_SCHEMA)
         return profile;
     profile = structuredClone(profile);
+    profile.scheduledTransfers ??= [];
+    profile.splitCollections ??= [];
+    profile.birthdayPlans ??= [];
     // v18：支出基金改称支出预算，旧键就地转换，避免与默认域同时生成两张空表
     if (Array.isArray(profile.funds)) {
         profile.budgets ??= profile.funds;

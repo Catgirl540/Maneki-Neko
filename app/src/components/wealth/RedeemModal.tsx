@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { AlertIcon, CheckIcon } from '@/components/ui/icons'
 import { formatAmount } from '@/lib/format'
 import { RiskBadge } from './RiskBadge'
+import { wealthRedemptionQuote } from '../../../../shared/wealth-redemption.mjs'
 
 /**
  * 赎回。
@@ -29,12 +30,15 @@ export function RedeemModal({
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState<WealthRedeemResult | null>(null)
+  const [quotedAt] = useState(() => Date.now())
 
   const closed = holding.closed
-  const shares = sharesText ? Number(sharesText) : holding.shares
+  const availableShares = holding.redeemableShares ?? holding.shares
+  const shares = sharesText ? Number(sharesText) : availableShares
   const gross = Math.round((Number.isFinite(shares) ? shares : 0) * product.nav)
-  const feeItem = product.transactionFees.find((f) => f.label.startsWith('赎回'))
-  const fee = feeItem ? Math.round(gross * feeItem.rate) : 0
+  let quote: ReturnType<typeof wealthRedemptionQuote> | null = null
+  try { quote = wealthRedemptionQuote(product, holding, shares, quotedAt) } catch { /* Invalid input is explained on submit. */ }
+  const fee = quote?.fee ?? 0
   const net = Math.max(0, gross - fee)
 
   async function submit() {
@@ -43,8 +47,8 @@ export function RedeemModal({
       setError('请输入赎回份额')
       return
     }
-    if (shares > holding.shares) {
-      setError('赎回份额超过持有份额')
+    if (shares > availableShares) {
+      setError('赎回份额超过当前已开放份额')
       return
     }
     setSubmitting(true)
@@ -67,7 +71,7 @@ export function RedeemModal({
       onClose={onClose}
       closeDisabled={submitting}
       width="max-w-[480px]"
-      title={result ? '赎回已受理' : '赎回'}
+      title={result ? '演示赎回已完成' : '赎回'}
       footer={
         result ? (
           <Button block variant="primary" onClick={onDone}>
@@ -99,7 +103,7 @@ export function RedeemModal({
           <p className="num mt-4 text-[30px] leading-none font-bold text-ink">
             ¥{formatAmount(result.estimatedAmount)}
           </p>
-          <p className="mt-2 text-[13px] text-ink-mute">预计到账金额</p>
+          <p className="mt-2 text-[13px] text-ink-mute">演示到账金额</p>
           <dl className="mt-6 flex flex-col gap-3 border-t border-line pt-5 text-left text-[13px]">
             <div className="flex justify-between">
               <dt className="text-ink-soft">赎回份额</dt>
@@ -107,7 +111,7 @@ export function RedeemModal({
             </div>
             <div className="flex justify-between">
               <dt className="text-ink-soft">受理时间</dt>
-              <dd className="num text-ink">{result.acceptedAt.slice(0, 19).replace('T', ' ')}</dd>
+              <dd className="num text-ink">{new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'short', timeStyle: 'medium', hour12: false }).format(new Date(result.acceptedAt))}（北京时间）</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-ink-soft">到账时间</dt>
@@ -115,7 +119,7 @@ export function RedeemModal({
             </div>
           </dl>
           <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">
-            实际到账金额按赎回确认日的净值计算，可能与预计金额有差异。款项将划入你申购时使用的储蓄账户。
+            本次按演示净值记账，已扣赎回费 ¥{formatAmount(result.fees)}，款项已进入你本人的储蓄资金账户。这不代表真实基金清算。
           </p>
         </div>
       ) : (
@@ -125,6 +129,7 @@ export function RedeemModal({
             <p className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-mute">
               <RiskBadge risk={holding.risk} showLevel={false} />
               <span className="num">持有 {holding.shares.toFixed(2)} 份</span>
+              <span className="num">可赎 {availableShares.toFixed(2)} 份</span>
               <span className="num">净值 {product.nav.toFixed(4)}</span>
             </p>
           </div>
@@ -150,17 +155,17 @@ export function RedeemModal({
                 value={sharesText}
                 inputMode="decimal"
                 onChange={(e) => setSharesText(e.target.value.replace(/[^\d.]/g, ''))}
-                placeholder={holding.shares.toFixed(2)}
+                placeholder={availableShares.toFixed(2)}
                 disabled={closed}
-                hint={sharesText ? undefined : '留空表示全部赎回'}
+                hint={sharesText ? undefined : '留空表示赎回全部已开放份额'}
               />
             </div>
             <Button
               className="h-14 shrink-0"
               disabled={closed}
-              onClick={() => setSharesText(holding.shares.toFixed(2))}
+              onClick={() => setSharesText(availableShares.toFixed(2))}
             >
-              全部赎回
+              赎回可用份额
             </Button>
           </div>
 
@@ -187,7 +192,7 @@ export function RedeemModal({
           )}
 
           <p className="text-[12px] leading-relaxed text-ink-mute">
-            赎回到账时间以产品说明为准，通常为 T+1 个工作日。赎回不收取支付密码验证，款项只回到你本人的储蓄账户。
+            当前为演示即时记账，按先进先出核对各笔持有时间与费用。权益产品持有不满 7 天的赎回部分收取目录费用；满 7 天的部分不收该项费。款项只回到你本人的储蓄账户。
           </p>
         </div>
       )}

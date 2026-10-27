@@ -1,0 +1,103 @@
+/** Browser → HTTP adapter → isolated in-memory domain. No external calls or customer database. */
+import assert from 'node:assert/strict'
+import path from 'node:path'
+import { mkdir } from 'node:fs/promises'
+import { createServer } from '../app/node_modules/vite/dist/node/index.js'
+import { chromium } from 'playwright-core'
+class MemoryStorage { values = new Map(); getItem(k) { return this.values.get(k) ?? null } setItem(k, v) { this.values.set(k, String(v)) } removeItem(k) { this.values.delete(k) } setItemsAtomically(entries) { for (const [k, v] of entries) this.setItem(k, v) } }
+globalThis.window = { localStorage: new MemoryStorage(), sessionStorage: new MemoryStorage() }
+const state = await import('../server/domain/state.mjs'), { createBankBusinessApi } = await import('../server/domain/index.mjs')
+state.resetDb()
+const api = createBankBusinessApi(), user = await api.profile(), funding = (await api.listAccounts())[0]
+const root = path.resolve(import.meta.dirname, '..'), output = path.join(root, '.generated', 'payment-tools')
+await mkdir(output, { recursive: true })
+Object.assign(process.env, { VITE_USE_MOCK: 'false', VITE_BASE_PATH: '/', VITE_API_BASE_URL: '', VITE_AGENT_URL: '/agent-api' })
+const web = await createServer({ root: path.join(root, 'app'), configFile: path.join(root, 'app/vite.config.ts'), logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false } })
+let browser
+const errors = [], requests = []
+try {
+  await web.listen()
+  const base = `http://127.0.0.1:${web.httpServer.address().port}`
+  browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true })
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
+  page.setDefaultTimeout(12000); page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(user => { sessionStorage.setItem('luckycat.token', JSON.stringify('fixture-token')); sessionStorage.setItem('luckycat.session.user', JSON.stringify(user)) }, user)
+  await page.route('**/*', async route => {
+    const request = route.request(), url = new URL(request.url()), method = request.method()
+    const respond = (data, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(data) })
+    if (url.origin !== base) return respond({ message: 'External call blocked in fixture' }, 502)
+    if (url.pathname.startsWith('/agent-api/')) return respond({ ok: true, bankDataSource: 'http' })
+    if (!url.pathname.startsWith('/api/')) return route.continue()
+    const body = request.postData() ? JSON.parse(request.postData()) : {}, pathname = url.pathname
+    requests.push({ method, pathname, body, query: Object.fromEntries(url.searchParams) })
+    try {
+      if (pathname === '/api/auth/profile') return respond(user)
+      if (pathname === '/api/accounts') return respond(await api.listAccounts())
+      if (pathname === '/api/membership') return respond(await api.getMembership())
+      if (pathname === '/api/banks') return respond(await api.listBanks())
+      if (pathname === '/api/payees') return respond(await api.listPayees())
+      if (pathname === '/api/security/overview') return respond(await api.getSecurityOverview())
+      if (pathname === '/api/support/messages') return respond([])
+      if (pathname === '/api/transfers/scheduled') return respond(method === 'POST' ? await api.createScheduledTransfer(body) : await api.listScheduledTransfers())
+      if (pathname.startsWith('/api/transfers/scheduled/')) return respond(await api.cancelScheduledTransfer(pathname.split('/').at(-1), body.version))
+      if (pathname === '/api/transfers/splits') return respond(method === 'POST' ? await api.createSplitCollection(body) : await api.listSplitCollections())
+      if (pathname.endsWith('/reminders')) return respond(await api.remindSplitParticipant(pathname.split('/').at(-2), body))
+      if (pathname === '/api/statistics/report') return respond(await api.getBillingReport(Object.fromEntries(url.searchParams)))
+      if (pathname === '/api/statistics/report/export') return respond(await api.exportBillingReport(Object.fromEntries(url.searchParams)))
+      if (pathname === '/api/analysis/spending') return respond(await api.getSpending(url.searchParams.get('month')))
+      if (pathname === '/api/analysis/cashflow') return respond(await api.getCashFlow(Number(url.searchParams.get('days') ?? 7)))
+      errors.push(`Unhandled fixture ${method} ${pathname}`); return respond({ message: 'No fixture' }, 404)
+    } catch (error) { return respond({ message: error.message, code: error.code }, error.status ?? 500) }
+  })
+  await page.goto(base + '/transfer')
+  const planned = page.getByRole('region', { name: '定时转账管理' })
+  await planned.getByLabel('收款人姓名', { exact: true }).fill('陈嘉禾')
+  await planned.getByLabel('完整收款账号', { exact: true }).fill('8820000000124471')
+  await planned.getByLabel('转账金额（CNY 元）', { exact: true }).fill('1.01')
+  await planned.getByLabel('执行时间（北京时间）', { exact: true }).fill(new Date(Date.now() + 8 * 3_600_000 + 86_400_000).toISOString().slice(0, 16))
+  const save = planned.getByRole('button', { name: '保存定时转账', exact: true })
+  assert(await save.isDisabled())
+  for (let i = 1; i <= 6; i++) await planned.getByLabel(`定时转账支付密码第 ${i} 位`, { exact: true }).fill('8')
+  await planned.getByRole('checkbox').check()
+  await planned.getByLabel('转账金额（CNY 元）', { exact: true }).fill('1.02')
+  assert(await save.isDisabled(), 'editing confirmed terms must require new consent')
+  await planned.getByLabel('转账金额（CNY 元）', { exact: true }).fill('1.01')
+  await planned.getByRole('checkbox').check(); await save.click()
+  await planned.getByText('定时转账已保存，请在待执行清单核对。', { exact: true }).waitFor()
+  assert.equal(state.loadDb().scheduledTransfers.length, 1); assert.equal(state.loadDb().scheduledTransfers[0].request.amount, 101)
+  assert.equal(state.loadDb().accounts[0].balance, funding.balance)
+  const submitted = requests.find(row => row.method === 'POST' && row.pathname === '/api/transfers/scheduled')
+  assert.equal(submitted.body.confirmed, true); assert.equal(submitted.body.paymentPassword, '888888'); assert.equal(submitted.body.amount, 101)
+  assert(!JSON.stringify(state.loadDb().scheduledTransfers).includes('888888'))
+  await planned.screenshot({ path: path.join(output, 'scheduled.png') })
+  await planned.getByRole('button', { name: '取消定时转账', exact: true }).click()
+  assert.equal(state.loadDb().scheduledTransfers[0].status, 'scheduled')
+  await planned.getByRole('button', { name: '确认取消指令', exact: true }).click()
+  await planned.getByText(/陈嘉禾.*已取消/).waitFor()
+  console.log('PASS 定时 UI：明确授权+支付密码→金额分/北京时间→不冻结→二次确认取消')
+  await page.getByRole('tab', { name: 'AA 收款', exact: true }).click()
+  const split = page.getByRole('region', { name: 'AA 收款管理' })
+  await split.getByLabel('收款事由', { exact: true }).fill('晚餐 AA')
+  await split.getByLabel('待收总额（人民币元）', { exact: true }).fill('100.01')
+  await split.getByLabel('付款参与者姓名（逗号或换行分隔，不含已自付份额）', { exact: true }).fill('张三,李四')
+  await split.getByRole('button', { name: '创建 AA 收款单', exact: true }).click()
+  await split.getByText('AA 单已创建；没有扣款或发送邀请。', { exact: true }).waitFor()
+  assert.deepEqual(state.loadDb().splitCollections[0].participants.map(row => row.amount), [5001, 5000])
+  await split.getByRole('button', { name: '生成催收文字', exact: true }).first().click()
+  await split.getByRole('status').filter({ hasText: '未向联系人发送消息' }).waitFor()
+  await split.screenshot({ path: path.join(output, 'split.png') })
+  console.log('PASS AA UI：按分均摊→真实待收状态→生成准确催收文本')
+  await page.goto(base + '/analysis/statistics')
+  const report = page.getByLabel(/\d{4} CNY 账单报告/)
+  await report.getByRole('button', { name: '导出年度报告 CSV', exact: true }).waitFor()
+  assert.equal(await report.locator('tbody tr').count(), 12)
+  const downloaded = page.waitForEvent('download')
+  await report.getByRole('button', { name: '导出年度报告 CSV', exact: true }).click()
+  const download = await downloaded; assert(download.suggestedFilename().includes('年报')); await download.saveAs(path.join(output, 'annual.csv'))
+  await page.getByRole('tab', { name: '月度报告', exact: true }).click()
+  await page.getByRole('button', { name: '导出月度报告 CSV', exact: true }).waitFor()
+  await page.screenshot({ path: path.join(output, 'report.png'), fullPage: true })
+  for (const width of [1440, 1024]) { await page.setViewportSize({ width, height: 1100 }); assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `overflow at ${width}`) }
+  assert.deepEqual(errors, [])
+  console.log('PASS 报表 UI：年度12个月→实际CSV→切换月报→1440/1024不溢出，无页面异常')
+} finally { await browser?.close(); await web.close() }

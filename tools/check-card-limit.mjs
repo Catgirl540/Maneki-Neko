@@ -30,7 +30,7 @@ const addr = { recipient: '林小满', phone: '13800138000', region: '上海市'
 const unionpay = CARD_PRODUCTS.find(p => p.network === 'unionpay')
 const visa = CARD_PRODUCTS.find(p => p.network === 'visa')
 const balance = () => loadDb().accounts[0].balance
-const occupying = (network) => loadDb().cards.filter(c => c.network === network && ['active', 'locked', 'pending'].includes(c.status))
+const occupying = (network) => loadDb().cards.filter(c => c.network === network && ['active', 'locked', 'pending', 'lost'].includes(c.status))
 const networkLimit = (e) => e.code === 'CARD_NETWORK_LIMIT'
 
 // 演示档案：在用 Visa 一张（active），银联历史卡已换发（不占名额），Visa 另有一张 replaced 历史卡
@@ -69,6 +69,8 @@ assert.equal(balance(), beforeVisaReject)
 console.log('PASS pending（寄送中）状态占用名额，重复申请被拒')
 
 // 锁定也占名额：把刚开的银联卡锁住，名额不释放
+await assert.rejects(api.setCardLock(created.id, true), error => error.code === 'CARD_NOT_DELIVERED')
+await api.activateCard(created.id, '888888')
 await api.setCardLock(created.id, true)
 assert.equal(loadDb().cards.find(c => c.id === created.id).status, 'locked')
 await assert.rejects(api.openCard({ productCode: unionpay.code, address: addr, paymentPassword: '888888' }), networkLimit)

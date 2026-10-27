@@ -17,7 +17,7 @@ const table = (head, rows) => [head, head.map(() => '---'), ...rows].map(row => 
 const categories = { cash: '现金管理', fixed: '固定收益', mixed: '混合', equity: '权益', derivative: '商品及衍生品' }
 const products = server.WEALTH_PRODUCTS
 const fee = (product, name) => percent(product.ongoingFees.find(fee => fee.label === name)?.rate ?? 0)
-const once = (product, name) => { const item = product.transactionFees.find(fee => fee.label.startsWith(name)); return item ? `${percent(item.rate)}${item.label.includes('7 天') ? '（目录标注持有不满 7 天，执行差异见下文）' : ''}` : '0.00%' }
+const once = (product, name) => { const item = product.transactionFees.find(fee => fee.label.startsWith(name)); return item ? `${percent(item.rate)}${item.holdingDaysLessThan ? `（持有不满 ${item.holdingDaysLessThan} 天的部分）` : ''}` : '0.00%' }
 const blocks = {
   'wealth-catalog': table(['代码', '虚构产品', '类型 / 风险', '起购（元）', '递增（元）', '期限 / 开放性'], products.map(product => [ `\`${product.code}\``, product.name, `${categories[product.category]} / ${product.risk}`, money(product.minAmount), money(product.stepAmount), `${product.term} / ${product.openEnded ? '开放式' : '封闭期内不可赎回'}` ])),
   'wealth-fees': table(['代码', '管理费/年', '托管费/年', '销售服务费/年', '申购费', '赎回费'], products.map(product => [ `\`${product.code}\``, fee(product, '固定管理费'), fee(product, '托管费'), fee(product, '销售服务费'), once(product, '申购'), once(product, '赎回') ])),
@@ -35,8 +35,8 @@ for (const [id, content] of Object.entries(blocks)) {
   assert(from >= 0 && to > from, `缺少 ${id} 文档标记`)
   const expected = `\n${content}\n`
   if (write) doc = doc.slice(0, from + start.length) + expected + doc.slice(to)
-  else assert.equal(doc.slice(from + start.length, to), expected, `${id} 已偏离当前产品；核对目录后运行 --write`)
+  else assert.equal(doc.slice(from + start.length, to).replace(/\r\n/g, '\n'), expected, `${id} 已偏离当前产品；核对目录后运行 --write`)
 }
-for (const phrase of ['虚构配置', '没有检查持有天数', '分金额 ÷ 单位净值', '即时增加资金账户余额', '不创建自动执行任务', '不是第二个储蓄账户']) assert(doc.includes(phrase), `缺少实现边界：${phrase}`)
+for (const phrase of ['虚构配置', 'holdingDaysLessThan: 7', '先进先出', '分金额 ÷ 单位净值', '即时增加资金账户余额', 'sandbox-immediate', '不创建自动执行任务', '不是第二个储蓄账户']) assert(doc.includes(phrase), `缺少实现边界：${phrase}`)
 if (write) writeFileSync(path, doc)
 console.log(`PASS ${products.length} 款普通理财、${serverDomains.investments.products.length} 款定投、${serverDomains.cashManagement.products.length} 款旧活钱：双端目录一致，文档${write ? '已更新' : '一致'}，未读写客户库`)

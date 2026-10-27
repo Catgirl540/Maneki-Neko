@@ -56,6 +56,25 @@
       - bank_set_autodebit
       - bank_get_spending
       - bank_get_cashflow
+      - bank_list_scheduled_transfers
+      - bank_schedule_transfer
+      - bank_cancel_scheduled_transfer
+      - bank_update_payee_remark
+      - bank_list_split_collections
+      - bank_create_split_collection
+      - bank_cancel_split_collection
+      - bank_confirm_split_payment
+      - bank_prepare_split_reminder
+      - bank_get_billing_report
+      - bank_wealth_recommend
+      - bank_report_card_lost
+      - bank_recover_card
+      - bank_find_subscription_candidates
+      - bank_create_renewal_reminder
+      - bank_list_birthday_plans
+      - bank_create_birthday_plan
+      - bank_cancel_birthday_plan
+      - bank_confirm_birthday_order
     secretEnv:
       - OPENROUTER_API_KEY
       - RELAYROUTER_API_KEY

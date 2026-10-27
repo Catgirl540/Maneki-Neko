@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { maskPhone } from './lib/format.mjs'
+import { advanceBirthdayPlans } from '../shared/linked-plans.mjs'
 
 /** Deterministic sandbox status tags; no inferred risk score or credit decision. */
 function riskTagsFor(profile) {
@@ -45,8 +46,19 @@ const ROUTES = [
   ['GET', 'receiving', 'getReceivingInfo', () => []],
   ['POST', 'fpsRegistration', 'registerFps', (id, b) => [b]],
   ['POST', 'cardBin', 'resolveCardBin', (id, b) => [b]],
-  ['GET', 'payees', 'listPayees', () => []],
+  ['GET', 'payees', 'listPayees', (id, b, q) => [q.get('keyword') ?? undefined]],
+  ['PATCH', 'payee', 'updatePayeeRemark', (id, b) => [id, b.remark]],
   ['DELETE', 'payee', 'deletePayee', (id) => [id]],
+  ['GET', 'scheduledTransfers', 'listScheduledTransfers', () => []],
+  ['POST', 'scheduledTransfers', 'createScheduledTransfer', (id, b) => [b]],
+  ['DELETE', 'scheduledTransfer', 'cancelScheduledTransfer', (id, b) => [id, b.version]],
+  ['GET', 'splitCollections', 'listSplitCollections', () => []],
+  ['POST', 'splitCollections', 'createSplitCollection', (id, b) => [b]],
+  ['DELETE', 'splitCollection', 'cancelSplitCollection', (id, b) => [id, b.version]],
+  ['POST', 'splitPayment', 'confirmSplitPayment', (id, b) => [id, b]],
+  ['POST', 'splitReminder', 'remindSplitParticipant', (id, b) => [id, b]],
+  ['GET', 'billingReport', 'getBillingReport', (id, b, q) => [Object.fromEntries(q)]],
+  ['GET', 'billingReportExport', 'exportBillingReport', (id, b, q) => [Object.fromEntries(q)]],
   ['POST', 'fpsResolve', 'resolveFps', (id, b) => [b.idType, b.fpsId]],
   ['POST', 'transferQuote', 'quoteTransfer', (id, b) => [b]],
   ['POST', 'transferRecipient', 'resolveTransferRecipient', (id, b) => [b]],
@@ -58,6 +70,8 @@ const ROUTES = [
   ['GET', 'cardProducts', 'listCardProducts', () => []],
   ['POST', 'cardOpen', 'openCard', (id, b) => [b]],
   ['POST', 'cardLock', 'setCardLock', (id, b) => [id, b.locked]],
+  ['POST', 'cardLost', 'reportCardLost', (id, b) => [id, b.paymentPassword]],
+  ['POST', 'cardRecover', 'recoverCard', (id, b) => [id, b.paymentPassword]],
   ['POST', 'cardReplace', 'replaceCard', (id, b) => [id, b]],
   ['POST', 'cardSecrets', 'revealCardSecrets', (id, b) => [id, b.paymentPassword]],
   ['PATCH', 'cardSettings', 'updateCardSettings', (id, b) => [id, b]],
@@ -79,6 +93,11 @@ const ROUTES = [
   ['GET', 'cashFlow', 'getCashFlow', (id, b, q) => [q.get('days') === null ? undefined : Number(q.get('days'))]],
   ['GET', 'autoDebits', 'listAutoDebits', () => []],
   ['PATCH', 'autoDebit', 'setAutoDebitEnabled', (id, b) => [id, b.enabled]],
+  ['GET', 'birthdayPlans', 'listBirthdayPlans', () => []],
+  ['POST', 'birthdayPlanPreview', 'previewBirthdayPlan', (id, b) => [b]],
+  ['POST', 'birthdayPlans', 'createBirthdayPlan', (id, b) => [b]],
+  ['POST', 'birthdayPlanCancel', 'cancelBirthdayPlan', (id, b) => [id, b]],
+  ['POST', 'birthdayPlanOrder', 'confirmBirthdayOrder', (id, b) => [id, b]],
 
   // —— 支出预算 ——
   ['GET', 'budgets', 'listBudgets', () => []],
@@ -320,13 +339,21 @@ export async function createBankApi({
     settleHeldTransfer: mockSettleHeldTransfer,
     settleExpiredHolds: mockSettleExpiredHolds,
     settleClearingTransactions: mockSettleClearing,
+    settleScheduledTransfers: mockSettleScheduled,
   } = mockModule
   const { routes, ApiError } = contractModule
   const { findProfileByPhone, findProfileByUserId, listAllProfiles, activateDb, ledgerBalances, findBalance } = dbModule
   await storage.beginUnitOfWork()
   try {
     storage.initializing = true
-    if (storage.scoped && process.env.NODE_ENV !== 'production') await storage.findProfileByPhone('13600136000')
+    if (storage.scoped) {
+      // Seed helpers inspect the bounded projection, not the complete customer
+      // directory. Load every eligible existing seed before they decide it is
+      // absent, so restarting with another current customer never reseeds funds
+      // or replaces a seeded customer's transaction history.
+      if (process.env.NODE_ENV !== 'production') await storage.findProfileByPhone('13600136000')
+      if (process.env.NODE_ENV !== 'production' || process.env.BANK_ALLOW_DEMO_SEED === 'true') await storage.findProfileByPhone('13900000000')
+    }
     dbModule.loadDb(); await storage.commitUnitOfWork()
   }
   catch (error) { await storage.rollbackUnitOfWork(); throw error }
@@ -394,6 +421,22 @@ export async function createBankApi({
     return next
   }
   exclusiveRef = exclusive
+
+  // Sandbox only. Production requires live mode, where this returns before any
+  // customer load or mutation. Stored plans originate from explicit confirmation.
+  async function advanceSandboxPlans() {
+    if (security.mode !== 'sandbox') return 0
+    const profile = dbModule.loadDb()
+    if (advanceBirthdayPlans(profile).length) dbModule.persist()
+    const executed = await mockSettleScheduled({ reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn,
+      runInUnit: work => exclusive(work) }, api)
+    if (onTransferHeld) for (const plan of executed) {
+      const tx = dbModule.loadDb().transactions.find(row => row.id === plan.transactionId)
+      if (tx?.pendingReason === 'inflight') await onTransferHeld({ customerId: profile.user.id,
+        request: tx.heldRequest, result: { ...plan, pendingReason: tx.pendingReason, holdUntil: tx.holdUntil } })
+    }
+    return executed.length
+  }
 
 
   async function activateRequestProfile(req, routeName) {
@@ -469,7 +512,7 @@ export async function createBankApi({
       // Legacy portfolios are historical demo records, never commercial bank balances.
       const liveSafe = new Set(['login','register','logout','profile','sendSmsCode','verifyIdentity','changePhone','changePassword','changePaymentPassword','getSecurityOverview','listSupportMessages','sendSupportMessage','requestHumanSupport','listSupportTickets','getSupportTicket','replySupportTicket'])
       if (security.mode === 'live' && !liveSafe.has(entry.bankMethod)) throw Object.assign(new Error('合作银行尚未接入或尚未授权此项能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
-      const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : {}
+      const body = ['POST', 'PATCH', 'DELETE'].includes(req.method) ? await readBody(req) : {}
       if (entry.bankMethod === 'login') await security.run(req, () => security.loginAttempt(body.phone))
       const requestId = randomUUID()
       if (auth && entry.bankMethod === 'updateCardSettings' && body.dailyLimit !== undefined) {
@@ -628,10 +671,11 @@ export async function createBankApi({
               if (!profile) return 0
               try {
                 activateDb(profile)
+                const advanced = await advanceSandboxPlans()
                 const closed = await mockSettleExpiredHolds()
                 mockSettleClearing()
                 if (onHoldClosed) for (const item of closed) await onHoldClosed({ customerId: owner, ...item, reason: item.reason ?? '窗口到点，自动到账' })
-                return closed.length
+                return closed.length + advanced
               } finally { activateDb(before) }
             })
           }
@@ -648,6 +692,7 @@ export async function createBankApi({
         const closed = []
         for (const profile of listAllProfiles()) {
           activateDb(profile)
+          await advanceSandboxPlans()
           const ids = await mockSettleExpiredHolds()
           for (const item of ids) {
             closed.push({ customerId: profile.user.id, ...item })

@@ -1,0 +1,46 @@
+{
+  "release": "20261027-function-fixes",
+  "verifiedOn": "2026-10-27",
+  "timeZone": "Asia/Shanghai",
+  "url": "https://bank.waveflow.men",
+  "source": "/srv/maneki-bank/releases/20261027-function-fixes",
+  "web": "/var/www/bank.waveflow.men/releases/20261027-function-fixes",
+  "baseCommit": "d2983d76273cc89a17d7b0ade217c318e600d893",
+  "originalReleaseIncludedUncommittedCode": true,
+  "serverVerification": {
+    "method": "Read-only SSH inspection of current links, running process directories and every release-manifest file",
+    "manifestSha256": "1d136dd8def16d842764217c83e06874f3e3dd73e83c5bddca7b5875d1fe11dd",
+    "filesChecked": 1379,
+    "filesMatched": 1379,
+    "missingFiles": 0,
+    "mismatchedFiles": 0,
+    "sourceFilesRepresentedInGit": 1047,
+    "webIndexSha256": "c008d6dce9095c7036a681f016a5af2eaa2181eaf60f0c9406850e57170171ce",
+    "sourceAndPublishedWebIndexMatch": true,
+    "activeServicesUsingRelease": [
+      "luckycat-bank",
+      "luckycat-bank-demo",
+      "luckycat-agent-demo",
+      "luckycat-staff-agent",
+      "luckycat-ops-agent"
+    ]
+  },
+  "synchronization": {
+    "target": "Local main branch",
+    "source": "Verified server manifest, matching local files and archived release bytes; divergent files downloaded from the verified server release",
+    "gitNormalization": "Standard Git clean filters applied, including the configured line-ending normalization",
+    "buildArtifacts": "Verified against release hashes; app/dist remains excluded from Git",
+    "localChanges": "Post-release documentation moves, mock bindings, validation-tool changes and notes are preserved as uncommitted working-tree changes",
+    "serverChanges": "None"
+  },
+  "localVerification": {
+    "accountModelCheck": "PASS",
+    "sharedBusinessUnitTests": {
+      "pass": 22,
+      "fail": 0,
+      "skip": 0
+    },
+    "fullPostgresqlIntegrationRerun": false,
+    "releaseTestEvidence": "../bank-function-fixes-deployment-20261027.json"
+  }
+}

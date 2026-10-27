@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ImError, isImFeatureUnavailable, listImBindings, type ImBinding } from '@/api/im'
 import { WeixinQrBinding } from './WeixinQrBinding'
+import { ReminderManager } from './ReminderManager'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { Skeleton, Tag } from '@/components/ui/Segmented'
 import { CheckIcon, ChatIcon, RefreshIcon, ShieldIcon } from '@/components/ui/icons'
@@ -72,6 +73,7 @@ export function ImConnectView() {
     </Card>
     {bound && rebinding && <p className="im-rebind-note">重新扫码并确认后，将替换当前绑定的微信。</p>}
     {showQr && <WeixinQrBinding onBound={async () => { setRebinding(false); await load() }} />}
+    {!loading && !error && <ReminderManager key={live.map(item => item.id).join(',')} />}
     <p className="im-security-note"><ShieldIcon size={16} />银行登录密码、支付密码仅在银行页面填写；资金操作仍需单独确认。</p>
   </div>
 }

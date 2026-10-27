@@ -122,23 +122,40 @@ async function fixture({ production = false, mode = 'sandbox', reviewThreshold =
       STAFF_AGENT_TOKEN: randomBytes(32).toString('base64url'), BANK_WEBHOOK_ENABLED: 'false',
     }
     await bootstrap(env)
-    child = spawn(process.execPath, [join(root, 'server/index.mjs')], {
-      cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
-    })
-    child.once('error', error => { startupError = error })
-    for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { output = (output + bytes).slice(-12000) })
-    let ready = false
-    for (let i = 0; i < 180; i++) {
-      if (startupError) throw startupError
-      if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Bank fixture exited during startup:\n${output.replaceAll(testUrl, '[test database]')}`)
-      try { ready = (await call('/health')).body.ok === true } catch {}
-      if (ready) break
-      await delay(100)
+    async function start() {
+      startupError = undefined
+      child = spawn(process.execPath, [join(root, 'server/index.mjs')], {
+        cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+      })
+      child.once('error', error => { startupError = error })
+      for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { output = (output + bytes).slice(-12000) })
+      let ready = false
+      for (let i = 0; i < 180; i++) {
+        if (startupError) throw startupError
+        if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Bank fixture exited during startup:\n${output.replaceAll(testUrl, '[test database]')}`)
+        try { ready = (await call('/health')).body.ok === true } catch {}
+        if (ready) break
+        await delay(100)
+      }
+      assert(ready, `Bank fixture did not become healthy:\n${output.replaceAll(testUrl, '[test database]')}`)
     }
-    assert(ready, `Bank fixture did not become healthy:\n${output.replaceAll(testUrl, '[test database]')}`)
+    await start()
+    async function restart() {
+      assert(!cleaned && child?.exitCode === null && child?.signalCode === null, 'fixture must be running before restart')
+      const previous = child
+      let timeout
+      const stopped = new Promise((resolveExit, reject) => {
+        previous.once('exit', resolveExit)
+        timeout = setTimeout(() => reject(new Error('Bank fixture did not stop for restart')), 10000)
+      })
+      previous.kill()
+      try { await stopped } finally { clearTimeout(timeout) }
+      // Same data key and database; no bootstrap, schema reset or reseeding.
+      await start()
+    }
     const staffLogin = async name => ok(await call('/staff-api/login', { method: 'POST', body: { name, password: staffPasswords[name] } }))
     const supervisorLogin = async () => (await staffLogin('李主管')).token
-    return { base, call, database, close, staffLogin, supervisorLogin, renameCustomer, editCustomer }
+    return { base, call, database, close, restart, staffLogin, supervisorLogin, renameCustomer, editCustomer }
   } catch (error) { await close(); throw error }
 }
 

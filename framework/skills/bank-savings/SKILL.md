@@ -1,7 +1,7 @@
 ---
 {
   "name": "bank-savings",
-  "description": "根据用户目标、期限、收支和已有积蓄制定储蓄计划；不创建储蓄目标、不自动划款或开启自动存入。",
+  "description": "根据目标、期限、收支制定储蓄计划，说明生日资金预留与订购待办；普通目标不冻结余额，生日预留须另行核对和支付密码。",
   "metadata": {
     "serviceId": "savings",
     "label": "储蓄规划",
@@ -13,6 +13,10 @@
       "bank_get_balance",
       "bank_get_spending",
       "bank_get_cashflow",
+      "bank_list_birthday_plans",
+      "bank_create_birthday_plan",
+      "bank_cancel_birthday_plan",
+      "bank_confirm_birthday_order",
       "knowledge_lookup",
       "ask_user_question"
     ],
@@ -20,7 +24,10 @@
       "framework/bridge/bank-agent.mjs",
       "framework/packages/bank-demo/src/http-tools.ts",
       "app/src/pages/SavingsPage.tsx",
-      "framework/knowledge/05-analysis.md"
+      "framework/knowledge/05-analysis.md",
+      "shared/linked-plans.mjs",
+      "app/src/components/linked/BirthdayPlans.tsx",
+      "docs/api/linked-birthdays.md"
     ]
   }
 }
@@ -45,3 +52,5 @@
 ## 能力限制
 
 不能代建、修改储蓄目标或开启自动存入，不能承诺存款利率；执行引导「理财与储蓄 → 储蓄与计划 → 存钱目标」。用户要求买理财时加载 bank-wealth，实际划款加载 bank-transfer。
+
+生日留款可用 bank_list_birthday_plans 查询，bank_create_birthday_plan 须明确联系人、关系、具体生日与币种金额，核对预留/订购待办时间并在银行页验证支付密码，也可引导「储蓄与计划 → 生日联动」。生日预留会减少对应币种可用余额，与不冻结余额的普通存钱目标不同；bank_cancel_birthday_plan 经独立确认只释放该计划金额。到期 bank_confirm_birthday_order 仍需单独确认，当前商户未接入，不生成真实订单、不自动消费预留资金，不能说已购买、已配送。生日过期后未消费预留释放；不读取外部通讯录或猜测爱人生日。

@@ -55,6 +55,8 @@ import { useAsync } from '@/lib/useAsync'
 import { usePendingTransaction } from '@/lib/usePendingTransaction'
 import { Link, useNavigate } from 'react-router-dom'
 import { PageHeader } from '@/components/layout/PageHeader'
+import { PaymentPlans } from '@/components/account/PaymentPlans'
+import { searchPayees } from '../../../shared/payee-search.mjs'
 
 /** 独立任务页复用已有转账引擎，报价、核验与支付确认保持一致。 */
 export function TransferPage() {
@@ -68,6 +70,7 @@ export function TransferPage() {
     <Card className="transfer-task-panel">
       <TransferForm onClose={() => navigate('/accounts')} onUpdate={() => window.dispatchEvent(new Event('luckycat:bank-updated'))} onBusyChange={setBusy} />
     </Card>
+    <PaymentPlans />
     {busy && <p role="status" className="text-[13px] text-ink-soft">正在处理，请稍候…</p>}
   </div>
 }
@@ -271,9 +274,11 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     [payees.data, channel],
   )
   /** 「全部」弹层里的完整列表：同一通道、不截断 */
+  const [payeeKeyword, setPayeeKeyword] = useState('')
+  const [editingPayee, setEditingPayee] = useState<{ id: string; remark: string } | null>(null)
   const channelPayees = useMemo(
-    () => (payees.data ?? []).filter((p) => p.channel === channel),
-    [payees.data, channel],
+    () => searchPayees(payees.data ?? [], payeeKeyword).filter((p) => p.channel === channel),
+    [payees.data, channel, payeeKeyword],
   )
   const [payeesOpen, setPayeesOpen] = useState(false)
   const [deletingPayeeId, setDeletingPayeeId] = useState<string | null>(null)
@@ -1341,6 +1346,10 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
         description="每次转账成功后自动记录，按最近使用排序；点选直接填入，也可以删除不再需要的。"
         width="max-w-[520px]"
       >
+        <label className="mb-4 block text-[13px] text-ink-soft">搜索姓名、账号或备注<input aria-label="搜索历史收款人" value={payeeKeyword} maxLength={140} onChange={event => setPayeeKeyword(event.target.value)} className="mt-2 min-h-11 w-full rounded-field border border-line px-3" /></label>
+        {editingPayee && <form className="mb-4 flex gap-2" onSubmit={event => {
+          event.preventDefault(); void api.updatePayeeRemark(editingPayee.id, editingPayee.remark).then(() => { setEditingPayee(null); payees.reload() }).catch(error => toast.show(error instanceof Error ? error.message : '备注保存失败', 'error'))
+        }}><input aria-label="收款人备注" value={editingPayee.remark} maxLength={140} onChange={event => setEditingPayee({ ...editingPayee, remark: event.target.value })} className="min-h-11 min-w-0 flex-1 rounded-field border border-line px-3" /><Button type="submit">保存备注</Button><Button onClick={() => setEditingPayee(null)}>取消</Button></form>}
         <div className="-mx-6 max-h-[420px] divide-y divide-line overflow-y-auto px-6">
           {channelPayees.map((p) => (
             <div key={p.id} className="flex items-center gap-3 py-3">
@@ -1354,6 +1363,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium text-ink">{p.name}</span>
+                  {p.remark && <span className="block truncate text-[12px] text-ink-soft">{p.remark}</span>}
                   <span className="num mt-0.5 block truncate text-[12px] text-ink-mute">
                     {p.bankName ? `${p.bankName} · ` : ''}{p.channel === 'fps'
                       ? maskFpsValue(p.fpsMethod ?? 'mobile', (p.fpsMethod === 'account' ? p.accountNo : p.fpsId) ?? '')
@@ -1362,6 +1372,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 </span>
                 <span className="shrink-0 text-[11px] text-ink-mute">最近 {formatDate(p.lastUsedAt)}</span>
               </button>
+              <Button variant="ghost" onClick={() => setEditingPayee({ id: p.id, remark: p.remark ?? '' })}>备注</Button>
               <button
                 type="button"
                 disabled={deletingPayeeId === p.id}

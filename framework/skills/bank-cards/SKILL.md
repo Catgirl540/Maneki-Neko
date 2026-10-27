@@ -15,6 +15,8 @@
       "bank_apply_card",
       "bank_replace_card",
       "bank_set_card_lock",
+      "bank_report_card_lost",
+      "bank_recover_card",
       "bank_update_card_settings",
       "bank_spend",
       "bank_list_budgets",
@@ -46,7 +48,7 @@
 ## 办理步骤
 
 用 bank_list_cards 查询状态、卡编号及设置，bank_card_products 查询可申请产品和实际费用（`held` 为 true 的卡组织不可再申请，`feeQuote` 为按会员等级折算的实付价；等级按 AUM 分普通 / 金卡 / 白金 / 钻石）。新卡调用 bank_apply_card，换卡调用 bank_replace_card，并明确旧卡失效。
-锁定/解锁用 bank_set_card_lock；只修改用户明确要求的字段，调用 bank_update_card_settings。查看卡号或安全码调用 bank_reveal_card_secret，内容由安全弹窗展示，不要求用户回传。
+锁定/解锁用 bank_set_card_lock；正式挂失用 bank_report_card_lost，找回后解挂用 bank_recover_card，均先核对实际卡编号与状态并在安全确认卡验证支付密码。普通解锁不能解除正式挂失。只修改用户明确要求的字段，调用 bank_update_card_settings。查看卡号或安全码调用 bank_reveal_card_secret，内容由安全弹窗展示，不要求用户回传。
 用户在演示环境要求刷卡消费时，用 bank_spend：先确认本人使用中的卡、预设商户或自定义商户名、金额；金额以分为单位，上限 ¥50000.00，备注最多 80 字且必须由用户给出。只在本行沙箱演示环境可用，不产生真实商户交易，也不需要支付密码。
 用户问「今天还能花多少」「为什么被拦」时，用 bank_list_budgets 读取支出预算：只报返回的今日额度、已用、剩余与积分，不创建或修改预算，也不代用户兑换额度券（这些只在网页 /analysis/budgets 办理）。
 
@@ -56,4 +58,4 @@
 
 ## 能力限制
 
-寄送中或已换卡的旧卡不能借解锁激活，锁定卡不能开支付。不能提高到账户转账额度。不得在正文展示、保存或索取完整卡安全信息。丢卡联动 bank-security。bank_spend 只支持 12 个预设商户与 custom、stripe 两个自由收单入口；不支持退款、撤销、分期或修改已生成流水，也不能据此声称商户确已收款。
+寄送中或已换卡的旧卡不能借解锁激活，锁定卡不能开支付；lost 正式挂失卡不能用普通解锁解除，也不能消费或查看卡安全信息。正式挂失和找回解挂都须验证支付密码，找回只恢复原 active/locked/pending 状态，支付保持关闭，pending 仍须单独激活。挂失卡继续占卡组织名额，补卡后旧卡失效，新卡待激活。不能提高到账户转账额度。不得在正文展示、保存或索取完整卡安全信息。丢卡联动 bank-security。bank_spend 只支持 12 个预设商户与 custom、stripe 两个自由收单入口；不支持退款、撤销、分期或修改已生成流水，也不能据此声称商户确已收款。

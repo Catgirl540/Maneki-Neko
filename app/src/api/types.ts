@@ -243,6 +243,30 @@ export interface FpsResolveResult {
   reason?: string
 }
 
+export interface BillingReportQuery { period: 'month' | 'year'; value: string; currency: Currency }
+export interface BillingReport extends BillingReportQuery {
+  timeZone: 'Asia/Shanghai'; asOf: string; periodStatus: 'complete' | 'partial' | 'future';
+  totalIncome: Cents; totalExpense: Cents; net: Cents; transactionCount: number; scope: string;
+  ignoredDates: { invalidDate: number; futureDate: number };
+  categories: { key: string; label: string; amount: Cents; ratio: number }[];
+  months: { month: string; income: Cents; expense: Cents; count: number }[];
+}
+export interface ScheduledTransferRequest extends TransferRequest {
+  executeAt: string; paymentPassword: string; confirmed: true; clientRequestId: string;
+}
+export interface ScheduledTransfer {
+  id: string; version: number; executeAt: string; createdAt: string; updatedAt: string;
+  fromAccountId: string; payeeName: string; payeeBankCode: string; payeeBankRegion: 'CN'; payeeAccountNo: string; amount: Cents; memo: string;
+  currency: Currency; fee: Cents; fundsReserved: false; status: 'scheduled' | 'executed' | 'failed' | 'cancelled';
+  transactionId?: string; settlementStatus?: 'success' | 'pending'; failureReason?: string;
+}
+export interface SplitCollectionRequest { title: string; amount: Cents; currency: Currency; participants: string[]; clientRequestId: string }
+export interface SplitCollection {
+  id: string; version: number; title: string; amount: Cents; currency: Currency; accountId: string; accountNo: string;
+  status: 'open' | 'complete' | 'cancelled'; createdAt: string; updatedAt: string;
+  participants: { id: string; name: string; amount: Cents; status: 'unpaid' | 'paid'; reminders: number; lastRemindedAt?: string; transactionId?: string; paidAt?: string }[];
+}
+
 export interface Payee {
   id: string
   name: string
@@ -258,6 +282,8 @@ export interface Payee {
   payeeCurrency?: Currency
   scope: TransferScope
   lastUsedAt: string
+  /** 本人维护的收款人备注，可用于检索；不是付款授权。 */
+  remark?: string
 }
 
 /** 银行所在市场：内地 / 香港 */
@@ -552,7 +578,7 @@ export interface ReceiptFile {
   expiresAt: string | null
 }
 
-export type CardStatus = 'active' | 'locked' | 'pending' | 'replaced'
+export type CardStatus = 'active' | 'locked' | 'pending' | 'lost' | 'replaced'
 
 /**
  * 卡面主题（设计属性）。
@@ -673,6 +699,9 @@ export interface BankCard {
   issuingFee?: Cents
   /** 换发来源卡 id；新开卡为 null，换发卡指向已停用的旧卡 */
   replacedFromId?: string | null
+  /** 正式挂失前状态；找回解挂只恢复原状态，不代替激活。 */
+  lostFromStatus?: 'active' | 'locked' | 'pending' | null
+  reportedLostAt?: string | null
 }
 
 /**
@@ -979,6 +1008,8 @@ export interface FeeItem {
   label: string
   /** 年化费率，如 0.0015 = 0.15% */
   rate: number
+  /** 仅在持有时间不满此天数时收取；未设置表示无持有期条件。 */
+  holdingDaysLessThan?: number
 }
 
 export interface NavPoint {
@@ -1032,6 +1063,14 @@ export interface WealthProduct {
   priorityOpenAt?: string
   /** 优先申购所需最低会员等级，如 platinum */
   priorityTier?: MemberTier
+  /** 当次银行查询时是否受会员优先购窗口限制。 */
+  priorityRestricted?: boolean
+}
+
+export interface WealthHoldingLot {
+  shares: number
+  purchasedAt: string
+  redeemableAt: string | null
 }
 
 export interface WealthHolding {
@@ -1051,6 +1090,9 @@ export interface WealthHolding {
   profitRate: number
   /** 确认日期 */
   purchasedAt: string
+  /** 旧档案未提供批次时按 purchasedAt 作为单个历史批次。 */
+  lots?: WealthHoldingLot[]
+  redeemableShares?: number
   /** 封闭期结束、可赎回的日期；活期为 null */
   redeemableAt: string | null
   /**
@@ -1123,11 +1165,14 @@ export interface WealthRedeemRequest {
 
 export interface WealthRedeemResult {
   holdingId: string
-  /** 「T+1」到账：先给受理结果，再给预计到账时间 */
+  /** 演示记账已完成的时间；不代表真实基金清算。 */
   acceptedAt: string
   shares: number
   /** 预计到账金额（按当前净值估算） */
   estimatedAmount: Cents
+  fees: Cents
+  settlementMode: 'sandbox-immediate'
+  settledAt: string
   etaText: string
 }
 
@@ -1767,3 +1812,8 @@ export interface InsuranceEnrollRequest {
   /** 6 位数字支付密码 */
   paymentPassword: string
 }
+
+export type { BirthdayPlan } from '../../../shared/linked-plans.mjs'
+export type BirthdayPlanDraft = import('../../../shared/linked-plans.mjs').BirthdayPlanInput
+export type BirthdayPlanPreview = ReturnType<typeof import('../../../shared/linked-plans.mjs').previewBirthdayPlan>
+export type BirthdayPlanRequest = BirthdayPlanDraft & { confirmed: true; requestId: string; paymentPassword: string }

@@ -21,6 +21,8 @@ import { useReveal } from '@/lib/useReveal'
 import { BENCHMARK_DISCLAIMER, CATEGORY_LABEL, TOLERANCE_LABEL, benchmarkLabel, canBuyRisk } from '@/lib/wealth'
 import { DEFAULT_WEALTH_FILTERS, filterWealthHoldings, filterWealthProducts, hasValidWealthRisk, type WealthFilters } from '@/lib/wealth-workspace'
 import { MEMBER_TIER_RULES } from '../../../shared/membership.mjs'
+import { recommendWealthProducts, type WealthRecommendations } from '../../../shared/wealth-recommendation.mjs'
+import { Field } from '@/components/ui/Field'
 
 const CATEGORIES: { value: WealthCategory | 'all'; label: string }[] = [
   { value: 'all', label: '全部产品' }, { value: 'cash', label: '现金管理' }, { value: 'fixed', label: '固定收益' },
@@ -45,6 +47,12 @@ export function WealthPage({ view = 'overview' }: { view?: View }) {
   const questions = useAsync(() => assessing || opening ? api.listRiskQuestions() : Promise.resolve(null), [assessing, opening])
   const [compareCodes, setCompareCodes] = useState<string[]>([])
   const [comparing, setComparing] = useState(false)
+  const [recommending, setRecommending] = useState(false)
+  const [recommendAmount, setRecommendAmount] = useState('1000')
+  const [recommendLiquidity, setRecommendLiquidity] = useState<'any' | 'open'>('open')
+  const [recommendDays, setRecommendDays] = useState('')
+  const [recommendations, setRecommendations] = useState<WealthRecommendations | null>(null)
+  const [recommendError, setRecommendError] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
   const candidate = params.get('category')
   const category = CATEGORIES.some(item => item.value === candidate) ? candidate as WealthFilters['category'] : 'all'
@@ -131,6 +139,7 @@ export function WealthPage({ view = 'overview' }: { view?: View }) {
 
     {view === 'products' && <>
       <section className="wealth-section">
+        <div className="mb-4 flex items-center justify-between gap-3"><p className="text-[13px] text-ink-soft">按当前测评、金额与资金期限筛选匹配产品</p><Button size="sm" disabled={!products.data || !validRisk} onClick={() => { setRecommendError(null); setRecommendations(null); setRecommending(true) }}>匹配推荐</Button></div>
         <Segmented value={category} options={CATEGORIES} onChange={setCategory} className="flex-wrap" />
         <div className="wealth-filters">
           <label className="wealth-search"><SearchIcon size={17} /><input type="search" aria-label="搜索理财产品" placeholder="产品名称、代码或发行方" value={filters.keyword} onChange={event => setFilters({ ...filters, keyword: event.target.value })} /></label>
@@ -178,6 +187,29 @@ export function WealthPage({ view = 'overview' }: { view?: View }) {
       })}</div></section>}
     </>}
 
+    <Modal open={recommending} title="匹配推荐" width="max-w-[640px]" onClose={() => setRecommending(false)}>
+      <div className="space-y-4">
+        <Field label="拟投入金额（元）" value={recommendAmount} inputMode="decimal" onChange={event => { setRecommendAmount(event.target.value); setRecommendations(null) }} />
+        <label className="flex items-center gap-3 text-[13px]">流动性<select aria-label="推荐流动性" value={recommendLiquidity} onChange={event => { setRecommendLiquidity(event.target.value as 'any' | 'open'); setRecommendations(null) }}><option value="open">只看开放式</option><option value="any">可以接受封闭期</option></select></label>
+        <Field label="最长可接受封闭期（天，可留空）" value={recommendDays} inputMode="numeric" onChange={event => { setRecommendDays(event.target.value); setRecommendations(null) }} />
+        <Button block variant="primary" onClick={() => {
+          setRecommendError(null)
+          try {
+            if (!/^\d+(\.\d{1,2})?$/.test(recommendAmount.trim())) throw new Error('请输入最多两位小数的金额')
+            const amountCents = Math.round(Number(recommendAmount) * 100)
+            if (recommendDays && !/^\d+$/.test(recommendDays)) throw new Error('封闭期请输入正整数天数')
+            setRecommendations(recommendWealthProducts(catalog, data, { amountCents, liquidity: recommendLiquidity, ...(recommendDays ? { maxTermDays: Number(recommendDays) } : {}) }))
+          } catch (error) { setRecommendations(null); setRecommendError(error instanceof Error ? error.message : '暂无法匹配') }
+        }}>按条件匹配</Button>
+        {recommendError && <p role="alert" className="text-[13px] text-coral">{recommendError}</p>}
+        {recommendations && <div className="space-y-3" aria-live="polite">
+          <p className="text-[12px] text-ink-mute">排序：{recommendations.ranking}。匹配 {recommendations.totalMatches} 款。</p>
+          {recommendations.matches.map(item => <div key={item.code} className="rounded-field border border-line p-4 text-[13px]"><strong>{item.name} · {item.risk}</strong><p className="mt-2 text-ink-soft">{item.reasons.join('；')}；预计申购费 ¥{formatAmount(item.estimatedSubscriptionFeeCents)}</p><Button className="mt-3" size="sm" onClick={() => { setDetail(catalog.find(product => product.code === item.code) ?? null); setRecommending(false) }}>查看详情并核对</Button></div>)}
+          {!recommendations.totalMatches && <p className="text-[13px]">没有符合当前条件的产品，可调整金额或期限；风险测评不满足时请先完成测评。</p>}
+          <p className="text-[12px] text-ink-mute">{recommendations.notice}</p>
+        </div>}
+      </div>
+    </Modal>
     {(assessing || opening) && questions.error && <DataUnavailable message={questions.error} onRetry={questions.reload} />}
     {(assessing || opening) && questions.loading && <DataLoading />}
     {assessing && questions.data && <RiskAssessmentModal questions={questions.data} onClose={() => setAssessing(false)} onDone={result => { setAssessing(false); setAssessed(result); overview.reload() }} />}

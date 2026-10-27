@@ -6,7 +6,7 @@ import { createScopedProfileStorage, fingerprint } from './profile-store.mjs'
 
 export const CURRENT_KEY = 'luckycat.mock.db'
 export const PROFILES_KEY = 'luckycat.luckycat.mock.user-profiles.v1'
-export const CORE_SCHEMA_VERSION = 2026102201
+export const CORE_SCHEMA_VERSION = 2026102701
 const PROFILE_KEYS = new Set([CURRENT_KEY, PROFILES_KEY])
 const DOMAINS = {
   customer_wealth_state: ['holdings', 'riskAssessment', 'wealthAccount'],
@@ -56,6 +56,14 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
       if (version < CORE_SCHEMA_VERSION) {
         await db.exec(readFileSync(new URL('./postgres-schema.sql', import.meta.url), 'utf8'))
         for (const table of [...Object.keys(DOMAINS), 'customer_extension_state']) await db.exec(`CREATE TABLE IF NOT EXISTS ${table} (owner_id TEXT PRIMARY KEY REFERENCES customers(id), payload_cipher TEXT NOT NULL, updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP::text))`)
+        // One-time migration: bounded keyset pages, encrypted extensions only.
+        let after = ''
+        for (;;) {
+          const rows = await query('SELECT owner_id,payload_cipher FROM customer_extension_state WHERE owner_id>? ORDER BY owner_id LIMIT 100', after)
+          if (!rows.length) break
+          for (const row of rows) await saveBackgroundTasks(row.owner_id, cipher.open(row.payload_cipher, `customer_extension_state:${row.owner_id}`))
+          after = rows.at(-1).owner_id
+        }
         await run('INSERT INTO bank_schema_migrations(version) VALUES (?) ON CONFLICT DO NOTHING', CORE_SCHEMA_VERSION)
       }
     })
@@ -64,6 +72,21 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
 
   async function upsertPayload(table, owner, payload) {
     await run(`INSERT INTO ${table}(owner_id,payload_cipher) VALUES (?,?) ON CONFLICT(owner_id) DO UPDATE SET payload_cipher=excluded.payload_cipher,updated_at=CURRENT_TIMESTAMP`, owner, cipher.seal(payload, `${table}:${owner}`))
+  }
+  async function saveBackgroundTasks(owner, profile) {
+    const background = []
+    for (const plan of profile.scheduledTransfers ?? []) if (plan.status === 'scheduled') {
+      background.push({ id: plan.id, kind: 'scheduled-transfer', dueAt: plan.executeAt })
+    }
+    for (const plan of profile.birthdayPlans ?? []) if (!['cancelled', 'expired', 'released'].includes(plan.status)) {
+      const dueAt = plan.reservation?.status !== 'held' ? plan.reserveAt
+        : plan.order?.status === 'planned' ? plan.orderAt : plan.expiresAt
+      background.push({ id: plan.id, kind: 'birthday-plan', dueAt })
+    }
+    await saveRows('bank_background_tasks', owner, background, item => {
+      if (!Number.isFinite(Date.parse(item.dueAt))) throw new Error('Invalid background task due time')
+      return [item.id, item.kind, item.dueAt]
+    }, ['id', 'kind', 'due_at'])
   }
   async function saveProfile(profile, changes, original) {
     const owner = requireText(profile?.user?.id, 'customer id')
@@ -77,6 +100,7 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
       else if (!CORE_FIELDS.has(key) && !DOMAIN_FIELDS.has(key)) extensions[key] = value
     }
     await upsertPayload('customer_credentials', owner, credentials); await upsertPayload('customer_extension_state', owner, extensions)
+    await saveBackgroundTasks(owner, profile)
     for (const [table, fields] of Object.entries(DOMAINS)) await upsertPayload(table, owner, Object.fromEntries(fields.filter(f => own(profile, f)).map(f => [f, profile[f]])))
     const ids = new Set()
     const typed = profile.schema >= 20

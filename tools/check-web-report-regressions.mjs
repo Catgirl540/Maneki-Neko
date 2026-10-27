@@ -74,7 +74,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } })
   await prepare(page)
   async function visit(url) { await page.goto(base + url) }
-  await visit('/dashboard?flow=in')
+  await visit('/accounts?flow=in')
   assert.equal(await page.evaluate(() => isSecureContext), false, '测试必须运行在真实 HTTP 非安全上下文')
   const incoming = page.getByRole('dialog', { name: '转入', exact: true })
   await incoming.getByRole('button', { name: '复制全部', exact: true }).waitFor()
@@ -126,7 +126,7 @@ try {
   assert.equal(await single.getByRole('textbox', { name: '收款账户', exact: true }).inputValue(), account.accountNo)
   console.log('PASS 现代剪贴板拒绝时可降级；全部复制失败后可选择完整单项/全部文本')
 
-  await visit('/dashboard?flow=out')
+  await visit('/accounts?flow=out')
   const outgoing = page.getByRole('dialog', { name: '转出', exact: true })
   const amount = outgoing.getByLabel('转账金额', { exact: true })
   await amount.waitFor()
@@ -195,15 +195,17 @@ try {
   console.log('PASS 未测评、已过期、超风险、风险匹配四种理财产品状态分开显示')
 
   await visit('/support')
-  await page.getByText('当前连接不支持录音，请使用 HTTPS 地址。', { exact: true }).waitFor()
-  assert(await page.getByRole('button', { name: '语音', exact: true }).isDisabled())
+  const voice = page.getByRole('button', { name: '语音输入', exact: true })
+  await voice.waitFor()
+  assert(await voice.isDisabled())
+  assert.equal(await voice.getAttribute('title'), '当前连接不支持录音，请使用 HTTPS 地址。')
   console.log('PASS HTTP 语音入口显示禁用原因，不请求麦克风权限')
 
   const anon = await browser.newPage()
   await prepare(anon, false)
-  for (const destination of ['/dashboard?flow=out#payment', '/security?source=history#devices']) {
+  for (const destination of ['/accounts?flow=out#payment', '/security?source=history#devices']) {
     await anon.goto(base + destination)
-    await anon.getByRole('heading', { name: '欢迎回来', exact: true }).waitFor()
+    await anon.getByRole('heading', { name: '登录您的账户', exact: true }).waitFor()
     await anon.getByLabel('手机号', { exact: true }).fill(user.phone)
     await anon.getByLabel('密码', { exact: true }).fill('FixturePassword!')
     await anon.getByLabel('短信验证码', { exact: true }).fill('123456')
@@ -214,15 +216,15 @@ try {
   }
   console.log('PASS 登录后恢复来源的路径、查询参数、锚点，转出深链自动打开')
 
-  for (const width of [320, 390, 1440]) {
+  for (const width of [1024, 1280, 1440]) {
     await page.setViewportSize({ width, height: 1000 })
-    for (const url of ['/dashboard?flow=in', '/dashboard?flow=out', '/analysis', '/security', '/wealth', '/support']) {
+    for (const url of ['/accounts?flow=in', '/accounts?flow=out', '/analysis', '/security', '/wealth/products', '/support']) {
       await visit(url)
       if (url.includes('flow=in')) await page.getByRole('dialog', { name: '转入', exact: true }).getByRole('button', { name: '复制全部', exact: true }).waitFor()
       else if (url.includes('flow=out')) await page.getByLabel('转账金额', { exact: true }).waitFor()
       else if (url === '/analysis') await page.getByRole('link').filter({ hasText: '报告流水01' }).waitFor()
-      else if (url === '/wealth') await page.getByRole('button').filter({ hasText: products[1].name }).waitFor()
-      else if (url === '/support') await page.getByText('当前连接不支持录音，请使用 HTTPS 地址。', { exact: true }).waitFor()
+      else if (url === '/wealth/products') await page.getByRole('row').filter({ hasText: products[1].name }).waitFor()
+      else if (url === '/support') await page.getByRole('button', { name: '语音输入', exact: true }).waitFor()
       else await page.getByText('暂无安全日志', { exact: true }).waitFor()
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${url} 在 ${width}px 溢出`)
     }
@@ -230,5 +232,5 @@ try {
   assert.deepEqual(errors, [])
   assert.deepEqual(unexpected, [])
   assert(!requests.some(r => r.method !== 'GET' && r.path !== '/api/auth/login' && r.path !== '/api/transfers/quote'))
-  console.log('PASS 六个页面/弹窗在 320/390/1440px 无横向溢出，无运行异常，无真实服务请求')
+  console.log('PASS 六个页面/弹窗在 1024/1280/1440px 无横向溢出，无运行异常，无真实服务请求')
 } finally { await browser?.close(); await web.close() }

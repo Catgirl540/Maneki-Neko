@@ -42,7 +42,7 @@ export const OVERSEAS_TRANSFER_RATE = 0.001
 export const OVERSEAS_TRANSFER_MIN_FEE = 5_000
 
 /** 每个卡组织（Visa / 银联）每位客户至多一张；replaced 的历史卡不占名额 */
-export const OCCUPYING_CARD_STATUSES = ['active', 'locked', 'pending']
+export const OCCUPYING_CARD_STATUSES = ['active', 'locked', 'pending', 'lost']
 
 /* ------------------------------------------------------------------ 北京时间 */
 

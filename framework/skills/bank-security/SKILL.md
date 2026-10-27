@@ -12,6 +12,8 @@
     "tools": [
       "bank_list_cards",
       "bank_set_card_lock",
+      "bank_report_card_lost",
+      "bank_recover_card",
       "bank_list_transactions",
       "bank_get_transaction_detail",
       "bank_get_balance",
@@ -40,6 +42,7 @@
 ## 办理步骤
 
 丢卡且要求锁卡时用 bank_list_cards 定位并 bank_set_card_lock 发起确认。陌生扣款先 bank_list_transactions / bank_get_transaction_detail 核对时间、商户和实际状态，不凭截图断言盗刷。
+用户明确要求正式挂失时用 bank_report_card_lost；只有用户明确表示找回卡片并请求解挂时用 bank_recover_card。两者都在独立确认卡验证支付密码，不能在聊天中索取。lost 状态不能普通解锁、消费或查看卡安全信息，解挂恢复原状态且不恢复支付开关，pending 仍需独立激活。挂失/解挂不冻结整个资金账户，不释放卡组织名额。
 规则与登录安全说明查知识库；修改密码、手机号引导「安全中心」。需换卡加载 bank-cards，撤回仍可撤回的转账加载 bank-transfer；用户要求人工帮助时加载 bank-support。
 微信或企微连接异常时，引导用户在银行 IM 连接页面核对或解除本人绑定；不在聊天中收集密码或验证码，不代替网页绑定、确认或核验。IM 身份关联不创建资金账户，群聊不办理个人业务。
 已绑定且登录有效的 IM 私聊，普通白名单只读查询由服务端校验归属并按本次参数发放一次性查询授权，不要求用户逐次登录或点击查询确认。写操作与敏感卡信息仍走网页确认和原验证；解除、过期或重启后须重新绑定，不恢复旧授权。

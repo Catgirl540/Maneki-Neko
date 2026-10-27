@@ -705,6 +705,9 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
     const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardSpend','cardActivate','cardLock','cardReplace','cardSecrets','budgets','budgetPass','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
     const patches = new Set(['cardSettings','autoDebit','budget','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     const deletes = new Set(['payee'])
+    for (const name of ['scheduledTransfers','splitCollections','splitPayment','splitReminder','cardLost','cardRecover','birthdayPlanPreview','birthdayPlans','birthdayPlanCancel','birthdayPlanOrder']) posts.add(name)
+    patches.add('payee')
+    deletes.add('scheduledTransfer'); deletes.add('splitCollection')
     for (const [name, build] of Object.entries(routes)) {
       if (safe.has(name)) continue
       const method = posts.has(name) ? 'POST' : patches.has(name) ? 'PATCH' : deletes.has(name) ? 'DELETE' : 'GET'

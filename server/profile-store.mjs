@@ -108,8 +108,10 @@ export async function createScopedProfileStorage({ db, query, get, run, readProf
         transactions: row.held ? [{ pendingReason: 'inflight' }] : [], cards: row.locked ? [{ status: 'locked' }] : [] }))
     },
     async settlementOwners(after = '', limit = 25) {
-      return query(`SELECT DISTINCT owner_id FROM bank_transactions WHERE status='pending' AND owner_id>?
-        ORDER BY owner_id LIMIT ?`, after, limit)
+      return query(`SELECT owner_id FROM (
+        SELECT owner_id FROM bank_transactions WHERE status='pending'
+        UNION SELECT owner_id FROM bank_background_tasks WHERE due_at<=CURRENT_TIMESTAMP
+        ) due WHERE owner_id>? ORDER BY owner_id LIMIT ?`, after, limit)
     },
     releaseProjection() { if (!pending) frame = empty() },
     async beginUnitOfWork({ requestId = randomUUID(), loadCurrent = true } = {}) {

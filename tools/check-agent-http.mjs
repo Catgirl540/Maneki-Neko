@@ -83,7 +83,13 @@ try{
  const result=await wait(e=>e.type==='tool-result');assert.equal(result.isError,false);assert(result.text.includes('http'))
  const riskResult = JSON.parse(result.text).risk
  assert.deepEqual(riskResult, summarizeRiskAssessment((await api(bank, '/api/wealth/overview', a.token)).data.risk))
- await wait(e=>e.type==='status'&&e.status==='idle');assert(events.some(e=>e.type==='assistant-update'&&e.text));console.log('PASS 实际 Harness → 确认卡 → HTTP 工具 → SSE 流式返回账户数据')
+ // The stream first replays the new session's idle status. Only the idle after
+ // this turn's streamed text proves completion; the initial idle is not enough.
+ const firstUpdate = await wait(e=>e.type==='assistant-update'&&e.text)
+ await wait(e=>e.type==='status'&&e.status==='idle'&&events.indexOf(e)>events.indexOf(firstUpdate))
+ assert(!events.some(e=>e.type==='error'), JSON.stringify(events))
+ assert(events.some(e=>e.type==='assistant'&&e.text?.includes('完成处理。')), JSON.stringify(events))
+ console.log('PASS 实际 Harness → 确认卡 → HTTP 工具 → SSE 流式返回账户数据')
  // Product comparison uses the actual catalog and risk snapshot and never submits a purchase.
  const comparisonProducts = (await api(bank, '/api/wealth/products', a.token)).data
  assert(comparisonProducts.length >= 2)

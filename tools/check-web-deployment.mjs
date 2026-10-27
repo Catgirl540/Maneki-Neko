@@ -34,7 +34,9 @@ try {
   assert.equal(android.packageName, 'com.moneymeow.bank')
   assert.match(android.sha256, /^[a-f0-9]{64}$/)
   assert.equal(android.fileName, `luckycat-android-${android.sha256.slice(0, 12)}.apk`)
-  const apk = await fetch(new URL(`downloads/${android.fileName}`, base), {
+  const apkUrl = new URL(android.apkUrl || `downloads/${android.fileName}`, base)
+  assert(apkUrl.protocol === 'https:' || apkUrl.origin === base.origin, '安装包外链必须使用 HTTPS')
+  const apk = await fetch(apkUrl, {
     headers: { Range: 'bytes=0-3' }, signal: AbortSignal.timeout(15_000),
   })
   try {

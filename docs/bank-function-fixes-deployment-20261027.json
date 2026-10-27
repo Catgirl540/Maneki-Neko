@@ -1,0 +1,117 @@
+{
+  "startedAt": "20261027T080426Z",
+  "oldSource": "/srv/maneki-bank/releases/20261026-im-handoff-r6",
+  "oldWeb": "/var/www/bank.waveflow.men/releases/20261026-im-handoff-r6",
+  "newSource": "/srv/maneki-bank/releases/20261027-function-fixes",
+  "newWeb": "/var/www/bank.waveflow.men/releases/20261027-function-fixes",
+  "backup": "/var/backups/maneki-function-fixes-20261027T080426Z",
+  "servicesBefore": {
+    "luckycat-agent-demo": "active",
+    "luckycat-staff-agent": "active",
+    "luckycat-ops-agent": "active",
+    "luckycat-bank-demo": "active",
+    "luckycat-bank": "active"
+  },
+  "bankHealth": {
+    "8080": {
+      "ok": true,
+      "kind": "bank-partner-platform",
+      "database": "postgresql",
+      "integrationMode": "live",
+      "commercialReady": false,
+      "bankConnection": "unconfigured",
+      "routes": 104
+    },
+    "8081": {
+      "ok": true,
+      "kind": "bank-partner-platform",
+      "database": "postgresql",
+      "integrationMode": "sandbox",
+      "commercialReady": false,
+      "bankConnection": "unconfigured",
+      "routes": 104
+    }
+  },
+  "servicePids": {
+    "luckycat-bank": "230241",
+    "luckycat-bank-demo": "236230",
+    "luckycat-agent-demo": "238032",
+    "luckycat-staff-agent": "238034",
+    "luckycat-ops-agent": "238033"
+  },
+  "switched": true,
+  "completedAt": "2026-10-27T08:25:47.356163+00:00",
+  "startupRepair": "Preload both existing sandbox seed profiles before synchronous seed check; keep original history protection.",
+  "migration": {
+    "maneki_bank": {
+      "version": 2026102701,
+      "reconciled": true,
+      "existingTablesUnchanged": 78,
+      "expectedChangedTables": [
+        "public.bank_schema_migrations",
+        "public.operations_events"
+      ],
+      "dumpSha256": "25e29ec235d8106828ab8e39d49a154f80abb21c5ebeba7a38e5a86996afaef2"
+    },
+    "maneki_bank_demo": {
+      "version": 2026102701,
+      "reconciled": true,
+      "existingTablesUnchanged": 78,
+      "expectedChangedTables": [
+        "public.bank_schema_migrations",
+        "public.operations_events"
+      ],
+      "dumpSha256": "b532c8cdb5dd01e7c5da4b41838bb18fc0f948211dfecb6d65e567671a98328a"
+    }
+  },
+  "url": "https://bank.waveflow.men",
+  "status": "deployed-and-verified",
+  "baseCommit": "d2983d76273cc89a17d7b0ade217c318e600d893",
+  "includesUncommittedWorkingTree": true,
+  "tests": {
+    "postgresql": {
+      "pass": 119,
+      "fail": 0,
+      "skip": 0
+    },
+    "bridge": {
+      "pass": 99,
+      "fail": 0,
+      "skip": 2,
+      "skipped": "optional real IM runtime/browser scenarios"
+    },
+    "harnessHttp": "ALL PASS",
+    "existingDemoRestart": {
+      "pass": 1,
+      "fail": 0
+    },
+    "public": {
+      "base": "https://bank.waveflow.men",
+      "checkedAt": "2026-10-27T08:27:41.545Z",
+      "checks": [
+        {
+          "name": "公开网页与入口资源哈希匹配本次生产构建"
+        },
+        {
+          "name": "客户、员工、Agent 和新增接口未登录均拒绝访问"
+        },
+        {
+          "name": "演示登录、唯一资金账户、新增只读接口、十二个月年报和导出正常"
+        },
+        {
+          "name": "真实浏览器：转账、年报、生日、IM提醒、卡片五个页面无运行异常"
+        }
+      ],
+      "ok": true,
+      "logoutStatus": 200
+    },
+    "webAndApk": "PASS"
+  },
+  "dependencyRepair": "framework/bridge/pg-runtime/node_modules points to release server/node_modules; installed pg 8.23.1 matches pinned runtime",
+  "limitations": [
+    "No real clearing, outbound WeChat delivery or merchant order acceptance",
+    "No new Android APK built",
+    "No Git commit or push"
+  ],
+  "temporaryTestDatabasesRemoved": true
+}

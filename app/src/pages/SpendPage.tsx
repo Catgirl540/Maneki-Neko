@@ -79,6 +79,7 @@ function parseAmount(raw: string): Cents | null {
 }
 
 const STATUS_LABEL: Record<BankCard['status'], string> = {
+  lost: '已挂失',
   active: '使用中',
   locked: '已锁定',
   pending: '待激活',

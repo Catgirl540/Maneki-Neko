@@ -401,5 +401,8 @@
   { "query": "查指定月份的支出环比，上月没花钱有基数吗", "source": "kb-analysis#spending", "critical": true },
   { "query": "本月支出与上月全月相比是等天数环比吗", "source": "kb-analysis#spending", "critical": true },
   { "query": "撤回美元在途转账会释放其他指令冻结吗", "source": "kb-transfers#recall", "critical": true },
-  { "query": "客户提交任务后会通过微信提醒工作人员吗", "source": "kb-assistant#staff-im-notification", "critical": true }
+  { "query": "客户提交任务后会通过微信提醒工作人员吗", "source": "kb-assistant#staff-im-notification", "critical": true },
+  { "query": "怎样为下一次续费创建微信提醒", "source": "kb-analysis#renewal-reminder", "critical": true },
+  { "query": "能从流水自动识别所有第三方订阅吗", "source": "kb-analysis#subscription-candidates", "critical": true },
+  { "query": "能为家人生日留款并提前准备鲜花蛋糕吗", "source": "kb-analysis#birthday-plan", "critical": true }
 ]

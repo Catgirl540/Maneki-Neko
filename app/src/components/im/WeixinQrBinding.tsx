@@ -105,6 +105,8 @@ export function WeixinQrBinding({ onBound }: { onBound: () => Promise<void> }) {
         <p className="text-[13px] text-ink-soft">请确认本次扫码使用的是本人微信。确认后可在微信中办理本人查询及接收提醒；资金操作仍需单独确认。</p>
         <Button className="mt-3" variant="ink" loading={busy} onClick={() => void act(async () => {
           const binding = await confirmWeixinQr(qr.attemptId)
+          // onBound may unmount this component before the state effect runs.
+          saveAttempt(null)
           setQr({ ...qr, binding }); await onBound()
         })}>确认绑定此微信到当前账户</Button>
       </div>}

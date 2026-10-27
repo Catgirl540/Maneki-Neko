@@ -9,6 +9,10 @@ import type {
   RegistrationRequest,
   RegistrationResult,
   AutoDebit,
+  BirthdayPlan,
+  BirthdayPlanDraft,
+  BirthdayPlanPreview,
+  BirthdayPlanRequest,
   Bank,
   CardBinQuery,
   CardSecrets,
@@ -32,6 +36,7 @@ import type {
   BudgetsOverview,
   Paged,
   Payee,
+  BillingReport, BillingReportQuery, ScheduledTransfer, ScheduledTransferRequest, SplitCollection, SplitCollectionRequest,
   ReceiptFile,
   SecurityOverview,
   SmsCodeResult,
@@ -129,6 +134,14 @@ export const routes = {
   cardBin: () => '/api/cards/bin',
   payees: () => '/api/payees',
   payee: (id: string) => `/api/payees/${id}`,
+  scheduledTransfers: () => '/api/transfers/scheduled',
+  scheduledTransfer: (id: string) => `/api/transfers/scheduled/${id}`,
+  splitCollections: () => '/api/transfers/splits',
+  splitCollection: (id: string) => `/api/transfers/splits/${id}`,
+  splitPayment: (id: string) => `/api/transfers/splits/${id}/payments`,
+  splitReminder: (id: string) => `/api/transfers/splits/${id}/reminders`,
+  billingReport: () => '/api/statistics/report',
+  billingReportExport: () => '/api/statistics/report/export',
   fpsResolve: () => '/api/fps/resolve',
   transferQuote: () => '/api/transfers/quote',
   transferRecipient: () => '/api/transfers/recipient',
@@ -141,6 +154,8 @@ export const routes = {
   cardProducts: () => '/api/cards/products',
   cardOpen: () => '/api/cards/open',
   cardLock: (id: string) => `/api/cards/${id}/lock`,
+  cardLost: (id: string) => `/api/cards/${id}/lost`,
+  cardRecover: (id: string) => `/api/cards/${id}/recover`,
   cardReplace: (id: string) => `/api/cards/${id}/replace`,
   cardSettings: (id: string) => `/api/cards/${id}/settings`,
   cardSpend: (id: string) => `/api/cards/${id}/spend`,
@@ -161,6 +176,10 @@ export const routes = {
   cashFlow: () => '/api/analysis/cashflow',
   autoDebits: () => '/api/autodebits',
   autoDebit: (id: string) => `/api/autodebits/${id}`,
+  birthdayPlans: () => '/api/linked/birthdays',
+  birthdayPlanPreview: () => '/api/linked/birthdays/preview',
+  birthdayPlanCancel: (id: string) => `/api/linked/birthdays/${id}/cancel`,
+  birthdayPlanOrder: (id: string) => `/api/linked/birthdays/${id}/order`,
 
   security: () => '/api/security/overview',
   securityRule: (id: string) => `/api/security/rules/${id}`,
@@ -272,7 +291,18 @@ export interface BankApi {
   registerFps(req: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; paymentPassword: string }): Promise<ReceivingInfo>
   /** 卡 BIN 查询：卡号前缀 → 发卡行。前缀不认识时明确回 unsupported，界面据此提示 */
   resolveCardBin(req: CardBinQuery): Promise<CardBinResolution>
-  listPayees(): Promise<Payee[]>
+  listPayees(keyword?: string): Promise<Payee[]>
+  updatePayeeRemark(id: string, remark: string): Promise<Payee>
+  listScheduledTransfers(): Promise<ScheduledTransfer[]>
+  createScheduledTransfer(req: ScheduledTransferRequest): Promise<ScheduledTransfer>
+  cancelScheduledTransfer(id: string, version: number): Promise<ScheduledTransfer>
+  listSplitCollections(): Promise<SplitCollection[]>
+  createSplitCollection(req: SplitCollectionRequest): Promise<SplitCollection>
+  cancelSplitCollection(id: string, version: number): Promise<SplitCollection>
+  confirmSplitPayment(id: string, req: { version: number; participantId: string; transactionId: string }): Promise<SplitCollection>
+  remindSplitParticipant(id: string, req: { version: number; participantId: string }): Promise<{ collection: SplitCollection; text: string; delivered: false; notice: string }>
+  getBillingReport(query: BillingReportQuery): Promise<BillingReport>
+  exportBillingReport(query: BillingReportQuery): Promise<ExportDataset & { report: BillingReport }>
   /** 删除一条历史收款人；不存在时 404 */
   deletePayee(id: string): Promise<void>
   /** 转数快标识解析：查收款人姓名与收款银行 */
@@ -294,6 +324,8 @@ export interface BankApi {
   /** 申请新卡：要扣制卡费、要寄送地址、要支付密码 */
   openCard(req: CardApplication): Promise<BankCard>
   setCardLock(id: string, locked: boolean): Promise<BankCard>
+  reportCardLost(id: string, paymentPassword: string): Promise<BankCard>
+  recoverCard(id: string, paymentPassword: string): Promise<BankCard>
   /** 换卡同样要寄卡，所以也要地址与支付密码 */
   replaceCard(id: string, req: CardReplaceRequest): Promise<BankCard>
   /** 查看卡安全码：必须带支付密码；卡未寄到 / 已换卡时拒绝 */
@@ -335,6 +367,11 @@ export interface BankApi {
   getCashFlow(days?: number): Promise<CashFlow>
   listAutoDebits(): Promise<AutoDebit[]>
   setAutoDebitEnabled(id: string, enabled: boolean): Promise<AutoDebit>
+  listBirthdayPlans(): Promise<BirthdayPlan[]>
+  previewBirthdayPlan(req: BirthdayPlanDraft): Promise<BirthdayPlanPreview>
+  createBirthdayPlan(req: BirthdayPlanRequest): Promise<BirthdayPlan>
+  cancelBirthdayPlan(id: string, req: { confirmed: boolean }): Promise<BirthdayPlan>
+  confirmBirthdayOrder(id: string, req: { confirmed: boolean }): Promise<BirthdayPlan>
 
   // —— 支出预算（每日额度 + 打卡积分） ——
   /** 我的预算：带今天的用量、额度、积分与额度券；服务端顺带补算历史达标日 */

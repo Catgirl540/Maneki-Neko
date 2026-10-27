@@ -21,7 +21,7 @@
 
 `currencyBalances` 是该账户下的币种记账分区，每项包含 `id`、`currency`、`balance`、`available` 等字段，共享同一个 `accountNo`。分区 `id` 用于兼容既有流水和换汇接口，不代表另外开立账户。不同币种金额不得直接相加。
 
-PostgreSQL 档案 v20 保留退役账本行。旧分区 ID 和旧账号仍可解析到当前归属；历史交易的 SQL 原始关联与回单账号快照保留，读取时返回当前 `accountId` 及可选的 `legacyAccountId`。首次换汇只初始化币种余额，跨币种 FPS 按确认报价贷记收款人的登记币种分区。
+PostgreSQL 档案的单账户迁移保留退役账本行。旧分区 ID 和旧账号仍可解析到当前归属；历史交易的 SQL 原始关联与回单账号快照保留，读取时返回当前 `accountId` 及可选的 `legacyAccountId`。首次换汇只初始化币种余额，跨币种 FPS 按确认报价贷记收款人的登记币种分区。
 
 员工客户档案的 `accounts[].currencyBalances` 与 `recentTransactions[].currency` 指明金额币种；显示外币不得加人民币符号。未提供交易币种的旧客户端夹具仍按原人民币契约兼容。
 
@@ -75,6 +75,30 @@ PostgreSQL 档案 v20 保留退役账本行。旧分区 ID 和旧账号仍可解
 - `GET /api/transactions/:id/receipt` → `ReceiptFile`；演示环境 `url=null`，需退回浏览器打印。
 - `GET /api/accounts/:id/transactions/export` → `ExportDataset`（后端给列与格式化值，前端落 CSV）。
 
+## 收款人备注、定时转账与 AA 收款
+
+`GET /api/payees?keyword=爱人` 只检索本人的已保存收款人，匹配姓名、银行、完整账号、FPS 标识及 `remark`；`PATCH /api/payees/:id` 请求 `{remark}` 可维护最多 140 字的备注。普通转账保存收款人时将交易备注作为初始备注，已有手动备注不覆盖。备注相同不证明同一人，重名或多个匹配仍须用户明确选定；内地 11 位手机号不能套用香港 FPS，未登记解析不虚构户名或银行。
+
+### 一次性定时转账
+
+`GET /api/transfers/scheduled` 查询本人指令。`POST /api/transfers/scheduled` 创建，字段为原 `TransferRequest` 的付款账户、金额、收款人完整账号、银行及地区、备注，另加 `executeAt`、`paymentPassword`、`confirmed=true`、`clientRequestId`。必须明确授权具体收款人、金额和时间，并验证支付密码；密码不写入计划记录。当前只支持 `channel=bank,scope=domestic,payeeBankRegion=CN` 的同币种、零手续费路径，不支持 FPS、跨境换汇、按内地手机号路由或周期转账。账号限制 12–19 位，单笔金额 1–100000000 整数分，时间带 `Z` 或 `+08:00` 且在一分钟后至未来 366 天内，最多 50 条待执行指令。
+
+保存时不扣款、不冻结，返回 `fundsReserved=false,status=scheduled,version=1`。同一客户 `clientRequestId` 重放原参数返回同一指令，改参数返回 `IDEMPOTENCY_CONFLICT`。`DELETE /api/transfers/scheduled/:id` 请求 `{version}` 仅取消本人待执行指令；版本变化返回 `VERSION_CONFLICT`。不能用取消定时指令撤回已执行付款，已进入在途的付款须另走在途撤销。
+
+沙箱服务端每客户后台事务扫描到期指令，执行前重新核验资金币种、可用余额和收款人，复用原转账路径。明确的执行前核验失败记 `failed/failureCode/failureReason`；资金执行错误和持久化异常向外抛出，整笔客户资金和指令状态一起回滚。成功受理记 `executed/transactionId/settlementStatus`，其中 `pending` 仍不代表到账；大额继续进入既有风控在途窗口。已执行指令重扫不会重复转账，取消和执行在同一银行队列中串行处理。只在 sandbox 启用，live 模式未接合作银行调度时不执行。浏览器 mock 需显式触发测试扫描，不以关闭浏览器后的前端计时器承诺后台执行。
+
+Agent `bank_list_scheduled_transfers/bank_schedule_transfer/bank_cancel_scheduled_transfer` 使用同一接口；创建走独立确认卡与安全支付密码输入，查询权限不能代替执行授权。网页 `/transfer` 有指令管理、北京时间输入、授权确认和取消入口。
+
+### AA 收款
+
+`GET/POST /api/transfers/splits` 查询/创建本人收款单。创建 `{title,amount,currency,participants,clientRequestId}`，`participants` 为 2–30 个不重名的完整付款人姓名，金额至少每人 1 分，均分后余数按名单顺序每人加 1 分。`amount` 是待收总额，不包含已自付份额。API 支持 CNY/USD/HKD 并要求本人已有对应币种余额；网页入口目前为人民币。只保存清单，不扣参与者余额、不发送邀请或新建资金账户。
+
+`POST /api/transfers/splits/:id/payments` 请求 `{version,participantId,transactionId}`，只接受本人同币种余额、金额恰等于该份额、交易对方登记名等于参与者的 `success/in` 真实流水，排除账户内换汇；一笔流水只能证明一份 AA 款项。确认只关联证据，不增加余额，全部匹配后状态为 `complete`。`POST .../:id/reminders` 请求 `{version,participantId}`，为未收份额生成催收文字并记录准备次数，返回 `delivered=false`；文字须用户自行发送。`DELETE /api/transfers/splits/:id` 请求 `{version}` 取消仍待收的清单，保留已收证据，不退款。
+
+网页 `/transfer` 提供 AA 均分、回款流水核对、催收文字和取消；Agent 工具为 `bank_list_split_collections/bank_create_split_collection/bank_cancel_split_collection/bank_confirm_split_payment/bank_prepare_split_reminder`，修改逐次确认。错误包括 `SPLIT_PAYMENT_NOT_MATCHED/SPLIT_PAYMENT_REUSED/VERSION_CONFLICT`。
+
+验证：`server/payment-plans.test.mjs` 覆盖明确确认、密码拒绝、幂等、重启、取消竞争版本、到期一次执行、失败无扣款、AA 余数与回款证据隔离；`tools/check-payment-plans.mjs` 在隔离内存分别运行真实服务端和浏览器 mock，验证双方守恒、重扫、重载及 ID 唯一；`tools/check-payment-tools-ui.mjs` 验证当前桌面网页交互。不使用客户库或真实银行通道。
+
 ## 在途转账与撤销
 
 转账返回 `settlementStatus=pending,pendingReason=inflight,holdUntil` 时，尚未扣余额，已从实际付款币种可用余额预留本金和手续费。它不是用户设定日期的定时转账；`pending/clearing` 则已扣款，仅等待清算状态更新，不能按在途指令撤销。
@@ -88,6 +112,16 @@ Agent 的 `bank_recall_transfer` 仍逐次确认，无需支付密码，有效 I
 本次修复待处理指令的解冻查找，不批量修正历史已结单可能遗留的冻结。历史余额与可用余额的差额可能包含其他有效预留，需依据原指令及账务逐笔核对，不能直接抹平差额；本轮未读取远程库确认是否存在此类记录。
 
 ## 收支统计
+
+### 完整月度 / 年度报告
+
+`GET /api/statistics/report?period=year&value=2026&currency=CNY` 返回本人该币种全部成功记账流水的聚合；`period=month` 时 `value=2026-10`。`currency` 限 CNY、USD、HKD，一次只统计一个币种，账户内换汇、未成功及晚于查询时点的记录不计。普通转账仍纳入对应收支，不把它伪装为消费。报告包含 `totalIncome/totalExpense/net/transactionCount`、支出 `categories`、`months`（年报固定 12 行）、`timeZone=Asia/Shanghai/asOf`、`periodStatus=complete/partial/future` 以及排除日期数量；它读取全部账本，独立于 Agent 的 20–200 条异常核查样本。
+
+`GET /api/statistics/report/export` 接受同组参数，返回 `ExportDataset` 和 `report`。CSV 包含汇总、各月收支、支出分类、币种和查询时点；整数分转换为十进制元，不合计外币。网页 `/analysis/statistics` 提供月份、年份、币种选择与月报/年报下载，查询失败显示错误，不用其他周期数据兜底。Agent `bank_get_billing_report` 查询同一全量统计，文件下载引导至该页面。金额非整数、负数或求和溢出时报错。
+
+验证：`server/billing-reports.test.mjs` 覆盖北京时间跨年、分币种、成功状态、无效/未来日期、超过样本上限的全量账本、导出金额及溢出；`tools/check-payment-tools-ui.mjs` 覆盖网页年度 12 月、实际 CSV 下载和切换月报。
+
+### 月度支出与近期现金流
 
 `GET /api/analysis/spending?month=YYYY-MM`（省略为当前北京时间月份）返回所选月成功支出、分类及截至该月的 6 个月走势。顶层兼容 CNY，`byCurrency.CNY/USD/HKD` 分别返回相同结构，金额为各币种分，不直接相加。普通转账仍计入支出，账户内换汇排除。
 

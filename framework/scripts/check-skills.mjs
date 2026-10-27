@@ -17,7 +17,8 @@ const array = (value, label) => {
 
 export function validateSkills({ skillsRoot = resolve(frameworkRoot, 'skills'), sourceRoot = repoRoot } = {}) {
   const source = path => readFileSync(resolve(sourceRoot, path), 'utf8')
-  const bankTools = [...source('framework/packages/bank-demo/src/http-tools.ts').matchAll(/\{ name: '(bank_[a-z_]+)'/g)].map(m => m[1])
+  const bankSources = ['http-tools.ts', 'extended-http-tools.ts'].map(name => source('framework/packages/bank-demo/src/' + name)).join('\n')
+  const bankTools = [...bankSources.matchAll(/\{ name: '(bank_[a-z_]+)'/g)].map(m => m[1])
   const tools = new Set([...bankTools, 'knowledge_lookup', 'ask_user_question'])
   const ui = [...source('app/src/components/layout/services.ts').matchAll(/\{ id: '([^']+)', label: '([^']+)'/g)].map(m => ({ id: m[1], label: m[2] }))
   const routes = new Set([...source('app/src/App.tsx').matchAll(/<Route path="([^"]+)"/g)].map(m => m[1]))

@@ -1,37 +1,38 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import type { ReactNode } from 'react'
+import { lazy, Suspense, type ReactNode } from 'react'
+import { DataLoading } from '@/components/ui/DataUnavailable'
 import { AppShell } from '@/components/layout/AppShell'
 import { AccountLayout } from '@/components/layout/AccountLayout'
 import { DemoWatermark } from '@/components/layout/DemoWatermark'
 import { ScrollToTop } from '@/components/layout/ScrollToTop'
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary'
 import { ToastProvider } from '@/components/ui/Toast'
-import { AnalysisPage } from '@/pages/AnalysisPage'
-import { BillsPage } from '@/pages/BillsPage'
-import { AutoDebitsPage } from '@/pages/AutoDebitsPage'
-import { CardsPage } from '@/pages/CardsPage'
-import { SpendPage } from '@/pages/SpendPage'
-import { BudgetsPage } from '@/pages/BudgetsPage'
-import { DashboardPage } from '@/pages/DashboardPage'
-import { OverviewPage } from '@/pages/OverviewPage'
+const AnalysisPage = lazy(() => import('@/pages/AnalysisPage').then(module => ({ default: module.AnalysisPage })))
+const BillsPage = lazy(() => import('@/pages/BillsPage').then(module => ({ default: module.BillsPage })))
+const AutoDebitsPage = lazy(() => import('@/pages/AutoDebitsPage').then(module => ({ default: module.AutoDebitsPage })))
+const CardsPage = lazy(() => import('@/pages/CardsPage').then(module => ({ default: module.CardsPage })))
+const SpendPage = lazy(() => import('@/pages/SpendPage').then(module => ({ default: module.SpendPage })))
+const BudgetsPage = lazy(() => import('@/pages/BudgetsPage').then(module => ({ default: module.BudgetsPage })))
+const DashboardPage = lazy(() => import('@/pages/DashboardPage').then(module => ({ default: module.DashboardPage })))
+const OverviewPage = lazy(() => import('@/pages/OverviewPage').then(module => ({ default: module.OverviewPage })))
 import { LandingPage } from '@/pages/LandingPage'
 import { DownloadPage } from '@/pages/DownloadPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { OpenAccountStandalone } from '@/pages/OpenAccountPage'
-import { SecurityPage } from '@/pages/SecurityPage'
-import { InvitationsPage } from '@/pages/InvitationsPage'
-import { MembershipPage } from '@/pages/MembershipPage'
-import { ExchangePage } from '@/pages/ExchangePage'
-import { CashflowPage } from '@/pages/CashflowPage'
-import { CreditPage } from '@/pages/CreditPage'
-import { CashManagementPage } from '@/pages/CashManagementPage'
-import { InsurancePage } from '@/pages/InsurancePage'
-import { TransactionDetailPage } from '@/pages/TransactionDetailPage'
-import { WealthPage } from '@/pages/WealthPage'
-import { WealthPlansPage } from '@/pages/WealthPlansPage'
-import { WealthRecordsPage } from '@/pages/WealthRecordsPage'
-import { TransferPage } from '@/pages/TransferPage'
-import { ServicesPage } from '@/pages/ServicesPage'
+const SecurityPage = lazy(() => import('@/pages/SecurityPage').then(module => ({ default: module.SecurityPage })))
+const InvitationsPage = lazy(() => import('@/pages/InvitationsPage').then(module => ({ default: module.InvitationsPage })))
+const MembershipPage = lazy(() => import('@/pages/MembershipPage').then(module => ({ default: module.MembershipPage })))
+const ExchangePage = lazy(() => import('@/pages/ExchangePage').then(module => ({ default: module.ExchangePage })))
+const CashflowPage = lazy(() => import('@/pages/CashflowPage').then(module => ({ default: module.CashflowPage })))
+const CreditPage = lazy(() => import('@/pages/CreditPage').then(module => ({ default: module.CreditPage })))
+const CashManagementPage = lazy(() => import('@/pages/CashManagementPage').then(module => ({ default: module.CashManagementPage })))
+const InsurancePage = lazy(() => import('@/pages/InsurancePage').then(module => ({ default: module.InsurancePage })))
+const TransactionDetailPage = lazy(() => import('@/pages/TransactionDetailPage').then(module => ({ default: module.TransactionDetailPage })))
+const WealthPage = lazy(() => import('@/pages/WealthPage').then(module => ({ default: module.WealthPage })))
+const WealthPlansPage = lazy(() => import('@/pages/WealthPlansPage').then(module => ({ default: module.WealthPlansPage })))
+const WealthRecordsPage = lazy(() => import('@/pages/WealthRecordsPage').then(module => ({ default: module.WealthRecordsPage })))
+const TransferPage = lazy(() => import('@/pages/TransferPage').then(module => ({ default: module.TransferPage })))
+const ServicesPage = lazy(() => import('@/pages/ServicesPage').then(module => ({ default: module.ServicesPage })))
 import { SessionProvider, RequireAuth } from '@/store/session'
 import { useSession } from '@/store/session-context'
 import { clientDevice } from '@/lib/device'
@@ -87,7 +88,7 @@ export default function App() {
         {/* 兜在最外层：任何页面渲染崩了都给一张能读的错误页，而不是白屏 */}
         <ErrorBoundary>
           <ClientEntry>
-            <Routes>
+            <Suspense fallback={<DataLoading />}><Routes>
               {/* 官网是公开的：它要回答「这是什么」，所以不能先拦一道登录 */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<LoginRoute />} />
@@ -135,7 +136,7 @@ export default function App() {
               </Route>
               {/* 认不出的路径回官网，而不是回总览：没登录的人落到总览只会被再弹去登录页 */}
               <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
+            </Routes></Suspense>
           </ClientEntry>
         </ErrorBoundary>
       </ToastProvider>

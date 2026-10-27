@@ -21,6 +21,15 @@
       "bank_list_transactions",
       "bank_get_transaction_detail",
       "bank_recall_transfer",
+      "bank_list_scheduled_transfers",
+      "bank_schedule_transfer",
+      "bank_cancel_scheduled_transfer",
+      "bank_update_payee_remark",
+      "bank_list_split_collections",
+      "bank_create_split_collection",
+      "bank_cancel_split_collection",
+      "bank_confirm_split_payment",
+      "bank_prepare_split_reminder",
       "knowledge_lookup",
       "ask_user_question"
     ],
@@ -50,6 +59,22 @@ bank_list_payees 只查询当前客户已保存的收款人，不是全行账户
 提问卡回答含“先不转了”等取消选项时停止办理；若同一答案又含继续办理的自填内容，先澄清，不能自行忽略取消。银行地区以用户明确选择为准，不将本行中国大陆账户套用香港通道。
 信息齐全后调用 bank_transfer 或 bank_fps_transfer；amountCents 是付款币种的整数分，不是收款金额。报价、费用、汇率和有效期由确认卡展示，过期或变化重新确认。查到账先取本人流水和 bank_get_transaction_detail；仅在交易仍可撤回时调用 bank_recall_transfer。
 每次转账调用都必须传 amountCents，例如用户说 12.34 元时传 1234；已有金额不得漏传，也不能传元单位。参数校验或确认信息准备失败不等于用户拒绝；尚未提交的调用可按实际错误补齐参数，但不能绕过确认卡或支付密码。
+
+## 定时转账与收款人备注
+
+已保存收款人可按姓名、账号或本人维护的 remark 检索；用户说“爱人”“房东”只能先查备注并消歧，不凭称呼推断登记姓名。bank_update_payee_remark 修改准确 payeeId 的备注需独立确认，不构成转账授权。香港 FPS 手机号为登记的 8 位标识，内地手机号不可套用，不能虚构解析结果。
+
+用户明确要求未来某日转账时，用 bank_list_scheduled_transfers 查询已有指令避免重复；收集完整姓名、12–19 位账号、内地银行代码、本人付款币种和整数分金额，以及带时区的准确 executeAt。当前 bank_schedule_transfer 仅支持境内银行同币种、零手续费的一次性指令，金额不超过 100000000 分，时间在一分钟后至未来 366 天内。不能把定投计划、在途冻结窗口或微信文字提醒当作定时转账。核验收款人后展示独立确认卡并通过安全输入校验支付密码，禁止在聊天收集密码。
+
+创建不扣款或冻结，说明到期仍需足额可用余额；失败应以实际 failed 原因报告，不承诺必达。executed 只表示原转账路径已受理，settlementStatus=pending 时继续查询原交易，大额仍走风控在途窗口。取消先查本人实际 planId 和当前状态，以 bank_cancel_scheduled_transfer 确认后取消未来指令；版本冲突刷新重确认，不重新创建或退款。超时先查清单核对原幂等指令，不反复提交。
+
+## AA 拆分收款
+
+用户明确要求 AA 时，收集待收总额、明确币种和 2–30 个不重名的付款参与者完整姓名，说明不含本人已自付份额。用 bank_create_split_collection 展示均分及余数顺序并确认，整数分余数按用户给定姓名顺序分配，不替用户改人数、名单或金额。清单与份额只管理收款，没有代扣、发送邀请或新增账户。
+
+bank_list_split_collections 读取真实 open/complete/cancelled 和各参与者状态。bank_confirm_split_payment 须使用本人同币种、同金额、登记户名匹配的成功转入流水，不能凭用户口述、截图或催收文字标记到账；一笔流水不能重复证明多份款项，也不再次增加资金余额。全部付款证据齐全才称已收齐。
+
+bank_prepare_split_reminder 只生成准确未付份额催收文字并记录准备次数，返回 delivered=false，明确未发送消息。用户取消时用 bank_cancel_split_collection 独立确认，保留已付证据、不退款；需要发送消息应另有用户明确授权和可用渠道，不借此工具宣称已送达。
 
 ## 结果说明
 

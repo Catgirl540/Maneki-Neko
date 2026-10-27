@@ -11,6 +11,10 @@ import { analyzeAutoDebits, validateReminderDays } from './autodebit-analysis.mj
 import { validateInvestPlan } from '../../shared/invest-plan.mjs'
 import { findFreeMerchant, findSpendPlatform, SPEND_MAX_CENTS } from '../../shared/spend-platforms.mjs'
 import { reviewTransactions, validateReviewLimit } from './transaction-review.mjs'
+import { prepareExtendedBankOperation, extendedPasswordTools, extendedWriteTools, extendedQueryTools } from './extended-bank-tools.mjs'
+import { recommendWealthProducts } from '../../shared/wealth-recommendation.mjs'
+import { wealthRedemptionQuote } from '../../shared/wealth-redemption.mjs'
+import { analyzeSubscriptionCandidates, renewalReminderDraft } from '../../shared/subscriptions.mjs'
 const enc = encodeURIComponent
 const text = (value, label) => {
   if (typeof value !== 'string' || !value.trim()) throw bankError(`缺少${label}`)
@@ -34,6 +38,9 @@ routineQueries.add('bank_list_budgets')
 writable.add('bank_create_im_reminder')
 writable.add('bank_cancel_im_reminder')
 writable.add('bank_spend')
+for (const tool of extendedPasswordTools) passwordTools.add(tool)
+for (const tool of extendedWriteTools) writable.add(tool)
+for (const tool of extendedQueryTools) routineQueries.add(tool)
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -282,8 +289,12 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         if (holding.closed) throw bankError('持仓尚在封闭期，暂不能赎回')
         if (a.shares !== undefined && (!Number.isFinite(a.shares) || a.shares <= 0 || a.shares > holding.shares)) throw bankError('赎回份额不合法')
         path = '/api/wealth/redeem'
-        body = { holdingId: holding.id, ...(a.shares === undefined ? {} : { shares: a.shares }) }
-        fields = [field('产品', holding.productName), field('持仓编号', holding.id), field('赎回份额', a.shares ?? holding.shares, true), field('说明', '到账金额与时间以银行受理结果为准')]
+        const product = await get(`/api/wealth/products/${enc(holding.productCode)}`)
+        const shares = a.shares ?? holding.shares
+        const quote = wealthRedemptionQuote(product, holding, shares)
+        body = { holdingId: holding.id, shares }
+        preview = { redemption: { holding: digest(holding), product: digest(product), quote: digest({ shares: quote.shares, gross: quote.gross, fee: quote.fee, net: quote.net }) } }
+        fields = [field('产品', holding.productName), field('持仓编号', holding.id), field('赎回份额', shares, true), field('赎回金额', money(quote.gross)), field('赎回费用', money(quote.fee)), field('预计净到账', money(quote.net)), field('说明', '演示环境按申购批次先进先出计费，即时入账；实际结果以银行回执为准')]
         break
       }
       case 'bank_list_cards':
@@ -303,6 +314,7 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         const locked = boolean(a.locked, '锁卡状态')
         // 寄送中卡片不能借解锁动作被激活。
         if (card.status === 'pending') throw bankError('卡片仍在寄送中，请在银行卡页面处理')
+        if (!['active', 'locked'].includes(card.status)) throw bankError('卡片已挂失或状态不可管理，请先核对挂失状态')
         path = `/api/cards/${enc(card.id)}/lock`
         body = { locked }
         preview = { cardState: digest(safeCard(card)) }
@@ -312,6 +324,7 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
       case 'bank_update_card_settings': {
         const card = await ownedCard()
         if (card.status === 'pending') throw bankError('卡片仍在寄送中，请在银行卡页面处理')
+        if (!['active', 'locked'].includes(card.status)) throw bankError('卡片已挂失或状态不可管理')
         body = {}
         fields = [field('卡片', cardLabel(card))]
         for (const [key, label] of [['onlinePayment', '线上支付'], ['overseasPayment', '境外支付']]) {
@@ -336,6 +349,7 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         // 消费是扣款写操作；先在确认前把卡状态说清楚，避免用户确认后才被后端拒绝。
         if (card.status === 'pending') throw bankError('卡片仍在寄送中，激活后才能消费')
         if (card.status === 'locked') throw bankError('卡片已锁定，请先解锁再消费')
+        if (card.status !== 'active') throw bankError('卡片已挂失或不可消费')
         if (card.paymentEnabled === false) throw bankError('该卡已关闭消费，请先在卡片设置中开启')
         if (!card.onlinePayment) throw bankError('该卡已关闭线上支付，请先在卡片设置中开启')
         const platform = text(a.platform, '消费平台')
@@ -426,7 +440,33 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         fields = [field('卡片', `${card.productName} · 尾号 ${card.last4}`), field('查看内容', a.field === 'cvv' ? 'CVV' : '完整卡号')]
         break
       }
-      default: throw bankError('未支持的银行工具', 400)
+      case 'bank_report_card_lost':
+      case 'bank_recover_card': {
+        const card = await ownedCard()
+        const recover = challenge.toolName === 'bank_recover_card'
+        if (recover ? card.status !== 'lost' : !['active', 'locked', 'pending'].includes(card.status)) throw bankError(recover ? '仅可解除本人已挂失卡片' : '该卡状态不能挂失', 409)
+        path = `/api/cards/${enc(card.id)}/${recover ? 'recover' : 'lost'}`
+        body = {}
+        preview = { cardState: digest(safeCard(card)) }
+        fields = [field('卡片', cardLabel(card)), field('操作', recover ? '解除挂失' : '正式挂失', true), field('影响', recover ? '恢复挂失前状态，支付开关保持关闭；待激活卡仍须激活' : '关闭卡片支付；该卡仍占卡组织名额，资金账户不冻结')]
+        break
+      }
+      case 'bank_create_renewal_reminder': {
+        const contract = (await get('/api/autodebits')).find(row => row.id === text(a.autoDebitId, '合约编号'))
+        if (!contract) throw bankError('合约不存在或不属于本人', 404)
+        const draft = renewalReminderDraft(contract, Date.now(), a.leadDays ?? 2)
+        const service = reminders()
+        if (!service) throw bankError('微信提醒尚未启用', 503)
+        const prepared = service.prepare(entry.ownerId, 'create', { title: draft.title, dueAt: draft.time + ':00+08:00', ...(a.bindingId ? { bindingId: a.bindingId } : {}) }, challenge.sessionId)
+        preview = { reminder: prepared, autoDebitState: digest(contract) }
+        fields = [field('合约', contract.merchant + ' · ' + contract.id), field('提醒内容', prepared.title), field('提醒时间', new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(new Date(prepared.dueAt))), field('接收微信', prepared.label), field('说明', '仅创建一次性文字提醒，不执行扣款、不取消商户订阅')]
+        break
+      }
+      default: {
+        const extended = await prepareExtendedBankOperation(challenge.toolName, a, { get, post, requestId: `agent_${digest([challenge.sessionId, challenge.callId, challenge.toolName])}` })
+        if (!extended) throw bankError('未支持的银行工具', 400)
+        ;({ path, body, fields, preview, method } = extended)
+      }
     }
     if (submitBefore) challenge = { ...challenge, expiresAt: Math.min(challenge.expiresAt, submitBefore) }
     if (!Number.isFinite(challenge.expiresAt) || challenge.expiresAt <= Date.now()) throw bankError('确认已过期')
@@ -489,6 +529,23 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         if (digest({ nav: product.nav, fees: product.transactionFees }) !== g.preview.product || overview.account.settlementAccountId !== g.preview.settlementAccountId) throw bankError('产品净值、费用或资金账户已变化，请重新确认', 409)
       }
       if (input.toolName === 'bank_wealth_redeem') await call(entry.bankToken, '/api/auth/payment-password/verify', { paymentPassword: g.password })
+      if (g.preview?.redemption) {
+        const overview = await call(entry.bankToken, '/api/wealth/overview')
+        const holding = overview.holdings.find(row => row.id === body.holdingId)
+        const product = holding && await call(entry.bankToken, `/api/wealth/products/${enc(holding.productCode)}`)
+        if (!holding || digest(holding) !== g.preview.redemption.holding || digest(product) !== g.preview.redemption.product) throw bankError('持仓或产品已变化，请重新确认', 409)
+        const quote = wealthRedemptionQuote(product, holding, body.shares)
+        if (digest({ shares: quote.shares, gross: quote.gross, fee: quote.fee, net: quote.net }) !== g.preview.redemption.quote) throw bankError('赎回费用已变化，请重新确认', 409)
+      }
+      if (g.preview?.extendedSnapshot) {
+        const snapshot = g.preview.extendedSnapshot
+        const row = (await call(entry.bankToken, snapshot.path)).find(item => item.id === snapshot.id)
+        if (!row || digest(row) !== digest(snapshot.record)) throw bankError('业务记录已变化，请重新确认', 409)
+      }
+      if (g.preview?.birthdayTerms) {
+        const terms = await call(entry.bankToken, '/api/linked/birthdays/preview', body)
+        if (digest(terms) !== digest(g.preview.birthdayTerms)) throw bankError('生日计划条件已变化，请重新确认', 409)
+      }
       if (g.preview?.cardState) {
         const card = (await call(entry.bankToken, '/api/cards')).find(c => c.id === input.arguments.cardId)
         if (!card || digest(safeCard(card)) !== g.preview.cardState) throw bankError('卡片状态或设置已变化，请重新确认', 409)
@@ -519,12 +576,19 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
       if (['bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
       const investmentWrite = ['bank_create_invest_plan', 'bank_update_invest_plan'].includes(input.toolName)
       if (investmentWrite && g.challenge.verification) body = { ...body, paymentPassword: g.password }
+      if (extendedPasswordTools.includes(input.toolName)) body = { ...body, paymentPassword: g.password }
       if (g.preview?.reminder) {
         const service = reminders()
         if (!service) throw bankError('提醒服务不可用', 503)
         return { dataSource: 'personal-workbench', result: service.execute(entry.ownerId, g.preview.reminder, `agent_${digest([input.sessionId, input.callId, input.toolName])}`) }
       }
-      const data = await call(entry.bankToken, g.path, body, g.method, investmentWrite ? `agent_${digest([input.sessionId, input.callId, input.toolName])}` : undefined)
+      const data = await call(entry.bankToken, g.path, body, g.method, investmentWrite || extendedWriteTools.includes(input.toolName) ? `agent_${digest([input.sessionId, input.callId, input.toolName])}` : undefined)
+      if (input.toolName === 'bank_wealth_recommend') return { dataSource: 'http', result: recommendWealthProducts(data, await call(entry.bankToken, '/api/wealth/overview'), input.arguments) }
+      if (input.toolName === 'bank_find_subscription_candidates') {
+        const account = await call(entry.bankToken, '/api/accounts/' + enc(g.preview.subscriptionAccount.id))
+        if (account.id !== g.preview.subscriptionAccount.id || account.currency !== g.preview.subscriptionAccount.currency) throw bankError('账户币种已变化，请重新查询', 409)
+        return { dataSource: 'http', result: analyzeSubscriptionCandidates(account, data) }
+      }
       if (input.toolName === 'bank_review_transactions') {
         const account = await call(entry.bankToken, `/api/accounts/${enc(g.preview.reviewAccount.id)}`)
         if (account.id !== g.preview.reviewAccount.id || account.currency !== g.preview.reviewAccount.currency) throw bankError('账户信息已变化，请重新查询', 409)
@@ -551,7 +615,7 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
       }
       if (['bank_list_banks', 'bank_list_payees'].includes(input.toolName)) {
         const query = String(input.arguments.keyword ?? '').trim().toLowerCase()
-        const rows = data.filter(item => (input.toolName !== 'bank_list_banks' || !input.arguments.region || item.region === input.arguments.region) && (!query || [item.name, item.bankName, item.code, item.accountNo, item.fpsId].some(v => typeof v === 'string' && v.toLowerCase().includes(query))))
+        const rows = data.filter(item => (input.toolName !== 'bank_list_banks' || !input.arguments.region || item.region === input.arguments.region) && (!query || [item.name, item.bankName, item.code, item.accountNo, item.fpsId, item.remark, item.memo].some(v => typeof v === 'string' && v.toLowerCase().includes(query))))
         const notices = []
         if (input.toolName === 'bank_list_payees') notices.push('这里只查询当前客户已保存的收款人，不是全行账户查询。未找到不代表账号不存在或户名错误；新收款人无需先保存，信息齐全后请用 bank_verify_recipient 核验。')
         if (rows.length > 20) notices.push('请提供更具体的名称或银行地区以缩小范围，不得猜测未返回的信息。')

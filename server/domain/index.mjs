@@ -17,8 +17,13 @@ export function appendStaffNotice(notice) {
 
 
 import { ledgerBalances, findBalance } from '../../shared/account-model.mjs';
+import { previewBirthdayPlan as previewBirthday, createBirthdayPlan as createBirthday, advanceBirthdayPlans, listBirthdayPlans as listBirthdays, cancelBirthdayPlan as cancelBirthday, confirmBirthdayOrder as confirmBirthday } from '../../shared/linked-plans.mjs';
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../shared/account-model.mjs'
+import { billingReport, exportBillingReport as buildBillingExport } from '../../shared/billing-reports.mjs'
+import { createPaymentPlans } from '../../shared/payment-plans.mjs'
+import { searchPayees, updatePayeeRemark as patchPayeeRemark, rememberInternalPayee } from '../../shared/payee-search.mjs'
 import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../shared/invest-plan.mjs'
+import { wealthHoldingLots, wealthHoldingState, wealthRedemptionQuote } from '../../shared/wealth-redemption.mjs'
 import { supportGuidance } from '../../shared/support-guidance.mjs'
 import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../shared/spend-platforms.mjs'
 import { BUDGET_MAX_COUNT, BUDGET_PASS_EXTRA_CENTS, BUDGET_PASS_MAX_FUTURE_DAYS, BUDGET_POINTS_PER_PASS, BudgetError, checkBudgetLimit, budgetPoints, budgetsOverview, shanghaiDay, settleBudgetPoints, validateBudgetInput, validateBudgetPatch, validatePassDay } from '../../shared/budgets.mjs'
@@ -144,7 +149,7 @@ function withDerivedHoldings(db) {
             marketValue,
             profit,
             profitRate: h.principal === 0 ? 0 : profit / h.principal,
-            closed: h.redeemableAt != null && Date.now() < new Date(h.redeemableAt).getTime(),
+            ...wealthHoldingState(h),
         };
     });
 }
@@ -468,7 +473,11 @@ export function createBankBusinessApi(options) {
     const holdWindowMs = options?.holdWindowMs ?? 5 * 60_000;
     const settleImmediately = options?.settleImmediately === true;
     const exchangeQuotes = new Map();
-    return {
+    let api;
+    const plans = paymentPlans(options, () => api);
+    const publicPlans = Object.fromEntries(Object.entries(plans).filter(([name]) => name !== 'settleScheduledTransfers'));
+    return api = {
+        ...publicPlans,
         async login(phone, password, smsCode) {
             await delay();
             const db = loadDb();
@@ -778,9 +787,13 @@ export function createBankBusinessApi(options) {
             await delay(140);
             return lookupCardBin(loadDb().banks, digits, region);
         },
-        async listPayees() {
+        async listPayees(keyword) {
             await delay(140);
-            return [...loadDb().payees].sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
+            return searchPayees(loadDb().payees, keyword);
+        },
+        async updatePayeeRemark(id, remark) {
+            const row = patchPayeeRemark(loadDb().payees, id, remark);
+            persist(); return row;
         },
         async deletePayee(id) {
             await delay(160);
@@ -1072,10 +1085,13 @@ export function createBankBusinessApi(options) {
                     remark: req.memo.trim() || undefined,
                 },
             });
+            const priorPayees = structuredClone(db.payees);
             try {
+                if (!isFps) rememberInternalPayee(db, req, nextId);
                 persistRelatedProfiles(isOwnAccount ? [] : [recipient.profile]);
             }
             catch (error) {
+                db.payees = priorPayees;
                 sender.balance += req.amount;
                 sender.available += req.amount;
                 recipient.account.balance -= quotedFx?.toAmount ?? req.amount;
@@ -1166,11 +1182,13 @@ export function createBankBusinessApi(options) {
         if (existing) {
             existing.lastUsedAt = new Date().toISOString();
             existing.name = req.payeeName.trim();
+            existing.remark ??= req.memo.trim();
         }
         else {
             db.payees.unshift({
                 id: nextId('pay'),
                 name: req.payeeName.trim(),
+                remark: req.memo.trim(),
                 channel: req.channel,
                 scope: isFps ? 'overseas' : req.scope,
                 lastUsedAt: new Date().toISOString(),
@@ -1290,13 +1308,43 @@ export function createBankBusinessApi(options) {
         async setCardLock(id, locked) {
             await delay(300);
             const card = findCard(id);
+            if (typeof locked !== 'boolean') throw new ApiError('锁卡参数必须为布尔值', 400, 'INVALID_CARD_LOCK');
             if (card.status === 'replaced')
                 throw new ApiError('该卡已换卡，无法操作', 400, 'CARD_REPLACED');
+            if (card.status === 'pending') throw new ApiError('请收到卡片后验证支付密码激活，待激活卡不能锁定或解锁', 409, 'CARD_NOT_DELIVERED');
+            if (card.status === 'lost') throw new ApiError('该卡已正式挂失，请验证支付密码解挂或办理补卡', 409, 'CARD_LOST');
+            if (!['active', 'locked'].includes(card.status)) throw new ApiError('卡片状态不允许锁定或解锁', 409, 'INVALID_CARD_STATE');
             card.status = locked ? 'locked' : 'active';
             if (locked) {
                 card.onlinePayment = false;
                 card.overseasPayment = false;
             }
+            persist();
+            return card;
+        },
+        async reportCardLost(id, paymentPassword) {
+            const card = findCard(id);
+            verifyPayPassword(paymentPassword);
+            if (card.status === 'lost') return card;
+            if (!['active', 'locked', 'pending'].includes(card.status)) throw new ApiError('该卡状态不允许挂失', 409, 'INVALID_CARD_STATE');
+            card.lostFromStatus = card.status;
+            card.reportedLostAt = new Date().toISOString();
+            card.status = 'lost';
+            card.onlinePayment = false;
+            card.overseasPayment = false;
+            persist();
+            return card;
+        },
+        async recoverCard(id, paymentPassword) {
+            const card = findCard(id);
+            verifyPayPassword(paymentPassword);
+            if (card.status !== 'lost') throw new ApiError('仅已挂失卡可以解挂', 409, 'CARD_NOT_LOST');
+            if (!['active', 'locked', 'pending'].includes(card.lostFromStatus)) throw new ApiError('挂失前状态不完整，请联系客服办理补卡', 409, 'INVALID_CARD_STATE');
+            card.status = card.lostFromStatus;
+            card.lostFromStatus = null;
+            card.reportedLostAt = null;
+            card.onlinePayment = false;
+            card.overseasPayment = false;
             persist();
             return card;
         },
@@ -1311,6 +1359,7 @@ export function createBankBusinessApi(options) {
             verifyPayPassword(paymentPassword);
             if (card.status === 'replaced')
                 throw new ApiError('该卡已换卡，无法激活', 409, 'CARD_REPLACED');
+            if (card.status === 'lost') throw new ApiError('该卡已挂失，请先解挂', 409, 'CARD_LOST');
             if (card.status !== 'pending')
                 throw new ApiError('该卡已是使用中状态，无需激活', 409, 'CARD_ALREADY_ACTIVE');
             card.status = 'active';
@@ -1347,6 +1396,8 @@ export function createBankBusinessApi(options) {
                 shippingAddress: req.address,
                 issuingFee: fee,
                 replacedFromId: card.id,
+                lostFromStatus: null,
+                reportedLostAt: null,
             };
             db.cards.push(fresh);
             // 换发的新卡是另一张卡，安全码必须重新生成，不能沿用旧卡的
@@ -1376,6 +1427,8 @@ export function createBankBusinessApi(options) {
             if (card.status === 'replaced') {
                 throw new ApiError('这张卡已换发，旧卡信息不再可用', 409, 'CARD_REPLACED');
             }
+            if (card.status === 'lost') throw new ApiError('该卡已挂失，卡安全信息不可用', 409, 'CARD_LOST');
+            if (!['active', 'locked'].includes(card.status)) throw new ApiError('卡片状态无效', 409, 'INVALID_CARD_STATE');
             const secret = db.cardSecrets[id];
             if (!secret)
                 throw new ApiError('该卡暂无安全码记录', 404, 'CARD_SECRET_MISSING');
@@ -1389,16 +1442,22 @@ export function createBankBusinessApi(options) {
         async updateCardSettings(id, patch) {
             await delay(240);
             const card = findCard(id);
-            if (card.status === 'locked' && (patch.onlinePayment || patch.overseasPayment)) {
-                throw new ApiError('卡片已锁定，请先解锁', 400, 'CARD_LOCKED');
-            }
             if (!patch || typeof patch !== 'object' || Array.isArray(patch)) throw new ApiError('无效卡设置', 400, 'INVALID_CARD_SETTINGS');
-            const allowed = ['onlinePayment', 'overseasPayment', 'dailyLimit'];
+            if (card.status === 'locked' && ['onlinePayment', 'overseasPayment', 'paymentEnabled'].some(key => patch[key] === true)) throw new ApiError('卡片已锁定，请先解锁再开启支付', 400, 'CARD_LOCKED');
+            if (card.status === 'pending') throw new ApiError('请先验证支付密码激活卡片', 409, 'CARD_NOT_DELIVERED');
+            if (card.status === 'lost') throw new ApiError('该卡已挂失，请先解挂', 409, 'CARD_LOST');
+            if (card.status === 'replaced') throw new ApiError('该卡已换发，不能修改设置', 409, 'CARD_REPLACED');
+            if (!['active', 'locked'].includes(card.status)) throw new ApiError('卡片状态无效', 409, 'INVALID_CARD_STATE');
+            const allowed = ['onlinePayment', 'overseasPayment', 'dailyLimit', 'paymentEnabled', 'channelLimits', 'merchantLimits'];
             if (Object.keys(patch).some(k => !allowed.includes(k))) throw new ApiError('卡设置包含不可修改字段', 400, 'INVALID_CARD_SETTINGS');
-            for (const key of ['onlinePayment', 'overseasPayment']) {
+            for (const key of ['onlinePayment', 'overseasPayment', 'paymentEnabled']) {
                 if (patch[key] !== undefined && typeof patch[key] !== 'boolean') throw new ApiError('无效支付设置', 400, 'INVALID_CARD_SETTINGS');
             }
             if (patch.dailyLimit !== undefined && (!Number.isSafeInteger(patch.dailyLimit) || patch.dailyLimit < 0)) throw new ApiError('无效限额', 400, 'INVALID_DAILY_LIMIT');
+            for (const [key, names] of [['channelLimits', ['online', 'offline', 'overseas']], ['merchantLimits', ['dining', 'shopping', 'other']]]) {
+                const limits = patch[key];
+                if (limits !== undefined && (!limits || typeof limits !== 'object' || Array.isArray(limits) || Object.keys(limits).length !== names.length || names.some(name => !Number.isSafeInteger(limits[name]) || limits[name] < 0))) throw new ApiError('无效渠道或商户类别限额', 400, 'INVALID_CARD_SETTINGS');
+            }
             Object.assign(card, patch);
             persist();
             return card;
@@ -1420,6 +1479,8 @@ export function createBankBusinessApi(options) {
                 throw new ApiError('卡还在寄送途中，收到并激活后才能消费', 409, 'CARD_NOT_DELIVERED');
             if (card.status === 'replaced')
                 throw new ApiError('这张卡已换发，旧卡不再消费', 409, 'CARD_REPLACED');
+            if (card.status === 'lost') throw new ApiError('该卡已挂失，无法消费', 409, 'CARD_LOST');
+            if (card.status !== 'active') throw new ApiError('卡片状态无效，无法消费', 409, 'INVALID_CARD_STATE');
             if (card.paymentEnabled === false)
                 throw new ApiError('该卡已关闭消费，请在卡片设置中开启', 409, 'CARD_PAYMENT_DISABLED');
             if (!card.onlinePayment)
@@ -1529,11 +1590,12 @@ export function createBankBusinessApi(options) {
         async listWealthProducts() {
             await delay(220);
             const today = dayKey(new Date());
-            return WEALTH_PRODUCTS.map((p) => ({ ...p, navDate: today }));
+            return WEALTH_PRODUCTS.map((p) => ({ ...p, navDate: today, priorityRestricted: Boolean(wealthPriorityGate(p, loadDb().membership.tier)) }));
         },
         async getWealthProduct(code) {
             await delay(160);
-            return { ...productByCode(code), navDate: dayKey(new Date()) };
+            const product = productByCode(code);
+            return { ...product, navDate: dayKey(new Date()), priorityRestricted: Boolean(wealthPriorityGate(product, loadDb().membership.tier)) };
         },
         async getWealthOverview() {
             await delay(240);
@@ -1670,6 +1732,9 @@ export function createBankBusinessApi(options) {
             const { fee } = oneOffFee(product, req.amount, '申购');
             const netAmount = req.amount - fee;
             const shares = Number((netAmount / product.nav).toFixed(2));
+            const existing = db.holdings.find((h) => h.productCode === product.code);
+            const existingLots = existing ? wealthHoldingLots(existing) : [];
+            if (!Number.isFinite(shares) || shares <= 0 || !Number.isSafeInteger(Math.round((shares + (existing?.shares ?? 0)) * 100)) || !Number.isSafeInteger((existing?.principal ?? 0) + req.amount)) throw new ApiError('持仓份额或本金超过有效范围', 400, 'INVALID_AMOUNT');
             applyBalance(account.id, -req.amount);
             await pushTransaction({
                 accountId: account.id,
@@ -1691,9 +1756,10 @@ export function createBankBusinessApi(options) {
                 remark: fee > 0 ? `申购费 ¥${(fee / 100).toFixed(2)}（内扣）` : '申购费免费',
             });
             // 同一产品合并持仓，按加权平均重算买入净值
-            const existing = db.holdings.find((h) => h.productCode === product.code);
             const confirmedAt = new Date().toISOString();
+            const newLot = { shares, purchasedAt: confirmedAt, redeemableAt: product.openEnded ? null : inDaysFromNow(product.term) };
             if (existing) {
+                existing.lots = [...existingLots, newLot];
                 const totalShares = existing.shares + shares;
                 existing.costNav =
                     (existing.shares * existing.costNav + shares * product.nav) / totalShares;
@@ -1714,6 +1780,7 @@ export function createBankBusinessApi(options) {
                     profit: 0,
                     profitRate: 0,
                     purchasedAt: confirmedAt,
+                    lots: [newLot],
                     redeemableAt: product.openEnded ? null : inDaysFromNow(product.term),
                     closed: !product.openEnded,
                 });
@@ -1734,13 +1801,10 @@ export function createBankBusinessApi(options) {
                 throw new ApiError(`该产品处于封闭期，${formatDate(derived.redeemableAt)} 起可赎回`, 400, 'IN_CLOSED_PERIOD');
             }
             const shares = req.shares == null ? holding.shares : req.shares;
-            if (shares <= 0)
-                throw new ApiError('赎回份额必须大于 0', 400, 'INVALID_SHARES');
-            if (shares > holding.shares)
-                throw new ApiError('赎回份额超过持有份额', 400, 'EXCEED_SHARES');
-            const gross = Math.round(shares * product.nav);
-            const { fee } = oneOffFee(product, gross, '赎回');
-            const net = gross - fee;
+            let quote;
+            try { quote = wealthRedemptionQuote(product, holding, shares); }
+            catch (error) { throw new ApiError(error.message, error.status ?? 400, error.code ?? 'INVALID_SHARES'); }
+            const { fee, net, remainingLots } = quote;
             const account = settlementAccount(db);
             applyBalance(account.id, net);
             await pushTransaction({
@@ -1765,20 +1829,19 @@ export function createBankBusinessApi(options) {
             // 按份额比例扣减本金，剩下的继续持有
             const ratio = shares / holding.shares;
             holding.principal = Math.round(holding.principal * (1 - ratio));
-            holding.shares = Number((holding.shares - shares).toFixed(2));
+            holding.lots = remainingLots;
+            holding.shares = Number(remainingLots.reduce((sum, lot) => sum + lot.shares, 0).toFixed(8));
             if (holding.shares <= 0) {
                 db.holdings = db.holdings.filter((h) => h.id !== holding.id);
             }
             persist();
-            return {
-                holdingId: holding.id,
-                acceptedAt: new Date().toISOString(),
-                shares,
-                estimatedAmount: net,
-                etaText: '预计 T+1 个工作日到账',
-            };
+            const settledAt = new Date().toISOString();
+            return { holdingId: holding.id, acceptedAt: settledAt, shares, estimatedAmount: net, fees: fee,
+                settlementMode: 'sandbox-immediate', settledAt, etaText: '演示资金已即时到账' };
         },
         async getSpending(month) { return spendingStatistics(loadDb(), month, CATEGORY_LABEL) },
+        async getBillingReport(query) { return billingReport(loadDb(), query, CATEGORY_LABEL) },
+        async exportBillingReport(query) { return buildBillingExport(loadDb(), query, CATEGORY_LABEL) },
         async getCashFlow(days = 7) { return cashFlowStatistics(loadDb(), days) },
         async listAutoDebits() {
             await delay(160);
@@ -2525,6 +2588,17 @@ async getSecurityOverview() {
             persist();
             return plan;
         },
+        async listBirthdayPlans() { return listBirthdays(loadDb()); },
+        async previewBirthdayPlan(req) { return previewBirthday(loadDb(), req); },
+        async createBirthdayPlan(req) {
+            if (req.confirmed !== true) throw new ApiError('请先核对并确认生日计划', 400, 'CONFIRMATION_REQUIRED');
+            verifyPayPassword(req.paymentPassword);
+            const plan = createBirthday(loadDb(), req);
+            persist();
+            return plan;
+        },
+        async cancelBirthdayPlan(id, req) { const plan = cancelBirthday(loadDb(), id, req); persist(); return plan; },
+        async confirmBirthdayOrder(id, req) { const plan = confirmBirthday(loadDb(), id, req); persist(); return plan; },
         async getInsurance() {
             await delay(220);
             return loadDb().insurance;
@@ -2672,6 +2746,32 @@ export async function settleHeldTransfer(transactionId, outcome, reason) {
  * 跨用户的扫描由调用方（demo-bank tickHolds）逐档案切换来做。
  * 返回本次自动到账的指令号列表，调用方据此关掉员工端的窗口记录。
  */
+function paymentPlans(options, api) {
+    return createPaymentPlans({
+        getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword,
+        resolveRecipient: async request => {
+            if (request.payeeBankCode === 'LCB') {
+                const found = await findRecipientByNumber(request.payeeAccountNo);
+                if (!found) throw new ApiError('本行未找到收款账户', 404, 'RECIPIENT_NOT_FOUND');
+                if (found.profile.user.name !== request.payeeName) throw new ApiError('收款人姓名不匹配', 400, 'PAYEE_NAME_MISMATCH');
+                if (found.account.currency !== findBalance(loadDb(), request.fromAccountId)?.currency) throw new ApiError('收付款币种不一致', 400, 'CURRENCY_MISMATCH');
+                return { sameOwner: found.profile.user.id === loadDb().user.id };
+            }
+            return api().resolveTransferRecipient({ bankCode: request.payeeBankCode, bankRegion: request.payeeBankRegion, accountOrCardNo: request.payeeAccountNo, payeeName: request.payeeName });
+        },
+        executeTransfer: request => api().submitTransfer(request),
+    });
+}
+
+/** Called by the bank settlement scanner inside its per-customer durable unit of work. */
+export async function settleScheduledTransfers(options, existingApi) {
+    const api = existingApi ?? createBankBusinessApi(options);
+    return paymentPlans(options, () => api).settleScheduledTransfers();
+}
+
+/** Advance only already-authorized plans inside the bank scanner's transaction. */
+export function settleBirthdayPlans() { const changed = advanceBirthdayPlans(loadDb()); if (changed.length) persist(); return changed; }
+
 export async function settleExpiredHolds() {
     const db = loadDb();
     const now = Date.now();

@@ -37,6 +37,7 @@ const STATUS_META: Record<
   active: { label: '使用中', tone: 'blue' },
   locked: { label: '已锁定', tone: 'coral' },
   pending: { label: '待激活', tone: 'gold' },
+  lost: { label: '已挂失', tone: 'coral' },
   replaced: { label: '已换卡', tone: 'neutral' },
 }
 
@@ -68,6 +69,10 @@ export function CardsPage() {
   const [activateFor, setActivateFor] = useState<BankCard | null>(null)
   const [activatePin, setActivatePin] = useState('')
   const [activating, setActivating] = useState(false)
+  const [lossAction, setLossAction] = useState<{ card: BankCard; recover: boolean } | null>(null)
+  const [lossPin, setLossPin] = useState('')
+  const [lossError, setLossError] = useState<string | null>(null)
+  const [lossBusy, setLossBusy] = useState(false)
   /**
    * 已解锁的安全码，按卡记，**带时限**。
    * 放在页面而不是卡片组件里：解锁弹窗挂在页面上，而且切卡回来时这个状态不该丢。
@@ -240,7 +245,7 @@ export function CardsPage() {
             <div className="card-wallet-heading"><h2>当前卡片</h2><span>{list.length} 张</span></div>
             <div key={card.id} data-wallet-card={card.id} className="card-stack-front" tabIndex={-1} aria-label={`当前卡片：${card.productName}`}>
               <BankCardVisual card={card}
-                pan={unlockedFor(card.id)?.pan ?? null} cvv={unlockedFor(card.id)?.cvv || null}
+                pan={['active', 'locked'].includes(card.status) ? unlockedFor(card.id)?.pan ?? null : null} cvv={['active', 'locked'].includes(card.status) ? unlockedFor(card.id)?.cvv || null : null}
                 onUnlockCvv={() => setSecretsFor(card)} onHideCvv={() => hideCardCvv(card.id)} />
             </div>
             {list.length > 1 && <div className="card-wallet-pile">
@@ -276,7 +281,7 @@ export function CardsPage() {
                 </dl>
                 <div className="card-management-actions">
                   <Button size="sm" variant={card.status === 'locked' ? 'primary' : 'secondary'} loading={busy}
-                    disabled={card.status === 'replaced' || card.status === 'pending'}
+                    disabled={!['active', 'locked'].includes(card.status)}
                     icon={card.status === 'locked' ? <UnlockIcon size={16} /> : <LockIcon size={16} />}
                     onClick={() => {
                       const locking = card.status !== 'locked'
@@ -286,8 +291,11 @@ export function CardsPage() {
                     }}>{card.status === 'locked' ? '解锁卡片' : '立即锁卡'}</Button>
                   {card.status === 'pending' && <Button size="sm" variant="primary"
                     onClick={() => { setActivatePin(''); setActivateFor(card) }}>激活卡片</Button>}
+                  {card.status !== 'replaced' && <Button size="sm" disabled={busy}
+                    onClick={() => { setLossPin(''); setLossError(null); setLossAction({ card, recover: card.status === 'lost' }) }}>
+                    {card.status === 'lost' ? '找回解挂' : '正式挂失'}</Button>}
                   <Button size="sm" icon={<RefreshIcon size={16} />} disabled={busy || card.status === 'replaced'}
-                    onClick={() => setApplication({ mode: 'replace', card })}>换卡</Button>
+                    onClick={() => setApplication({ mode: 'replace', card })}>{card.status === 'lost' ? '挂失补卡' : '换卡'}</Button>
                   {(card.shippingAddress || card.issuingFee) && <Button size="sm" variant="ghost" onClick={() => setDeliveryFor(card)}>寄送信息</Button>}
                 </div>
               </div>
@@ -324,7 +332,29 @@ export function CardsPage() {
         </div>
       )}
 
-      <Modal open={activateFor !== null} onClose={() => setActivateFor(null)} title="激活卡片">
+      <Modal open={lossAction !== null} closeDisabled={lossBusy} onClose={() => setLossAction(null)} title={lossAction?.recover ? '找回解挂' : '正式挂失'}>
+        {lossAction && <div className="space-y-4 text-[14px]">
+          <p className="text-ink-soft">{lossAction.card.productName} · 尾号 {lossAction.card.last4}</p>
+          <p>{lossAction.recover ? '请确认已经找回卡片。解挂恢复挂失前状态，线上和境外支付保持关闭；待激活卡仍需单独激活。' : '挂失后立即拦截该卡消费并关闭支付开关。普通解锁不能解除挂失；找回后可验证支付密码解挂，也可办理补卡。资金账户与余额不变。'}</p>
+          <PinInput label="支付密码" value={lossPin} onChange={setLossPin} />
+          {lossError && <p role="alert" className="text-coral">{lossError}</p>}
+          <Button block variant="primary" loading={lossBusy} disabled={!/^\d{6}$/.test(lossPin)} onClick={() => {
+            const action = lossAction
+            setLossBusy(true); setLossError(null)
+            void (action.recover ? api.recoverCard(action.card.id, lossPin) : api.reportCardLost(action.card.id, lossPin))
+              .then(fresh => {
+                cards.setData((cards.data ?? []).map(item => item.id === fresh.id ? fresh : item))
+                setUnlocked(previous => { const next = { ...previous }; delete next[fresh.id]; return next })
+                toast.show(action.recover ? '已解挂，支付开关保持关闭' : '已正式挂失', 'success')
+                setLossAction(null)
+              })
+              .catch(err => setLossError(err instanceof ApiError ? err.message : '操作失败，请稍后重试'))
+              .finally(() => setLossBusy(false))
+          }}>{lossAction.recover ? '确认找回并解挂' : '确认挂失'}</Button>
+        </div>}
+      </Modal>
+
+      <Modal open={activateFor !== null} closeDisabled={activating} onClose={() => setActivateFor(null)} title="激活卡片">
         {activateFor && <div className="space-y-4 text-[14px]">
           <p className="text-ink-soft">确认已收到 <strong className="text-ink">{activateFor.productName}</strong>（尾号 {activateFor.last4}）并立即启用。激活需要验证支付密码。</p>
           <PinInput label="支付密码" value={activatePin} onChange={setActivatePin} />
@@ -420,6 +450,8 @@ function BankCardVisual({
       ? '卡还在寄送途中，收到并激活后才能查看'
       : card.status === 'replaced'
         ? '这张卡已换发，旧卡信息不再可用'
+        : card.status === 'lost'
+          ? '该卡已挂失，解挂后才能查看'
         : '验证支付密码后查看完整卡号与安全码'
   return (
     <div className="flex flex-col gap-3">

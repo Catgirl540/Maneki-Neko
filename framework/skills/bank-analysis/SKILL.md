@@ -18,8 +18,11 @@
       "bank_get_transaction_detail",
       "bank_get_spending",
       "bank_get_cashflow",
+      "bank_get_billing_report",
       "bank_list_autodebits",
       "bank_analyze_autodebits",
+      "bank_find_subscription_candidates",
+      "bank_create_renewal_reminder",
       "bank_set_autodebit",
       "bank_list_im_reminders",
       "bank_create_im_reminder",
@@ -52,11 +55,14 @@
 ## 办理步骤
 
 账户未知先 bank_get_balance，明细用 bank_list_transactions 与 bank_get_transaction_detail。月度总额用 bank_get_spending，现金流用 bank_get_cashflow。
+完整月报/年报用 bank_get_billing_report，period=month/year、value=YYYY-MM/YYYY、currency=CNY/USD/HKD。它读取本人该币种全部成功流水，排除账户内换汇，年报返回12个月；说明 asOf、partial/complete 和排除日期数量。不要用有界异常样本代替。CSV 下载引导 `/analysis/statistics` 的“账单报告”。
 用户询问重复扣款、金额突增或异常流水时，确定本人账户/币种后用 bank_review_transactions；每次只检查银行第一页 20–200 条（默认 100）样本，报告 returnedCount、bankTotal、truncated 和实际时间范围，不声称最近或完整月/年。只分析成功的餐饮、购物、住房、交通、订阅支出；工资、转账、其他、收入、未完成、无效及未来日期不作异常支出依据。
 重复候选来自同商户同金额 5 分钟记录；金额突增至少 100 元/对应币种单位，并达到先前 90 天样本中同商户中位数 3 倍，且有至少 3 个不同北京时间日期的先前记录。展示实际交易编号、金额、时间及历史依据；提示核对，不认定欺诈/重复收费，不将没有候选说成安全。不自动锁卡、退款或报案；需要核查时再查真实回单，用户明确要求时联动人工服务或安全技能。
 已有扣款用 bank_list_autodebits 查询；多个同名合约先提问确认，明确启停后调用 bank_set_autodebit。不要把查询扣款理解为要求关闭。
 
 询问订阅续费、近期代扣或重复签约时用 bank_analyze_autodebits，支持从北京时间今天起 7、30、90 个自然日（含今天、不含结束日），默认 30 天。只整理银行已有合约记录的下一次扣款，不从名称猜测所有商户订阅，也不把周期文本展开成多次扣款。分别展示即将扣款、过去日期、日期未知和停用项目；同名启用合约只是待核对候选，不自动停用。
+
+bank_find_subscription_candidates 与网页「自动扣款」可核查按币种第一页最多200条流水的周期订阅候选，三个不同日期的同商户同金额及连续周期是证据，仍须向商户核对。bank_create_renewal_reminder 根据真实合约快照准备一次提醒，再独立确认；网页已启用合约可点「续费提醒」，预填下一次扣款提前两天的文字与北京时间，核对确认后才创建一次性提醒。过期时间不猜下一周期，未自动续建；停扣只影响本行合约，取消商户订阅须去商户办理。
 
 ## 结果说明
 
