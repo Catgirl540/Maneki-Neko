@@ -48,6 +48,8 @@ import type {
   CashManagement,
   InvestmentsOverview,
   InsuranceOverview,
+  BudgetRecord,
+  BudgetPass,
 } from '@/api/types'
 import { STORAGE_KEYS, storage } from '@/lib/storage'
 import { PRIMARY_BIN } from './bin-table'
@@ -84,8 +86,10 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
  *       savings / virtualCards / invitations / membership
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
+ *  18 → 支出基金改称支出预算：funds / fundPointDays / fundPasses
+ *       → budgets / budgetPointDays / budgetPasses
  */
-export const MOCK_SCHEMA = 21
+export const MOCK_SCHEMA = 23
 
 export interface MockDb {
   fpsRegistrations: { idType: FpsIdType; id: string; accountId: string; region: 'HK'; currency: 'HKD'; registeredAt: string }[]
@@ -146,6 +150,12 @@ export interface MockDb {
   cashManagement: CashManagement
   investments: InvestmentsOverview
   insurance: InsuranceOverview
+  /** 支出预算：每日额度规则（只拦模拟消费，不建子账户） */
+  budgets: BudgetRecord[]
+  /** 打卡积分：每个达标日一条，天然去重 */
+  budgetPointDays: { budgetId: string; day: string; spent: Cents; awardedAt: string }[]
+  /** 积分兑换出来的「某天额度 +N 元」券 */
+  budgetPasses: BudgetPass[]
 }
 
 const DAY = 86_400_000
@@ -1552,6 +1562,9 @@ function seed(): MockDb {
       ],
     },
     virtualCards: [],
+    budgets: [],
+    budgetPointDays: [],
+    budgetPasses: [],
     invitations: {
       invite: {
         code: 'LC2026XIAOMAN',
@@ -1913,7 +1926,8 @@ export {
 /** Only product catalogues are shared. Customer activity always starts empty. */
 export function emptyCustomerDomains(user: User, accountId: string): Pick<MockDb,
   'savings' | 'virtualCards' | 'invitations' | 'membership' | 'assetSnapshots' | 'salaryPlan' |
-  'overdraft' | 'credit' | 'cashManagement' | 'investments' | 'insurance' | 'fpsRegistrations'> {
+  'overdraft' | 'credit' | 'cashManagement' | 'investments' | 'insurance' | 'fpsRegistrations' |
+  'budgets' | 'budgetPointDays' | 'budgetPasses'> {
   const catalog = seed()
   return {
     fpsRegistrations: [],
@@ -1929,6 +1943,9 @@ export function emptyCustomerDomains(user: User, accountId: string): Pick<MockDb
     cashManagement: { balance: 0, totalYield: 0, sevenDayYield: 0, accountId, sweepEnabled: false, sweepThreshold: 0, products: catalog.cashManagement.products },
     investments: { holding: 0, totalReturn: 0, plans: [], products: catalog.investments.products },
     insurance: { totalCoverage: 0, policies: [], products: catalog.insurance.products },
+    budgets: [],
+    budgetPointDays: [],
+    budgetPasses: [],
   }
 }
 
@@ -1941,6 +1958,16 @@ export function migrateProfile(profile: MockDb): MockDb {
   profile.assetSnapshots ??= []
   if (profile.schema === MOCK_SCHEMA) return profile
   profile = structuredClone(profile)
+  // v18：支出基金改称支出预算，旧键就地转换，避免与默认域同时生成两张空表
+  const legacy = profile as unknown as { funds?: unknown[]; fundPointDays?: unknown[]; fundPasses?: unknown[] }
+  if (Array.isArray(legacy.funds)) {
+    profile.budgets ??= legacy.funds as typeof profile.budgets
+    profile.budgetPointDays ??= (legacy.fundPointDays ?? []) as typeof profile.budgetPointDays
+    profile.budgetPasses ??= (legacy.fundPasses ?? []) as typeof profile.budgetPasses
+  }
+  delete legacy.funds
+  delete legacy.fundPointDays
+  delete legacy.fundPasses
   const defaults = emptyCustomerDomains(profile.user, profile.accounts[0]?.id ?? '')
   for (const key of Object.keys(defaults) as (keyof typeof defaults)[]) {
     if (profile[key] === undefined) Object.assign(profile, { [key]: defaults[key] })

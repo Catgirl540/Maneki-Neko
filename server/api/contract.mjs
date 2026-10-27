@@ -101,6 +101,10 @@ export const routes = {
     investPlanStatus: (id) => `/api/wealth/investments/plan/${id}`,
     insurance: () => '/api/wealth/insurance',
     insuranceEnroll: () => '/api/wealth/insurance/enroll',
+    // —— 支出预算（每日额度 + 打卡积分） ——
+    budgets: () => '/api/budgets',
+    budget: (id) => `/api/budgets/${id}`,
+    budgetPass: (id) => `/api/budgets/${id}/passes`,
 };
 export class ApiError extends Error {
     status;

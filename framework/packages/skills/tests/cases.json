@@ -289,6 +289,30 @@
     ]
   },
   {
+    "id": "bank-cards-7",
+    "query": "帮我在美团点份外卖，用尾号8888的卡付",
+    "kind": "action",
+    "expectedSkills": [
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "bank_spend",
+      "演示环境"
+    ]
+  },
+  {
+    "id": "bank-cards-8",
+    "query": "我今天的奶茶预算还剩多少能花？",
+    "kind": "spoken",
+    "expectedSkills": [
+      "bank-cards"
+    ],
+    "instructionIncludes": [
+      "bank_list_budgets",
+      "今日额度"
+    ]
+  },
+  {
     "id": "bank-exchange-1",
     "query": "我自己想换点港币",
     "kind": "spoken",

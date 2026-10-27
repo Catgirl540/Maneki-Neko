@@ -139,6 +139,7 @@ const TOOL_LABELS: Record<string, string> = {
   bank_card_products: '查询卡产品',
   bank_set_card_lock: '锁卡或解锁',
   bank_update_card_settings: '修改卡片设置',
+  bank_spend: '模拟消费',
   bank_apply_card: '申请新卡',
   bank_replace_card: '换卡',
   bank_list_autodebits: '查询自动扣款',

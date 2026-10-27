@@ -11,6 +11,7 @@ import { BillsPage } from '@/pages/BillsPage'
 import { AutoDebitsPage } from '@/pages/AutoDebitsPage'
 import { CardsPage } from '@/pages/CardsPage'
 import { SpendPage } from '@/pages/SpendPage'
+import { BudgetsPage } from '@/pages/BudgetsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { OverviewPage } from '@/pages/OverviewPage'
 import { LandingPage } from '@/pages/LandingPage'
@@ -108,6 +109,7 @@ export default function App() {
                   <Route path="/analysis" element={<BillsPage />} />
                   <Route path="/analysis/statistics" element={<AnalysisPage />} />
                   <Route path="/analysis/autodebits" element={<AutoDebitsPage />} />
+                  <Route path="/analysis/budgets" element={<BudgetsPage />} />
                   <Route path="/dashboard/savings" element={<Navigate to="/wealth/plans" replace />} />
                   <Route path="/transactions/:id" element={<TransactionDetailPage />} />
                 </Route>

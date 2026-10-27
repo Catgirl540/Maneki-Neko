@@ -69,8 +69,10 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin.mjs';
  *       savings / virtualCards / invitations / membership
  *  16 → 新增工资与备用金 / 借款与分期 / 理财扩展（现金管理 / 投资与定投 / 保险）：
  *       salaryPlan / overdraft / credit / cashManagement / investments / insurance
+ *  18 → 支出基金改称支出预算：funds / fundPointDays / fundPasses
+ *       → budgets / budgetPointDays / budgetPasses
  */
-export const MOCK_SCHEMA = 21;
+export const MOCK_SCHEMA = 23;
 const DAY = 86_400_000;
 /** 借记卡的展示文案，与种子数据里的星享借记卡一致 */
 export const CARD_PAYMENT_METHOD = '招财猫 · 星享借记卡 尾号 8888';
@@ -1401,6 +1403,9 @@ function seed() {
             ],
         },
         virtualCards: [],
+        budgets: [],
+        budgetPointDays: [],
+        budgetPasses: [],
         invitations: {
             invite: {
                 code: 'LC2026XIAOMAN',
@@ -1807,6 +1812,9 @@ export function emptyCustomerDomains(user, accountId) {
         savings: { totalSaved: 0, goals: [], roundup: { enabled: false, roundupTo: 1000, dailyCap: 5000, accountId, goalId: null },
             streak: { days: 0, longestDays: 0, lastSavedAt: '', badges: [] }, rewards: [] },
         virtualCards: [],
+        budgets: [],
+        budgetPointDays: [],
+        budgetPasses: [],
         invitations: { invite: { code: `LC-${user.id}`, link: `https://luckycat.bank/i/LC-${user.id}`, createdAt: new Date().toISOString() }, friends: [], rewards: [], totalEarned: 0 },
         membership: freshMembership(),
         assetSnapshots: [],
@@ -1829,6 +1837,15 @@ export function migrateProfile(profile) {
     if (profile.schema === MOCK_SCHEMA)
         return profile;
     profile = structuredClone(profile);
+    // v18：支出基金改称支出预算，旧键就地转换，避免与默认域同时生成两张空表
+    if (Array.isArray(profile.funds)) {
+        profile.budgets ??= profile.funds;
+        profile.budgetPointDays ??= profile.fundPointDays ?? [];
+        profile.budgetPasses ??= profile.fundPasses ?? [];
+    }
+    delete profile.funds;
+    delete profile.fundPointDays;
+    delete profile.fundPasses;
     const defaults = emptyCustomerDomains(profile.user, profile.accounts[0]?.id ?? '');
     for (const key of Object.keys(defaults)) {
         if (profile[key] === undefined)

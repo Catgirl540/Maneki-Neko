@@ -2,9 +2,9 @@
 id: "kb-bills"
 title: "账单、回单与导出"
 navigation: "账户"
-routes: ["/analysis", "/transactions/:id"]
-keywords: ["账单", "流水", "回单", "CSV"]
-sources: ["app/src/pages/BillsPage.tsx", "app/src/pages/TransactionDetailPage.tsx", "app/src/api/mock/index.ts", "server/lib/categorize.mjs", "framework/packages/bank-demo/src/http-tools.ts"]
+routes: ["/analysis", "/analysis/budgets", "/transactions/:id"]
+keywords: ["账单", "流水", "回单", "CSV", "支出预算", "每日额度", "打卡积分"]
+sources: ["app/src/pages/BillsPage.tsx", "app/src/pages/BudgetsPage.tsx", "app/src/pages/TransactionDetailPage.tsx", "app/src/api/mock/index.ts", "server/lib/categorize.mjs", "server/domain/index.mjs", "shared/budgets.mjs", "framework/packages/bank-demo/src/http-tools.ts"]
 ---
 
 ## 在哪里看账单和搜索流水？ {#list}
@@ -26,3 +26,11 @@ sources: ["app/src/pages/BillsPage.tsx", "app/src/pages/TransactionDetailPage.ts
 ## 怎么导出交易流水？支持 Excel 吗？ {#export}
 
 在「账户 → 账单」打开导出功能，设置日期、分类、关键词后下载 CSV 文件，可用表格软件打开。文件包含实际筛选记录及相应字段，空结果不能伪造流水。当前不是原生 Excel 文件，助手暂不能导出。
+
+## 支出预算怎么用？能挡住哪些消费？ {#budgets}
+
+入口在「全部服务 → 账单与资金 → 支出预算」。预算＝名字＋覆盖平台（只 12 个预设平台，自由商户不进）＋每日限额。只拦「模拟消费」：命中平台且当日已用＋本次金额超额时整笔拒绝，并报预算名、额度与已用；不拦转账、换汇、理财，也不冻结资金。
+
+额度按上海自然日累计；停用只是不再拦截，积分与额度券保留，删除才清空。
+
+某天该预算花费低于门槛（默认 10 元，0 元也算）记 1 分，次日补记；30 分换一张「某天额度 +20 元」券。问助手今天还能花多少，它会读今日额度与已用；创建、修改与兑换仍在页面完成。

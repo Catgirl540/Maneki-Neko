@@ -27,6 +27,9 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5180,
+      // 编辑器的原子写入会在源码旁生成 `.xxx.tmpdir/` 临时目录；
+      // 监听它会让 dev server 在临时目录被删时抛 EBUSY 直接退出。
+      watch: { ignored: ['**/.*.tmpdir/**', '**/*.tmp'] },
       proxy: {
         '/staff-ops-agent-api': {
           target: process.env.VITE_OPS_AGENT_TARGET ?? env.VITE_OPS_AGENT_TARGET ?? 'http://127.0.0.1:8790',

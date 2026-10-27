@@ -79,6 +79,23 @@
 
 摘要规则：有 `note` 时 `memo = 商户名 · note`，否则 `memo = 商户名 消费`；`detail.remark = 模拟消费 · 商户名( · note)`。
 
+## Agent 工具：`bank_spend`
+
+助手侧入口，工具定义在 `framework/packages/bank-demo/src/http-tools.ts`，确认与转发在 `framework/bridge/bank-agent.mjs`。只在沙箱演示环境可用：非 live 模式由本机演示银行（`server/domain/index.mjs` 的 `spendOnCard`）处理；`BANK_MODE=live` 时被 `server/bank-api.mjs` 的 live 白名单挡成 `503 BANK_NOT_CONNECTED`。
+
+| 工具参数 | 对应接口字段 | 说明 |
+| --- | --- | --- |
+| `cardId` | 路径 `:id` | 必须先 `bank_list_cards`，只接受本人卡片 |
+| `platform` | `platform` | 12 个预设 id，或 `custom` / `stripe` |
+| `amountCents` | `amount` | 正整数分，上限 5000000 |
+| `merchant` | `merchant` | 仅自由商家必填，2–40 字单行 |
+| `note` | `note` | 可选，≤80 字单行，必须由客户给出 |
+
+- **确认**：属于写操作，走桥接的一次性确认卡（`prepare` → `approve` → `execute`），展示卡、商户、金额、账单详情；执行前按 `preview.cardState` 复核卡片状态与设置，变化则要求重新确认。
+- **不需要支付密码**：卡消费本身不验证支付密码；模型参数里也不接受任何密码字段。
+- **预检**：`prepare` 阶段先拒绝寄送中、锁定、关闭消费或关闭线上支付的卡，并复用 `shared/spend-platforms.mjs` 校验平台与商户名，避免用户确认后才被后端拒绝。
+- **结果口径**：返回银行回执 `{ transaction, category, classificationState, available, currency }`；`category` 恒为 `other`，分类由后台任务异步回写，助手不得把它描述成最终分类或真实商户收款。
+
 ## 校验链（按执行顺序）
 
 | 顺序 | 校验 | 错误码 |
@@ -94,8 +111,11 @@
 | 9 | 单卡单日限额（累计当日成功消费） | `DAILY_LIMIT_EXCEEDED` |
 | 10 | 账户可用余额 | `INSUFFICIENT_FUNDS` |
 | 11 | 账单详情格式 | `INVALID_NOTE` |
+| 12 | 支出预算当日额度（口径见 [budgets.md](./budgets.md)） | `BUDGET_LIMIT_EXCEEDED` |
 
 注意：分类是**后台任务**，写账时还不知道类别，因此商户类别限额固定按「其他」桶校验，分类完成后不回溯重算。
+
+支出预算这道校验排在扣款之前、账户余额校验附近：命中任一启用预算的平台且「今日已用 + 本次金额」超过当日额度（基础额度 + 当天已兑换的额度券）就整笔拒绝，文案带预算名、今日额度与已用金额；预算放行后卡自身的限额与余额仍然照常校验。
 
 ## 记账与后台分类
 
@@ -120,7 +140,10 @@
 ```bash
 node --import ./tools/ts-resolve-hook.mjs tools/check-spend.mjs   # 21 项
 node tools/check-categorize.mjs                                   # 分类器契约
+BANK_HTTP_TEST_DATABASE_URL=postgres://.../maneki_http_test node --test server/banking-http.test.mjs
 ```
+
+`banking-http.test.mjs` 新增 `/api/cards/:id/spend` 与 `/api/cards/:id/activate` 的真实 HTTP 用例：扣款与余额守恒、卡渠道流水与详情、平台/金额/备注/所有权/锁定/寄送中/已换发拒绝且资金不变、单日限额累计、激活密码校验与重复激活；需要独立 PostgreSQL（库名 `maneki_http_test*`，测试会重建 schema）。
 
 `check-spend` 覆盖：分类器接线（pending → done 回写）、余额守恒、按平台分类差异、账单详情去空白落库与默认摘要、自由商家（自定义/Stripe 收单、缺失/过短/换行拒绝）、锁定卡、未开线上支付、未知平台、零金额、超单笔上限、超单日限额（相对当日已用额构造，不受前序用例影响）、余额不足、卡激活（密码错拒绝、正确密码改为使用中、重复激活拒绝）。
 

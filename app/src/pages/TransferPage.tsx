@@ -61,7 +61,10 @@ export function TransferPage() {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
   return <div className="page-stack transfer-task-page">
-    <PageHeader title="转账与支付" actions={<Link to="/accounts?flow=in" className="service-link">收款与转入</Link>} />
+    <PageHeader title="转账与支付" actions={<>
+      <Link to="/spend" className="service-link">模拟消费</Link>
+      <Link to="/accounts?flow=in" className="service-link">收款与转入</Link>
+    </>} />
     <Card className="transfer-task-panel">
       <TransferForm onClose={() => navigate('/accounts')} onUpdate={() => window.dispatchEvent(new Event('luckycat:bank-updated'))} onBusyChange={setBusy} />
     </Card>

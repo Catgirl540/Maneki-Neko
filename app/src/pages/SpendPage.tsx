@@ -187,6 +187,10 @@ export function SpendPage() {
           在预设商户上模拟一次刷卡：从所选银行卡绑定的资金账户扣款，落一笔卡类流水。
           交易分类由服务端分类器按商户判定，与真实刷卡同一条链路。
         </p>
+        <p className="mt-2 text-[13px] text-ink-mute">
+          给某几个平台设了每日额度？
+          <Link to="/analysis/budgets" className="ml-1 font-medium text-gold-deep underline-offset-2 hover:underline">去支出预算看看</Link>
+        </p>
       </div>
       <Tag tone="gold">演示功能 · 不产生真实扣款</Tag>
     </header>

@@ -6,15 +6,15 @@ import { ACCOUNT_OPENING_PLEDGE } from './lib/account-opening.mjs'
 import { nextInvestDate } from '../shared/invest-plan.mjs'
 import { fixture, ok, login, register, transfer, account, reconcile, financialState, testOptions, routes } from './testing/http-fixture.mjs'
 
-test('investment plans preserve funds, isolate customers, deduplicate retries and enforce versioned lifecycle', { ...testOptions, timeout: 120000 }, async t => {
+test('investment plans preserve budgets, isolate customers, deduplicate retries and enforce versioned lifecycle', { ...testOptions, timeout: 120000 }, async t => {
   const app = await fixture()
   t.after(() => app.close())
   const owner = await login(app, '13800138000'), other = await login(app, '13600136000')
   const overview = () => app.call('/api/wealth/investments', { token: owner.token }).then(ok)
   const body = { productCode: 'BOND-A', accountId: owner.accounts[0].id, amount: 10000, cycle: '每周', paymentPassword: '888888' }
   const create = (value = body, key) => app.call('/api/wealth/investments/plan', { method: 'POST', token: owner.token, body: value, key })
-  const funds = async () => { const state = await financialState(app); return { accounts: state.accounts, counts: state.counts.filter(([table]) => table !== 'bank_idempotency') } }
-  const baseline = await funds(), before = await overview()
+  const budgets = async () => { const state = await financialState(app); return { accounts: state.accounts, counts: state.counts.filter(([table]) => table !== 'bank_idempotency') } }
+  const baseline = await budgets(), before = await overview()
   assert.equal(before.executionMode, 'plan-only')
   assert.equal((await create()).body.code, 'WEALTH_PREREQUISITE')
   await app.editCustomer(owner.user.id, profile => {
@@ -56,11 +56,11 @@ test('investment plans preserve funds, isolate customers, deduplicate retries an
   const persisted = (await overview()).plans.find(row => row.id === plan.id)
   assert.equal(persisted.status, 'cancelled'); assert.equal(persisted.executedRuns, 0); assert.equal(persisted.totalInvested, 0)
   assert(!ok(await app.call('/api/wealth/investments', { token: other.token })).plans.some(row => row.id === plan.id))
-  assert.deepEqual(await funds(), baseline)
+  assert.deepEqual(await budgets(), baseline)
   await reconcile(app)
 })
 
-test('bank HTTP transactions and security preserve customer funds and balanced accounting', { ...testOptions, timeout: 180000 }, async t => {
+test('bank HTTP transactions and security preserve customer budgets and balanced accounting', { ...testOptions, timeout: 180000 }, async t => {
   const app = await fixture()
   t.after(() => app.close())
   const sender = await login(app, '13800138000')
@@ -81,7 +81,7 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
     await reconcile(app)
   })
 
-  await t.test('statistics expose Shanghai scope, separate currencies and real empty customer results without fund changes', async () => {
+  await t.test('statistics expose Shanghai scope, separate currencies and real empty customer results without budget changes', async () => {
     const before = await financialState(app)
     assert.equal((await app.call('/api/analysis/spending')).status, 401)
     const spending = ok(await app.call('/api/analysis/spending', { token: sender.token }))
@@ -115,7 +115,7 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
     assert.deepEqual(await financialState(app), before)
   })
 
-  await t.test('cross-customer internal transfer conserves funds and posts both histories', async () => {
+  await t.test('cross-customer internal transfer conserves budgets and posts both histories', async () => {
     const before = await Promise.all([account(app, sender), account(app, recipient)])
     const result = ok(await app.call('/api/transfers', { method: 'POST', token: sender.token, body: transfer(sender, recipient, 137) }))
     assert.equal(result.settlementStatus, 'success')
@@ -171,6 +171,174 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
       body: { ...transfer(sender, recipient, 100), payeeName: '不匹配的户名' } })
     assert.equal(mismatch.status, 400)
     assert.deepEqual(await financialState(app), before)
+    await reconcile(app)
+  })
+
+  await t.test('card spend debits the funding account once and records a card-channel transaction', async () => {
+    const cards = ok(await app.call('/api/cards', { token: sender.token }))
+    const card = cards.find(row => row.status === 'active')
+    assert(card)
+    const before = await account(app, sender)
+    const receipt = ok(await app.call(`/api/cards/${card.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'meituan', amount: 2500, note: '午饭' } }))
+    assert.equal(receipt.transaction.amount, 2500)
+    assert.equal(receipt.transaction.direction, 'out')
+    assert.equal(receipt.transaction.status, 'success')
+    assert.equal(receipt.category, 'other')
+    assert(['pending', 'done', 'failed'].includes(receipt.classificationState))
+    assert.equal(receipt.currency, before.currency)
+    assert.equal(receipt.available, before.available - 2500)
+    const posted = ok(await app.call(`/api/transactions/${receipt.transaction.id}`, { token: sender.token }))
+    assert.equal(posted.memo, '美团外卖 · 午饭')
+    assert.equal(posted.detail.channel, 'card')
+    assert.equal(posted.detail.cardId, card.id)
+    assert.equal(posted.detail.merchantNote, '午饭')
+    assert.equal(posted.detail.merchantId, receipt.transaction.detail.merchantId)
+    assert(posted.detail.paymentMethod.endsWith(card.last4))
+    // 演示档案里有当天更晚的种子流水，账户余额回推会以它们为基准，这里只校验这笔交易自身的前后差额
+    assert.equal(posted.detail.balanceAfter - posted.detail.balanceBefore, posted.signedAmount)
+
+    const custom = ok(await app.call(`/api/cards/${card.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'custom', merchant: '街角咖啡', amount: 1200 } }))
+    assert.equal(custom.transaction.counterparty, '街角咖啡')
+    assert.equal(custom.transaction.memo, '街角咖啡 消费')
+    const after = await account(app, sender)
+    assert.equal(after.balance, before.balance - 3700)
+    assert.equal(after.available, custom.available)
+
+    const frozen = await financialState(app)
+    const reject = async (body, status, code, options = {}) => {
+      const result = await app.call(`/api/cards/${options.cardId ?? card.id}/spend`, {
+        method: 'POST', token: options.token ?? sender.token, body,
+      })
+      assert.equal(result.status, status, `${code}: ${JSON.stringify(result.body)}`)
+      assert.equal(result.body.code, code)
+    }
+    await reject({ platform: 'meituan', amount: 100 }, 404, 'CARD_NOT_FOUND', { token: recipient.token })
+    await reject({ platform: 'no-such-merchant', amount: 100 }, 404, 'SPEND_PLATFORM_NOT_FOUND')
+    await reject({ platform: 'custom', amount: 100 }, 400, 'INVALID_MERCHANT')
+    await reject({ platform: 'custom', merchant: '短', amount: 100 }, 400, 'INVALID_MERCHANT')
+    await reject({ platform: 'meituan', amount: 0 }, 400, 'INVALID_AMOUNT')
+    await reject({ platform: 'meituan', amount: -100 }, 400, 'INVALID_AMOUNT')
+    await reject({ platform: 'meituan', amount: 5_000_001 }, 400, 'LIMIT_EXCEEDED')
+    await reject({ platform: 'meituan', amount: 100, note: 'x'.repeat(81) }, 400, 'INVALID_NOTE')
+    await reject({ platform: 'meituan', amount: 100, note: '两行\n备注' }, 400, 'INVALID_NOTE')
+    const replaced = cards.find(row => row.status === 'replaced')
+    assert(replaced)
+    await reject({ platform: 'meituan', amount: 100 }, 409, 'CARD_REPLACED', { cardId: replaced.id })
+    assert.deepEqual(await financialState(app), frozen)
+
+    ok(await app.call(`/api/cards/${card.id}/settings`, { method: 'PATCH', token: sender.token, body: { dailyLimit: 200_000 } }))
+    await reject({ platform: 'meituan', amount: 200_000 }, 409, 'DAILY_LIMIT_EXCEEDED')
+    ok(await app.call(`/api/cards/${card.id}/settings`, { method: 'PATCH', token: sender.token, body: { dailyLimit: card.dailyLimit } }))
+
+    ok(await app.call(`/api/cards/${card.id}/lock`, { method: 'POST', token: sender.token, body: { locked: true } }))
+    await reject({ platform: 'meituan', amount: 100 }, 409, 'CARD_LOCKED')
+    ok(await app.call(`/api/cards/${card.id}/lock`, { method: 'POST', token: sender.token, body: { locked: false } }))
+    await reject({ platform: 'meituan', amount: 100 }, 409, 'CARD_ONLINE_PAYMENT_DISABLED')
+    ok(await app.call(`/api/cards/${card.id}/settings`, { method: 'PATCH', token: sender.token, body: { onlinePayment: true } }))
+    const recovered = ok(await app.call(`/api/cards/${card.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'starbucks', amount: 100 } }))
+    assert.equal(recovered.available, after.available - 100)
+    await reconcile(app)
+  })
+
+  await t.test('pending card activation unlocks spending and repeated activation is rejected', async () => {
+    const products = ok(await app.call('/api/cards/products', { token: sender.token }))
+    const product = products.find(row => row.code === 'LCB-UP-DEBIT')
+    assert(product)
+    assert.equal(product.held, false)
+    const before = await account(app, sender)
+    const opened = ok(await app.call('/api/cards/open', { method: 'POST', token: sender.token, body: {
+      productCode: product.code,
+      address: { recipient: '林小满', phone: '13800138000', region: '浙江省', city: '杭州市', detail: '西湖区文三路 100 号', postalCode: '310012' },
+      paymentPassword: '888888',
+    } }))
+    assert.equal(opened.status, 'pending')
+    assert.equal(opened.onlinePayment, false)
+    assert.equal(opened.overseasPayment, false)
+    assert.equal(opened.accountId, sender.accounts[0].id)
+    const blocked = await app.call(`/api/cards/${opened.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'hema', amount: 100 } })
+    assert.equal(blocked.status, 409)
+    assert.equal(blocked.body.code, 'CARD_NOT_DELIVERED')
+    const wrong = await app.call(`/api/cards/${opened.id}/activate`, { method: 'POST', token: sender.token,
+      body: { paymentPassword: '000000' } })
+    assert.equal(wrong.status, 401)
+    assert.equal(wrong.body.code, 'BAD_PAY_PASSWORD')
+    const active = ok(await app.call(`/api/cards/${opened.id}/activate`, { method: 'POST', token: sender.token,
+      body: { paymentPassword: '888888' } }))
+    assert.equal(active.status, 'active')
+    const offline = await app.call(`/api/cards/${opened.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'hema', amount: 100 } })
+    assert.equal(offline.status, 409)
+    assert.equal(offline.body.code, 'CARD_ONLINE_PAYMENT_DISABLED')
+    ok(await app.call(`/api/cards/${opened.id}/settings`, { method: 'PATCH', token: sender.token, body: { onlinePayment: true } }))
+    const receipt = ok(await app.call(`/api/cards/${opened.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'hema', amount: 100 } }))
+    assert.equal(receipt.available, before.available - opened.issuingFee - 100)
+    const repeated = await app.call(`/api/cards/${opened.id}/activate`, { method: 'POST', token: sender.token,
+      body: { paymentPassword: '888888' } })
+    assert.equal(repeated.status, 409)
+    assert.equal(repeated.body.code, 'CARD_ALREADY_ACTIVE')
+    const foreign = await app.call(`/api/cards/${opened.id}/spend`, { method: 'POST', token: recipient.token,
+      body: { platform: 'hema', amount: 100 } })
+    assert.equal(foreign.status, 404)
+    assert.equal(foreign.body.code, 'CARD_NOT_FOUND')
+    const posted = ok(await app.call(`/api/transactions/${receipt.transaction.id}`, { token: sender.token }))
+    assert.equal(posted.detail.cardId, opened.id)
+    assert(posted.detail.paymentMethod.endsWith(opened.last4))
+    await reconcile(app)
+  })
+
+  await t.test('spending budgets cap matched card spend before the debit happens', async () => {
+    const cards = ok(await app.call('/api/cards', { token: sender.token }))
+    const card = cards.find(row => row.status === 'active')
+    assert(card)
+    const before = await account(app, sender)
+    const created = ok(await app.call('/api/budgets', { method: 'POST', token: sender.token, body: {
+      name: '奶茶预算', platforms: ['luckin'], dailyLimit: 2_000, pointThreshold: 1_000,
+    } }))
+    assert.equal(created.today.limit, 2_000)
+    assert.equal(created.today.used, 0)
+    const inside = ok(await app.call(`/api/cards/${card.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'luckin', amount: 1_500 } }))
+    assert.equal(inside.transaction.memo, '瑞幸咖啡 消费')
+    const over = await app.call(`/api/cards/${card.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'luckin', amount: 800 } })
+    assert.equal(over.status, 409)
+    assert.equal(over.body.code, 'BUDGET_LIMIT_EXCEEDED')
+    assert.match(over.body.message, /奶茶预算/)
+    const outside = ok(await app.call(`/api/cards/${card.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'meituan', amount: 800 } }))
+    assert.equal(outside.transaction.counterparty, '美团外卖')
+    const overview = ok(await app.call('/api/budgets', { token: sender.token }))
+    const budget = overview.budgets.find(row => row.id === created.id)
+    assert.equal(budget.today.used, 1_500)
+    assert.equal(budget.today.remaining, 500)
+    assert.deepEqual(budget.merchantNames, ['瑞幸咖啡'])
+    assert.equal(overview.timeZone, 'Asia/Shanghai')
+    const after = await account(app, sender)
+    assert.equal(after.available, before.available - 1_500 - 800)
+    const patched = ok(await app.call(`/api/budgets/${created.id}`, { method: 'PATCH', token: sender.token,
+      body: { enabled: false, dailyLimit: 3_000 } }))
+    assert.equal(patched.enabled, false)
+    assert.equal(patched.today.limit, 3_000)
+    ok(await app.call(`/api/cards/${card.id}/spend`, { method: 'POST', token: sender.token,
+      body: { platform: 'luckin', amount: 1_200 } }))
+    const redeem = await app.call(`/api/budgets/${created.id}/passes`, { method: 'POST', token: sender.token,
+      body: { day: overview.today } })
+    assert.equal(redeem.status, 409)
+    assert.equal(redeem.body.code, 'INSUFFICIENT_BUDGET_POINTS')
+    const invalid = await app.call('/api/budgets', { method: 'POST', token: sender.token,
+      body: { name: '', platforms: [], dailyLimit: 10 } })
+    assert.equal(invalid.status, 400)
+    assert.equal(invalid.body.code, 'INVALID_BUDGET_NAME')
+    const foreign = await app.call('/api/budgets', { token: recipient.token })
+    assert.equal(foreign.status, 200)
+    assert.deepEqual(foreign.body.budgets, [])
+    ok(await app.call(`/api/budgets/${created.id}`, { method: 'DELETE', token: sender.token }))
+    assert.deepEqual(ok(await app.call('/api/budgets', { token: sender.token })).budgets, [])
     await reconcile(app)
   })
 
@@ -280,7 +448,7 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
     await reconcile(app)
   })
 
-  await t.test('pending internal transfer freezes funds then settles once with the original transaction identity', async () => {
+  await t.test('pending internal transfer freezes budgets then settles once with the original transaction identity', async () => {
     const before = await Promise.all([account(app, sender), account(app, recipient)])
     const result = ok(await app.call('/api/transfers', { method: 'POST', token: sender.token,
       body: transfer(sender, recipient, 1500, 'automatic hold settlement') }))
@@ -329,7 +497,7 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
     await reconcile(app)
   })
 
-  await t.test('large transfer to a nonexistent internal recipient cannot freeze funds or create an approval', async () => {
+  await t.test('large transfer to a nonexistent internal recipient cannot freeze budgets or create an approval', async () => {
     const before = await financialState(app)
     const approvalCount = await app.database(async db => (await db.prepare('SELECT COUNT(*) AS n FROM approvals').get()).n)
     const rejected = await app.call('/api/transfers', { method: 'POST', token: sender.token,
@@ -341,7 +509,7 @@ test('bank HTTP transactions and security preserve customer funds and balanced a
     await reconcile(app)
   })
 
-  await t.test('recipient rename during a hold fails settlement, releases funds and rejects the approval atomically', async () => {
+  await t.test('recipient rename during a hold fails settlement, releases budgets and rejects the approval atomically', async () => {
     const supervisor = await app.supervisorLogin()
     const before = await Promise.all([account(app, sender), account(app, recipient)])
     const journalBefore = await app.database(async db => (await db.prepare('SELECT COUNT(*) AS n FROM journal_entries').get()).n)
@@ -534,8 +702,8 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
   const before = await financialState(app)
   await t.test('every legacy financial contract route refuses live demo reads and writes', async () => {
     const safe = new Set(['login','register','logout','profile','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
-    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardLock','cardReplace','cardSecrets','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
-    const patches = new Set(['cardSettings','autoDebit','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
+    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardSpend','cardActivate','cardLock','cardReplace','cardSecrets','budgets','budgetPass','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
+    const patches = new Set(['cardSettings','autoDebit','budget','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     const deletes = new Set(['payee'])
     for (const [name, build] of Object.entries(routes)) {
       if (safe.has(name)) continue

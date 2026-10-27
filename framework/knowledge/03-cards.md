@@ -2,9 +2,9 @@
 id: "kb-cards"
 title: "银行卡与安全信息"
 navigation: "账户"
-routes: ["/cards"]
-keywords: ["银行卡", "锁卡", "换卡", "支付开关", "卡名额", "会员"]
-sources: ["app/src/pages/CardsPage.tsx", "app/src/api/mock/index.ts", "app/src/api/mock/db.ts", "framework/bridge/bank-agent.mjs"]
+routes: ["/cards", "/spend"]
+keywords: ["银行卡", "锁卡", "换卡", "支付开关", "卡名额", "会员", "模拟消费"]
+sources: ["app/src/pages/CardsPage.tsx", "app/src/pages/SpendPage.tsx", "app/src/api/mock/index.ts", "app/src/api/mock/db.ts", "server/domain/index.mjs", "shared/spend-platforms.mjs", "framework/bridge/bank-agent.mjs"]
 ---
 
 ## 没有银行卡怎么申请新卡？ {#apply}
@@ -34,3 +34,7 @@ sources: ["app/src/pages/CardsPage.tsx", "app/src/api/mock/index.ts", "app/src/a
 ## 如何查看完整卡号和 CVV 安全码？ {#secrets}
 
 在银行卡页发起查看并验证支付密码。助手也可发起查看卡号或 CVV，验证后仅在临时安全弹窗显示；助手不会收到完整敏感值，不应把密码或安全码发到聊天正文。寄送中和已换发旧卡不可查看；当前临时显示六十秒，以弹窗倒计时为准。
+
+## 模拟消费是什么？会真的扣钱吗？ {#spend}
+
+服务菜单「账户与支付」分组里的「模拟消费」是演示刷卡：选择本人使用中的卡、12 个预设商户之一或自定义、Stripe 两个自由收单入口，填写金额与可选账单详情后提交。它只在本行演示环境可用，不接真实收单、不产生真实商户扣款，扣的是该卡所属资金账户的演示余额，因此也不会产生真实退款或商户对账。单笔上限 ¥50,000.00，账单详情最多 80 字单行；自由商家需填 2–40 字商户名。卡处于锁定、寄送中或已换发状态，或关闭了消费、线上支付时不能消费；单卡单日限额按当日已成功消费累计。消费会写入卡渠道流水，分类由后台任务异步完成，页面上会先显示「正在分类」，返回的 `other` 不是最终分类。助手可用 `bank_spend` 办理，核对卡、商户与金额后确认即可，不需要支付密码；不支持退款、撤销、分期或修改已生成流水。

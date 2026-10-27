@@ -7,6 +7,7 @@ import type {
   CardProduct,
   Cents,
   ExportQuery,
+  BudgetsOverview,
   Payee,
   ReceiptFile,
   TransactionRecord,
@@ -149,6 +150,12 @@ export function createHttpApi(): BankApi {
       request(routes.cashFlow() + (days ? `?days=${days}` : '')),
     listAutoDebits: () => request<AutoDebit[]>(routes.autoDebits()),
     setAutoDebitEnabled: (id, enabled) => patch(routes.autoDebit(id), { enabled }),
+
+    listBudgets: () => request<BudgetsOverview>(routes.budgets()),
+    createBudget: (req) => post(routes.budgets(), req),
+    updateBudget: (id, req) => patch(routes.budget(id), req),
+    deleteBudget: (id) => del(routes.budget(id)),
+    redeemBudgetPass: (id, day) => post(routes.budgetPass(id), { day }),
 
     getSecurityOverview: () => request(routes.security()),
     setSecurityRule: (id, enabled) => patch(routes.securityRule(id), { enabled }),

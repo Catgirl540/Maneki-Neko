@@ -21,6 +21,7 @@ import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowSt
 import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../shared/invest-plan.mjs'
 import { supportGuidance } from '../../shared/support-guidance.mjs'
 import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../shared/spend-platforms.mjs'
+import { BUDGET_MAX_COUNT, BUDGET_PASS_EXTRA_CENTS, BUDGET_PASS_MAX_FUTURE_DAYS, BUDGET_POINTS_PER_PASS, BudgetError, checkBudgetLimit, budgetPoints, budgetsOverview, shanghaiDay, settleBudgetPoints, validateBudgetInput, validateBudgetPatch, validatePassDay } from '../../shared/budgets.mjs'
 import { hashPassword, verifyPassword, needsRehash } from '../passwords.mjs';
 import { randomInt } from 'node:crypto';
 // Server business rules with normalized SQL persistence; sandbox integrations are explicitly gated.
@@ -1451,6 +1452,15 @@ export function createBankBusinessApi(options) {
             if (note.length > 80 || [...note].some(ch => (ch.codePointAt(0) ?? 0) < 32 || ch.codePointAt(0) === 127))
                 throw new ApiError('账单详情最多 80 字，且不能包含换行或控制字符', 400, 'INVALID_NOTE');
             const memo = note ? `${platform.name} · ${note}` : `${platform.name} 消费`;
+            // 支出预算：命中就先拦，额度是业务规则，不建子账户也不动其他币种
+            try {
+                checkBudgetLimit(db.budgets, db.budgetPasses, db.transactions, platform.merchantId, amount, shanghaiDay(Date.now()));
+            }
+            catch (error) {
+                if (error instanceof BudgetError)
+                    throw new ApiError(error.message, error.status, error.code);
+                throw error;
+            }
             const balance = findBalance(db, card.accountId);
             if (!balance)
                 throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND');
@@ -1782,6 +1792,93 @@ async setAutoDebitEnabled(id, enabled) {
             item.enabled = enabled;
             persist();
             return item;
+        },
+        /* ------------------------------------------------------- 支出预算 */
+        async listBudgets() {
+            await delay(180);
+            const db = loadDb();
+            const budgets = budgetsOverview(db);
+            persist();
+            return { budgets, today: shanghaiDay(), timeZone: 'Asia/Shanghai', pointsPerPass: BUDGET_POINTS_PER_PASS, passExtra: BUDGET_PASS_EXTRA_CENTS, maxFutureDays: BUDGET_PASS_MAX_FUTURE_DAYS };
+        },
+        async createBudget(input) {
+            await delay(240);
+            const db = loadDb();
+            db.budgets ??= [];
+            if (db.budgets.length >= BUDGET_MAX_COUNT)
+                throw new ApiError(`最多同时持有 ${BUDGET_MAX_COUNT} 个支出预算`, 409, 'BUDGET_LIMIT_REACHED');
+            let value;
+            try {
+                value = validateBudgetInput(input);
+            }
+            catch (error) {
+                if (error instanceof BudgetError)
+                    throw new ApiError(error.message, error.status, error.code);
+                throw error;
+            }
+            const now = new Date().toISOString();
+            const budget = { id: nextId('budget'), ...value, enabled: true, createdAt: now, updatedAt: now };
+            db.budgets.push(budget);
+            persist();
+            return budgetsOverview(db).find(row => row.id === budget.id);
+        },
+        async updateBudget(id, patch) {
+            await delay(220);
+            const db = loadDb();
+            const budget = (db.budgets ?? []).find(row => row.id === id);
+            if (!budget)
+                throw new ApiError('支出预算不存在', 404, 'BUDGET_NOT_FOUND');
+            let next;
+            try {
+                next = validateBudgetPatch(patch ?? {}, budget);
+            }
+            catch (error) {
+                if (error instanceof BudgetError)
+                    throw new ApiError(error.message, error.status, error.code);
+                throw error;
+            }
+            Object.assign(budget, next, { updatedAt: new Date().toISOString() });
+            persist();
+            return budgetsOverview(db).find(row => row.id === budget.id);
+        },
+        async deleteBudget(id) {
+            await delay(200);
+            const db = loadDb();
+            const index = (db.budgets ?? []).findIndex(row => row.id === id);
+            if (index < 0)
+                throw new ApiError('支出预算不存在', 404, 'BUDGET_NOT_FOUND');
+            db.budgets.splice(index, 1);
+            // 预算没了，它的达标记录与额度券也就没有意义，一并清掉
+            db.budgetPointDays = (db.budgetPointDays ?? []).filter(row => row.budgetId !== id);
+            db.budgetPasses = (db.budgetPasses ?? []).filter(row => row.budgetId !== id);
+            persist();
+            return { removed: id };
+        },
+        async redeemBudgetPass(id, input) {
+            await delay(240);
+            const db = loadDb();
+            const budget = (db.budgets ?? []).find(row => row.id === id);
+            if (!budget)
+                throw new ApiError('支出预算不存在', 404, 'BUDGET_NOT_FOUND');
+            settleBudgetPoints(db);
+            const points = budgetPoints(db.budgetPointDays, db.budgetPasses, id);
+            if (points.available < BUDGET_POINTS_PER_PASS)
+                throw new ApiError(`积分不足，兑换一次额度需要 ${BUDGET_POINTS_PER_PASS} 分（当前 ${points.available} 分）`, 409, 'INSUFFICIENT_BUDGET_POINTS');
+            const now = Date.now();
+            let day;
+            try {
+                day = validatePassDay(input?.day ?? shanghaiDay(now), now);
+            }
+            catch (error) {
+                if (error instanceof BudgetError)
+                    throw new ApiError(error.message, error.status, error.code);
+                throw error;
+            }
+            const pass = { id: nextId('pass'), budgetId: id, day, extra: BUDGET_PASS_EXTRA_CENTS, createdAt: new Date(now).toISOString() };
+            db.budgetPasses ??= [];
+            db.budgetPasses.push(pass);
+            persist();
+            return { pass, points: budgetPoints(db.budgetPointDays, db.budgetPasses, id), budget: budgetsOverview(db).find(row => row.id === id) };
         },
 async getSecurityOverview() {
             await delay(200);

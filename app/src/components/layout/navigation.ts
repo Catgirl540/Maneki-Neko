@@ -27,6 +27,7 @@ export const serviceGroups = [
     { to: '/analysis', label: '账单与交易', Icon: ChartIcon },
     { to: '/analysis/statistics', label: '消费分析', Icon: ChartIcon },
     { to: '/analysis/autodebits', label: '自动扣款', Icon: CardIcon },
+    { to: '/analysis/budgets', label: '支出预算', Icon: PigIcon },
     { to: '/cashflow', label: '工资与备用金', Icon: WalletIcon },
     { to: '/credit', label: '借款与分期', Icon: WalletIcon },
   ] },

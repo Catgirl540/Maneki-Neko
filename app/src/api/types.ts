@@ -742,6 +742,61 @@ export interface SpendReceipt {
   currency: Currency
 }
 
+/** 支出预算：把某几个消费平台的钱装进一个每日限额的罐子，超了就不让花 */
+export interface BudgetRecord {
+  id: string
+  name: string
+  /** 覆盖的预设平台 id（见 shared/spend-platforms.mjs）；自定义收单不能进预算 */
+  platforms: string[]
+  /** 不含额度券的每日基础限额 */
+  dailyLimit: Cents
+  /** 当日消费低于该值（含 0）记 1 分 */
+  pointThreshold: Cents
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface Budget extends BudgetRecord {
+  /** 平台展示名，与 platforms 一一对应，方便页面直接渲染 */
+  merchantNames: string[]
+  /** 今天（上海自然日）的用量与叠加额度券后的实际额度 */
+  today: { day: string; used: Cents; limit: Cents; remaining: Cents }
+  points: { awarded: number; used: number; available: number }
+  passes: BudgetPass[]
+}
+
+/** 打卡积分兑换出来的「某天额度 +N 元」券 */
+export interface BudgetPass {
+  id: string
+  budgetId: string
+  /** 额度生效的上海自然日 YYYY-MM-DD */
+  day: string
+  extra: Cents
+  createdAt: string
+}
+
+export interface BudgetsOverview {
+  budgets: Budget[]
+  /** 今天（上海自然日） */
+  today: string
+  timeZone: 'Asia/Shanghai'
+  /** 兑换一次额度券需要多少分 */
+  pointsPerPass: number
+  /** 一次额度券抬高多少限额 */
+  passExtra: Cents
+  /** 额度券最多可以兑换到未来多少天 */
+  maxFutureDays: number
+}
+
+export interface BudgetInput {
+  name: string
+  platforms: string[]
+  dailyLimit: Cents
+  pointThreshold?: Cents
+  enabled?: boolean
+}
+
 /** 现金流图表的单日数据点 */
 export interface CashFlowPoint {
   /** YYYY-MM-DD */

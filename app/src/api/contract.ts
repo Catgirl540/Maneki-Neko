@@ -26,6 +26,10 @@ import type {
   ExportQuery,
   FpsIdType,
   FpsResolveResult,
+  Budget,
+  BudgetInput,
+  BudgetPass,
+  BudgetsOverview,
   Paged,
   Payee,
   ReceiptFile,
@@ -206,6 +210,11 @@ export const routes = {
   investPlanStatus: (id: string) => `/api/wealth/investments/plan/${id}`,
   insurance: () => '/api/wealth/insurance',
   insuranceEnroll: () => '/api/wealth/insurance/enroll',
+
+  // —— 支出预算（每日额度 + 打卡积分） ——
+  budgets: () => '/api/budgets',
+  budget: (id: string) => `/api/budgets/${id}`,
+  budgetPass: (id: string) => `/api/budgets/${id}/passes`,
 } as const
 
 export interface TransactionQuery {
@@ -326,6 +335,15 @@ export interface BankApi {
   getCashFlow(days?: number): Promise<CashFlow>
   listAutoDebits(): Promise<AutoDebit[]>
   setAutoDebitEnabled(id: string, enabled: boolean): Promise<AutoDebit>
+
+  // —— 支出预算（每日额度 + 打卡积分） ——
+  /** 我的预算：带今天的用量、额度、积分与额度券；服务端顺带补算历史达标日 */
+  listBudgets(): Promise<BudgetsOverview>
+  createBudget(req: BudgetInput): Promise<Budget>
+  updateBudget(id: string, patch: Partial<BudgetInput>): Promise<Budget>
+  deleteBudget(id: string): Promise<{ removed: string }>
+  /** 用积分兑换一张「某天额度 +N 元」券 */
+  redeemBudgetPass(id: string, day: string): Promise<{ pass: BudgetPass; points: Budget['points']; budget: Budget }>
 
   // —— 安全中心 ——
   getSecurityOverview(): Promise<SecurityOverview>

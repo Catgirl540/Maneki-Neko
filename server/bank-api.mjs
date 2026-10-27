@@ -80,6 +80,13 @@ const ROUTES = [
   ['GET', 'autoDebits', 'listAutoDebits', () => []],
   ['PATCH', 'autoDebit', 'setAutoDebitEnabled', (id, b) => [id, b.enabled]],
 
+  // —— 支出预算 ——
+  ['GET', 'budgets', 'listBudgets', () => []],
+  ['POST', 'budgets', 'createBudget', (id, b) => [b]],
+  ['PATCH', 'budget', 'updateBudget', (id, b) => [id, b]],
+  ['DELETE', 'budget', 'deleteBudget', (id) => [id]],
+  ['POST', 'budgetPass', 'redeemBudgetPass', (id, b) => [id, b]],
+
   // —— 安全中心 ——
   ['GET', 'security', 'getSecurityOverview', () => []],
   ['PATCH', 'securityRule', 'setSecurityRule', (id, b) => [id, b.enabled]],

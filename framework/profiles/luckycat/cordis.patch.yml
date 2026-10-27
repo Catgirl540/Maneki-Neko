@@ -309,6 +309,8 @@
       - bank_card_products
       - bank_set_card_lock
       - bank_update_card_settings
+      - bank_spend
+      - bank_list_budgets
       - bank_apply_card
       - bank_replace_card
       - bank_list_autodebits

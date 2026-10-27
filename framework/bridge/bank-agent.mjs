@@ -9,6 +9,7 @@ import { summarizeRiskAssessment } from './wealth-risk.mjs'
 import { compareWealthProducts } from './wealth-compare.mjs'
 import { analyzeAutoDebits, validateReminderDays } from './autodebit-analysis.mjs'
 import { validateInvestPlan } from '../../shared/invest-plan.mjs'
+import { findFreeMerchant, findSpendPlatform, SPEND_MAX_CENTS } from '../../shared/spend-platforms.mjs'
 import { reviewTransactions, validateReviewLimit } from './transaction-review.mjs'
 const enc = encodeURIComponent
 const text = (value, label) => {
@@ -29,8 +30,10 @@ const routineQueries = new Set(['bank_get_balance', 'bank_list_transactions', 'b
 routineQueries.add('bank_list_investments')
 routineQueries.add('bank_review_transactions')
 routineQueries.add('bank_list_im_reminders')
+routineQueries.add('bank_list_budgets')
 writable.add('bank_create_im_reminder')
 writable.add('bank_cancel_im_reminder')
+writable.add('bank_spend')
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -287,6 +290,10 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         path = '/api/cards'
         fields = [field('查询内容', '本人银行卡、状态、支付开关与日限额')]
         break
+      case 'bank_list_budgets':
+        path = '/api/budgets'
+        fields = [field('查询内容', '支出预算、今日已用额度与打卡积分')]
+        break
       case 'bank_card_products':
         path = '/api/cards/products'
         fields = [field('查询内容', '可申请卡产品、制卡与寄送费用')]
@@ -322,6 +329,40 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         path = `/api/cards/${enc(card.id)}/settings`
         method = 'PATCH'
         preview = { cardState: digest(safeCard(card)) }
+        break
+      }
+      case 'bank_spend': {
+        const card = await ownedCard()
+        // 消费是扣款写操作；先在确认前把卡状态说清楚，避免用户确认后才被后端拒绝。
+        if (card.status === 'pending') throw bankError('卡片仍在寄送中，激活后才能消费')
+        if (card.status === 'locked') throw bankError('卡片已锁定，请先解锁再消费')
+        if (card.paymentEnabled === false) throw bankError('该卡已关闭消费，请先在卡片设置中开启')
+        if (!card.onlinePayment) throw bankError('该卡已关闭线上支付，请先在卡片设置中开启')
+        const platform = text(a.platform, '消费平台')
+        const preset = findSpendPlatform(platform)
+        const free = preset ? null : findFreeMerchant(platform)
+        if (!preset && !free) throw bankError('消费平台不存在；请使用预设平台或 custom、stripe')
+        const merchant = a.merchant === undefined ? undefined : text(a.merchant, '商家名称')
+        if (free && merchant === undefined) throw bankError('自由商家消费需要提供商家名称')
+        if (!free && merchant !== undefined) throw bankError('预设平台不能指定商家名称，请改用 custom 或 stripe')
+        if (merchant !== undefined) {
+          const chars = [...merchant]
+          if (chars.length < 2 || chars.length > 40) throw bankError('商家名称需为 2–40 个字符')
+          if (chars.some(ch => (ch.codePointAt(0) ?? 0) < 32 || ch.codePointAt(0) === 127)) throw bankError('商家名称不能包含换行或控制字符')
+        }
+        const cents = amount(a.amountCents)
+        if (cents > SPEND_MAX_CENTS) throw bankError(`单笔模拟消费上限 ${money(SPEND_MAX_CENTS)}`)
+        const note = a.note === undefined ? undefined : text(a.note, '账单详情')
+        if (note !== undefined) {
+          const chars = [...note]
+          if (chars.length > 80) throw bankError('账单详情最多 80 个字符')
+          if (chars.some(ch => (ch.codePointAt(0) ?? 0) < 32 || ch.codePointAt(0) === 127)) throw bankError('账单详情不能包含换行或控制字符')
+        }
+        const merchantName = preset?.name ?? merchant
+        path = `/api/cards/${enc(card.id)}/spend`
+        body = { platform, amount: cents, ...(merchant === undefined ? {} : { merchant }), ...(note === undefined ? {} : { note }) }
+        preview = { cardState: digest(safeCard(card)) }
+        fields = [field('卡片', cardLabel(card)), field('消费商户', merchantName), field('消费金额', money(cents), true), ...(note === undefined ? [] : [field('账单详情', note)]), field('说明', '仅本行演示环境可用；扣减该卡资金账户余额并生成卡消费流水，分类由后台任务稍后完成')]
         break
       }
       case 'bank_apply_card':
