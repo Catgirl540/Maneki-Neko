@@ -303,10 +303,24 @@ export async function openBankDatabase(connectionString = process.env.BANK_DATAB
         // The synchronous legacy projection remains serialized across processes.
         await db.query('SELECT pg_advisory_xact_lock(782614101)')
         committed = await hydrate()
+        await db.query('SAVEPOINT bank_business')
         pending = { entries: staged.entries, profiles: staged.profiles, requestId, baseline: new Map(committed) }
         staged = { entries: new Map(), profiles: new Map() }
         migrationImport = historicalImport
       } catch (error) { await db.rollback(); throw error } finally { starting = false }
+    },
+    /** Recover only the business portion; keep the original transaction and lock. */
+    async recoverUnitOfWork() {
+      if (!pending) throw new Error('No database unit of work is active')
+      const work = pending
+      try {
+        await db.query('ROLLBACK TO SAVEPOINT bank_business')
+        committed = await hydrate()
+        pending = { entries: new Map(), profiles: new Map(), requestId: work.requestId, baseline: work.baseline }
+      } catch (error) {
+        try { await db.rollback() } finally { committed = work.baseline; pending = null; migrationImport = false }
+        throw error
+      }
     },
     async commitUnitOfWork() {
       if (!pending) throw new Error('No database unit of work is active')

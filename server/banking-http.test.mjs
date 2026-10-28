@@ -360,7 +360,7 @@ test('bank HTTP transactions and security preserve customer budgets and balanced
     assert.equal(reused.body.code, 'SMS_NOT_SENT')
     const before = await financialState(app)
     const forged = await app.call('/api/auth/register', { method: 'POST', body: {
-      phone: '13900139002', password: '123456', paymentPassword: '888888', holderName: '伪造核验测试', smsCode: '000000',
+      phone: '13900139002', password: 'TestBank!123', paymentPassword: '888888', holderName: '伪造核验测试', smsCode: '000000',
       faceTicket: 'verify.face.1234567890', idNumber: '330106199203047234', pledge: ACCOUNT_OPENING_PLEDGE,
     } })
     assert.equal(forged.status, 403)
@@ -735,7 +735,10 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
     }
     const pending = ok(await app.call(`/staff-api/approvals/${approvalId}`, { token: supervisor }))
     assert.equal(pending.status, 'pending'); assert.equal(pending.executionStatus, 'pending')
-    assert.equal((await app.call(`/staff-api/customers/${customer.id}/profile?reason=TEST-live-block`, { token: supervisor })).status, 503)
+    const securityProfile = ok(await app.call(`/staff-api/customers/${customer.id}/profile?reason=TEST-live-security`, { token: supervisor }))
+    assert.equal(securityProfile.financialDataAvailable, false)
+    assert.equal(typeof securityProfile.accountSecurity.frozen, 'boolean')
+    for (const key of ['accounts', 'cards', 'autoDebits', 'recentTransactions']) assert.deepEqual(securityProfile[key], [], `live ${key} must not expose legacy finances`)
     assert.deepEqual(await financialState(app), before)
   })
   await t.test('unconfigured native payments, account reads and receipt endpoints cannot create bank evidence', async () => {

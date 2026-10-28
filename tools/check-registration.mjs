@@ -41,7 +41,7 @@ check(
 check(!('tier' in (demoAccounts[0] ?? {})), '公开账户 DTO 不含 tier')
 
 const phone = '13900139000'
-const password = 'safe123'
+const password = 'SafeBank!123'
 const sms = await api.sendSmsCode(phone)
 const face = await api.verifyIdentity('face')
 const result = await api.register({

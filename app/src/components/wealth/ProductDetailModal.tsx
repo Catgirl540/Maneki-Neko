@@ -405,7 +405,7 @@ export function ProductDetailModal({
               error={error && error.includes('支付密码') ? error : undefined}
             />
             <p className="text-[12px] leading-relaxed text-ink-mute">
-              连续输错 3 次会锁定。
+              连续输错 5 次会冻结账号，需联系工作人员解冻。
             </p>
 
             {error && !error.includes('支付密码') && (

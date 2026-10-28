@@ -3,8 +3,8 @@ id: "kb-security"
 title: "登录与安全设置"
 navigation: "我的"
 routes: ["/security", "/login"]
-keywords: ["登录", "密码", "手机号", "安全设置"]
-sources: ["app/src/pages/SecurityPage.tsx", "app/src/pages/LoginPage.tsx", "app/src/api/mock/index.ts"]
+keywords: ["登录", "密码", "手机号", "安全设置", "账号冻结", "解冻", "支付密码"]
+sources: ["app/src/pages/SecurityPage.tsx", "app/src/pages/LoginPage.tsx", "app/src/api/mock/index.ts", "shared/password-policy.mjs", "shared/account-security.mjs", "server/staff-api.mjs"]
 ---
 
 ## 登录需要短信验证码吗？验证码过期怎么办？ {#login}
@@ -13,7 +13,7 @@ sources: ["app/src/pages/SecurityPage.tsx", "app/src/pages/LoginPage.tsx", "app/
 
 ## 怎么修改登录密码？忘记密码可以找回吗？ {#password}
 
-到「我的 → 安全设置 → 登录密码」输入原密码、新密码和确认密码后提交，当前修改接口要求新密码至少六个字符。当前网页修改需要知道原密码，没有可用的忘记密码找回；助手不能代改或代重置密码。
+到「我的 → 安全设置 → 登录密码」输入原密码、新密码和确认密码后提交。注册或修改时，登录密码至少 8 位，须包含大写字母、小写字母和特殊字符（例如 !@#，空格不计），数字不是必需；现有旧密码仍可登录。当前网页修改需要知道原密码，没有可用的忘记密码找回；助手不能代改或代重置密码。
 
 ## 如何更换登录手机号？ {#phone}
 
@@ -25,4 +25,4 @@ sources: ["app/src/pages/SecurityPage.tsx", "app/src/pages/LoginPage.tsx", "app/
 
 ## 支付密码错误或被锁定怎么办？ {#paypassword}
 
-支付密码为 6 位数字，开户注册时由本人设置，用于转账、申购、申请卡和查看卡安全信息等敏感操作，区别于登录密码。修改或重置在「我的 → 安全设置 → 支付密码」：记得原密码可凭原密码修改；忘记原密码或连续输错被锁定后，须人脸核身后重置，重置成功即清除错误次数。助手不能代改、代重置或查看支付密码。
+支付密码为 6 位数字，开户时由本人设置。连续输错 5 次会冻结账号的支付及敏感操作，登录、普通查询和联系客服仍可使用；未冻结前正确验证一次会清零连续错误。重新登录、重启或人脸重置密码都不能解冻，须联系工作人员核验身份后在工作人员端解冻。账号未冻结时，可在「我的 → 安全设置 → 支付密码」凭原密码修改，忘记密码可人脸核身重置。助手不能解冻账号、代改、代重置或查看密码，也不会索取密码。

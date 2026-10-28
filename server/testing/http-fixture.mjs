@@ -174,7 +174,7 @@ async function register(app, phone, name) {
   const sms = ok(await app.call('/api/auth/sms-code', { method: 'POST', body: { phone } }))
   const face = ok(await app.call('/api/security/verify', { method: 'POST', body: { channel: 'face' } }))
   const user = ok(await app.call('/api/auth/register', {
-    method: 'POST', body: { phone, holderName: name, password: '123456', paymentPassword: '888888', smsCode: sms.demoCode,
+    method: 'POST', body: { phone, holderName: name, password: 'TestBank!123', paymentPassword: '888888', smsCode: sms.demoCode,
       faceTicket: face.ticket, idNumber: '330106199203047234', pledge: ACCOUNT_OPENING_PLEDGE },
   }), 'customer registration')
   return { ...user, phone, accounts: ok(await app.call('/api/accounts', { token: user.token })) }

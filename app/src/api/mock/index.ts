@@ -1,3 +1,5 @@
+import { isValidLoginPassword, LOGIN_PASSWORD_REQUIREMENTS } from '../../../../shared/password-policy.mjs'
+import { assertAccountActive as assertSharedAccountActive, paymentSecurityStatus, recordPaymentPasswordFailure, resetPaymentPasswordFailures, paymentPasswordFailureError, protectAccountApi } from '../../../../shared/account-security.mjs'
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../../../shared/account-model.mjs'
 import { previewBirthdayPlan as previewBirthday, createBirthdayPlan as createBirthday, listBirthdayPlans as listBirthdays, cancelBirthdayPlan as cancelBirthday, confirmBirthdayOrder as confirmBirthday } from '../../../../shared/linked-plans.mjs'
 import { billingReport, exportBillingReport as buildBillingExport } from '../../../../shared/billing-reports.mjs'
@@ -137,7 +139,6 @@ import {
   FX_SPREAD,
   FX_MID_RATES,
   findBank,
-  PAY_PASSWORD_MAX_ATTEMPTS,
   cardFeeQuote,
   effectiveSpread,
   entitlements,
@@ -271,6 +272,7 @@ function withDerivedSecurity(): SecurityOverview {
   )
   return {
     ...db.security,
+    accountSecurity: paymentSecurityStatus(db),
     score,
     level: score >= 90 ? '防护优秀' : score >= 75 ? '防护良好' : '建议加强',
   }
@@ -482,27 +484,35 @@ export function appendStaffNotice(notice: Omit<StaffNotice, 'id'>): StaffNotice 
 /**
  * 校验支付密码。
  * 付钱这一步必须单独验证：登录密码泄露不等于能扣钱。
- * 连续输错达阈值即锁定，要求重新登录（真实系统还会要求去柜台或人脸解锁）。
+ * 连续输错 5 次冻结账号，必须由工作人员核验身份后解冻。
  */
+function assertAccountActive(profile: ReturnType<typeof loadDb>): void {
+  try { assertSharedAccountActive(profile) }
+  catch (error) {
+    if (error instanceof Error) throw new ApiError(error.message, 423, 'ACCOUNT_FROZEN')
+    throw error
+  }
+}
+
+function activeProfile() {
+  const profile = loadDb()
+  assertAccountActive(profile)
+  return profile
+}
+
 export function verifyPayPassword(input: string): void {
   const db = loadDb()
-  if (db.payPasswordFailures >= PAY_PASSWORD_MAX_ATTEMPTS) {
-    throw new ApiError('支付密码已锁定，请重新登录后再试', 423, 'PAY_PASSWORD_LOCKED')
-  }
+  assertAccountActive(db)
   if (!/^\d{6}$/.test(input)) {
     throw new ApiError('请输入 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD')
   }
   if (input !== db.payPassword) {
-    db.payPasswordFailures += 1
+    recordPaymentPasswordFailure(db)
     persist()
-    const left = PAY_PASSWORD_MAX_ATTEMPTS - db.payPasswordFailures
-    throw new ApiError(
-      left > 0 ? `支付密码不正确，还可尝试 ${left} 次` : '支付密码连续错误，已锁定，请重新登录',
-      401,
-      'BAD_PAY_PASSWORD',
-    )
+    const failure = paymentPasswordFailureError(db)
+    throw new ApiError(failure.message, failure.status, failure.code)
   }
-  db.payPasswordFailures = 0
+  resetPaymentPasswordFailures(db)
   persist()
 }
 
@@ -601,10 +611,19 @@ export function createMockApi(options?: {
   const classify = options?.classify ?? null
   const exchangeQuotes = new Map<string, { ownerId: string; accountId: string; amount: number; toCurrency: Currency; rate: number; expiresAt: number }>()
   let api: BankApi
-  const { settleScheduledTransfers: scanScheduledTransfers, ...publicPlans } = browserPaymentPlans(() => api)
-  void scanScheduledTransfers // Internal scanner is not part of the HTTP contract.
-  return api = {
-    ...publicPlans,
+  const planApi = browserPaymentPlans(() => api)
+  void planApi.settleScheduledTransfers // Internal scanner is not part of the HTTP contract.
+  // 计划类方法逐条列出，不整体 spread：契约检查是静态读这个对象字面量的，
+  // `...publicPlans` 会让它看不到方法名，等于把「mock 是否实现全部 BankApi」这条断言废掉。
+  return api = protectAccountApi({
+    listScheduledTransfers: planApi.listScheduledTransfers,
+    createScheduledTransfer: planApi.createScheduledTransfer,
+    cancelScheduledTransfer: planApi.cancelScheduledTransfer,
+    listSplitCollections: planApi.listSplitCollections,
+    createSplitCollection: planApi.createSplitCollection,
+    confirmSplitPayment: planApi.confirmSplitPayment,
+    remindSplitParticipant: planApi.remindSplitParticipant,
+    cancelSplitCollection: planApi.cancelSplitCollection,
     async login(phone, password, smsCode) {
       await delay()
       const db = loadDb()
@@ -637,8 +656,7 @@ export function createMockApi(options?: {
       activateDb(target)
       const live = loadDb()
       live.pendingSms = null
-      // 重新登录即解除支付密码锁定
-      live.payPasswordFailures = 0
+      // 登录不重置支付密码错误次数或解除账号冻结。
       persist()
       return { token: `mock.${btoa(phone)}.${Date.now()}`, user: live.user }
     },
@@ -649,8 +667,8 @@ export function createMockApi(options?: {
       const phone = digitsOnly(req.phone)
       if (!/^1[3-9]\d{9}$/.test(phone)) throw new ApiError('请输入 11 位手机号', 400, 'INVALID_PHONE')
       if (findProfileByPhone(phone) !== null) throw new ApiError('该手机号已注册', 409, 'PHONE_EXISTS')
-      if (req.password.length < 6 || req.password.length > 20) {
-        throw new ApiError('登录密码需为 6–20 个字符', 400, 'WEAK_PASSWORD')
+      if (!isValidLoginPassword(req.password)) {
+        throw new ApiError(LOGIN_PASSWORD_REQUIREMENTS, 400, 'WEAK_PASSWORD')
       }
       if (!/^\d{6}$/.test(req.paymentPassword)) {
         throw new ApiError('请设置 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD')
@@ -2283,8 +2301,8 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       if (await passwordDigest(oldPassword) !== db.passwordDigest) {
         throw new ApiError('原密码不正确', 400, 'BAD_OLD_PASSWORD')
       }
-      if (newPassword.length < 6) {
-        throw new ApiError('新密码至少 6 位', 400, 'WEAK_PASSWORD')
+      if (!isValidLoginPassword(newPassword)) {
+        throw new ApiError(LOGIN_PASSWORD_REQUIREMENTS, 400, 'WEAK_PASSWORD')
       }
       db.passwordDigest = await passwordDigest(newPassword)
       db.security.logs.unshift({
@@ -2301,10 +2319,10 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       await delay(420)
       const db = loadDb()
       if (typeof req.oldPassword === 'string' && req.oldPassword.length > 0) {
-        // 常规修改：和付款一样验原密码，错误次数会累计、已锁定必须走核身重置
+        // 常规修改同样累计错误次数，冻结账号已由统一入口拦截。
         verifyPayPassword(req.oldPassword)
       } else {
-        // 忘记原密码或已锁定：核身重置是唯一出口
+        // 未冻结时忘记原密码，可核身重置。
         if (!req.faceTicket) {
           throw new ApiError('请先完成人脸识别', 400, 'FACE_REQUIRED')
         }
@@ -2945,7 +2963,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       persist()
       return policy
     },
-  }
+  }, activeProfile)
 }
 
 /* ==========================================================================
@@ -2986,6 +3004,7 @@ function browserPaymentPlans(api: () => BankApi) {
 
 /** Browser demo requires this explicit scan; the HTTP server owns the durable background scanner. */
 export async function settleScheduledTransfers(existingApi?: BankApi) {
+  if (paymentSecurityStatus(loadDb()).frozen) return []
   const api = existingApi ?? createMockApi()
   return browserPaymentPlans(() => api).settleScheduledTransfers()
 }
@@ -3032,6 +3051,7 @@ export async function settleHeldTransfer(
   reason?: string,
 ): Promise<TransferResult | null> {
   const db = loadDb()
+  if (outcome === 'settled') assertAccountActive(db)
   const index = db.transactions.findIndex(
     (t) => t.id === transactionId && t.pendingReason === 'inflight' && t.status === 'pending',
   )
@@ -3093,6 +3113,7 @@ export async function settleHeldTransfer(
  */
 export async function settleExpiredHolds(): Promise<string[]> {
   const db = loadDb()
+  if (paymentSecurityStatus(db).frozen) return []
   const now = Date.now()
   const expired = db.transactions.filter(
     (t) => t.status === 'pending' && t.pendingReason === 'inflight' && t.holdUntil !== undefined

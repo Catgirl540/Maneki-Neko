@@ -1,0 +1,113 @@
+{
+  "release": "20261028-account-security",
+  "startedAt": "20261028T090557Z",
+  "oldSource": "/srv/maneki-bank/releases/20261027-function-fixes",
+  "oldWeb": "/var/www/bank.waveflow.men/releases/20261027-function-fixes",
+  "newSource": "/srv/maneki-bank/releases/20261028-account-security",
+  "newWeb": "/var/www/bank.waveflow.men/releases/20261028-account-security",
+  "backup": "/var/backups/maneki-security-20261028T090557Z",
+  "schemaMigration": false,
+  "databases": {
+    "maneki_bank": {
+      "backupSha256": "b2ca73599c42a7f90599369a9bba09817bec8141174061c3224851eec22849f4",
+      "schemaVersion": 2026102701,
+      "reconciled": true
+    },
+    "maneki_bank_demo": {
+      "backupSha256": "73e38fa74707f16d25e2ece52e8af476182f3bd20050300e6eef4f31927af143",
+      "schemaVersion": 2026102701,
+      "reconciled": true
+    }
+  },
+  "health": {
+    "live": {
+      "ok": true,
+      "kind": "bank-partner-platform",
+      "database": "postgresql",
+      "integrationMode": "live",
+      "commercialReady": false,
+      "bankConnection": "unconfigured",
+      "routes": 104
+    },
+    "sandbox": {
+      "ok": true,
+      "kind": "bank-partner-platform",
+      "database": "postgresql",
+      "integrationMode": "sandbox",
+      "commercialReady": false,
+      "bankConnection": "unconfigured",
+      "routes": 104
+    }
+  },
+  "completedAt": "2026-10-28T09:06:03.204263+00:00",
+  "switched": true,
+  "status": "deployed-and-verified",
+  "url": "https://bank.waveflow.men",
+  "staffDemoUrl": "https://bank.waveflow.men/staff/login?bank=demo",
+  "features": [
+    "登录密码至少8个字符，包含ASCII大小写字母及标点/符号",
+    "支付密码连续5次错误冻结账号，登录和密码重置不能解冻",
+    "客服或主管关联在办工单并核验身份后解冻，记录审计"
+  ],
+  "postgresqlIntegration": {
+    "pass": 136,
+    "fail": 0,
+    "skip": 0
+  },
+  "bridgeIntegration": {
+    "pass": 99,
+    "fail": 0,
+    "skip": 2,
+    "skipped": "optional real IM runtime/browser scenarios"
+  },
+  "harnessHttp": "ALL PASS",
+  "onlineVerification": {
+    "base": "https://bank.waveflow.men",
+    "environment": "sandbox",
+    "startedAt": "2026-10-28T09:07:19.449Z",
+    "checks": [
+      "新版工作人员网页与生产构建一致，两个环境均鉴权，演示入口不开放运维终端",
+      "真实线上注册及修改密码拒绝弱密码，合规密码可开户",
+      "连续五次错误准确冻结，正确支付密码、人脸重置与其他支付入口均不能绕过，余额不变",
+      "客户令牌、核验失败与无效工单均无法解冻",
+      "真实浏览器完成工作人员登录、查询冻结资料、核验与解冻；客户恢复验密，资金未变化"
+    ],
+    "customerId": "u_1793178444544",
+    "staffId": "staff_security_5f8f35a4",
+    "ticketId": "T_bebaab652babf32c",
+    "ok": true,
+    "completedAt": "2026-10-28T09:08:00.734Z"
+  },
+  "auditVerification": {
+    "auditedUnfreezeActions": 1,
+    "auditedFreezeEvents": 1,
+    "accountFrozen": false,
+    "failedAttempts": 0,
+    "syntheticCustomerBalance": 0,
+    "syntheticCustomerTransactions": 0,
+    "testStaffCredentialRevoked": true,
+    "existingUsersChanged": false,
+    "checkedAt": "2026-10-28T09:09:54.423Z"
+  },
+  "finalVerification": {
+    "temporaryTestDatabasesRemoved": 4,
+    "testRoleRemoved": true,
+    "finalReconciliation": true,
+    "services": {
+      "luckycat-bank": "active",
+      "luckycat-bank-demo": "active",
+      "luckycat-agent-demo": "active",
+      "luckycat-staff-agent": "active",
+      "luckycat-ops-agent": "active"
+    },
+    "checkedAt": "2026-10-28T09:09:56.185038+00:00"
+  },
+  "manifestSha256": "60ba3b5459a8d4582979698362cc94f6c0a7a2f4bc43f3add17ed6b3795046d0",
+  "scopeNotes": [
+    "官网客户与工作人员演示入口统一使用maneki_bank_demo；合作银行及运维保持独立",
+    "仅使用合成验收客户与临时员工，未变更现有账号凭据；临时员工已撤销，工单已解决",
+    "四个专用PostgreSQL测试库及其角色已删除，旧版本和两个业务库备份保留",
+    "未发布新的Android APK；服务器安全规则对共用API生效",
+    "未执行Git提交或推送"
+  ]
+}

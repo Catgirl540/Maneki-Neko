@@ -9,6 +9,7 @@ import { PinInput } from '@/components/ui/PinInput'
 import { ChevronRightIcon } from '@/components/ui/icons'
 import { ACCOUNT_OPENING_PLEDGE } from '@/lib/account-opening'
 import { generateDemoIdentity, type DemoIdentity } from '@/lib/demo-id'
+import { isValidLoginPassword, LOGIN_PASSWORD_REQUIREMENTS } from '../../../shared/password-policy.mjs'
 import { useSession } from '@/store/session-context'
 import '@/styles/open-account.css'
 
@@ -159,11 +160,11 @@ export function OpenAccountStandalone() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const passwordError = password.length > 0 && (password.length < 6 || password.length > 20)
+  const passwordError = password.length > 0 && !isValidLoginPassword(password)
   const confirmError = confirmPassword.length > 0 && confirmPassword !== password
   const canSend = /^1[3-9]\d{9}$/.test(phone) && !sending
   const paymentPasswordError = confirmPaymentPassword.length > 0 && confirmPaymentPassword !== paymentPassword
-  const canSubmit = canSend && password.length >= 6 && password.length <= 20 &&
+  const canSubmit = canSend && isValidLoginPassword(password) &&
     password === confirmPassword &&
     /^\d{6}$/.test(paymentPassword) && paymentPassword === confirmPaymentPassword &&
     holderName.trim().length > 0 && /^\d{17}[\dXx]$/.test(idNumber) &&
@@ -238,8 +239,8 @@ export function OpenAccountStandalone() {
           <Field label="手机号" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} inputMode="numeric" />
           <Field label="短信验证码" value={smsCode} onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" trailing={<button type="button" disabled={!canSend} onClick={() => void sendCode()} className="text-[13px] font-medium text-gold-deep disabled:text-ink-mute">{sending ? '发送中…' : '获取验证码'}</button>} hint={demoCode ? `演示环境验证码：${demoCode}` : undefined} />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="登录密码" type="password" value={password} onChange={(e) => setPassword(e.target.value)} error={passwordError ? '请输入 6-20 个字符' : undefined} />
-            <Field label="确认登录密码" type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} error={confirmError ? '两次输入的密码不一致' : undefined} />
+            <Field label="登录密码" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} hint={LOGIN_PASSWORD_REQUIREMENTS} error={passwordError ? LOGIN_PASSWORD_REQUIREMENTS : undefined} />
+            <Field label="确认登录密码" type="password" autoComplete="new-password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} error={confirmError ? '两次输入的密码不一致' : undefined} />
           </div>
         </div></Card>
         <Card><CardHeader title="2. 上传身份证" />
@@ -282,7 +283,7 @@ export function OpenAccountStandalone() {
             <PinInput label="支付密码" value={paymentPassword} onChange={setPaymentPassword} />
             <PinInput label="确认支付密码" value={confirmPaymentPassword} onChange={setConfirmPaymentPassword} error={paymentPasswordError ? '两次输入的支付密码不一致' : undefined} />
           </div>
-          <p className="text-[12px] leading-relaxed text-ink-mute">支付密码为 6 位数字，用于转账、办卡等敏感操作，请勿与登录密码相同。</p>
+          <p className="text-[12px] leading-relaxed text-ink-mute">支付密码为 6 位数字，用于转账、办卡等敏感操作，请勿与登录密码相同。连续输错 5 次会冻结账号，需联系工作人员解冻。</p>
         </div></Card>
       </div>
       <div className="flex flex-col gap-5"><Card className="bg-gold-tint"><CardHeader title="5. 开户确认" />

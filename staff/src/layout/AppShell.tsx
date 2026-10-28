@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useSession } from '@/store/session-context'
 import { staffNavigation, staffRoleLabel } from './navigation'
 import { useStaffClock } from './useStaffClock'
+import { isDemoStaff, staffEnvironmentLabel } from '@/api/environment'
 import { WorkbenchBrand } from '../../../app/src/components/brand/WorkbenchBrand'
 import { AlertIcon, ChevronRightIcon, LogoutIcon } from '../../../app/src/components/ui/icons'
 
@@ -11,13 +12,13 @@ export function AppShell() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const isChat = pathname === '/assistant'
-  const visible = staffNavigation.filter(item => user && item.roles.includes(user.role))
+  const visible = staffNavigation.filter(item => user && item.roles.includes(user.role) && (!isDemoStaff || !['/assistant', '/im', '/operations'].includes(item.to)))
   const current = visible.find(item => item.to === pathname)
   const now = useStaffClock()
   const date = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric', weekday: 'long' }).format(now)
 
   return <div className="staff-app">
-    <div className="staff-demo"><AlertIcon size={12} />比赛演示作品 · 非真实银行</div>
+    <div className="staff-demo"><AlertIcon size={12} />比赛演示作品 · 非真实银行 · {staffEnvironmentLabel}</div>
     <div className={`staff-shell ${isChat ? 'staff-shell-chat' : ''}`}>
       <a href="#staff-main" className="staff-skip-link">跳到主要内容</a>
       <aside className="staff-sidebar">

@@ -148,6 +148,10 @@ export interface CustomerProfile {
   customerId: string
   name: string
   phoneMasked: string
+  /** 支付密码连续错误触发的账号冻结；仅工作人员核验后可解除。 */
+  accountSecurity: { frozen: boolean; failedAttempts: number; maxAttempts: 5; reason: string | null }
+  /** 未接入银行资金查询时，仍提供平台账号安全状态。 */
+  financialDataAvailable?: boolean
   accounts: Array<{ id: string; label: string; currency?: string; balance: Cents; available?: Cents; currencyBalances?: Array<{ id: string; currency: string; balance: Cents; available: Cents }> }>
   cards: Array<{ id: string; last4: string; status: string }>
   /**

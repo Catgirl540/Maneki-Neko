@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { api, type StaffUser } from '@/api'
+import { api, ApiError, type StaffUser } from '@/api'
+import { isDemoStaff } from '@/api/environment'
 import { STAFF_AUTH_EXPIRED_EVENT } from '@/api/agent'
 import { SessionContext, useSession } from './session-context'
 
@@ -24,6 +25,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (name: string, password: string) => {
     const result = await api.login(name, password)
+    if (isDemoStaff && result.staff.role === 'ops') {
+      await api.logout().catch(() => {})
+      throw new ApiError('演示环境仅用于客服与主管办理，请切换合作银行环境使用运维功能', 403, 'STAFF_ENVIRONMENT_UNSUPPORTED')
+    }
     setUser(result.staff)
   }, [])
 

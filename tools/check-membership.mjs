@@ -202,7 +202,7 @@ console.log('PASS 降级缓冲：连续 2 期低于当前档门槛才降；中�
 /* ── 7. 新客户 standard：零权益、标准点差、旧权益不生效 ───────── */
 const newSms = await api.sendSmsCode('13900139098')
 const face = await api.verifyIdentity('face')
-await api.register({ phone: '13900139098', password: 'safe123', paymentPassword: '888888', holderName: '新客测试', idNumber: '310101199001011234', smsCode: newSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
+await api.register({ phone: '13900139098', password: 'SafeBank!123', paymentPassword: '888888', holderName: '新客测试', idNumber: '310101199001011234', smsCode: newSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
 const fresh = await api.getMembership()
 assert.equal(fresh.tier, 'standard')
 assert.equal(fresh.tierLabel, '普通会员')

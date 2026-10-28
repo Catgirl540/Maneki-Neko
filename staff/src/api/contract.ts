@@ -1,6 +1,7 @@
 /* ==========================================================================
    StaffApi —— 工作人员端前端唯一依赖的接口面
-   版本：v1.5（2026-10-21：员工权限版本、工单版本/转派、真实聚合与 IM 接入。
+   版本：v1.6（2026-10-28：客户账号冻结状态与核验后 unfreezeAccount 解冻动作。
+        v1.5：2026-10-21 员工权限版本、工单版本/转派、真实聚合与 IM 接入。
         v1.4：2026-10-14 合并两条并行变更，各自独立提交过：
         v1.3a postTicketMessage 增加可选 opts.visibleToCustomer，员工留言可投递到
         客户端收件箱；v1.3b 新增 ops 角色与只读运维总览。取高号 v1.4 避免撞车。
@@ -107,6 +108,7 @@ export interface CustomerActionRequest {
    * 目标字段（v1.2 补，乙交付记录 §4.1）：按动作二选一带入，服务端逐动作校验必填。
    * - lockCard / unlockCard / updateCardSettings → cardId（updateCardSettings 另需 dailyLimit）
    * - patchAutodebit → autoDebitId + enabled
+   * - unfreezeAccount → 无额外目标字段，解除客户账号的支付密码错误冻结
    */
   /** 目标卡 id（卡类动作必填） */
   cardId?: string

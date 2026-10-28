@@ -128,6 +128,47 @@ test('scoped projection rolls back financial identity changes and refreshes afte
   } finally { await first.close(); await second.close() }
 }))
 
+for (const projection of ['scoped', 'full']) test(`${projection} recovery keeps the cross-process lock and persists only the security event`, options, () => scratch(async (bank, schema, admin) => {
+  await seed(bank, { ...sample(), payPasswordFailures: 4 })
+  const runtime = await openBankDatabase(url, { schema, autoMigrate: false, ...(projection === 'scoped' ? { profileProjection: 'scoped' } : {}) })
+  const read = () => JSON.parse(runtime.storage.getItem(CURRENT_KEY))
+  const lockAvailable = async () => (await admin.query('SELECT pg_try_advisory_xact_lock(782614101) AS acquired')).rows[0].acquired
+  try {
+    await assert.rejects(runtime.storage.recoverUnitOfWork(), /No database unit/)
+    const original = read()
+    await runtime.storage.beginUnitOfWork({ requestId: `security-savepoint-${projection}` })
+    const dirty = read()
+    dirty.accounts[0].balance -= 5000; dirty.accounts[0].available -= 5000
+    dirty.payPasswordFailures = 0
+    stage(runtime, dirty)
+    await runtime.db.prepare('INSERT INTO app_storage(key,value_json) VALUES(?,?)').run('rejected-business-write', '{}')
+    assert.equal(await lockAvailable(), false)
+    // Also recover a PostgreSQL-aborted statement, not only a JavaScript rejection.
+    await assert.rejects(runtime.db.query('SELECT 1 / 0'))
+    await runtime.storage.recoverUnitOfWork()
+    assert.equal(await lockAvailable(), false, 'recovery must retain the lock acquired before the savepoint')
+    assert.deepEqual(read(), original)
+    assert.equal(await runtime.db.prepare('SELECT value_json FROM app_storage WHERE key=?').get('rejected-business-write'), undefined)
+    const recovered = read()
+    recovered.payPasswordFailures += 1
+    stage(runtime, recovered)
+    await runtime.storage.commitUnitOfWork()
+    assert.equal(await lockAvailable(), true)
+    await assert.rejects(runtime.storage.recoverUnitOfWork(), /No database unit/)
+    await bank.storage.refresh()
+    const saved = JSON.parse(bank.storage.getItem(CURRENT_KEY))
+    assert.deepEqual(saved.accounts, original.accounts)
+    assert.deepEqual(saved.transactions, original.transactions)
+    assert.equal(saved.payPasswordFailures, 5)
+    assert.equal((await reconcileDatabase(bank.db)).ok, true)
+    await runtime.storage.beginUnitOfWork()
+    const changed = read(); changed.payPasswordFailures = 0; stage(runtime, changed)
+    await runtime.storage.recoverUnitOfWork()
+    await runtime.storage.rollbackUnitOfWork()
+    assert.equal(read().payPasswordFailures, 5, 'full rollback must retain the original unit baseline')
+  } finally { await runtime.close() }
+}))
+
 test('single funding migration preserves frozen money, original transaction identity and retired ledger history across restart', options, () => scratch(async (bank, schema) => {
   const profile = sample()
   profile.accounts.push({ ...profile.accounts[0], id: 'old-cny', accountNo: '8820990000000002', balance: 25_000, available: 20_000 },

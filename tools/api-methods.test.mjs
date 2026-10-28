@@ -24,6 +24,19 @@ test('removing or adding a returned method changes the extracted API instead of 
   assert(parse('async one(){}, async two(){}, async extra(){}').has('extra'))
 })
 
+test('a factory that returns a self-assignment keeps the same extraction and still rejects loose shapes', () => {
+  // 内部助手需要 `() => api` 自引用，所以工厂先赋值再 return；这层赋值不该让检查失效。
+  const source = `export function createMockApi(): BankApi {
+    let api
+    const plans = helper(() => api)
+    return api = { async first() {}, async second() {} }
+  }`
+  assert.deepEqual([...returnedApiMethods(source, 'createMockApi')], ['first', 'second'])
+  // 赋值右侧不是对象字面量时仍要拒绝，不能因为放宽一层就放过条件返回。
+  assert.throws(() => returnedApiMethods('function createMockApi(){ let api; return api = makeApi() }', 'createMockApi'))
+  assert.throws(() => returnedApiMethods('function createMockApi(){ let api; return api = { ...other } }', 'createMockApi'))
+})
+
 test('missing or unsupported factories, spreads, computed/duplicate keys and syntax errors fail closed', () => {
   for (const source of [
     'function other(){return {}}', 'function createMockApi(){return missing}',

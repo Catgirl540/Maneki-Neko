@@ -81,7 +81,7 @@ export function CardSecretsModal({
         />
         <p className="text-[12px] leading-relaxed text-ink-mute">
           完整卡号与安全码是持卡人验证信息，与卡面上的有效期不同，查看前需要单独验证支付密码。
-          验证通过后 60 秒内显示，到点自动隐藏。连续输错 3 次会被锁定，需重新登录。
+          验证通过后 60 秒内显示，到点自动隐藏。连续输错 5 次会冻结账号，需联系工作人员解冻。
         </p>
         {error && !passwordError && (
           <p className="flex items-start gap-2 rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">

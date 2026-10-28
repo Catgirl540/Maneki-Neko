@@ -1,5 +1,6 @@
 import { PageHeader } from '@/components/PageHeader'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   ApiError,
   api,
@@ -11,13 +12,14 @@ import { CARD_STATUS_LABEL, formatCents } from '../customers/labels'
 
 /**
  * 代客办理（清单 §2 P1，乙模块）。
- * 白名单动作（锁卡/解锁/调限额/关闭代扣），复用客户端既有业务规则；提交前弹确认。
+ * 白名单动作（账号解冻/锁卡/解锁/调限额/关闭代扣），复用既有业务规则。
  * 目标字段 cardId/dailyLimit/autoDebitId/enabled 由契约 v1.2 提供（甲 [contract] 补）。
  */
 
-type ActionKey = 'lockCard' | 'unlockCard' | 'updateCardSettings' | 'patchAutodebit'
+type ActionKey = 'lockCard' | 'unlockCard' | 'updateCardSettings' | 'patchAutodebit' | 'unfreezeAccount'
 
 const ACTIONS: Array<{ key: ActionKey; label: string; highImpact: boolean }> = [
+  { key: 'unfreezeAccount', label: '解冻账号', highImpact: true },
   { key: 'lockCard', label: '锁卡', highImpact: false },
   { key: 'unlockCard', label: '解锁卡', highImpact: true },
   { key: 'updateCardSettings', label: '调整单日限额', highImpact: true },
@@ -33,14 +35,17 @@ const VERIFY_METHODS = [
 ] as const
 
 export function ActionsPage() {
-  const [keyword, setKeyword] = useState('')
+  const [searchParams] = useSearchParams()
+  const initialCustomerId = searchParams.get('customer') ?? ''
+  const [keyword, setKeyword] = useState(initialCustomerId)
   const [results, setResults] = useState<CustomerSummary[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const [customer, setCustomer] = useState<CustomerSummary | null>(null)
   const [profile, setProfile] = useState<CustomerProfile | null>(null)
+  const [profileLoading, setProfileLoading] = useState(false)
 
-  const [action, setAction] = useState<ActionKey>('lockCard')
+  const [action, setAction] = useState<ActionKey>(searchParams.get('action') === 'unfreezeAccount' ? 'unfreezeAccount' : 'lockCard')
   const [cardId, setCardId] = useState('')
   const [autoDebitId, setAutoDebitId] = useState('')
   const [dailyLimit, setDailyLimit] = useState(5_000_000)
@@ -61,18 +66,34 @@ export function ActionsPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!initialCustomerId) return
+    let active = true
+    void api.searchCustomers(initialCustomerId).then(
+      rows => { if (active) setResults(rows) },
+      error => { if (active) setError(error instanceof ApiError ? error.message : '客户查询失败') },
+    )
+    return () => { active = false }
+  }, [initialCustomerId])
+
   async function selectCustomer(c: CustomerSummary) {
+    setProfileLoading(true)
     setCustomer(c)
     setProfile(null)
     setCardId('')
     setAutoDebitId('')
     setDone(null)
     setError(null)
+    setTicketId('')
+    setReason('')
+    setVerificationResult('failed')
     try {
       // 选目标卡/代扣需要读到客户档案，这一步本身是一次敏感查看，落账走 profile 接口
-      setProfile(await api.getCustomerProfile(c.customerId, '代客办理（选择目标卡）'))
+      setProfile(await api.getCustomerProfile(c.customerId, '代客办理（核对账号与业务状态）'))
     } catch (e) {
       setError(e instanceof ApiError ? e.message : '加载客户档案失败')
+    } finally {
+      setProfileLoading(false)
     }
   }
 
@@ -80,6 +101,8 @@ export function ActionsPage() {
     if (!customer || !profile) return
     if (action === 'patchAutodebit') {
       if (!autoDebitId) return setError('请选择代扣协议')
+    } else if (action === 'unfreezeAccount') {
+      if (!profile.accountSecurity?.frozen) return setError('该账号当前未冻结，无需解冻')
     } else if (!cardId) {
       return setError('请选择目标卡')
     }
@@ -92,7 +115,7 @@ export function ActionsPage() {
       verificationMethod,
       verificationResult,
       reason: reason.trim(),
-      ...(action === 'patchAutodebit'
+      ...(action === 'unfreezeAccount' ? {} : action === 'patchAutodebit'
         ? { autoDebitId, enabled: false }
         : action === 'updateCardSettings'
           ? { cardId, dailyLimit }
@@ -103,6 +126,9 @@ export function ActionsPage() {
     setDone(null)
     try {
       await api.performCustomerAction(customer.customerId, action, req)
+      if (action === 'unfreezeAccount') {
+        setProfile({ ...profile, accountSecurity: { frozen: false, failedAttempts: 0, maxAttempts: 5, reason: null } })
+      }
       setDone(
         `已以员工身份为「${customer.name}」完成「${ACTIONS.find((a) => a.key === action)?.label}」`,
       )
@@ -121,7 +147,7 @@ export function ActionsPage() {
 
   return (
     <div className="staff-page">
-      <PageHeader title="代客办理" description="核验客户身份后，办理卡片与自动扣款业务。" />
+      <PageHeader title="代客办理" description="核验客户身份后，办理账号解冻、卡片与自动扣款业务。" />
 
       <ol className="staff-action-steps" aria-label="办理进度">{['选择客户', '核验与办理', '完成'].map((label, index) => <li key={label} aria-current={(done ? 2 : customer ? 1 : 0) === index ? 'step' : undefined}><span>{index + 1}</span>{label}</li>)}</ol>
 
@@ -208,6 +234,7 @@ export function ActionsPage() {
               为「{customer.name}」办理 · {customer.phoneMasked}
             </div>
             <button
+              disabled={submitting || profileLoading}
               onClick={() => {
                 setCustomer(null)
                 setProfile(null)
@@ -219,7 +246,7 @@ export function ActionsPage() {
             </button>
           </div>
 
-          <div className="mt-4 grid gap-4">
+          <fieldset disabled={submitting || profileLoading} className="mt-4 grid gap-4">
             <div className="flex flex-wrap gap-3">
               {ACTIONS.map((a) => (
                 <button
@@ -241,7 +268,7 @@ export function ActionsPage() {
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              {action !== 'patchAutodebit' && (
+              {action !== 'patchAutodebit' && action !== 'unfreezeAccount' && (
                 <label className="text-sm text-[var(--color-ink-soft)]">
                   目标卡
                   <select
@@ -342,6 +369,14 @@ export function ActionsPage() {
               </label>
             </div>
 
+            {action === 'unfreezeAccount' && (
+              <div className="rounded-[var(--radius-tile)] bg-[var(--color-paper)] px-4 py-3 text-sm text-[var(--color-ink-soft)]">
+                {profileLoading ? '正在读取账号安全状态…' : !profile?.accountSecurity ? '暂时无法读取账号安全状态，请重新选择客户后重试。' : profile.accountSecurity.frozen
+                  ? `账号已冻结：${profile.accountSecurity.reason ?? '支付密码连续输错 5 次'}。请关联本客户正在受理的工单，完成身份核验后解冻。解冻会清零支付密码错误次数。`
+                  : '该账号当前未冻结，无需解冻。'}
+              </div>
+            )}
+
             {activeAction && verificationResult !== 'passed' && (
               <div className="rounded-[var(--radius-tile)] bg-[var(--color-coral-wash)] px-4 py-3 text-sm text-[var(--color-coral)]">
                 办理「{activeAction.label}」须先通过身份核验。
@@ -361,12 +396,12 @@ export function ActionsPage() {
 
             <button
               onClick={submit}
-              disabled={submitting||verificationResult!=='passed'}
+              disabled={submitting || !profile || verificationResult !== 'passed' || (action === 'unfreezeAccount' && !profile?.accountSecurity?.frozen)}
               className="w-fit rounded-[var(--radius-tile)] bg-[var(--color-gold)] px-5 py-2 text-sm font-medium text-white hover:bg-[var(--color-gold-deep)] disabled:opacity-50"
             >
               {submitting ? '办理中…' : `确认办理「${activeAction?.label ?? ''}」`}
             </button>
-          </div>
+          </fieldset>
         </div>
       )}
     </div>

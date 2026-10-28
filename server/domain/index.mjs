@@ -17,6 +17,8 @@ export function appendStaffNotice(notice) {
 
 
 import { ledgerBalances, findBalance } from '../../shared/account-model.mjs';
+import { isValidLoginPassword, LOGIN_PASSWORD_REQUIREMENTS } from '../../shared/password-policy.mjs';
+import { assertAccountActive, paymentSecurityStatus, recordPaymentPasswordFailure, resetPaymentPasswordFailures, paymentPasswordFailureError, protectAccountApi } from '../../shared/account-security.mjs';
 import { previewBirthdayPlan as previewBirthday, createBirthdayPlan as createBirthday, advanceBirthdayPlans, listBirthdayPlans as listBirthdays, cancelBirthdayPlan as cancelBirthday, confirmBirthdayOrder as confirmBirthday } from '../../shared/linked-plans.mjs';
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../shared/account-model.mjs'
 import { billingReport, exportBillingReport as buildBillingExport } from '../../shared/billing-reports.mjs'
@@ -28,6 +30,7 @@ import { supportGuidance } from '../../shared/support-guidance.mjs'
 import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../shared/spend-platforms.mjs'
 import { BUDGET_MAX_COUNT, BUDGET_PASS_EXTRA_CENTS, BUDGET_PASS_MAX_FUTURE_DAYS, BUDGET_POINTS_PER_PASS, BudgetError, checkBudgetLimit, budgetPoints, budgetsOverview, shanghaiDay, settleBudgetPoints, validateBudgetInput, validateBudgetPatch, validatePassDay } from '../../shared/budgets.mjs'
 import { hashPassword, verifyPassword, needsRehash } from '../passwords.mjs';
+import { recordPaymentPasswordEvent } from '../payment-password-events.mjs';
 import { randomInt } from 'node:crypto';
 // Server business rules with normalized SQL persistence; sandbox integrations are explicitly gated.
 import { ApiError } from '../api/contract.mjs';
@@ -43,7 +46,7 @@ import { redactSupportText } from '../../shared/support.mjs';
 import { STORAGE_KEYS, storage } from '../lib/storage.mjs';
 import { CHANNEL_LABEL, STATUS_LABEL } from '../lib/tx.mjs';
 import { maskPhone } from '../lib/format.mjs';
-import { CARD_PAYMENT_METHOD, DEFAULT_PAY_PASSWORD, CARD_PRODUCTS, emptyCustomerDomains, lookupFpsRegistration, cardPan, RISK_QUESTIONS, WEALTH_PRODUCTS, toleranceFromScore, FX_QUOTE_TTL, FX_SPREAD, FX_MID_RATES, findBank, PAY_PASSWORD_MAX_ATTEMPTS, applyRealtimeUpgrade, cardFeeQuote, effectiveSpread, entitlements, evaluateMembership, fxRateFor, membershipOverview, recordCardFeeWaiver, redeemLoungePass, transferFee, transferFeeWaived, wealthPriorityGate, OCCUPYING_CARD_STATUSES, loadDb, findProfileByPhone, findProfileByUserId, findRecipientByNumber, persistRelatedProfiles, forgetProfilePhone, activateDb, makeReferenceNo, nextId, persist, toTransactionListItem, withBalances, } from './state.mjs';
+import { CARD_PAYMENT_METHOD, DEFAULT_PAY_PASSWORD, CARD_PRODUCTS, emptyCustomerDomains, lookupFpsRegistration, cardPan, RISK_QUESTIONS, WEALTH_PRODUCTS, toleranceFromScore, FX_QUOTE_TTL, FX_SPREAD, FX_MID_RATES, findBank, applyRealtimeUpgrade, cardFeeQuote, effectiveSpread, entitlements, evaluateMembership, fxRateFor, membershipOverview, recordCardFeeWaiver, redeemLoungePass, transferFee, transferFeeWaived, wealthPriorityGate, OCCUPYING_CARD_STATUSES, loadDb, findProfileByPhone, findProfileByUserId, findRecipientByNumber, persistRelatedProfiles, forgetProfilePhone, activateDb, makeReferenceNo, nextId, persist, toTransactionListItem, withBalances, } from './state.mjs';
 import { lookupCardBin } from './card-bin.mjs';
 const delay = async () => {};
 async function passwordDigest(value) { return hashPassword(value); }
@@ -130,6 +133,7 @@ function withDerivedSecurity() {
     const score = Math.min(100, 60 + (db.security.identityVerified ? 12 : 0) + enabledRules * 6);
     return {
         ...db.security,
+        accountSecurity: paymentSecurityStatus(db),
         score,
         level: score >= 90 ? '防护优秀' : score >= 75 ? '防护良好' : '建议加强',
     };
@@ -373,24 +377,23 @@ function cannedReply(text) {
 /**
  * 校验支付密码。
  * 付钱这一步必须单独验证：登录密码泄露不等于能扣钱。
- * 连续输错达阈值即锁定，要求重新登录（真实系统还会要求去柜台或人脸解锁）。
+ * 连续输错 5 次冻结账号，必须由工作人员核验身份后解冻。
  */
 export function verifyPayPassword(input) {
     const db = loadDb();
-    if (db.payPasswordFailures >= PAY_PASSWORD_MAX_ATTEMPTS) {
-        throw new ApiError('支付密码已锁定，请重新登录后再试', 423, 'PAY_PASSWORD_LOCKED');
-    }
+    assertAccountActive(db);
     if (!/^\d{6}$/.test(input)) {
         throw new ApiError('请输入 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD');
     }
     if (!verifyPassword(input, db.payPassword)) {
-        db.payPasswordFailures += 1;
+        recordPaymentPasswordEvent(db.user.id, false);
+        recordPaymentPasswordFailure(db);
         persist();
-        const left = PAY_PASSWORD_MAX_ATTEMPTS - db.payPasswordFailures;
-        throw new ApiError(left > 0 ? `支付密码不正确，还可尝试 ${left} 次` : '支付密码连续错误，已锁定，请重新登录', 401, 'BAD_PAY_PASSWORD');
+        throw paymentPasswordFailureError(db);
     }
+    recordPaymentPasswordEvent(db.user.id, true);
     if (needsRehash(db.payPassword)) db.payPassword = hashPassword(input);
-    db.payPasswordFailures = 0;
+    resetPaymentPasswordFailures(db);
     persist();
 }
 /**
@@ -476,7 +479,7 @@ export function createBankBusinessApi(options) {
     let api;
     const plans = paymentPlans(options, () => api);
     const publicPlans = Object.fromEntries(Object.entries(plans).filter(([name]) => name !== 'settleScheduledTransfers'));
-    return api = {
+    return api = protectAccountApi({
         ...publicPlans,
         async login(phone, password, smsCode) {
             await delay();
@@ -501,8 +504,7 @@ export function createBankBusinessApi(options) {
             const live = loadDb();
             live.pendingSms = null;
             if (needsRehash(live.passwordDigest)) live.passwordDigest = hashPassword(password);
-            // 重新登录即解除支付密码锁定
-            // A new login does not reset a locked payment credential.
+            // 登录不重置支付密码错误次数或解除账号冻结。
             persist();
             return { token: `mock.${btoa(phone)}.${Date.now()}`, user: live.user };
         },
@@ -514,8 +516,8 @@ export function createBankBusinessApi(options) {
                 throw new ApiError('请输入 11 位手机号', 400, 'INVALID_PHONE');
             if (await findProfileByPhone(phone) !== null)
                 throw new ApiError('该手机号已注册', 409, 'PHONE_EXISTS');
-            if (req.password.length < 6 || req.password.length > 20) {
-                throw new ApiError('登录密码需为 6–20 个字符', 400, 'WEAK_PASSWORD');
+            if (!isValidLoginPassword(req.password)) {
+                throw new ApiError(LOGIN_PASSWORD_REQUIREMENTS, 400, 'WEAK_PASSWORD');
             }
             if (!/^\d{6}$/.test(req.paymentPassword)) {
                 throw new ApiError('请设置 6 位数字支付密码', 400, 'INVALID_PAY_PASSWORD');
@@ -2002,8 +2004,8 @@ async getSecurityOverview() {
             if (!verifyPassword(oldPassword, db.passwordDigest)) {
                 throw new ApiError('原密码不正确', 400, 'BAD_OLD_PASSWORD');
             }
-            if (newPassword.length < 6) {
-                throw new ApiError('新密码至少 6 位', 400, 'WEAK_PASSWORD');
+            if (!isValidLoginPassword(newPassword)) {
+                throw new ApiError(LOGIN_PASSWORD_REQUIREMENTS, 400, 'WEAK_PASSWORD');
             }
             db.passwordDigest = await passwordDigest(newPassword);
             db.security.logs.unshift({
@@ -2019,11 +2021,11 @@ async getSecurityOverview() {
             await delay(420);
             const db = loadDb();
             if (typeof req.oldPassword === 'string' && req.oldPassword.length > 0) {
-                // 常规修改：和付款一样验原密码，错误次数会累计、已锁定必须走核身重置
+                // 常规修改同样累计错误次数，冻结账号已由统一入口拦截。
                 verifyPayPassword(req.oldPassword);
             }
             else {
-                // 忘记原密码或已锁定：核身重置是唯一出口
+                // 未冻结时忘记原密码，可核身重置。
                 if (!req.faceTicket) {
                     throw new ApiError('请先完成人脸识别', 400, 'FACE_REQUIRED');
                 }
@@ -2653,7 +2655,7 @@ async getSecurityOverview() {
             persist();
             return policy;
         },
-    };
+    }, loadDb);
 }
 /** 解冻本次实际预留金额；兼容只冻结本金的旧指令。 */
 function releaseFreeze(db, rec) {
@@ -2691,6 +2693,7 @@ export function getHeldTransfer(transactionId) {
  */
 export async function settleHeldTransfer(transactionId, outcome, reason) {
     const db = loadDb();
+    if (outcome === 'settled') assertAccountActive(db);
     const index = db.transactions.findIndex((t) => t.id === transactionId && t.pendingReason === 'inflight' && t.status === 'pending');
     if (index < 0) {
         throw new ApiError('没有找到在途的转账指令', 404, 'HELD_TRANSFER_NOT_FOUND');
@@ -2765,15 +2768,17 @@ function paymentPlans(options, api) {
 
 /** Called by the bank settlement scanner inside its per-customer durable unit of work. */
 export async function settleScheduledTransfers(options, existingApi) {
+    if (paymentSecurityStatus(loadDb()).frozen) return [];
     const api = existingApi ?? createBankBusinessApi(options);
     return paymentPlans(options, () => api).settleScheduledTransfers();
 }
 
 /** Advance only already-authorized plans inside the bank scanner's transaction. */
-export function settleBirthdayPlans() { const changed = advanceBirthdayPlans(loadDb()); if (changed.length) persist(); return changed; }
+export function settleBirthdayPlans() { if (paymentSecurityStatus(loadDb()).frozen) return []; const changed = advanceBirthdayPlans(loadDb()); if (changed.length) persist(); return changed; }
 
 export async function settleExpiredHolds() {
     const db = loadDb();
+    if (paymentSecurityStatus(db).frozen) return [];
     const now = Date.now();
     const expired = db.transactions.filter((t) => t.status === 'pending' && t.pendingReason === 'inflight' && t.holdUntil !== undefined
         && new Date(t.holdUntil).getTime() <= now);

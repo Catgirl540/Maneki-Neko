@@ -936,12 +936,14 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
       if (customerActionMatch && req.method === 'POST') {
         const who = await auth.resolveCurrent(req, {})
         const [, customerId, action] = customerActionMatch
-        const WHITELIST = ['lockCard', 'unlockCard', 'updateCardSettings', 'patchAutodebit']
+        const WHITELIST = ['lockCard', 'unlockCard', 'updateCardSettings', 'patchAutodebit', 'unfreezeAccount']
         if (!WHITELIST.includes(action)) {
           throw staffError(400, `不支持的代客动作：${action}`, 'BAD_ACTION')
         }
         const body = await readBody(req)
         requireFields(body, ['ticketId', 'verificationMethod', 'verificationResult', 'reason'])
+        if (typeof body.reason !== 'string' || !body.reason.trim()) throw staffError(400, '请填写办理事由', 'REASON_REQUIRED')
+        body.reason = body.reason.trim()
         const linked = await db.prepare(`SELECT * FROM tickets WHERE id = ?${bankHooks.runStaffUnitOfWork ? ' FOR UPDATE' : ''}`).get(body.ticketId)
         if (!linked || linked.customer_id !== customerId) throw staffError(403, '工单不属于该客户', 'TICKET_CUSTOMER_MISMATCH')
         if (!['open','processing','waiting'].includes(linked.status)) throw staffError(409, '需要正在受理的工单', 'TICKET_CLOSED')
@@ -951,14 +953,16 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
         if (body.verificationResult === 'failed') {
           throw staffError(403, '客户核验未通过，不能办理', 'VERIFICATION_FAILED')
         }
-        // 高影响动作（解锁卡 / 调限额）必须核验通过，未核验禁止（清单 §2 P1）
-        const HIGH_IMPACT = ['unlockCard', 'updateCardSettings']
+        // 高影响动作（账号解冻 / 解锁卡 / 调限额）必须核验通过。
+        const HIGH_IMPACT = ['unlockCard', 'updateCardSettings', 'unfreezeAccount']
         if (HIGH_IMPACT.includes(action) && body.verificationResult !== 'passed') {
           throw staffError(403, '该动作影响资金安全，必须完成客户核验', 'VERIFICATION_REQUIRED')
         }
         // 组装 payload 交给 bankHooks（复用客户端业务规则，不复制校验逻辑）
         let payload
-        if (action === 'updateCardSettings') {
+        if (action === 'unfreezeAccount') {
+          payload = {}
+        } else if (action === 'updateCardSettings') {
           requireFields(body, ['cardId', 'dailyLimit'])
           const DAILY_LIMIT_OPTIONS = [200_000, 500_000, 1_000_000, 5_000_000]
           if (!DAILY_LIMIT_OPTIONS.includes(body.dailyLimit)) {
@@ -981,7 +985,7 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
           action: `customer.action.${action}`,
           targetType: 'customer',
           targetId: customerId,
-          reason: `工单 ${body.ticketId} · ${body.reason}`,
+          reason: `工单 ${body.ticketId} · ${body.verificationMethod} 核验通过 · ${body.reason}`,
         })
         json(res, 200, { ok: true })
         return true

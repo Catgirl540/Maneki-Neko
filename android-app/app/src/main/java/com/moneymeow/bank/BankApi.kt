@@ -56,6 +56,15 @@ object BankApi {
             )
         }
 
+    suspend fun changeLoginPassword(oldPassword: String, newPassword: String): Unit = withContext(Dispatchers.IO) {
+        require(PasswordPolicy.isValid(newPassword)) { PasswordPolicy.requirements }
+        requestRaw(
+            "POST", "/api/security/password",
+            JSONObject().put("oldPassword", oldPassword).put("newPassword", newPassword),
+        )
+        Unit
+    }
+
     suspend fun accounts(): List<AccountDto> = withContext(Dispatchers.IO) {
         val text = requestRaw("GET", "/api/accounts", null)
         val array = org.json.JSONTokener(text).nextValue() as JSONArray

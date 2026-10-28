@@ -257,9 +257,11 @@ PY
 
 后两类测试会重建各自专库中的业务 schema，必须使用可丢弃的测试库。缺少相应 URL 会将相关测试标记为 `skip`；存在跳过项目不能视为完成全套 PostgreSQL 验证。前端静态构建与不依赖这些旧库的工具保持原流程。
 
-### 6.1 密码重置与支付解锁
+### 6.1 密码维护与账号冻结
 
-`deploy/postgres/admin.py` 仅接受 Linux root，读取 `bank.env` 和 `pg-app.env`，以 `bank` 系统用户执行 PostgreSQL 版 `server/admin.mjs`。密码通过无回显 TTY 输入，并仅经子进程 stdin 传递，不接收密码参数，也不把新密码放入环境或文件。支付密码为六位数字，登录密码为 12–20 字符。维护在数据库事务内完成，并记录 `bank_admin_audit`。
+`deploy/postgres/admin.py` 仅接受 Linux root，读取 `bank.env` 和 `pg-app.env`，以 `bank` 系统用户执行 PostgreSQL 版 `server/admin.mjs`。密码通过无回显 TTY 输入，并仅经子进程 stdin 传递，不接收密码参数，也不把新密码放入环境或文件。支付密码为六位数字；客户登录密码至少 8 个字符，须含 ASCII 大写字母、小写字母及标点或符号，空格不计作特殊字符，最多 1024 UTF-8 字节；员工登录密码继续要求 12–20 字符。维护输入均不接受 NUL 或换行。维护在数据库事务内完成，并记录 `bank_admin_audit`。
+
+支付密码连续输错 5 次后冻结账号，必须在工作人员端关联客户工单、核验身份后解冻。维护入口已移除 `unlock-payment`，直接调用该 Node 动作也返回 `STAFF_UNFREEZE_REQUIRED`。冻结账号的 `set-payment-password` 返回 `ACCOUNT_FROZEN`，不修改密码或错误次数；`set-customer-password` 只重置登录密码，保留账号冻结。未冻结账号重置支付密码后可清零此前未达阈值的错误次数。旧 `deploy/bank/admin.py` 是 SQLite 历史入口，不用于当前 PostgreSQL 维护，也不能绕过这些服务端检查。
 
 先完成新备份，停止银行并确认 `MainPID=0`，再按需要选择一条命令。服务及维护脚本共用 `.maintenance.lock`，维护期间启动银行会被拒绝。脚本不会替操作者停止或启动服务。
 
@@ -270,7 +272,6 @@ systemctl show luckycat-bank.service --property=ActiveState --property=MainPID
 python3 -B /srv/maneki-bank/current/deploy/postgres/admin.py set-staff-password STAFF_ID
 python3 -B /srv/maneki-bank/current/deploy/postgres/admin.py set-customer-password CUSTOMER_ID
 python3 -B /srv/maneki-bank/current/deploy/postgres/admin.py set-payment-password CUSTOMER_ID
-python3 -B /srv/maneki-bank/current/deploy/postgres/admin.py unlock-payment CUSTOMER_ID
 systemctl start luckycat-bank-reconcile.service
 systemctl start luckycat-bank.service
 curl --fail --max-time 5 http://127.0.0.1:8080/health

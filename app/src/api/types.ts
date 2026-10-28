@@ -891,6 +891,8 @@ export interface SecurityLog {
 }
 
 export interface SecurityOverview {
+  /** 支付密码连续输错 5 次后冻结；仅工作人员核验后可解冻。 */
+  accountSecurity?: import('../../../shared/account-security.mjs').AccountSecurityStatus
   /** 0-100 */
   score: number
   level: string
@@ -1269,7 +1271,8 @@ export interface ChangePhoneRequest {
  *
  * 两条路径互斥：
  * - `oldPassword`：已记得原密码的常规修改，走与付款一致的校验（计错误次数、可能已锁定）。
- * - `faceTicket`：忘记原密码或已被锁定时，用本人核身来重置 —— 这也是锁定后的唯一出口。
+ * - `faceTicket`：账号未冻结且忘记原密码时，用本人核身来重置。
+ * 账号冻结时两条路径均不可用，必须由工作人员核验后解冻。
  * 成功后错误次数清零。新密码必须是 6 位数字。
  */
 export interface ChangePaymentPasswordRequest {

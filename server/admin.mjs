@@ -3,20 +3,22 @@ import { readFileSync } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { openBankDatabase, CURRENT_KEY, PROFILES_KEY } from './database.mjs'
 import { hashPassword } from './passwords.mjs'
+import { PASSWORD_MAINTENANCE_ACTIONS, assertMaintenancePassword, setCustomerMaintenancePassword } from './maintenance-passwords.mjs'
 
 const [action, owner, ...extra] = process.argv.slice(2)
-const actions = ['set-staff-password', 'set-customer-password', 'set-payment-password', 'unlock-payment']
-if (!actions.includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(owner ?? '') || extra.length || process.env.BANK_MAINTENANCE !== '1' || !/^postgres(?:ql)?:\/\//i.test(process.env.BANK_DATABASE_URL ?? '') || !process.env.BANK_DATA_KEY) {
+if (action === 'unlock-payment') {
+  console.error(JSON.stringify({ ok: false, code: 'STAFF_UNFREEZE_REQUIRED' }))
+  process.exit(2)
+}
+if (!PASSWORD_MAINTENANCE_ACTIONS.includes(action) || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(owner ?? '') || extra.length || process.env.BANK_MAINTENANCE !== '1' || !/^postgres(?:ql)?:\/\//i.test(process.env.BANK_DATABASE_URL ?? '') || !process.env.BANK_DATA_KEY) {
   console.error('Use deploy/postgres/admin.py with PostgreSQL maintenance mode while the bank service is stopped')
   process.exit(2)
 }
 let password = '', bank
 try {
   // Stdin only: never accept passwords in arguments or include them in diagnostics.
-  password = action === 'unlock-payment' ? '' : readFileSync(0, 'utf8').replace(/[\r\n]+$/, '')
-  if (action !== 'unlock-payment' && (/[\0\r\n]/.test(password) || (action === 'set-payment-password' ? !/^\d{6}$/.test(password) : password.length < 12 || password.length > 20))) {
-    throw Object.assign(new Error('Invalid maintenance password format'), { code: 'INVALID_PASSWORD_FORMAT' })
-  }
+  password = readFileSync(0, 'utf8').replace(/[\r\n]+$/, '')
+  assertMaintenancePassword(action, password)
   bank = await openBankDatabase(process.env.BANK_DATABASE_URL, { autoMigrate: false })
   await bank.storage.beginUnitOfWork({ requestId: randomUUID() })
   if (action === 'set-staff-password') {
@@ -30,10 +32,8 @@ try {
     const current = JSON.parse(bank.storage.getItem(CURRENT_KEY) ?? 'null')
     const profile = Object.values(profiles).find(item => item.user.id === owner) ?? (current?.user.id === owner ? current : null)
     if (!profile) throw Object.assign(new Error('Unknown customer'), { code: 'UNKNOWN_ACCOUNT' })
-    if (action === 'set-customer-password') profile.passwordDigest = hashPassword(password)
-    if (action === 'set-payment-password') profile.payPassword = hashPassword(password)
+    setCustomerMaintenancePassword(profile, action, password)
     password = ''
-    if (action !== 'set-customer-password') profile.payPasswordFailures = 0
     profiles[profile.user.phone] = profile
     const entries = [[PROFILES_KEY, JSON.stringify(profiles)]]
     if (current?.user.id === owner) entries.unshift([CURRENT_KEY, JSON.stringify(profile)])
@@ -47,7 +47,7 @@ try {
   console.log(JSON.stringify({ ok: true, database: 'postgresql', action, id: owner }))
 } catch (cause) {
   if (bank) await bank.storage.rollbackUnitOfWork().catch(() => {})
-  const code = ['INVALID_PASSWORD_FORMAT', 'UNKNOWN_ACCOUNT'].includes(cause?.code) ? cause.code : 'MAINTENANCE_FAILED'
+  const code = ['INVALID_PASSWORD_FORMAT', 'UNKNOWN_ACCOUNT', 'ACCOUNT_FROZEN'].includes(cause?.code) ? cause.code : 'MAINTENANCE_FAILED'
   // Database error messages may contain SQL values; never echo them to logs.
   console.error(JSON.stringify({ ok: false, code }))
   process.exitCode = code === 'INVALID_PASSWORD_FORMAT' ? 2 : 1

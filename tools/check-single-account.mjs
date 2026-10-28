@@ -95,7 +95,7 @@ console.log('PASS 申请新卡只增加卡片，所有卡共享账户；同组�
 
 const newSms = await api.sendSmsCode('13900139099')
 const face = await api.verifyIdentity('face')
-await api.register({ phone: '13900139099', password: 'safe123', paymentPassword: '888888', holderName: '隔离测试', idNumber: '310101199001011234', smsCode: newSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
+await api.register({ phone: '13900139099', password: 'SafeBank!123', paymentPassword: '888888', holderName: '隔离测试', idNumber: '310101199001011234', smsCode: newSms.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
 const fresh = await api.listAccounts()
 assert.equal(fresh.length, 1)
 assert.equal(fresh[0].balance, 0)

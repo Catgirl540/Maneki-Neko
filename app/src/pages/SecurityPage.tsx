@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { SecurityOverview } from '@/api/types'
 import { MEMBER_TIER_RULES } from '../../../shared/membership.mjs'
+import { isValidLoginPassword, LOGIN_PASSWORD_REQUIREMENTS } from '../../../shared/password-policy.mjs'
 import { Button } from '@/components/ui/Button'
 import { useResetOnOpen } from '@/lib/usePresence'
 import { Card, CardHeader } from '@/components/ui/Card'
@@ -40,6 +41,21 @@ export function SecurityPage() {
 
   const score = overview.data?.score ?? 0
   const phone = user?.phone ?? ''
+  const accountSecurity = overview.data?.accountSecurity
+  const frozen = accountSecurity?.frozen === true
+
+  useEffect(() => {
+    if (frozen) {
+      setPasswordOpen(false)
+      setPayPasswordOpen(false)
+      setPhoneOpen(false)
+    }
+  }, [frozen])
+
+  useEffect(() => {
+    window.addEventListener('focus', overview.reload)
+    return () => window.removeEventListener('focus', overview.reload)
+  }, [overview.reload])
 
   /**
    * 乐观更新风控规则：开关立即响应，接口返回最新的安全评分后一次写回。
@@ -47,7 +63,7 @@ export function SecurityPage() {
    */
   async function toggleRule(id: string, label: string, next: boolean) {
     const snapshot = overview.data
-    if (!snapshot) return
+    if (!snapshot || frozen) return
     overview.setData({
       ...snapshot,
       riskRules: snapshot.riskRules.map((r) => (r.id === id ? { ...r, enabled: next } : r)),
@@ -82,6 +98,23 @@ export function SecurityPage() {
           <span><span className="block text-[18px] font-semibold text-ink">{user?.name}</span><span className="mt-1 block text-[13px] text-ink-mute">{MEMBER_TIER_RULES[user?.memberTier ?? 'standard'].label}</span></span>
         </div>
       </Card>
+
+      {frozen && (
+        <section role="alert" className="rounded-card border border-coral/30 bg-coral-wash px-5 py-4">
+          <div className="flex items-start gap-3">
+            <LockIcon size={20} className="mt-0.5 shrink-0 text-coral" />
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[16px] font-semibold text-coral">账号已冻结</h2>
+              <p className="mt-2 text-[13px] leading-relaxed text-ink">{accountSecurity?.reason || '支付密码连续输错 5 次，请联系工作人员核验身份后解冻。'}</p>
+              <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">冻结期间可查询账户及联系客服，资金操作和安全设置变更已暂停。重新登录、修改密码或人脸核身均不能解除冻结。</p>
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <Link to="/assistant" className="text-[13px] font-medium text-gold-deep underline underline-offset-4">联系客服（进入助手后选择人工客服）</Link>
+                <Button size="sm" loading={overview.refreshing} onClick={overview.reload}>刷新账号状态</Button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {notice && (
         <p className="float-up flex items-center gap-2 rounded-field bg-blue-wash px-4 py-3 text-[13px] text-blue">
@@ -143,7 +176,7 @@ export function SecurityPage() {
               title="登录手机号"
               description={phone ? maskPhone(phone) : '—'}
               right={
-                <Button size="sm" onClick={() => setPhoneOpen(true)}>
+                <Button size="sm" disabled={frozen} onClick={() => setPhoneOpen(true)}>
                   更换
                 </Button>
               }
@@ -153,7 +186,7 @@ export function SecurityPage() {
               title="登录密码"
               description="修改后其他设备需要重新登录"
               right={
-                <Button size="sm" onClick={() => setPasswordOpen(true)}>
+                <Button size="sm" disabled={frozen} onClick={() => setPasswordOpen(true)}>
                   修改
                 </Button>
               }
@@ -161,9 +194,9 @@ export function SecurityPage() {
             <Row
               icon={<ShieldIcon size={20} />}
               title="支付密码"
-              description="转账、办卡等敏感操作使用，忘记可人脸核身重置"
+              description="连续输错 5 次冻结账号，需工作人员解冻；未冻结时忘记密码可人脸核身重置"
               right={
-                <Button size="sm" onClick={() => setPayPasswordOpen(true)}>
+                <Button size="sm" disabled={frozen} onClick={() => setPayPasswordOpen(true)}>
                   修改
                 </Button>
               }
@@ -217,6 +250,7 @@ export function SecurityPage() {
                 <Toggle
                   label={rule.label}
                   checked={rule.enabled}
+                  disabled={frozen}
                   onChange={(next) => void toggleRule(rule.id, rule.label, next)}
                 />
               }
@@ -284,7 +318,7 @@ export function SecurityPage() {
           条件挂载的话组件是被父级直接卸载的，`Modal` 里的退场动画永远没机会播，
           关掉就是"啪"地一下没了。表单状态由下面的 key 负责重置。 */}
       <PasswordModal
-        open={passwordOpen}
+        open={passwordOpen && !frozen}
         onClose={() => setPasswordOpen(false)}
         onDone={() => {
           setNotice('登录密码已更新，请在其他设备重新登录')
@@ -293,8 +327,9 @@ export function SecurityPage() {
       />
 
       <PayPasswordModal
-        open={payPasswordOpen}
+        open={payPasswordOpen && !frozen}
         onClose={() => setPayPasswordOpen(false)}
+        onFailure={overview.reload}
         onDone={(reset) => {
           setNotice(reset ? '支付密码已重置' : '支付密码已更新')
           overview.reload()
@@ -302,7 +337,7 @@ export function SecurityPage() {
       />
 
       <PhoneModal
-        open={phoneOpen}
+        open={phoneOpen && !frozen}
         currentPhone={phone}
         onClose={() => setPhoneOpen(false)}
         onDone={(next) => {
@@ -342,6 +377,8 @@ function PasswordModal({
 
   async function submit() {
     setError(null)
+    if (!oldPassword) return setError('请输入原密码')
+    if (!isValidLoginPassword(newPassword)) return setError(LOGIN_PASSWORD_REQUIREMENTS)
     if (newPassword !== confirm) return setError('两次输入的新密码不一致')
     setBusy(true)
     try {
@@ -359,14 +396,14 @@ function PasswordModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="重置登录密码"
+      title="修改登录密码"
       description="输入当前密码，再设置新的登录密码。"
       footer={
         <>
           <Button block onClick={onClose}>
             取消
           </Button>
-          <Button block variant="primary" loading={busy} onClick={() => void submit()}>
+          <Button block variant="primary" loading={busy} disabled={!oldPassword || !isValidLoginPassword(newPassword) || newPassword !== confirm} onClick={() => void submit()}>
             确认修改
           </Button>
         </>
@@ -376,6 +413,7 @@ function PasswordModal({
         <Field
           label="原密码"
           type="password"
+          autoComplete="current-password"
           icon={<LockIcon size={20} />}
           value={oldPassword}
           onChange={(e) => setOldPassword(e.target.value)}
@@ -384,19 +422,23 @@ function PasswordModal({
         <Field
           label="新密码"
           type="password"
+          autoComplete="new-password"
           icon={<LockIcon size={20} />}
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
-          placeholder="至少 6 位"
+          placeholder="至少 8 位，含大小写字母和特殊字符"
+          hint={LOGIN_PASSWORD_REQUIREMENTS}
+          error={newPassword && !isValidLoginPassword(newPassword) ? LOGIN_PASSWORD_REQUIREMENTS : undefined}
         />
         <Field
           label="确认新密码"
           type="password"
+          autoComplete="new-password"
           icon={<LockIcon size={20} />}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           placeholder="再次输入新密码"
-          error={error ?? undefined}
+          error={error ?? (confirm && confirm !== newPassword ? '两次输入的新密码不一致' : undefined)}
         />
       </div>
     </Modal>
@@ -408,17 +450,19 @@ function PasswordModal({
 /**
  * 修改与重置支付密码。
  *
- * 记得原密码：常规修改，校验与付款一致（错误次数累计，锁定后必须走核身）。
- * 忘记或被锁：人脸核身重置 —— 这是锁定后的唯一出口。
+ * 记得原密码：常规修改，校验与付款一致，连续输错 5 次冻结账号。
+ * 忘记原密码：账号未冻结时可人脸核身重置；冻结后须由工作人员解冻。
  */
 function PayPasswordModal({
   open,
   onClose,
   onDone,
+  onFailure,
 }: {
   open: boolean
   onClose: () => void
   onDone: (reset: boolean) => void
+  onFailure: () => void
 }) {
   const [resetMode, setResetMode] = useState(false)
   const [oldPassword, setOldPassword] = useState('')
@@ -466,6 +510,7 @@ function PayPasswordModal({
       onClose()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : '修改失败，请稍后重试')
+      onFailure()
     } finally {
       setBusy(false)
     }
@@ -505,7 +550,7 @@ function PayPasswordModal({
               <span className="min-w-0 flex-1">
                 <span className="block text-[14px] font-medium text-ink">人脸核身</span>
                 <span className="mt-0.5 block text-[12px] text-ink-mute">
-                  {faceTicket ? '已通过核身' : '忘记原密码或密码已锁定时，需先确认本人'}
+                  {faceTicket ? '已通过核身' : '忘记原密码时，需先确认本人；已冻结账号须联系工作人员解冻'}
                 </span>
               </span>
               {faceTicket ? (
@@ -528,6 +573,8 @@ function PayPasswordModal({
           onChange={setConfirm}
           error={confirm.length > 0 && confirm !== newPassword ? '两次输入的密码不一致' : undefined}
         />
+
+        <p className="text-[12px] leading-relaxed text-ink-mute">支付密码连续输错 5 次会冻结账号，需联系工作人员解冻；重新登录或人脸核身均不能解除冻结。</p>
 
         {error && (
           <p className="flex items-start gap-2 rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">

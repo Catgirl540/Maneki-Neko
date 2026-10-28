@@ -126,6 +126,7 @@ const demoProfiles: Record<string, CustomerProfile> = {
     customerId: 'u_0001',
     name: '林小满',
     phoneMasked: '138****8000',
+    accountSecurity: { frozen: false, failedAttempts: 0, maxAttempts: 5, reason: null },
     accounts: [{ id: 'acc_1', label: '储蓄账户', balance: 1250000 }],
     cards: [{ id: 'card_1', last4: '6688', status: 'active' }],
     autoDebits: [{ id: 'ad_1', merchant: '网易云音乐', amount: 2500, cycle: '每月 8 日', enabled: true }],
@@ -152,6 +153,7 @@ const demoProfiles: Record<string, CustomerProfile> = {
     customerId: 'u_demo_chen',
     name: '陈嘉禾',
     phoneMasked: '136****6000',
+    accountSecurity: { frozen: false, failedAttempts: 0, maxAttempts: 5, reason: null },
     accounts: [{ id: 'acc_chen', label: '储蓄账户', balance: 800000 }],
     cards: [{ id: 'card_chen', last4: '4471', status: 'active' }],
     autoDebits: [],
@@ -163,6 +165,7 @@ const demoProfiles: Record<string, CustomerProfile> = {
     customerId: 'u_0002',
     name: '苏晚',
     phoneMasked: '139****1234',
+    accountSecurity: { frozen: false, failedAttempts: 0, maxAttempts: 5, reason: null },
     accounts: [{ id: 'acc_su', label: '储蓄账户', balance: 3200000 }],
     cards: [{ id: 'card_su', last4: '9028', status: 'active' }],
     autoDebits: [{ id: 'ad_su', merchant: '房租', amount: 450000, cycle: '每月 3 日', enabled: true }],
@@ -175,6 +178,7 @@ const demoProfiles: Record<string, CustomerProfile> = {
     customerId: 'u_0003',
     name: '张伟',
     phoneMasked: '137****5678',
+    accountSecurity: { frozen: true, failedAttempts: 5, maxAttempts: 5, reason: '支付密码连续输错 5 次' },
     accounts: [{ id: 'acc_zhang', label: '储蓄账户', balance: 450000 }],
     cards: [{ id: 'card_zhang', last4: '3321', status: 'locked' }],
     autoDebits: [],
@@ -186,6 +190,7 @@ const demoProfiles: Record<string, CustomerProfile> = {
     customerId: 'u_0004',
     name: '王芳',
     phoneMasked: '135****9012',
+    accountSecurity: { frozen: false, failedAttempts: 0, maxAttempts: 5, reason: null },
     accounts: [{ id: 'acc_wang', label: '储蓄账户', balance: 158000 }],
     cards: [{ id: 'card_wang', last4: '1123', status: 'active' }],
     autoDebits: [],
@@ -197,6 +202,7 @@ const demoProfiles: Record<string, CustomerProfile> = {
     customerId: 'u_0005',
     name: '周杰',
     phoneMasked: '186****3456',
+    accountSecurity: { frozen: false, failedAttempts: 0, maxAttempts: 5, reason: null },
     accounts: [{ id: 'acc_zhou', label: '储蓄账户', balance: 8900000 }],
     cards: [{ id: 'card_zhou', last4: '2088', status: 'active' }],
     autoDebits: [{ id: 'ad_zhou', merchant: 'Netflix', amount: 13900, cycle: '每月 15 日', enabled: true }],
@@ -381,7 +387,29 @@ export function createMockApi(): StaffApi {
       return ok<CustomerProfile>(profile)
     },
 
-    performCustomerAction: (_id: string, _action: string, _req: CustomerActionRequest) => ok({ ok: true as const }),
+    async performCustomerAction(id: string, action: string, req: CustomerActionRequest) {
+      if (!session) throw new ApiError('未登录', 401, 'UNAUTHORIZED')
+      if (!['csr', 'supervisor'].includes(session.role)) throw new ApiError('没有办理权限', 403, 'FORBIDDEN')
+      if (!['lockCard', 'unlockCard', 'updateCardSettings', 'patchAutodebit', 'unfreezeAccount'].includes(action)) throw new ApiError('不支持的代客动作', 400, 'BAD_ACTION')
+      if (!req.reason?.trim()) throw new ApiError('请填写办理事由', 400, 'REASON_REQUIRED')
+      const ticket = tickets.get(req.ticketId)
+      if (!ticket || ticket.customerId !== id) throw new ApiError('工单不属于该客户', 403, 'TICKET_CUSTOMER_MISMATCH')
+      if (!['open', 'processing', 'waiting'].includes(ticket.status)) throw new ApiError('需要正在受理的工单', 409, 'TICKET_CLOSED')
+      if (session.role === 'csr' && ticket.assigneeId && ticket.assigneeId !== session.id) throw new ApiError('请由工单负责人办理', 403, 'NOT_ASSIGNEE')
+      if (req.verificationResult !== 'passed' || !['phone', 'sms', 'face'].includes(req.verificationMethod)) throw new ApiError('请完成真实客户身份核验', 403, 'VERIFICATION_REQUIRED')
+      const profile = demoProfiles[id]
+      if (!profile) throw new ApiError('客户不存在', 404, 'NOT_FOUND')
+      if (action === 'unfreezeAccount') {
+        if (!profile.accountSecurity.frozen) throw new ApiError('该账号当前未冻结，无需解冻', 409, 'ACCOUNT_NOT_FROZEN')
+        profile.accountSecurity = { frozen: false, failedAttempts: 0, maxAttempts: 5, reason: null }
+        const customer = demoCustomers.find(row => row.customerId === id)
+        if (customer) customer.riskTags = customer.riskTags.filter(tag => tag !== '冻结审查')
+      }
+      demoLogs.unshift({ id: `log_${Date.now()}`, actor_type: 'staff', actor_id: session.id,
+        action: `customer.action.${action}`, target_type: 'customer', target_id: id,
+        result: 'ok', request_id: null, reason: `工单 ${req.ticketId} · ${req.verificationMethod} 核验通过 · ${req.reason.trim()}`, created_at: new Date().toISOString() })
+      return { ok: true }
+    },
 
     listAuditLogs: () => ok<AuditLog[]>(demoLogs),
 

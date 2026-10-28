@@ -185,7 +185,8 @@ server.requestTimeout = 30_000
 server.headersTimeout = 15_000
 server.maxConnections = 128
 
-const connectedHttp = createConnectedHttp({ connections, auth, staffAuth: staffApi.auth, mode: security.mode })
+const connectedHttp = createConnectedHttp({ connections, auth, staffAuth: staffApi.auth, mode: security.mode,
+  runAccountPayment: (req, work) => bank.runAccountPayment(req, work) })
 
 server.listen(port, host, () => {
   console.log(`[bank-server] http://${host}:${port}`)

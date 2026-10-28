@@ -19,7 +19,7 @@ const json = (res, value, status = 200) => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
   res.end(JSON.stringify(value))
 }
-export function createConnectedHttp({ connections, auth, staffAuth, mode }) {
+export function createConnectedHttp({ connections, auth, staffAuth, mode, runAccountPayment }) {
   return { async handle(req, res, url) {
     if (url.pathname === '/staff-api/bank-connection/readiness') {
       staffAuth.resolve(req, { roles: ['ops','supervisor'] })
@@ -46,8 +46,10 @@ export function createConnectedHttp({ connections, auth, staffAuth, mode }) {
     }
     if (url.pathname === '/api/bank-payments') {
       if (req.method !== 'POST') fail('不支持此请求方法', 405, 'METHOD_NOT_ALLOWED')
-      const owner = (await auth.identity(req)).id
-      json(res, await connections.createPayment(owner, await objectBody(req), req.headers['idempotency-key']), 201); return true
+      const body = await objectBody(req)
+      if (typeof runAccountPayment !== 'function') fail('账号安全校验暂不可用', 503, 'ACCOUNT_SECURITY_UNAVAILABLE')
+      const payment = await runAccountPayment(req, owner => connections.createPayment(owner, body, req.headers['idempotency-key']))
+      json(res, payment, 201); return true
     }
     const payment = /^\/api\/bank-payments\/([^/]+)$/.exec(url.pathname)
     if (payment) {

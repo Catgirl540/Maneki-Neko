@@ -695,7 +695,7 @@ export const DEFAULT_PAY_PASSWORD = '888888'
 export const USER_FPS_ID = '2046881'
 
 /** 支付密码连续输错多少次就锁定 */
-export const PAY_PASSWORD_MAX_ATTEMPTS = 3
+export { PAY_PASSWORD_MAX_ATTEMPTS } from '../../../../shared/account-security.mjs'
 
 /**
  * 可申请的卡产品。

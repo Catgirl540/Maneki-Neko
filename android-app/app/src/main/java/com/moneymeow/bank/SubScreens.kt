@@ -22,7 +22,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -611,6 +613,8 @@ internal fun Metric(label: String, value: String) {
 @Composable
 fun SecurityScreen(onBack: () -> Unit) {
     var security by remember { mutableStateOf<SecurityDto?>(null) }
+    var passwordOpen by remember { mutableStateOf(false) }
+    var notice by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         if (BankApi.hasToken()) runCatching { BankApi.securityOverview() }.onSuccess { security = it }
     }
@@ -635,11 +639,102 @@ fun SecurityScreen(onBack: () -> Unit) {
         }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SmallAction("修改登录密码", Icons.Lock, Modifier.weight(1f)) { }
+            SmallAction("修改登录密码", Icons.Lock, Modifier.weight(1f)) { passwordOpen = true }
             SmallAction("修改支付密码", Icons.Check, Modifier.weight(1f)) { }
             SmallAction("设备管理", Icons.Phone, Modifier.weight(1f)) { }
         }
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "支付密码连续输错 5 次会冻结账号，需联系工作人员解冻；重新登录或人脸核身均不能解除冻结。",
+            fontSize = 12.sp,
+            color = Tokens.Muted,
+            lineHeight = 20.sp,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        notice?.let {
+            Spacer(Modifier.height(12.dp))
+            Text(it, fontSize = 12.sp, color = Tokens.Ink, modifier = Modifier.padding(horizontal = 16.dp))
+        }
     }
+    if (passwordOpen) {
+        LoginPasswordDialog(
+            onDismiss = { passwordOpen = false },
+            onDone = {
+                passwordOpen = false
+                notice = "登录密码已更新，请在其他设备重新登录"
+            },
+        )
+    }
+}
+
+@Composable
+private fun LoginPasswordDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
+    var oldPassword by remember { mutableStateOf("") }
+    var newPassword by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val validPassword = PasswordPolicy.isValid(newPassword)
+    val canSubmit = !busy && oldPassword.isNotEmpty() && validPassword && newPassword == confirmation
+
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        containerColor = Tokens.Surface,
+        title = { Text("修改登录密码", fontSize = 18.sp, color = Tokens.Ink) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("输入当前密码，再设置新的登录密码。", fontSize = 12.sp, color = Tokens.Muted)
+                TextFieldRow(
+                    label = "原密码", value = oldPassword,
+                    onValueChange = { if (!busy) { oldPassword = it; error = null } },
+                    placeholder = "请输入原密码", password = true,
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                )
+                TextFieldRow(
+                    label = "新密码", value = newPassword,
+                    onValueChange = { if (!busy) { newPassword = it; error = null } },
+                    placeholder = "至少 8 位", password = true,
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                )
+                Text(
+                    PasswordPolicy.requirements,
+                    fontSize = 12.sp, lineHeight = 19.sp,
+                    color = if (newPassword.isNotEmpty() && !validPassword) Tokens.Coral else Tokens.Muted,
+                )
+                TextFieldRow(
+                    label = "确认新密码", value = confirmation,
+                    onValueChange = { if (!busy) { confirmation = it; error = null } },
+                    placeholder = "再次输入新密码", password = true,
+                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
+                )
+                if (confirmation.isNotEmpty() && confirmation != newPassword) {
+                    Text("两次输入的新密码不一致", fontSize = 12.sp, color = Tokens.Coral)
+                }
+                error?.let { Text(it, fontSize = 12.sp, color = Tokens.Coral) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = canSubmit,
+                onClick = {
+                    if (canSubmit) {
+                        busy = true
+                        error = null
+                        scope.launch {
+                            runCatching { BankApi.changeLoginPassword(oldPassword, newPassword) }
+                                .onSuccess { onDone() }
+                                .onFailure { error = it.message ?: "修改失败，请稍后重试" }
+                            busy = false
+                        }
+                    }
+                },
+            ) { Text(if (busy) "修改中…" else "确认修改") }
+        },
+        dismissButton = {
+            TextButton(enabled = !busy, onClick = onDismiss) { Text("取消", color = Tokens.Ink2) }
+        },
+    )
 }
 
 @Composable

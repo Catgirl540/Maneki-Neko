@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { maskPhone } from './lib/format.mjs'
 import { advanceBirthdayPlans } from '../shared/linked-plans.mjs'
+import { assertAccountActive, assertAccountMethodAllowed, paymentSecurityStatus, recordPaymentPasswordFailure, resetPaymentPasswordFailures, paymentPasswordFailureError, unfreezeAccount } from '../shared/account-security.mjs'
+import { withPaymentPasswordEvents } from './payment-password-events.mjs'
 
 /** Deterministic sandbox status tags; no inferred risk score or credit decision. */
 function riskTagsFor(profile) {
@@ -388,31 +390,50 @@ export async function createBankApi({
     const next = requestQueue.then(() => staffUnit.run(unit,async () => {
       await storage.beginUnitOfWork({ requestId })
       dbModule.discardCache()
+      const paymentEvents = []
+      let workCompleted = false
       try {
-        const value = await work()
+        const value = await withPaymentPasswordEvents(paymentEvents, work)
+        workCompleted = true
         await storage.commitUnitOfWork()
         return value
       } catch (error) {
-        let paymentFailure
-        if (error?.code === 'BAD_PAY_PASSWORD') {
-          const profile = dbModule.loadDb()
-          paymentFailure = { id: profile.user.id, failures: profile.payPasswordFailures }
-        }
-        await storage.rollbackUnitOfWork()
-        dbModule.discardCache()
-        // Security counters survive a rejected request; business state does not.
-        await security.afterRollback(error)
-        if (paymentFailure) {
-          await storage.beginUnitOfWork()
+        if (paymentEvents.length && !workCompleted) {
+          // Keep the transaction lock while undoing business changes. This makes
+          // PIN failures, correct verifications and staff recovery ordered across
+          // server processes, without committing any rejected business mutation.
           try {
-            const profile = await dbModule.findProfileByUserId(paymentFailure.id)
-            if (profile) {
+            await storage.recoverUnitOfWork()
+            dbModule.discardCache()
+            await security.afterRollback(error)
+            for (const event of paymentEvents) {
+              const profile = await dbModule.findProfileByUserId(event.ownerId)
+              if (!profile) throw new Error('Payment credential owner no longer exists')
               dbModule.activateDb(profile)
-              dbModule.loadDb().payPasswordFailures = paymentFailure.failures
+              const current = dbModule.loadDb()
+              if (event.verified) {
+                resetPaymentPasswordFailures(current)
+                dbModule.persist()
+                continue
+              }
+              const wasFrozen = paymentSecurityStatus(current).frozen
+              const status = recordPaymentPasswordFailure(current)
               dbModule.persist()
+              if (error.paymentPasswordFailure === event.ownerId) {
+                const failure = paymentPasswordFailureError(current)
+                error.status = failure.status
+                error.code = failure.code
+                error.message = failure.message
+              }
+              await database.db.prepare('INSERT INTO customer_auth_audit (id,owner_id,action,created_at,level) VALUES(?,?,?,?,?)').run(
+                randomUUID(), current.user.id, status.frozen && !wasFrozen ? '支付密码连续输错 5 次，账号冻结' : '支付密码验证失败', new Date().toISOString(), 'warn')
             }
             await storage.commitUnitOfWork()
           } catch (failure) { await storage.rollbackUnitOfWork(); throw failure }
+        } else {
+          await storage.rollbackUnitOfWork()
+          dbModule.discardCache()
+          await security.afterRollback(error)
         }
         throw error
       } finally { unit.active=false; dbModule.discardCache(); storage.releaseProjection?.() }
@@ -427,6 +448,7 @@ export async function createBankApi({
   async function advanceSandboxPlans() {
     if (security.mode !== 'sandbox') return 0
     const profile = dbModule.loadDb()
+    if (paymentSecurityStatus(profile).frozen) return 0
     if (advanceBirthdayPlans(profile).length) dbModule.persist()
     const executed = await mockSettleScheduled({ reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn,
       runInUnit: work => exclusive(work) }, api)
@@ -529,6 +551,7 @@ export async function createBankApi({
           if (auth) await auth.logout(req)
           return undefined
         }
+        assertAccountMethodAllowed(dbModule.loadDb(), entry.bankMethod)
         const replay = await security.idempotent(req, entry.bankMethod, body)
         if (replay?.hit) return replay.value
         await security.before(req, entry.bankMethod, body)
@@ -598,6 +621,11 @@ export async function createBankApi({
     verifyPaymentPassword: (req, password) => exclusive(async () => {
       await activateRequestProfile(req, "profile")
       mockModule.verifyPayPassword(password)
+    }),
+    runAccountPayment: (req, work) => exclusive(async () => {
+      await activateRequestProfile(req, 'profile')
+      assertAccountActive(dbModule.loadDb())
+      return work(dbModule.loadDb().user.id)
     }),
     stats: () => ({ routes: ROUTES.length, staticRoutes: patterns.staticOnes.length }),
 
@@ -733,10 +761,14 @@ export async function createBankApi({
     /** 员工端客户 360：读账户/卡/最近流水摘要（脱敏，不碰支付密码/卡安全码）。 */
     getCustomerProfile(customerId) {
       return exclusive(async () => {
-        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入客户资金查询'), { status: 503, code: 'BANK_NOT_CONNECTED' })
         const profile = await findProfileByUserId(customerId)
         if (profile === null) {
           throw Object.assign(new Error('客户不存在'), { status: 404, code: 'NOT_FOUND' })
+        }
+        if (security.mode !== 'sandbox') return {
+          customerId: profile.user.id, name: profile.user.name, phoneMasked: maskPhone(profile.user.phone),
+          accountSecurity: paymentSecurityStatus(profile), financialDataAvailable: false,
+          accounts: [], cards: [], autoDebits: [], recentTransactions: [],
         }
         const txs = [...profile.transactions]
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -745,6 +777,7 @@ export async function createBankApi({
           customerId: profile.user.id,
           name: profile.user.name,
           phoneMasked: maskPhone(profile.user.phone),
+          accountSecurity: paymentSecurityStatus(profile),
           accounts: profile.accounts.map((a) => ({ id: a.id, accountNo: a.accountNo, label: a.label, currency: a.currency, balance: a.balance, available: a.available, currencyBalances: ledgerBalances(profile).map(row => ({ id: row.id, currency: row.currency, balance: row.balance, available: row.available })) })),
           cards: profile.cards.map((c) => ({ id: c.id, last4: c.last4, status: c.status, dailyLimit: c.dailyLimit, onlinePayment: c.onlinePayment, overseasPayment: c.overseasPayment })),
           autoDebits: (profile.autoDebits ?? []).map((a) => ({
@@ -773,7 +806,7 @@ export async function createBankApi({
      */
     performCustomerAction({ customerId, action, payload }) {
       return exclusive(async () => {
-        if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入此代客办理能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
+        if (security.mode !== 'sandbox' && action !== 'unfreezeAccount') throw Object.assign(new Error('合作银行尚未接入此代客办理能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
         const before = dbModule.loadDb()
         const profile = await findProfileByUserId(customerId)
         if (profile === null) {
@@ -782,6 +815,15 @@ export async function createBankApi({
         try {
           activateDb(profile)
           switch (action) {
+            case 'unfreezeAccount': {
+              const current = dbModule.loadDb()
+              if (!paymentSecurityStatus(current).frozen) throw Object.assign(new Error('账号未冻结，无需解冻'), { status: 409, code: 'ACCOUNT_NOT_FROZEN' })
+              unfreezeAccount(current)
+              dbModule.persist()
+              await database.db.prepare('INSERT INTO customer_auth_audit (id,owner_id,action,created_at,level) VALUES(?,?,?,?,?)').run(
+                randomUUID(), customerId, '工作人员核验后解冻账号', new Date().toISOString(), 'info')
+              return { ok: true }
+            }
             case 'lockCard':
               return await api.setCardLock(payload.cardId, true)
             case 'unlockCard':

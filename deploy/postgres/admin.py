@@ -10,12 +10,13 @@ import re
 import stat
 import subprocess
 import sys
+import unicodedata
 import warnings
 
 from check import OperationsError, absolute_path
 
 SERVICE = 'luckycat-bank.service'
-ACTIONS = ('set-staff-password', 'set-customer-password', 'set-payment-password', 'unlock-payment')
+ACTIONS = ('set-staff-password', 'set-customer-password', 'set-payment-password')
 
 
 def read_environment(path):
@@ -57,11 +58,18 @@ def prompt_password(action):
         again = getpass.getpass('再次输入新密码：')
     if not hmac.compare_digest(password.encode('utf-8'), again.encode('utf-8')):
         raise OperationsError('Password confirmation did not match')
+    if any(char in password for char in ('\0', '\r', '\n')):
+        raise OperationsError('Password must not contain NUL or line breaks')
     if action == 'set-payment-password':
         if not re.fullmatch(r'[0-9]{6}', password):
             raise OperationsError('Payment password must contain exactly six digits')
-    elif not 12 <= len(password) <= 20 or any(char in password for char in ('\0', '\r', '\n')):
-        raise OperationsError('Login password must contain 12–20 characters without line breaks')
+    elif action == 'set-customer-password':
+        if (len(password) < 8 or len(password.encode('utf-8')) > 1024
+                or not re.search(r'[A-Z]', password) or not re.search(r'[a-z]', password)
+                or not any(unicodedata.category(char)[0] in ('P', 'S') for char in password)):
+            raise OperationsError('Customer login password requires at least 8 characters, uppercase and lowercase letters, and a special character; maximum 1024 UTF-8 bytes')
+    elif action != 'set-staff-password' or not 12 <= len(password) <= 20:
+        raise OperationsError('Staff login password must contain 12–20 characters without line breaks')
     return password
 
 
@@ -102,8 +110,7 @@ def main():
         except BlockingIOError:
             raise OperationsError('Bank service or another maintenance process holds the maintenance lock') from None
         assert_stopped()
-        if args.action != 'unlock-payment':
-            password = prompt_password(args.action)
+        password = prompt_password(args.action)
         assert_stopped()
         result = subprocess.run(['/opt/maneki-node24/bin/node', str(entry), args.action, args.id],
                                 cwd=release, env=environment, input=password, text=True,

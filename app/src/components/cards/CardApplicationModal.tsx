@@ -324,7 +324,7 @@ export function CardApplicationModal({
             }
           />
           <p className="mt-3 text-[12px] leading-relaxed text-ink-mute">
-            支付密码用于扣款验证，与登录密码不同。连续输错 3 次会被锁定，需重新登录。
+            支付密码用于扣款验证，与登录密码不同。连续输错 5 次会冻结账号，需联系工作人员解冻。
           </p>
         </section>
 

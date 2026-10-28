@@ -37,7 +37,7 @@ console.log('PASS 演示账户工资计划已设置，nextPayday 为合法日期
 await api.logout()
 const sms2 = await api.sendSmsCode('13900139000')
 const face = await api.verifyIdentity('face')
-await api.register({ phone: '13900139000', password: 'abc12345', paymentPassword: '123321', holderName: '空计划测试', idNumber: '110101199001010011', smsCode: sms2.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
+await api.register({ phone: '13900139000', password: 'Abc!12345', paymentPassword: '123321', holderName: '空计划测试', idNumber: '110101199001010011', smsCode: sms2.demoCode, faceTicket: face.ticket, pledge: ACCOUNT_OPENING_PLEDGE })
 const freshPlan = await api.getSalaryPlan()
 assert.equal(freshPlan.nextPayday, '')
 assert.equal(freshPlan.employer, '')

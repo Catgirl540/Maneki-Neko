@@ -1,5 +1,6 @@
 import { PageHeader } from '@/components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { ApiError, api, type CustomerProfile, type CustomerSummary } from '@/api'
 import { CARD_STATUS_LABEL, TX_STATUS_LABEL, formatCents, formatTime } from './labels'
 
@@ -189,6 +190,16 @@ export function CustomersPage() {
               关闭
             </button>
           </div>
+
+          <div className="rounded-[var(--radius-tile)] border border-[var(--color-line)] px-4 py-3 text-sm">
+            <div className="font-semibold text-[var(--color-ink)]">账号安全状态：{profile.accountSecurity?.frozen ? '已冻结' : profile.accountSecurity ? '正常' : '暂未提供'}</div>
+            {profile.accountSecurity?.frozen && <>
+              <p className="mt-1 text-[var(--color-coral)]">{profile.accountSecurity.reason ?? '支付密码连续输错 5 次'}，需工作人员完成身份核验后解冻。</p>
+              <Link className="mt-3 inline-block rounded-[var(--radius-tile)] bg-[var(--color-gold)] px-4 py-2 font-medium text-white" to={`/actions?customer=${encodeURIComponent(profile.customerId)}&action=unfreezeAccount`}>办理账号解冻</Link>
+            </>}
+          </div>
+
+          {profile.financialDataAvailable === false && <p className="text-sm text-[var(--color-ink-mute)]">银行资金查询尚未接入，账号安全状态与解冻办理仍可使用。</p>}
 
           <div>
             <div className="mb-2 text-sm font-semibold text-[var(--color-ink)]">账户</div>

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { createBankApi } from '../server/bank-api.mjs'
+import { createConnectedHttp } from '../server/connected-http.mjs'
 import { routes } from '../server/api/contract.mjs'
 
 const CURRENT = 'luckycat.mock.db', PROFILES = 'luckycat.luckycat.mock.user-profiles.v1'
@@ -23,6 +24,7 @@ class TransactionalMemoryStorage {
   removeItem(key) { assert(this.staged, 'fixture writes require a unit of work'); this.staged.delete(key) }
   setItemsAtomically(entries) { for (const [key, value] of entries) this.setItem(key, value) }
   async beginUnitOfWork() { assert.equal(this.staged, null, 'no overlapping bank transaction'); this.staged = new Map(this.committed) }
+  async recoverUnitOfWork() { assert(this.staged, 'savepoint needs an active transaction'); this.staged = new Map(this.committed) }
   async commitUnitOfWork() {
     assert(this.staged)
     if (this.failNextCommit) { this.failNextCommit = false; throw Object.assign(Error('TEST ONLY commit rejected'), { status: 503, code: 'FIXTURE_COMMIT_FAILED' }) }
@@ -47,16 +49,21 @@ const auth = {
 const security = { mode: 'sandbox', run: (req, work) => work(), async before() {}, async afterRollback() {}, async idempotent() { return null } }
 const database = { db: { prepare() { return { async run() { return { changes: 1 } } } } } }
 const heldEvents = []
-const bank = await createBankApi({ storage, auth, security, database, reviewThreshold: 50_000_000, onTransferHeld: async event => { heldEvents.push(event) } })
+const bankOptions = { storage, auth, security, database, reviewThreshold: 50_000_000, onTransferHeld: async event => { heldEvents.push(event) } }
+let bank = await createBankApi(bankOptions)
+let nativePayments = 0
+const connected = createConnectedHttp({ auth, mode: 'sandbox', connections: { async createPayment() { nativePayments++; return { id: 'fixture-payment' } } },
+  runAccountPayment: (req, work) => bank.runAccountPayment(req, work) })
 const initial = storage.json(CURRENT), recipient = storage.profile('13600136000')
 assert(initial && recipient, 'isolated seed must have two separate funding owners')
 tokens.set('Bearer fixture-owner', initial.user.phone); tokens.set('Bearer fixture-recipient', recipient.user.phone)
 const ownerToken = 'fixture-owner', otherToken = 'fixture-recipient'
 const server = createServer(async (req, res) => {
   try {
+    if (await connected.handle(req, res, new URL(req.url, 'http://127.0.0.1'))) return
     const handled = await bank.handle(req, res, new URL(req.url, 'http://127.0.0.1'))
     if (!handled) { res.writeHead(404); res.end('{}') }
-  } catch (error) { res.writeHead(500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ message: error.message })) }
+  } catch (error) { res.writeHead(error.status ?? 500, { 'content-type': 'application/json' }); res.end(JSON.stringify({ message: error.message, code: error.code })) }
 })
 const originalNow = Date.now
 let clockOffset = 0
@@ -148,6 +155,43 @@ try {
   assert.deepEqual(storage.money(), beforeRejectedCommit, 'HTTP transfer commit failure must roll back sender, recipient and both ledgers')
   assert(storage.rollbacks >= 7); assert.equal(heldEvents.length, 0)
   console.log(`PASS HTTP rollback: commit rejection returns failure, all customers and ledger rows unchanged; ${bank.stats().routes} route bindings initialized`)
+
+  const beforeSecurity = storage.money()
+  const pin = (oldPassword, newPassword = '888888') => call(routes.paymentPassword(), { method: 'POST', body: { oldPassword, newPassword } })
+  const overview = async () => ok(await call(routes.security())).accountSecurity
+  for (let n = 1; n <= 4; n++) {
+    assert.equal((await pin('000000')).data.code, 'BAD_PAY_PASSWORD')
+    assert.equal((await overview()).failedAttempts, n, 'rejected HTTP business requests must persist PIN failures')
+  }
+  assert.equal((await pin('888888', 'invalid')).data.code, 'INVALID_PAY_PASSWORD')
+  assert.equal((await overview()).failedAttempts, 0, 'a verified PIN clears failures even if later business validation fails')
+  assert.deepEqual(storage.money(), beforeSecurity)
+  const failures = await Promise.all(Array.from({ length: 5 }, () => pin('000000')))
+  assert.equal(failures.filter(row => row.status === 401 && row.data.code === 'BAD_PAY_PASSWORD').length, 4)
+  assert.equal(failures.filter(row => row.status === 423 && row.data.code === 'ACCOUNT_FROZEN').length, 1)
+  assert.equal((await overview()).failedAttempts, 5)
+  assert.equal((await pin('888888')).data.code, 'ACCOUNT_FROZEN')
+  assert.equal((await call(routes.paymentPassword(), { method: 'POST', body: { faceTicket: 'forged', newPassword: '246810' } })).data.code, 'ACCOUNT_FROZEN')
+  assert.equal((await call('/api/bank-payments', { method: 'POST', body: {} })).data.code, 'ACCOUNT_FROZEN')
+  assert.equal(nativePayments, 0)
+  assert.equal(ok(await call(routes.security(), { token: otherToken })).accountSecurity.frozen, false)
+  assert.deepEqual(storage.money(), beforeSecurity)
+  bank = await createBankApi(bankOptions)
+  assert.equal((await overview()).frozen, true, 'recreating the actual HTTP API retains the committed freeze')
+  assert.equal((await bank.getCustomerProfile(initial.user.id)).accountSecurity.frozen, true)
+  security.mode = 'live'
+  const liveProfile = await bank.getCustomerProfile(initial.user.id)
+  assert.equal(liveProfile.accountSecurity.frozen, true)
+  assert.equal(liveProfile.financialDataAvailable, false)
+  assert.deepEqual(liveProfile.accounts, [])
+  // Staff route authorization is exercised by server/staff-unfreeze.test.mjs.
+  await bank.performCustomerAction({ customerId: initial.user.id, action: 'unfreezeAccount', payload: {} })
+  security.mode = 'sandbox'
+  assert.equal((await overview()).failedAttempts, 0)
+  ok(await pin('888888', '246810'))
+  ok(await pin('246810', '888888'))
+  assert.deepEqual(storage.money(), beforeSecurity, 'staff recovery and PIN changes preserve all balances and ledgers')
+  console.log('PASS security HTTP: savepoint rollback preserves consecutive failures and correct-PIN reset; five concurrent failures freeze only their owner; restart/native payment guard/live staff recovery preserve funds')
   console.log('LIMIT: transactional memory, stub authentication/security/audit; PostgreSQL persistence, real auth and live bank integrations still require their dedicated integration gate.')
 } finally {
   Date.now = originalNow

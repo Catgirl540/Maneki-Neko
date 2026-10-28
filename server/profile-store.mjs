@@ -122,9 +122,23 @@ export async function createScopedProfileStorage({ db, query, get, run, readProf
       try {
         await db.begin()
         await db.query('SELECT pg_advisory_xact_lock(782614101)')
-        pending = await snapshot({ loadCurrent }); pending.requestId = requestId
+        const work = await snapshot({ loadCurrent })
+        await db.query('SAVEPOINT bank_business')
+        pending = { ...work, requestId, loadCurrent }
       } catch (error) { await db.rollback(); throw error }
       finally { starting = false }
+    },
+    /** Discard rejected business changes while retaining the cross-process lock. */
+    async recoverUnitOfWork() {
+      if (!pending) throw new Error('No database unit of work is active')
+      const { requestId, loadCurrent } = pending
+      try {
+        await db.query('ROLLBACK TO SAVEPOINT bank_business')
+        pending = { ...await snapshot({ loadCurrent }), requestId, loadCurrent }
+      } catch (error) {
+        try { await db.rollback() } finally { pending = null; frame = empty() }
+        throw error
+      }
     },
     async commitUnitOfWork() {
       if (!pending) throw new Error('No database unit of work is active')
