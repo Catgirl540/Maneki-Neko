@@ -1,9 +1,9 @@
 {
   "manifestUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/latest.json",
-  "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-4.apk",
-  "versionCode": 4,
-  "versionName": "1.0.3",
-  "notes": "1.0.3：公开域名更新验证",
+  "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-6.apk",
+  "versionCode": 6,
+  "versionName": "1.0.5",
+  "notes": "1.0.5：接入真实后端数据，清除界面写死数据",
   "expiresAt": null,
-  "publishedAt": "2026-10-21T09:28:43.793Z"
+  "publishedAt": "2026-10-26T08:57:48.436Z"
 }

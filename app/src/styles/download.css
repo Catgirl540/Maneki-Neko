@@ -21,9 +21,9 @@
 .download-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 13px; color: var(--color-ink-soft); }
 .download-main { width: 100%; max-width: 520px; margin: auto; padding: 36px 24px 48px; text-align: center; }
 .download-app-icon { width: 92px; height: 92px; margin: 0 auto 28px; }
-/* 应用图标：白底圆角 + 品牌猫，与安卓启动图标一致（无金色描边） */
-.app-icon { display: grid; place-items: center; overflow: hidden; border-radius: 22%; background: #fff; border: 1px solid var(--color-line); }
-.app-icon img { width: 84%; height: 84%; object-fit: contain; }
+/* 应用图标：白底黑猫，与安卓启动图标一致 */
+.app-icon { display: inline-flex; align-items: center; justify-content: center; background: #fff; border: 1px solid var(--color-line); border-radius: 22%; overflow: hidden; }
+.app-icon img { width: 78%; height: 78%; object-fit: contain; }
 .download-main h1 { font-size: clamp(28px, 7.5vw, 36px); font-weight: 700; letter-spacing: -0.025em; line-height: 1.25; }
 .download-lead { margin-top: 14px; font-size: 15px; color: var(--color-ink-soft); line-height: 1.8; }
 .download-features { display: flex; justify-content: center; gap: 28px; margin: 28px 0 36px; color: var(--color-ink-soft); font-size: 14px; }

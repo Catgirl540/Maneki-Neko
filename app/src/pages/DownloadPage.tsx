@@ -55,7 +55,7 @@ export function DownloadPage({ device }: { device: ClientDevice }) {
             </div>
           ) : download ? (
             <>
-              <a className="download-button" href={`${base}downloads/${download.fileName}`} download={download.fileName}>
+              <a className="download-button" href={download.apkUrl ?? `${base}downloads/${download.fileName}`} download={download.fileName}>
                 <DownloadIcon size={21} />下载安卓版 APK
               </a>
               <p className="download-meta">

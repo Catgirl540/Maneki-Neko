@@ -82,22 +82,34 @@ try {
       })(),
     }
     assert.equal(data.packageName, 'com.moneymeow.bank', '拒绝发布其他应用的安装包')
+    // 配了 PUBLIC_BASE_URL 时 APK 由对象存储托管，清单里只写固定地址。
+    const publicBase = (process.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, '')
+    const manifestData = publicBase
+      ? { ...data, apkUrl: `${publicBase}/android/app-${data.versionCode}.apk` }
+      : data
     await mkdir(destination, { recursive: true })
-    const target = path.join(destination, data.fileName)
-    await copyFile(source, target + '.tmp')
-    await rename(target + '.tmp', target)
-    await check(data)
-    await writeFile(manifest + '.tmp', JSON.stringify(data, null, 2) + '\n')
-    await rename(manifest + '.tmp', manifest)
-    // 旧包留在本机构建目录供回滚，不让每次网页构建携带所有历史 APK。
     const archive = path.join(root, 'android-app/build/download-archive')
     await mkdir(archive, { recursive: true })
+    if (publicBase) {
+      // 本地只留回滚副本，不进 dist。
+      await copyFile(source, path.join(archive, data.fileName))
+    } else {
+      const target = path.join(destination, data.fileName)
+      await copyFile(source, target + '.tmp')
+      await rename(target + '.tmp', target)
+    }
+    await check(manifestData)
+    await writeFile(manifest + '.tmp', JSON.stringify(manifestData, null, 2) + '\n')
+    await rename(manifest + '.tmp', manifest)
+    // 旧包留在本机构建目录供回滚，不让每次网页构建携带所有历史 APK。
     for (const name of await readdir(destination)) {
-      if (/^luckycat-android-[a-f0-9]{12}\.apk$/.test(name) && name !== data.fileName) {
+      if (/^luckycat-android-[a-f0-9]{12}\.apk$/.test(name)) {
         await rename(path.join(destination, name), path.join(archive, name))
       }
     }
-    console.log('已准备官网静态下载文件，构建时会一并复制到 app/dist/downloads/')
+    console.log(publicBase
+      ? `已写入下载清单，APK 由对象存储提供：${manifestData.apkUrl}`
+      : '已准备官网静态下载文件，构建时会一并复制到 app/dist/downloads/')
   }
 } catch (error) {
   console.error(`FAIL ${error.message}\n先构建 Android APK（android-app 的 :app:assembleDebug），再运行 npm --prefix app run prepare:android；不会生成无效下载链接。`)
