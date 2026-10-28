@@ -430,6 +430,8 @@ POST   /api/fps/resolve            转数快标识解析（返回登记姓名与
 POST   /api/transfers/recipient     核对本行收款账户与户名
 POST   /api/transfers/quote         转账询价（手续费/到账时间/单笔上限/是否需二次确认/换汇报价）
 POST   /api/transfers               提交转账（channel=bank 走卡号；channel=fps 走四种汇款方式）
+                                    fromAccountId 可用币种分区 id；payeeCurrency 指定到账币种
+                                    （本行外币入同一资金账户分区，缺币种自动开立，不新建账户）
 POST   /api/transfers/:id/recall    撤销仍在延迟到账窗口内的转账
 
 GET    /api/cards                   银行卡列表
@@ -702,7 +704,9 @@ interface FxQuote {
 mock 里的汇率表是固定的（`FX_MID_RATES`，1 单位外币 = ? 人民币 + 0.35% 点差），
 真后端换成行情源即可 —— 前端只认 `FxQuote` 这个结构。
 
-> 已知边界：转账金额目前只有「付款方扣账」一个口径，没有「收款方到账 N 外币」的输入方式
+> 已知边界：金额仍按**付款方扣账**口径输入；到账币种可选（不同币种按报价折算），
+> 但没有「对方收到 N 外币」的反向输入方式。网页转账页可在同一资金账户的币种分区之间
+> 选择付款币种，本行收款方按到账币种入账，缺该币种时自动开立分区而不是新开账户。
 > （真实银行两者都给，后者要多一层反算与锁价）。
 
 ### 10.2 流水导出（`GET /api/accounts/:id/transactions/export`）

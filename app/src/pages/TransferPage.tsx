@@ -42,11 +42,12 @@ import {
 import { cn } from '@/lib/cn'
 import {
   CURRENCY_LABEL,
-  formatAmount,
+  CURRENCY_SYMBOL,
   formatCurrency,
   formatDate,
   formatRate,
 } from '@/lib/format'
+import { currencyBalances } from '@/lib/currencyBalances'
 import { parseAmountInput } from '@/lib/amountInput'
 import { RevealToggle } from '@/components/ui/Reveal'
 import { useToast } from '@/components/ui/toast-context'
@@ -89,6 +90,13 @@ const FPS_METHODS: { value: FpsMethod; label: string }[] = [
   { value: 'mobile', label: '手机号' },
   { value: 'email', label: '电邮' },
   { value: 'fpsid', label: 'FPS ID' },
+]
+
+/** 银行账户通道的到账币种：同一资金账户下的三种记账分区 */
+const PAYEE_CURRENCIES: { value: Currency; label: string }[] = [
+  { value: 'CNY', label: '人民币' },
+  { value: 'USD', label: '美元' },
+  { value: 'HKD', label: '港币' },
 ]
 
 export function TransferForm({ onClose, onUpdate, onBusyChange }: {
@@ -162,8 +170,21 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   const banks = useAsync<Bank[]>(() => api.listBanks(), [])
   const payees = useAsync<Payee[]>(() => api.listPayees(), [])
 
-  // 付款账户：默认用第一个账户（页面不再让用户切换）
-  const account = accounts.data?.[0] ?? null
+  // 付款分区：同一资金账户下的币种余额；默认人民币，没有就第一个
+  const balances = useMemo(() => currencyBalances(accounts.data ?? []), [accounts.data])
+  const [fromBalanceId, setFromBalanceId] = useState('')
+  const account =
+    balances.find((row) => row.id === fromBalanceId) ??
+    balances.find((row) => row.currency === 'CNY') ??
+    balances[0] ??
+    null
+  const payCurrency: Currency = account?.currency ?? 'CNY'
+  /**
+   * 到账币种：空串表示**跟随付款币种**（换钱包时自动跟着变）。
+   * 用户显式选过就固定下来 —— 切付款币种时不能把收款币种偷偷改掉。
+   */
+  const [payeeCurrencyChoice, setPayeeCurrencyChoice] = useState<Currency | ''>('')
+  const destCurrency: Currency = payeeCurrencyChoice || payCurrency
   const parsedAmount = parseAmountInput(amountText)
   const amount: Cents = parsedAmount ?? 0
   const isFps = channel === 'fps'
@@ -188,8 +209,8 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   }, [activeBankCode])
   const isFpsAccount = isFps && fpsMethod === 'account'
 
-  /** 只有转数快会带收款币种；银行账户通道没有币种字段，不产生换汇 */
-  const quoteCurrency: Currency | undefined = isFps ? fpsCurrency : undefined
+  /** 转数快用自己的收款币种选择；银行账户通道用到账币种（默认＝付款币种） */
+  const quoteCurrency: Currency = isFps ? fpsCurrency : destCurrency
   const fromAccountId = account?.id ?? ''
 
   /* 报价：账户 / 通道 / 金额 / 币种 / 银行变化时向后端询价。
@@ -407,6 +428,17 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     setResolved(null)
   }
 
+  /**
+   * 换付款币种。到账币种仍在「跟随」时自动跟着变；如果用户显式选的正好是新付款币种，
+   * 那等价于跟随，清掉固定值，避免之后再换钱包时被这份"伪选择"挡住。
+   */
+  function pickBalance(id: string) {
+    const next = balances.find((row) => row.id === id)
+    setFromBalanceId(id)
+    setError(null)
+    if (next && payeeCurrencyChoice === next.currency) setPayeeCurrencyChoice('')
+  }
+
   function switchFpsMethod(next: FpsMethod) {
     setFpsMethod(next)
     setFpsValue('')
@@ -464,7 +496,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
       return
     }
     if (overLimit && quote) {
-      setError(`单笔上限 ¥${formatAmount(quote.singleLimit)}，请调整金额或分多笔转出`)
+      setError(`单笔上限 ${formatCurrency(quote.singleLimit, payCurrency)}，请调整金额或分多笔转出`)
       return
     }
     if (insufficient) {
@@ -546,7 +578,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     }
 
     if (overLimit && quote) {
-      setError(`单笔上限 ¥${formatAmount(quote.singleLimit)}，请调整金额或分多笔转出`)
+      setError(`单笔上限 ${formatCurrency(quote.singleLimit, payCurrency)}，请调整金额或分多笔转出`)
       return
     }
     if (insufficient) {
@@ -592,10 +624,11 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
         memo: memo.trim(),
         payeeBankCode: activeBankCode,
         payeeBankRegion: activeBankRegion,
+        // 到账币种：银行通道与付款币种相同时后端不产生换汇；不同则按报价折算
+        payeeCurrency: quoteCurrency,
         ...(isFps
           ? {
               fpsMethod,
-              payeeCurrency: fpsCurrency,
               payeeAddress: fpsAddress.trim() || undefined,
               ...(isFpsAccount
                 ? { payeeAccountNo: fpsValue.trim() }
@@ -727,11 +760,50 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
               />
             </div>
 
+            {/* 付款币种：同一资金账户下的币种余额，只有一个币种时不占版面 */}
+            {balances.length > 1 && (
+              <div className="mt-7">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <p className="text-[13px] font-medium text-ink-soft">付款账户</p>
+                  <span className="num text-[12px] text-ink-mute">
+                    储蓄账户 · 尾号 {balances[0]?.accountNo.slice(-4)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {balances.map((row) => {
+                    const active = account?.id === row.id
+                    return (
+                      <button
+                        key={row.id}
+                        type="button"
+                        onClick={() => pickBalance(row.id)}
+                        aria-pressed={active}
+                        className={cn(
+                          'flex min-h-11 items-center gap-2 rounded-chip border px-4 text-[13px] font-medium transition-colors',
+                          active
+                            ? 'border-gold-wash bg-gold-wash text-gold-deep'
+                            : 'border-line bg-surface text-ink-soft hover:text-ink',
+                        )}
+                      >
+                        {CURRENCY_LABEL[row.currency]}
+                        <span className="num text-[12px] text-ink-mute">{row.currency}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="num mt-2 text-[12px] text-ink-mute">
+                  可用 {formatCurrency(account?.available ?? 0, payCurrency)}
+                </p>
+              </div>
+            )}
+
             {/* 金额 */}
             <div className="mt-7 flex flex-col items-center">
               <span className="text-[13px] text-ink-mute">转账金额</span>
               <div className="mt-3 flex w-full min-w-0 items-baseline justify-center gap-2">
-                <span className="text-[28px] leading-none font-semibold text-ink-mute">¥</span>
+                <span className="text-[28px] leading-none font-semibold text-ink-mute">
+                  {CURRENCY_SYMBOL[payCurrency]}
+                </span>
                 <input
                   value={amountText}
                   onChange={(e) => setAmountText(e.target.value)}
@@ -743,10 +815,8 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 />
               </div>
               <span className="mt-3 text-[13px] text-ink-mute">
-                {account
-                  ? `${CURRENCY_LABEL[account.currency]} · ${account.currency}`
-                  : '人民币 · CNY'}
-                {quote && ` · 单笔上限 ¥${formatAmount(quote.singleLimit)}`}
+                {`${CURRENCY_LABEL[payCurrency]} · ${payCurrency}`}
+                {quote && ` · 单笔上限 ${formatCurrency(quote.singleLimit, payCurrency)}`}
                 {fx && ` · 将换汇为 ${fx.toCurrency}`}
               </span>
             </div>
@@ -923,6 +993,16 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 </>
               ) : (
                 <>
+                  {/* 到账币种：默认跟付款币种走，可显式改成别的币种（按报价折算） */}
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="text-[13px] font-medium text-ink-soft">收款币种</span>
+                    <Segmented
+                      value={destCurrency}
+                      onChange={(next) => setPayeeCurrencyChoice(next === payCurrency ? '' : next)}
+                      options={PAYEE_CURRENCIES}
+                    />
+                  </div>
+
                   <div>
                     <p className="mb-3 text-[13px] font-medium text-ink-soft">收款银行</p>
                     <BankPicker
@@ -1012,18 +1092,20 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
             <h2 className="text-[17px] leading-6 font-semibold text-ink">费用摘要</h2>
             <dl className="mt-5 flex flex-col gap-4 text-[14px]">
               <SummaryRow label="转账方式" value={isFps ? '转数快 / 跨境支付通' : '银行账户转账'} />
-              {isFps && (
+              {isFps ? (
                 <>
                   <SummaryRow label="收款币种" value={fpsCurrency === 'HKD' ? '港币' : '人民币'} />
                   <SummaryRow label="汇款方式" value={FPS_METHOD_LABEL[fpsMethod]} />
                 </>
+              ) : (
+                <SummaryRow label="收款币种" value={`${CURRENCY_LABEL[destCurrency]}（${destCurrency}）`} />
               )}
               <SummaryRow label="收款银行" value={selectedBank?.name ?? '—'} />
               <SummaryRow
                 label={isFps ? FPS_METHOD_LABEL[fpsMethod] : '收款账户'}
                 value={identifier}
               />
-              <SummaryRow label="手续费" value={`¥${formatAmount(fee)}`} />
+              <SummaryRow label="手续费" value={formatCurrency(fee, payCurrency)} />
               {fx && (
                 <>
                   <SummaryRow
@@ -1045,8 +1127,8 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                   value={
                     account
                       ? shown
-                        ? `¥${formatAmount(Math.max(remaining, 0))}`
-                        : '¥••••••'
+                        ? formatCurrency(Math.max(remaining, 0), payCurrency)
+                        : `${CURRENCY_SYMBOL[payCurrency]}••••••`
                       : '—'
                   }
                   strong
@@ -1061,7 +1143,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
             )}
             {overLimit && quote && (
               <p className="mt-3 rounded-field bg-coral-wash px-3.5 py-2.5 text-[13px] text-coral">
-                超出单笔上限 ¥{formatAmount(quote.singleLimit)}
+                超出单笔上限 {formatCurrency(quote.singleLimit, payCurrency)}
               </p>
             )}
             {insufficient && (
@@ -1108,17 +1190,16 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
             {!isFps && recipientCheck && (
               <div className="mt-6 rounded-field border border-blue-wash bg-blue-tint px-4 py-3.5 text-[13px] leading-relaxed text-ink">
                 {recipientCheck.kind === 'internal'
-                  ? `已核对本行收款人：${recipientCheck.holderNameMasked} · ${recipientCheck.cardLast4 ? `银行卡尾号 ${recipientCheck.cardLast4}` : '资金账户'} · 实时入账`
+                  ? `已核对本行收款人：${recipientCheck.holderNameMasked} · ${recipientCheck.cardLast4 ? `银行卡尾号 ${recipientCheck.cardLast4}` : '资金账户'} · 实时入账 · 到账 ${CURRENCY_LABEL[destCurrency]}${destCurrency === 'CNY' ? '' : '（同一资金账户，无该币种余额时自动开立）'}`
                   : '收款行为其他银行：本演示仅模拟转出与清算提交，对方银行余额无法在本系统查询。'}
               </div>
             )}
 
             <p className="num mt-8 text-center text-[34px] leading-none font-bold tracking-[-0.03em] text-ink sm:text-[46px]">
-              ¥{formatAmount(amount)}
+              {formatCurrency(amount, payCurrency)}
             </p>
             <p className="mt-3 text-center text-[13px] text-ink-mute">
-              扣账金额
-              {account ? ` · ${CURRENCY_LABEL[account.currency]}（${account.currency}）` : ''}
+              扣账金额 · {CURRENCY_LABEL[payCurrency]}（{payCurrency}）
             </p>
 
             {/* 换汇：把「扣多少」和「对方收到多少」并排讲清楚，并显示锁价剩余时间 */}
@@ -1148,12 +1229,14 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
 
             <dl className="mt-9 flex flex-col gap-4 border-t border-line pt-6 text-[14px]">
               <SummaryRow label="转账方式" value={isFps ? '转数快 / 跨境支付通' : '银行账户转账'} />
-              {isFps && (
+              {isFps ? (
                 <>
                   <SummaryRow label="收款国家/地区" value="中国香港" />
                   <SummaryRow label="收款币种" value={fpsCurrency === 'HKD' ? '港币' : '人民币'} />
                   <SummaryRow label="汇款方式" value={FPS_METHOD_LABEL[fpsMethod]} />
                 </>
+              ) : (
+                <SummaryRow label="收款币种" value={`${CURRENCY_LABEL[destCurrency]}（${destCurrency}）`} />
               )}
               <SummaryRow label="收款银行" value={selectedBank?.name ?? '—'} />
               <SummaryRow
@@ -1174,7 +1257,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 />
               )}
               <SummaryRow label="备注" value={memo || '—'} />
-              <SummaryRow label="手续费" value={`¥${formatAmount(fee)}`} />
+              <SummaryRow label="手续费" value={formatCurrency(fee, payCurrency)} />
               <SummaryRow label="到账时间" value={etaText} />
             </dl>
 
@@ -1213,20 +1296,23 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
             ) : (
               <>
                 <p className="mt-4 text-[15px] font-medium text-ink">{account?.label ?? '—'}</p>
+                <p className="num mt-1 text-[12px] text-ink-mute">
+                  {CURRENCY_LABEL[payCurrency]}（{payCurrency}）· 尾号 {account?.accountNo.slice(-4) ?? '—'}
+                </p>
                 <dl className="mt-5 flex flex-col gap-4 text-[14px]">
                   <SummaryRow
                     label="当前可用"
-                    value={account ? (shown ? `¥${formatAmount(account.available)}` : '¥••••••') : '—'}
+                    value={account ? (shown ? formatCurrency(account.available, payCurrency) : `${CURRENCY_SYMBOL[payCurrency]}••••••`) : '—'}
                   />
-                  <SummaryRow label="本次支出" value={`¥${formatAmount(total)}`} />
+                  <SummaryRow label="本次支出" value={formatCurrency(total, payCurrency)} />
                   <div className="border-t border-line pt-4">
                     <SummaryRow
                       label="转账后余额"
                       value={
                         account
                           ? shown
-                            ? `¥${formatAmount(account.available - total)}`
-                            : '¥••••••'
+                            ? formatCurrency(account.available - total, payCurrency)
+                            : `${CURRENCY_SYMBOL[payCurrency]}••••••`
                           : '—'
                       }
                       strong
@@ -1260,7 +1346,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                   : '转账成功'}
           </h2>
           <p className="num mt-3 text-[34px] leading-none font-bold text-ink">
-            ¥{formatAmount(result.amount)}
+            {formatCurrency(result.amount, payCurrency)}
           </p>
           <p className="mt-3 text-[14px] text-ink-soft">
             {resultStatus === 'failed'
@@ -1294,6 +1380,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
           <dl className="mt-8 flex flex-col gap-3.5 border-t border-line pt-6 text-left text-[14px]">
             <SummaryRow label="收款银行" value={selectedBank?.name ?? '—'} />
             <SummaryRow label="收款标识" value={result.identifier} />
+            <SummaryRow label="收款币种" value={`${CURRENCY_LABEL[result.fx?.toCurrency ?? payCurrency]}（${result.fx?.toCurrency ?? payCurrency}）`} />
             {result.fx && (
               <SummaryRow
                 label="到账金额"
@@ -1301,7 +1388,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
               />
             )}
             <SummaryRow label="流水号" value={result.referenceNo} />
-            <SummaryRow label="手续费" value={`¥${formatAmount(result.fee)}`} />
+            <SummaryRow label="手续费" value={formatCurrency(result.fee, payCurrency)} />
             {result.fx && (
               <SummaryRow
                 label="成交汇率"

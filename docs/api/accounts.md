@@ -25,6 +25,17 @@ PostgreSQL 档案的单账户迁移保留退役账本行。旧分区 ID 和旧�
 
 员工客户档案的 `accounts[].currencyBalances` 与 `recentTransactions[].currency` 指明金额币种；显示外币不得加人民币符号。未提供交易币种的旧客户端夹具仍按原人民币契约兼容。
 
+### 转账的币种分区
+
+`POST /api/transfers` 的 `fromAccountId` 可以是 `currencyBalances[].id`：报价、单笔上限、手续费、在途冻结与回执都按该分区币种，不换汇时只扣该分区。本行收款方（`payeeBankCode=LCB`、`payeeBankRegion=CN`）按 `payeeCurrency` 入账，省略时等于付款币种：
+
+- 收款人同一资金账户下已有该币种分区 → 直接贷记；
+- 没有 → 自动开立 0 余额分区再入账，`accountNo` 与卡片归属不变，仍是一个资金账户；
+- `payeeCurrency` 与付款币种不同时按报价折算，回执带 `fx`；
+- 不在 `CNY/USD/HKD` 内的币种返回 400 `INVALID_CURRENCY`，两侧余额不变。
+
+外币入账产生的分区与换汇首次兑换同一结构（`bank_accounts` 多一行、开账分录一次），表行数增加不代表客户多开账户。
+
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 账户 ID |
@@ -107,7 +118,7 @@ Agent `bank_list_scheduled_transfers/bank_schedule_transfer/bank_cancel_schedule
 
 Agent 的 `bank_recall_transfer` 仍逐次确认，无需支付密码，有效 IM 只读权限不能自动批准撤销。确认卡用本人账户权威币种显示本金、冻结合计和记录的费用，历史未记费用时明确说明。执行前重读交易/币种；快照变化、过期、清算/已结算/拦截/撤回、跨客户均拒绝，不自动重做。错误包括 `NOT_FOUND`、`NOT_RECALLABLE`、`CONSENT_REQUIRED`；不能把撤销在途等同于取消定时转账任务。
 
-验证：`server/transfer-hold-currency.test.mjs` 用真实隔离 PostgreSQL 和实际换汇/转账核对多币种同时冻结、撤销、员工拦截/放行、费用注入失败回滚与重试；`framework/bridge/transfer-recall.test.mjs` 覆盖 Agent 原币种确认、一次性授权、状态重读、客户隔离、非法金额和历史指令。本地整合门禁必须包含外币冻结回归。
+验证：`server/transfer-hold-currency.test.mjs` 用真实隔离 PostgreSQL 和实际换汇/转账核对多币种同时冻结、撤销、员工拦截/放行、费用注入失败回滚与重试，并覆盖本行外币收款在同一资金账户下开立分区；`framework/bridge/transfer-recall.test.mjs` 覆盖 Agent 原币种确认、一次性授权、状态重读、客户隔离、非法金额和历史指令；`tools/check-transfer-currency.mjs` 在浏览器模拟后端验证同账户外币入账、跨币种到账、非法币种拒绝与人民币回归。本地整合门禁必须包含外币冻结与外币入账回归。
 
 本次修复待处理指令的解冻查找，不批量修正历史已结单可能遗留的冻结。历史余额与可用余额的差额可能包含其他有效预留，需依据原指令及账务逐笔核对，不能直接抹平差额；本轮未读取远程库确认是否存在此类记录。
 

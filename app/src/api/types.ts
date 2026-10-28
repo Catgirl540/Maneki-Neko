@@ -101,6 +101,11 @@ export interface Transaction {
   createdAt: string
   status: TransactionStatus
   /**
+   * 记账币种（由服务端按流水归属的币种分区反查）。
+   * 列表要按它渲染金额符号 —— 外币流水不能套人民币符号；旧数据缺省按 CNY。
+   */
+  currency?: Currency
+  /**
    * 后台分类状态。
    * `pending` = 分类器还在判定（页面显示「正在分类」），`done` = 已回写分类，
    * `failed` = 模型链全部重试失败，分类保持 other。

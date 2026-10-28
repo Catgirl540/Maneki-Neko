@@ -93,3 +93,53 @@ test('foreign currency transfer holds release the exact partition, preserve othe
     await cnyUnchanged(); await reconcile(app)
   })
 })
+
+test('internal foreign-currency transfer credits the pay currency into the recipient single funding account', { ...testOptions, timeout: 90000 }, async t => {
+  const app = await fixture({ reviewThreshold: 100000 })
+  t.after(() => app.close())
+  // A low-AUM new customer keeps the sender side a real (non-VIP) fee case.
+  const sender = await register(app, '13900000032', 'TEST ONLY fx sender')
+  const recipient = await login(app, '13600136000')
+  ok(await app.call(routes.deposit(sender.accounts[0].id), { method: 'POST', token: sender.token, body: { amount: 900000, channel: 'bank' } }))
+  const exchange = { fromAccountId: sender.accounts[0].id, toCurrency: 'USD', amount: 300000 }
+  const quote = ok(await app.call(routes.exchangeQuote(), { method: 'POST', token: sender.token, body: exchange }))
+  ok(await app.call(routes.exchange(), { method: 'POST', token: sender.token, body: { ...exchange, quoteId: quote.quoteId, paymentPassword: '888888' } }))
+  const funding = ok(await app.call(routes.accounts(), { token: sender.token }))[0]
+  const usd = funding.currencyBalances.find(row => row.currency === 'USD')
+  assert(usd, 'sender needs a USD partition')
+
+  // The recipient only holds CNY: a USD transfer must open the partition, not fail.
+  const before = ok(await app.call(routes.accounts(), { token: recipient.token }))[0]
+  assert.equal(before.currencyBalances.some(row => row.currency === 'USD'), false)
+  const body = { fromAccountId: usd.id, channel: 'bank', scope: 'domestic', payeeName: recipient.user.name,
+    payeeAccountNo: recipient.accounts[0].accountNo, payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount: 1200, memo: 'USD into a CNY-only customer' }
+  const result = ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body }))
+  assert.equal(result.settlementStatus, 'success')
+  assert.equal(result.fx, undefined, 'same currency must not quote an exchange')
+
+  const after = ok(await app.call(routes.accounts(), { token: recipient.token }))
+  assert.equal(after.length, 1, 'still exactly one funding account')
+  assert.equal(after[0].accountNo, before.accountNo, 'customer-facing account number is unchanged')
+  assert.equal(after[0].balance, before.balance, 'CNY partition is untouched')
+  const usdRow = after[0].currencyBalances.find(row => row.currency === 'USD')
+  assert(usdRow, 'USD partition is opened on the same funding account')
+  assert.equal(usdRow.balance, 1200)
+  assert.equal(usdRow.available, 1200)
+  assert.equal(usdRow.accountNo, before.accountNo, 'partitions share the funding account number')
+
+  // Repeating the transfer reuses the partition instead of opening a second one.
+  ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body: { ...body, amount: 800 } }))
+  const again = ok(await app.call(routes.accounts(), { token: recipient.token }))
+  assert.equal(again[0].currencyBalances.filter(row => row.currency === 'USD').length, 1)
+  assert.equal(again[0].currencyBalances.find(row => row.currency === 'USD').balance, 2000)
+
+  // Both sides list the flow under its own currency, and the incoming row belongs to the new partition.
+  const incoming = ok(await app.call(`${routes.transactions(usdRow.id)}?size=10`, { token: recipient.token }))
+  assert.equal(incoming.items[0].accountId, usdRow.id)
+  assert.equal(incoming.items[0].currency, 'USD')
+  assert.equal(incoming.items[0].amount, 800)
+  const outgoing = ok(await app.call(`${routes.transactions(usd.id)}?size=10`, { token: sender.token }))
+  assert.equal(outgoing.items[0].currency, 'USD')
+
+  await reconcile(app)
+})

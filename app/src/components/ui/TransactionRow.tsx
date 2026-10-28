@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import type { Transaction } from '@/api/types'
 import { CategoryIcon } from './CategoryIcon'
 import { ChevronRightIcon } from './icons'
-import { formatDateTime, formatMoneySigned } from '@/lib/format'
+import { formatDateTime, formatMoneySigned, CURRENCY_SYMBOL } from '@/lib/format'
 import { cn } from '@/lib/cn'
 import { statusText } from '@/lib/tx'
 
@@ -44,7 +44,7 @@ export function TransactionRow({ tx, showAccount }: { tx: Transaction; showAccou
           income ? 'text-blue' : 'text-ink',
         )}
       >
-        {formatMoneySigned(tx.signedAmount)}
+        {formatMoneySigned(tx.signedAmount, CURRENCY_SYMBOL[tx.currency ?? 'CNY'])}
       </span>
 
       <ChevronRightIcon size={16} className="shrink-0 text-ink-mute/60" />

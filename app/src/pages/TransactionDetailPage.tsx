@@ -16,6 +16,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, ApiError } from '@/api'
 import type {
   Cents,
+  Currency,
   TransactionDetail,
   TransactionRecord,
   TransactionStatus,
@@ -37,7 +38,7 @@ import { CATEGORY_LABEL } from '@/lib/categories'
 import { cn } from '@/lib/cn'
 import {
   CURRENCY_LABEL,
-  formatAmount,
+  formatCurrency,
   formatDateTimeFull,
   formatFxAmount,
   formatRate,
@@ -221,7 +222,7 @@ export function TransactionDetailPage() {
                     tx.direction === 'in' ? 'text-blue' : 'text-ink',
                   )}
                 >
-                  {tx.direction === 'in' ? '+' : '-'}¥{formatAmount(tx.amount)}
+                  {tx.direction === 'in' ? '+' : '-'}{formatCurrency(tx.amount, detail.settleCurrency ?? 'CNY')}
                 </p>
                 <p className="mt-2 text-[12px] text-ink-mute">
                   记账金额 · {CURRENCY_LABEL[detail.settleCurrency]}（{detail.settleCurrency}）
@@ -275,16 +276,17 @@ export function TransactionDetailPage() {
                 </p>
 
                 <dl className="mt-5 flex flex-col gap-3.5 border-t border-line pt-5">
-                  <BalanceLine label="交易前余额" value={detail.balanceBefore} />
+                  <BalanceLine label="交易前余额" value={detail.balanceBefore} currency={detail.settleCurrency ?? 'CNY'} />
                   <BalanceLine
                     label="交易金额"
                     value={tx.signedAmount}
+                    currency={detail.settleCurrency ?? 'CNY'}
                     tone={tx.direction === 'in' ? 'blue' : 'ink'}
                   />
                   <div className="flex items-baseline justify-between border-t border-line pt-3.5">
                     <dt className="text-[13px] text-ink-soft">交易后余额</dt>
                     <dd className="num text-[19px] leading-none font-semibold text-ink">
-                      ¥{formatAmount(detail.balanceAfter)}
+                      {formatCurrency(detail.balanceAfter, detail.settleCurrency ?? 'CNY')}
                     </dd>
                   </div>
                 </dl>
@@ -438,10 +440,13 @@ function InfoRow({
 function BalanceLine({
   label,
   value,
+  currency,
   tone = 'soft',
 }: {
   label: string
   value: Cents
+  /** 记账币种：外币回单不能套人民币符号 */
+  currency: Currency
   tone?: 'soft' | 'ink' | 'blue'
 }) {
   return (
@@ -453,7 +458,7 @@ function BalanceLine({
           tone === 'blue' ? 'text-blue' : tone === 'ink' ? 'text-ink' : 'text-ink-soft',
         )}
       >
-        {value > 0 && tone !== 'soft' ? '+' : value < 0 ? '-' : ''}¥{formatAmount(value)}
+        {value > 0 && tone !== 'soft' ? '+' : value < 0 ? '-' : ''}{formatCurrency(Math.abs(value), currency)}
       </dd>
     </div>
   )

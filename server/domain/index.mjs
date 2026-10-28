@@ -108,6 +108,33 @@ function withDerived(account) {
     return { ...account, accountNo: loadDb().accounts[0].accountNo, label: account.id === loadDb().accounts[0].id ? account.label : `${account.currency} 余额`, monthNetChange: net };
 }
 /**
+ * 收款方按到账币种取记账分区。
+ *
+ * 同一资金账户下缺这个币种时开立一个 0 余额分区 —— 与换汇首次兑换**完全同一套结构**：
+ * 只多一条 `currencyBalances`，对客账户号不变，不是新账户、也不是按卡建户。
+ * 本行外币收款必须走这里：`findRecipientByNumber` 只按对客账户号命中主分区，
+ * 直接往主分区加钱会把美元记成人民币。
+ */
+function ensureRecipientCurrencyBalance(profile, currency) {
+    const existing = ledgerBalances(profile).find((row) => row.currency === currency);
+    if (existing)
+        return existing;
+    const created = {
+        id: nextId('balance'),
+        kind: 'savings',
+        label: `${currency} 余额`,
+        accountNo: `ledger:${profile.user.id}:${currency}`,
+        currency,
+        balance: 0,
+        available: 0,
+        interestRate: 0.0155,
+        monthNetChange: 0,
+    };
+    profile.currencyBalances ??= [];
+    profile.currencyBalances.push(created);
+    return created;
+}
+/**
  * 生成换汇报价。扣账币种与收款币种相同时返回 undefined —— 不需要换汇。
  * 报价带 quotedAt / quoteTtlSeconds，调用方（UI）据此倒计时并在过期后重新询价。
  */
@@ -849,6 +876,9 @@ export function createBankBusinessApi(options) {
         // 询价必须针对具体账户：可用余额与扣账币种都取决于它
         const current = findAccount(req.fromAccountId);
         const isFps = req.channel === 'fps';
+        // 收款币种只支持三种记账分区；不拦下来 fxRateFor 会算出 NaN 报价
+        if (req.payeeCurrency !== undefined && !['CNY', 'USD', 'HKD'].includes(req.payeeCurrency))
+            throw new ApiError('收款币种无效', 400, 'INVALID_CURRENCY');
         const singleLimit = isFps ? FPS_SINGLE_LIMIT : BANK_SINGLE_LIMIT;
         // FPS 走香港即时结算通道，免手续费；境外转账费按会员等级减免（金卡+）
         const fee = transferFee(db, { amount: req.amount, scope: req.scope, isFps });
@@ -910,6 +940,11 @@ export function createBankBusinessApi(options) {
         if (!Number.isSafeInteger(req.amount) || req.amount <= 0) {
             throw new ApiError('转账金额必须是大于 0 的整数分', 400, 'INVALID_AMOUNT');
         }
+        // 到账币种：银行通道省略即＝付款币种；给出时表示收款人收到的币种（可跨币种）
+        if (req.payeeCurrency !== undefined && !['CNY', 'USD', 'HKD'].includes(req.payeeCurrency)) {
+            throw new ApiError('收款币种无效', 400, 'INVALID_CURRENCY');
+        }
+        const destCurrency = req.payeeCurrency ?? account.currency;
         // —— 收款标识校验 ——
         // 跨境支付通无论用哪种汇款方式都要指定收款银行（款项要路由到具体收款行）
         let identifier;
@@ -990,9 +1025,8 @@ export function createBankBusinessApi(options) {
             if (recipient.profile.user.id === db.user.id) {
                 throw new ApiError('付款和收款账户不能相同', 400, 'SAME_ACCOUNT');
             }
-            if (recipient.account.currency !== (isFps ? req.payeeCurrency : account.currency)) {
-                throw new ApiError('本行账户币种不一致', 400, 'CURRENCY_MISMATCH');
-            }
+            // 币种不在这里拦：本行收款方按到账币种取（必要时开立）记账分区，
+            // 同一资金账户可持有多币种余额，不是「收款账户币种不一致」。
             if (req.payeeName.trim() !== (isFps ? hideMiddle(recipient.profile.user.name) : recipient.profile.user.name)) {
                 throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH');
             }
@@ -1051,16 +1085,20 @@ export function createBankBusinessApi(options) {
         }
         if (recipient) {
             const sender = findBalance(db, account.id);
+            // 到账分区：同币种沿用，缺币种则在**同一资金账户**下开立（不新建账户）
+            const hadCurrency = ledgerBalances(recipient.profile).some((row) => row.currency === destCurrency);
+            const target = ensureRecipientCurrencyBalance(recipient.profile, destCurrency);
+            const credited = quotedFx?.toAmount ?? req.amount;
             sender.balance -= req.amount;
             sender.available -= req.amount;
-            recipient.account.balance += quotedFx?.toAmount ?? req.amount;
-            recipient.account.available += quotedFx?.toAmount ?? req.amount;
+            target.balance += credited;
+            target.available += credited;
             const isOwnAccount = recipient.profile.user.id === db.user.id;
             const createdAt = new Date().toISOString();
             const outgoing = await pushTransaction({
                 accountId: sender.id, direction: 'out', amount: req.amount,
                 signedAmount: -req.amount, counterparty: `转账 · ${req.payeeName.trim()}`,
-                memo: req.memo || `本行转账至尾号 ${recipient.account.accountNo.slice(-4)}`,
+                memo: req.memo || `本行转账至尾号 ${recipient.profile.accounts[0].accountNo.slice(-4)}`,
                 category: 'transfer', createdAt, status: 'success',
             }, {
                 channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: sender.label,
@@ -1073,15 +1111,15 @@ export function createBankBusinessApi(options) {
             const incomingId = nextId('txn');
             recipient.profile.transactions.unshift({
                 id: incomingId,
-                accountId: recipient.account.id, direction: 'in', amount: quotedFx?.toAmount ?? req.amount,
-                signedAmount: quotedFx?.toAmount ?? req.amount, counterparty: `本行转入 · ${db.user.name}`,
-                memo: req.memo || `本行转入自尾号 ${sender.accountNo.slice(-4)}`,
+                accountId: target.id, direction: 'in', amount: credited,
+                signedAmount: credited, counterparty: `本行转入 · ${db.user.name}`,
+                memo: req.memo || `本行转入自尾号 ${db.accounts[0].accountNo.slice(-4)}`,
                 category: 'transfer', createdAt, status: 'success',
                 detail: {
                     referenceNo: makeReferenceNo(incomingId), balanceBefore: 0, balanceAfter: 0,
-                    channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: recipient.account.label,
-                    accountLabel: recipient.account.label, accountNo: recipient.profile.accounts[0].accountNo,
-                    settleCurrency: recipient.account.currency, counterpartyName: db.user.name,
+                    channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: target.label,
+                    accountLabel: target.label, accountNo: recipient.profile.accounts[0].accountNo,
+                    settleCurrency: target.currency, counterpartyName: db.user.name,
                     counterpartyAccountNo: maskBankAccount(db.accounts[0].accountNo),
                     counterpartyBank: '招财猫银行', location: '招财猫银行 App',
                     remark: req.memo.trim() || undefined,
@@ -1096,8 +1134,14 @@ export function createBankBusinessApi(options) {
                 db.payees = priorPayees;
                 sender.balance += req.amount;
                 sender.available += req.amount;
-                recipient.account.balance -= quotedFx?.toAmount ?? req.amount;
-                recipient.account.available -= quotedFx?.toAmount ?? req.amount;
+                target.balance -= credited;
+                target.available -= credited;
+                // 这次才开出来的空分区一并撤掉：失败不能给收款人留下新币种
+                if (!hadCurrency && target.balance === 0 && target.available === 0) {
+                    const list = recipient.profile.currencyBalances ?? [];
+                    const index = list.findIndex((row) => row.id === target.id);
+                    if (index >= 0) list.splice(index, 1);
+                }
                 db.transactions.splice(db.transactions.findIndex((row) => row.id === outgoing.id), 1);
                 recipient.profile.transactions.splice(recipient.profile.transactions.findIndex((row) => row.id === incomingId), 1);
                 throw error;
