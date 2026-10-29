@@ -53,6 +53,19 @@
   --color-coral-wash: #fff0f4;
   --color-chart-neutral: #dce4ef;
 
+  /* —— 图表色板 ——
+     支出分类固定 8 类，饼图/图例只用这一组，避免同一张图里出现两块几乎一样、
+     或者浅到看不出边界的颜色。顺序按"先品牌紫蓝、再辅色"排；
+     相邻两项至少一个是不同色相，56px 宽的弧也能分清。 */
+  --color-chart-1: #533afd; /* 主紫 */
+  --color-chart-2: #306fdb; /* 信赖蓝 */
+  --color-chart-3: #126b62; /* 玉青 */
+  --color-chart-4: #b7781f; /* 琥珀 */
+  --color-chart-5: #d92159; /* 珊瑚 */
+  --color-chart-6: #7c8ba1; /* 石板灰 */
+  --color-chart-7: #a9b8cb; /* 浅灰蓝：兜底与"其他" */
+  --color-chart-8: #2055b4; /* 深蓝 */
+
   /* —— 圆角 —— */
   --radius-card: 8px;
   --radius-field: 6px;

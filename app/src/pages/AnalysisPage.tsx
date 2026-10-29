@@ -7,7 +7,7 @@ import { Segmented, Tag } from '@/components/ui/Segmented'
 import { Donut, DonutLegend, type DonutSegment } from '@/components/charts/Donut'
 import { TrendBars } from '@/components/charts/TrendBars'
 import { CashFlowChart, CashFlowLegend } from '@/components/charts/CashFlowChart'
-import { CATEGORY_COLOR } from '@/lib/categories'
+import { categoryColor } from '@/lib/categories'
 import { CURRENCY_LABEL, formatCurrency } from '@/lib/format'
 import { useAsync } from '@/lib/useAsync'
 import { Button } from '@/components/ui/Button'
@@ -84,7 +84,7 @@ function SpendingPanel({ month, currency }: { month: string; currency: Currency 
   if (!request.data) return <DataLoading />
   const spending = request.data.byCurrency?.[currency] ?? (currency === 'CNY' ? request.data : null)
   if (!spending || spending.month !== month) return <DataUnavailable message="银行未返回所选月份或币种的统计，请重试。" onRetry={request.reload} />
-  const segments: DonutSegment[] = spending.categories.map(c => ({ ...c, color: CATEGORY_COLOR[c.key] }))
+  const segments: DonutSegment[] = spending.categories.map(c => ({ ...c, color: categoryColor(c.key) }))
   const top = spending.categories[0]
   return (
     <section aria-label={month + ' ' + currency + ' 支出统计'} className="flex flex-col gap-6">

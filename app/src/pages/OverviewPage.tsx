@@ -11,7 +11,7 @@ import { RevealToggle } from '@/components/ui/Reveal'
 import { EmptyState, Skeleton, Tag } from '@/components/ui/Segmented'
 import { TransactionRow } from '@/components/ui/TransactionRow'
 import { ArrowDownLeftIcon, CardIcon, ChartIcon, GlobalIcon, TransferIcon } from '@/components/ui/icons'
-import { CATEGORY_COLOR } from '@/lib/categories'
+import { categoryColor } from '@/lib/categories'
 import { cn } from '@/lib/cn'
 import { CURRENCY_SYMBOL, formatCurrency, formatMoneySigned, formatToday } from '@/lib/format'
 import { salaryPlanConfigured } from '@/lib/salary-plan'
@@ -65,7 +65,7 @@ export function OverviewPage() {
   }
   const todosLoading = salaryPlan.loading || cards.loading || autoDebits.loading || transactions.loading
 
-  const spendingSegments: DonutSegment[] = (spending.data?.categories ?? []).map(c => ({ ...c, color: CATEGORY_COLOR[c.key] }))
+  const spendingSegments: DonutSegment[] = (spending.data?.categories ?? []).map(c => ({ ...c, color: categoryColor(c.key) }))
 
   return <div className="page-stack">
     <PageHeader title="总览" actions={<span className="text-[12px] text-ink-mute">{formatToday()}</span>} />

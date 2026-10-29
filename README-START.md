@@ -18,7 +18,7 @@ npm --prefix staff ci
 
 不要把 `demo-database/bank.sqlite` 复制到 `server/data/` 作为现版服务数据库。SQLite 只作为停止写入后的历史迁移源，迁移步骤见 [PostgreSQL 运维手册](docs/bank-postgresql-operations.md)。
 
-可选：为银行后端进程配置 `OPENROUTER_API_KEY` 启用交易自动分类（默认模型 `perplexity/pplx-decider-flash-v1.2`，可用 `BANK_CATEGORIZE_MODEL` 换）。未配置时分类器自动禁用，支出流水回落为 `other`，不发起任何付费请求。密钥不写入仓库，详见 [服务端说明](server/README.md#交易自动分类)。
+可选：为银行后端进程配置 `OPENROUTER_API_KEY` 启用交易自动分类（默认模型 `perplexity/pplx-decider-flash-v1.2`，可用 `BANK_CATEGORIZE_MODEL` 换）。未配置时按 `shared/spend-rules.mjs` 的本地商户规则即时归类（预设商户口径固定，自由商家看关键词），只有规则也认不出来才落 `other`；模型失败同样回落本地规则。密钥不写入仓库，详见 [服务端说明](server/README.md#交易自动分类)。
 
 ## 2. 初始化隔离开发库并启动后端
 
@@ -34,6 +34,8 @@ node server/index.mjs
 ```
 
 结构初始化需要数据库所有者权限。日常运行应改用已授权的应用角色；权限模板及维护步骤见 [server/README.md](server/README.md)。仅全新隔离开发库可创建演示数据。已有客户库的迁移必须保留原余额、冻结、流水、凭证和匹配密钥。
+
+> **拉取新代码后先重跑一次 `node server/bootstrap-postgres.mjs`。** 团队提交里一旦升了 schema 版本，`BANK_AUTO_MIGRATE=false` 会拒绝启动（控制台报 `PostgreSQL schema requires owner bootstrap`），此时前端所有接口都会失败，页面表现为「数据无法加载」「未知接口」之类；重跑 bootstrap 再启动后端即可。
 
 `http://127.0.0.1:8080/health` 应返回 `database: "postgresql"`。`commercialReady=false` 表示真实银行通道尚未就绪，不是数据库连接失败。生产要求 `BANK_INTEGRATION_MODE=live`，不会开放模拟短信、身份核验和资金办理；不得把本节开发配置用于生产。
 
