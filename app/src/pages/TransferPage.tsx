@@ -59,19 +59,69 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { PaymentPlans } from '@/components/account/PaymentPlans'
 import { searchPayees } from '../../../shared/payee-search.mjs'
 
+const TRANSFER_TABS = [
+  { value: 'instant', label: '即时转账' },
+  { value: 'scheduled', label: '定时转账' },
+  { value: 'split', label: 'AA 收款' },
+] as const
+type TransferTab = typeof TRANSFER_TABS[number]['value']
+
 /** 独立任务页复用已有转账引擎，报价、核验与支付确认保持一致。 */
 export function TransferPage() {
   const navigate = useNavigate()
   const [busy, setBusy] = useState(false)
+  const [tab, setTab] = useState<TransferTab>('instant')
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
   return <div className="page-stack transfer-task-page">
     <PageHeader title="转账与支付" actions={<>
       <Link to="/spend" className="service-link">模拟消费</Link>
       <Link to="/accounts?flow=in" className="service-link">收款与转入</Link>
     </>} />
     <Card className="transfer-task-panel">
-      <TransferForm onClose={() => navigate('/accounts')} onUpdate={() => window.dispatchEvent(new Event('luckycat:bank-updated'))} onBusyChange={setBusy} />
+      <div className="mb-6 border-b border-line">
+        <div role="tablist" aria-label="转账服务" className="flex flex-wrap gap-x-7 gap-y-1">
+          {TRANSFER_TABS.map((item, index) => (
+            <button
+              key={item.value}
+              ref={(element) => { tabRefs.current[index] = element }}
+              type="button"
+              role="tab"
+              id={`transfer-tab-${item.value}`}
+              aria-controls={`transfer-panel-${item.value}`}
+              aria-selected={tab === item.value}
+              tabIndex={tab === item.value ? 0 : -1}
+              disabled={busy}
+              onClick={() => setTab(item.value)}
+              onKeyDown={(event) => {
+                if (busy) return
+                const next = event.key === 'ArrowRight' ? (index + 1) % TRANSFER_TABS.length
+                  : event.key === 'ArrowLeft' ? (index + TRANSFER_TABS.length - 1) % TRANSFER_TABS.length
+                    : event.key === 'Home' ? 0 : event.key === 'End' ? TRANSFER_TABS.length - 1 : -1
+                if (next < 0) return
+                event.preventDefault()
+                setTab(TRANSFER_TABS[next].value)
+                tabRefs.current[next]?.focus()
+              }}
+              className={cn(
+                'border-b-2 px-0.5 pb-3 text-[14px] font-medium transition-colors disabled:cursor-wait disabled:opacity-60',
+                tab === item.value ? 'border-gold text-gold-deep' : 'border-transparent text-ink-soft hover:text-ink',
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div id="transfer-panel-instant" role="tabpanel" aria-labelledby="transfer-tab-instant" hidden={tab !== 'instant'}>
+        <TransferForm onClose={() => navigate('/accounts')} onUpdate={() => window.dispatchEvent(new Event('luckycat:bank-updated'))} onBusyChange={setBusy} />
+      </div>
+      <div id="transfer-panel-scheduled" role="tabpanel" aria-labelledby="transfer-tab-scheduled" hidden={tab !== 'scheduled'}>
+        {tab === 'scheduled' && <div className="mx-auto w-full max-w-[860px]"><PaymentPlans tab="scheduled" onBusyChange={setBusy} /></div>}
+      </div>
+      <div id="transfer-panel-split" role="tabpanel" aria-labelledby="transfer-tab-split" hidden={tab !== 'split'}>
+        {tab === 'split' && <div className="mx-auto w-full max-w-[860px]"><PaymentPlans tab="split" onBusyChange={setBusy} /></div>}
+      </div>
     </Card>
-    <PaymentPlans />
     {busy && <p role="status" className="text-[13px] text-ink-soft">正在处理，请稍候…</p>}
   </div>
 }
@@ -137,9 +187,13 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   const [recipientCheck, setRecipientCheck] = useState<TransferRecipientResult | null>(null)
 
   const [amountText, setAmountText] = useState('')
+  const [receiveText, setReceiveText] = useState('')
+  const [amountSide, setAmountSide] = useState<'pay' | 'receive'>('pay')
   const [memo, setMemo] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  /** 支付密码只用于本次提交，返回修改或转账成功后立即清空 */
+  const [paymentPassword, setPaymentPassword] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [result, setResult] = useState<TransferResult | null>(null)
   const [resultRecord, setResultRecord] = useState<TransactionRecord | null>(null)
@@ -148,7 +202,8 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   /** 在途倒计时用的本地时钟；只有 result 在途时才跳（§9） */
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [recalling, setRecalling] = useState(false)
-  const [quoteState, setQuoteState] = useState<TransferQuote | null>(null)
+  const [quoteState, setQuoteState] = useState<{ key: string; quote: TransferQuote | null } | null>(null)
+  const [reverseQuote, setReverseQuote] = useState<{ key: string; amount: Cents | null; expiresAt: number } | null>(null)
   /** 换汇报价过期后自增，触发重新询价 */
   const [quoteNonce, setQuoteNonce] = useState(0)
   /** 收到报价的**本地**时刻：锁价从这里起算，避免客户端与服务端的时钟偏差 */
@@ -179,14 +234,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     balances[0] ??
     null
   const payCurrency: Currency = account?.currency ?? 'CNY'
-  /**
-   * 到账币种：空串表示**跟随付款币种**（换钱包时自动跟着变）。
-   * 用户显式选过就固定下来 —— 切付款币种时不能把收款币种偷偷改掉。
-   */
-  const [payeeCurrencyChoice, setPayeeCurrencyChoice] = useState<Currency | ''>('')
-  const destCurrency: Currency = payeeCurrencyChoice || payCurrency
-  const parsedAmount = parseAmountInput(amountText)
-  const amount: Cents = parsedAmount ?? 0
+  const [destCurrency, setDestCurrency] = useState<Currency>('CNY')
   const isFps = channel === 'fps'
 
   /** 转数快走香港通道 */
@@ -212,6 +260,65 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
   /** 转数快用自己的收款币种选择；银行账户通道用到账币种（默认＝付款币种） */
   const quoteCurrency: Currency = isFps ? fpsCurrency : destCurrency
   const fromAccountId = account?.id ?? ''
+  const receiveAmount = parseAmountInput(receiveText)
+  const reverseKey = JSON.stringify([fromAccountId, channel, effectiveScope, activeBankCode, activeBankRegion, payCurrency, quoteCurrency, receiveAmount, quoteNonce])
+  const needsReverse = amountSide === 'receive' && quoteCurrency !== payCurrency && (receiveAmount ?? 0) > 0
+
+  // 用付款方向的报价反算，不能拿反向汇率代替（两者点差不同）。
+  useEffect(() => {
+    if (!needsReverse || !fromAccountId || receiveAmount === null) return
+    let cancelled = false
+    const timer = setTimeout(() => {
+      api.quoteTransfer({
+        fromAccountId,
+        channel,
+        scope: effectiveScope,
+        amount: 10000,
+        bankCode: activeBankCode,
+        bankRegion: activeBankRegion,
+        payeeCurrency: quoteCurrency,
+      }).then((q) => {
+        if (cancelled) return
+        const rate = q.fx?.rate
+        if (!rate || !Number.isFinite(rate) || rate <= 0) {
+          setReverseQuote({ key: reverseKey, amount: null, expiresAt: Infinity })
+          return
+        }
+        const closest = Math.max(1, Math.round(receiveAmount / rate))
+        if (!Number.isSafeInteger(closest)) {
+          setReverseQuote({ key: reverseKey, amount: null, expiresAt: Infinity })
+          return
+        }
+        const candidates = [closest, closest - 1, closest + 1].filter((value) => value > 0 && Number.isSafeInteger(value))
+        const calculated = candidates.reduce((best, value) =>
+          Math.abs(Math.round(value * rate) - receiveAmount) < Math.abs(Math.round(best * rate) - receiveAmount) ? value : best,
+        closest)
+        setReverseQuote({ key: reverseKey, amount: calculated, expiresAt: Date.now() + q.fx!.quoteTtlSeconds * 1000 })
+      }).catch(() => {
+        if (!cancelled) setReverseQuote({ key: reverseKey, amount: null, expiresAt: Infinity })
+      })
+    }, 220)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [needsReverse, fromAccountId, channel, effectiveScope, activeBankCode, activeBankRegion, quoteCurrency, receiveAmount, reverseKey])
+
+  const reverseReady = !needsReverse || (reverseQuote?.key === reverseKey && nowTick < reverseQuote.expiresAt)
+  useEffect(() => {
+    if (!needsReverse || reverseQuote?.key !== reverseKey || !Number.isFinite(reverseQuote.expiresAt)) return
+    const timer = setTimeout(() => {
+      setNowTick(Date.now())
+      setQuoteNonce((n) => n + 1)
+    }, Math.max(0, reverseQuote.expiresAt - Date.now()))
+    return () => clearTimeout(timer)
+  }, [needsReverse, reverseKey, reverseQuote])
+  const parsedAmount = amountSide === 'pay'
+    ? parseAmountInput(amountText)
+    : needsReverse
+      ? (reverseReady ? reverseQuote?.amount ?? null : null)
+      : receiveAmount
+  const amount: Cents = parsedAmount ?? 0
+  const paymentInput = amountSide === 'pay' ? amountText
+    : parsedAmount === null ? '' : `${Math.floor(parsedAmount / 100)}.${String(parsedAmount % 100).padStart(2, '0')}`
+  const quoteKey = JSON.stringify([fromAccountId, channel, effectiveScope, amount, activeBankCode, activeBankRegion, quoteCurrency, quoteNonce])
 
   /* 报价：账户 / 通道 / 金额 / 币种 / 银行变化时向后端询价。
      quoteNonce 由「换汇锁价过期」推进 —— 过期必须重新询价，不能拿旧汇率成交。 */
@@ -231,13 +338,13 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
         })
         .then((q) => {
           if (cancelled) return
-          setQuoteState(q)
+          setQuoteState({ key: quoteKey, quote: q })
           // 两个都在这一个回调里落定，倒计时首帧就是准的，不会闪一下
           setQuoteReceivedAt(Date.now())
           setNowTick(Date.now())
         })
         .catch(() => {
-          if (!cancelled) setQuoteState(null)
+          if (!cancelled) setQuoteState({ key: quoteKey, quote: null })
         })
     }, 220)
     return () => {
@@ -253,10 +360,20 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     activeBankRegion,
     quoteCurrency,
     quoteNonce,
+    quoteKey,
   ])
 
-  const quote = amount > 0 ? quoteState : null
+  // 任何询价参数变化时，旧报价立即失效，不展示旧的到账金额。
+  const matchedQuote = amount > 0 && quoteState?.key === quoteKey ? quoteState.quote : null
+  const quote = matchedQuote?.fx && nowTick >= quoteReceivedAt + matchedQuote.fx.quoteTtlSeconds * 1000
+    ? null : matchedQuote
   const fx = quote?.fx ?? null
+  const quoteFailed = amount > 0 && quoteState?.key === quoteKey &&
+    (!quoteState.quote || (quoteCurrency !== payCurrency && !quoteState.quote.fx))
+  const receiveInput = amountSide === 'receive' ? receiveText
+    : amount <= 0 ? ''
+      : quoteCurrency === payCurrency ? amountText
+        : fx ? `${Math.floor(fx.toAmount / 100)}.${String(fx.toAmount % 100).padStart(2, '0')}` : ''
 
   /* 倒计时在渲染期推导，不在 effect 里同步 setState */
   const quoteSecondsLeft =
@@ -417,26 +534,23 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
    * 只有内地卡有 BIN：香港方向收的是银行账户号，不含机构标识。
    */
   function selectBank(bank: Bank) {
+    setNowTick(Date.now())
     setBankSelection((prev) => ({ ...prev, [bank.region]: bank.code }))
     if (bank.region !== 'CN' || isFps || !bank.primaryBin) return
     setAccountNo(formatBankAccount(bank.primaryBin + digitsOnly(accountNo).slice(CARD_BIN_LENGTH)))
   }
 
   function switchChannel(next: TransferChannel) {
+    setNowTick(Date.now())
     setChannel(next)
     setError(null)
     setResolved(null)
   }
 
-  /**
-   * 换付款币种。到账币种仍在「跟随」时自动跟着变；如果用户显式选的正好是新付款币种，
-   * 那等价于跟随，清掉固定值，避免之后再换钱包时被这份"伪选择"挡住。
-   */
   function pickBalance(id: string) {
-    const next = balances.find((row) => row.id === id)
+    setNowTick(Date.now())
     setFromBalanceId(id)
     setError(null)
-    if (next && payeeCurrencyChoice === next.currency) setPayeeCurrencyChoice('')
   }
 
   function switchFpsMethod(next: FpsMethod) {
@@ -481,18 +595,26 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     }
   }
 
-  /**
-   * 第一步 → 第二步：只校验付款侧（金额）。
-   * 收款信息留到下一步校验 —— 一次只处理一部分，把错误挡在它所属的那一步。
-   */
+  function amountProblem(): string | null {
+    const source = amountSide === 'pay' ? amountText : receiveText
+    const input = parseAmountInput(source)
+    if (input === null && source.trim()) return '请输入有效转账金额，最多两位小数'
+    if (!input) return '请输入转账金额'
+    if (needsReverse && !reverseReady) return '正在计算付款金额，请稍候'
+    if (needsReverse && reverseQuote && Date.now() >= reverseQuote.expiresAt) return '报价已过期，请等待重新报价'
+    if (parsedAmount === null || amount <= 0) return '无法计算付款金额，请调整金额后重试'
+    if (quoteCurrency !== payCurrency && !fx) {
+      return quoteFailed ? '换汇报价暂不可用，请调整金额或币种后重试' : '正在获取换汇报价，请稍候'
+    }
+    if (fx && Date.now() >= quoteReceivedAt + fx.quoteTtlSeconds * 1000) return '报价已过期，请等待重新报价'
+    return null
+  }
+
   function goToRecipient() {
     setError(null)
-    if (parsedAmount === null && amountText.trim()) {
-      setError('请输入有效转账金额，最多两位小数')
-      return
-    }
-    if (amount <= 0) {
-      setError('请输入转账金额')
+    const problem = amountProblem()
+    if (problem) {
+      setError(problem)
       return
     }
     if (overLimit && quote) {
@@ -516,12 +638,9 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     setError(null)
     setResolved(null)
     setRecipientCheck(null)
-    if (parsedAmount === null && amountText.trim()) {
-      setError('请输入有效转账金额，最多两位小数')
-      return
-    }
-    if (amount <= 0) {
-      setError('请输入转账金额')
+    const problem = amountProblem()
+    if (problem) {
+      setError(problem)
       return
     }
 
@@ -610,7 +729,12 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
 
   async function doSubmit() {
     if (!account) return
-    if (parsedAmount === null || amount <= 0) { setError('请输入有效转账金额，最多两位小数'); return }
+    const problem = amountProblem()
+    if (problem) { setError(problem); return }
+    if (!/^\d{6}$/.test(paymentPassword)) {
+      setError('请输入 6 位数字支付密码')
+      return
+    }
     setSubmitting(true)
     onBusyChange(true)
     setError(null)
@@ -622,6 +746,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
         payeeName: finalPayeeName,
         amount,
         memo: memo.trim(),
+        paymentPassword,
         payeeBankCode: activeBankCode,
         payeeBankRegion: activeBankRegion,
         // 到账币种：银行通道与付款币种相同时后端不产生换汇；不同则按报价折算
@@ -638,12 +763,14 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
       })
       setResult(res)
       setResultRecord(null)
+      setPaymentPassword('')
       setConfirmOpen(false)
       setStep(4)
       onUpdate()
       accounts.reload()
       payees.reload()
     } catch (err) {
+      setPaymentPassword('')
       setConfirmOpen(false)
       setError(err instanceof ApiError ? err.message : '转账失败，请稍后重试')
     } finally {
@@ -656,12 +783,15 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
     setStep(1)
     setConfirmOpen(false)
     setAmountText('')
+    setReceiveText('')
+    setAmountSide('pay')
     setPayeeName('')
     setFpsValue('')
     setMemo('')
     setResolved(null)
     setResult(null)
     setResultRecord(null)
+    setPaymentPassword('')
     setError(null)
     setRecalling(false)
   }
@@ -760,65 +890,78 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
               />
             </div>
 
-            {/* 付款币种：同一资金账户下的币种余额，只有一个币种时不占版面 */}
-            {balances.length > 1 && (
-              <div className="mt-7">
+            <div className="mt-7 space-y-5">
+              <div>
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <p className="text-[13px] font-medium text-ink-soft">付款账户</p>
-                  <span className="num text-[12px] text-ink-mute">
-                    储蓄账户 · 尾号 {balances[0]?.accountNo.slice(-4)}
-                  </span>
+                  <span className="text-[13px] font-medium text-ink-soft">付款金额</span>
+                  <span className="num text-[12px] text-ink-mute">付款账户 · 尾号 {balances[0]?.accountNo.slice(-4)}</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {balances.map((row) => {
-                    const active = account?.id === row.id
-                    return (
-                      <button
-                        key={row.id}
-                        type="button"
-                        onClick={() => pickBalance(row.id)}
-                        aria-pressed={active}
-                        className={cn(
-                          'flex min-h-11 items-center gap-2 rounded-chip border px-4 text-[13px] font-medium transition-colors',
-                          active
-                            ? 'border-gold-wash bg-gold-wash text-gold-deep'
-                            : 'border-line bg-surface text-ink-soft hover:text-ink',
-                        )}
-                      >
-                        {CURRENCY_LABEL[row.currency]}
-                        <span className="num text-[12px] text-ink-mute">{row.currency}</span>
-                      </button>
-                    )
-                  })}
+                <div className="flex min-w-0 items-center rounded-field border border-line bg-surface focus-within:border-gold">
+                  <input
+                    value={paymentInput}
+                    onChange={(e) => { setNowTick(Date.now()); setAmountSide('pay'); setAmountText(e.target.value); setError(null) }}
+                    inputMode="decimal"
+                    placeholder={needsReverse && !reverseReady ? '正在计算…' : '0.00'}
+                    aria-label="转账金额"
+                    className="num h-16 min-w-0 flex-1 bg-transparent px-4 text-[24px] font-semibold text-ink outline-none placeholder:text-line-strong"
+                  />
+                  <select
+                    aria-label="付款币种"
+                    value={account?.id ?? ''}
+                    onChange={(e) => pickBalance(e.target.value)}
+                    className="h-10 max-w-[45%] shrink-0 cursor-pointer border-l border-line bg-transparent px-3 text-[13px] font-medium text-ink outline-none"
+                  >
+                    {balances.map((row) => <option key={row.id} value={row.id}>{row.currency} · {CURRENCY_LABEL[row.currency]}</option>)}
+                  </select>
                 </div>
                 <p className="num mt-2 text-[12px] text-ink-mute">
                   可用 {formatCurrency(account?.available ?? 0, payCurrency)}
+                  {balances.length === 1 && (
+                    <span className="ml-2 font-sans">
+                      只有{CURRENCY_LABEL[payCurrency]}余额，
+                      <Link to="/exchange" className="text-gold-deep hover:text-gold">换汇</Link>后可用其他币种付款
+                    </span>
+                  )}
                 </p>
               </div>
-            )}
 
-            {/* 金额 */}
-            <div className="mt-7 flex flex-col items-center">
-              <span className="text-[13px] text-ink-mute">转账金额</span>
-              <div className="mt-3 flex w-full min-w-0 items-baseline justify-center gap-2">
-                <span className="text-[28px] leading-none font-semibold text-ink-mute">
-                  {CURRENCY_SYMBOL[payCurrency]}
-                </span>
-                <input
-                  value={amountText}
-                  onChange={(e) => setAmountText(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  aria-label="转账金额"
-                  style={{ width: `${Math.max(amountText.length, 4) * 0.62 + 0.2}em`, maxWidth: 'calc(100% - 2rem)' }}
-                  className="num bg-transparent text-center text-[34px] leading-none font-bold tracking-[-0.03em] text-ink outline-none placeholder:text-line-strong sm:text-[46px]"
-                />
+              <div>
+                <p className="mb-2 text-[13px] font-medium text-ink-soft">收款金额</p>
+                <div className="flex min-w-0 items-center rounded-field border border-line bg-surface focus-within:border-gold">
+                  <input
+                    value={receiveInput}
+                    onChange={(e) => { setNowTick(Date.now()); setAmountSide('receive'); setReceiveText(e.target.value); setError(null) }}
+                    inputMode="decimal"
+                    placeholder={amount > 0 && quoteCurrency !== payCurrency && !fx && !quoteFailed ? '正在计算…' : '0.00'}
+                    aria-label="收款金额"
+                    className="num h-16 min-w-0 flex-1 bg-transparent px-4 text-[24px] font-semibold text-ink outline-none placeholder:text-line-strong"
+                  />
+                  <select
+                    aria-label="收款币种"
+                    value={quoteCurrency}
+                    onChange={(e) => {
+                      setNowTick(Date.now())
+                      const next = e.target.value as Currency
+                      if (isFps) setFpsCurrency(next)
+                      else setDestCurrency(next)
+                      setError(null)
+                    }}
+                    className="h-10 max-w-[45%] shrink-0 cursor-pointer border-l border-line bg-transparent px-3 text-[13px] font-medium text-ink outline-none"
+                  >
+                    {(isFps ? FPS_CURRENCIES : PAYEE_CURRENCIES).map((option) => (
+                      <option key={option.value} value={option.value}>{option.value} · {option.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <span className="mt-3 text-[13px] text-ink-mute">
-                {`${CURRENCY_LABEL[payCurrency]} · ${payCurrency}`}
-                {quote && ` · 单笔上限 ${formatCurrency(quote.singleLimit, payCurrency)}`}
-                {fx && ` · 将换汇为 ${fx.toCurrency}`}
-              </span>
+              <p role="status" className="text-[12px] leading-relaxed text-ink-mute">
+                {needsReverse && !reverseReady ? '正在计算付款金额…'
+                  : needsReverse && parsedAmount === null ? '无法获取报价或金额超出范围，请调整金额或币种。'
+                    : quoteFailed ? '报价暂不可用，请调整金额或币种后重试。'
+                      : fx ? `参考汇率：1 ${fx.fromCurrency} = ${formatRate(fx.rate)} ${fx.toCurrency}（含点差）。${amountSide === 'receive' && receiveAmount !== fx.toAmount ? `按当前报价折算，预计实际收款 ${formatCurrency(fx.toAmount, fx.toCurrency)}。` : ''}手续费另计，实际到账以交易结果为准。`
+                        : amount > 0 && quoteCurrency !== payCurrency ? '正在获取报价…'
+                          : '手续费另计，实际到账以交易结果为准。'}
+              </p>
             </div>
 
             {error && (
@@ -865,7 +1008,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                     <button
                       key={p.id}
                       type="button"
-                      onClick={() => applyPayee(p)}
+                      onClick={() => { setNowTick(Date.now()); applyPayee(p) }}
                       className="inline-flex h-10 items-center gap-2 rounded-chip border border-line px-3.5 text-[13px] text-ink-soft transition-colors hover:border-gold hover:text-gold-deep"
                     >
                       <UsersIcon size={16} />
@@ -891,15 +1034,6 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                   <div className="flex items-center justify-between gap-4 border-b border-line pb-4">
                     <span className="text-[13px] font-medium text-ink-soft">收款国家/地区</span>
                     <span className="text-[14px] text-ink">中国香港</span>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="text-[13px] font-medium text-ink-soft">收款币种</span>
-                    <Segmented
-                      value={fpsCurrency}
-                      onChange={setFpsCurrency}
-                      options={FPS_CURRENCIES}
-                    />
                   </div>
 
                   <div>
@@ -993,16 +1127,6 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
                 </>
               ) : (
                 <>
-                  {/* 到账币种：默认跟付款币种走，可显式改成别的币种（按报价折算） */}
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="text-[13px] font-medium text-ink-soft">收款币种</span>
-                    <Segmented
-                      value={destCurrency}
-                      onChange={(next) => setPayeeCurrencyChoice(next === payCurrency ? '' : next)}
-                      options={PAYEE_CURRENCIES}
-                    />
-                  </div>
-
                   <div>
                     <p className="mb-3 text-[13px] font-medium text-ink-soft">收款银行</p>
                     <BankPicker
@@ -1261,6 +1385,20 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
               <SummaryRow label="到账时间" value={etaText} />
             </dl>
 
+            <div className="mt-6">
+              <Field
+                label="支付密码"
+                type="password"
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={6}
+                value={paymentPassword}
+                disabled={submitting}
+                hint="6 位数字，仅用于本次转账验证"
+                onChange={(event) => setPaymentPassword(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              />
+            </div>
+
             {error && (
               <p className="mt-6 rounded-field bg-coral-wash px-4 py-3 text-[13px] text-coral">
                 {error}
@@ -1272,7 +1410,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
               <p className="mt-1">{quote?.confirmReason ?? '该笔转账金额较大，请再次核对收款人和金额。'}</p>
             </div>}
             <div className="mt-8 flex gap-3">
-              <Button block disabled={submitting} onClick={() => { setConfirmOpen(false); setStep(2) }}>
+              <Button block disabled={submitting} onClick={() => { setConfirmOpen(false); setPaymentPassword(''); setStep(2) }}>
                 返回修改
               </Button>
               <Button
@@ -1442,7 +1580,7 @@ export function TransferForm({ onClose, onUpdate, onBusyChange }: {
             <div key={p.id} className="flex items-center gap-3 py-3">
               <button
                 type="button"
-                onClick={() => { applyPayee(p); setPayeesOpen(false) }}
+                onClick={() => { setNowTick(Date.now()); applyPayee(p); setPayeesOpen(false) }}
                 className="flex min-w-0 flex-1 items-center gap-3 text-left transition-colors hover:text-gold-deep"
               >
                 <span className="grid size-9 shrink-0 place-items-center rounded-chip bg-sunk text-ink-mute">

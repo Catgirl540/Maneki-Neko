@@ -15,7 +15,7 @@ function request(patch = {}) {
   return {
     fromAccountId: loadDb().accounts[0].id, channel: 'bank', scope: 'overseas',
     payeeName: '回归收款人', payeeAccountNo: '123456789012',
-    payeeBankCode: '004', payeeBankRegion: 'HK', amount: 500_000, memo: 'issue4', ...patch,
+    payeeBankCode: '004', payeeBankRegion: 'HK', amount: 500_000, memo: 'issue4', paymentPassword: '888888', ...patch,
   }
 }
 function recipient() {
@@ -40,7 +40,13 @@ loadDb().membership.tier = 'standard'
 loadDb().user.memberTier = 'standard'
 account.balance = account.available = 506_000
 persist()
+const beforePin = { balance: account.balance, available: account.available, count: loadDb().transactions.length }
+await assert.rejects(api.submitTransfer(request({ paymentPassword: undefined })), e => e.code === 'INVALID_PAY_PASSWORD')
+await assert.rejects(api.submitTransfer(request({ paymentPassword: '000000' })), e => e.code === 'BAD_PAY_PASSWORD')
+assert.deepEqual({ balance: account.balance, available: account.available, count: loadDb().transactions.length }, beforePin)
 const held = await api.submitTransfer(request())
+assert.equal(Object.hasOwn(loadDb().transactions.find(tx => tx.id === held.transactionId).heldRequest, 'paymentPassword'), false)
+
 assert.equal(held.fee, 5000)
 assert.equal(account.balance, 506_000)
 assert.equal(account.available, 1000, '手续费必须一并预留')

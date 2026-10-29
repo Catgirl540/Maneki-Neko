@@ -5,24 +5,21 @@ import { useAsync } from '@/lib/useAsync'
 import { parseAmountInput } from '@/lib/amountInput'
 import { formatCurrency } from '@/lib/format'
 import { Button } from '@/components/ui/Button'
-import { Card, CardHeader } from '@/components/ui/Card'
 import { PinInput } from '@/components/ui/PinInput'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
-import { Segmented } from '@/components/ui/Segmented'
 
 const inputClass = 'min-h-11 w-full rounded-field border border-line bg-surface px-3 text-[14px] text-ink'
 const dateLabel = (iso: string) => new Date(iso).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })
 const scheduleStatus = { scheduled: '待执行', executed: '已执行', failed: '执行失败', cancelled: '已取消' }
 
 /** Separate instructions from an immediate transfer so its confirmation remains unambiguous. */
-export function PaymentPlans() {
-  const [tab, setTab] = useState<'scheduled' | 'split'>('scheduled')
-  return <Card><CardHeader title="转账计划与 AA 收款" action={<Segmented value={tab} onChange={setTab} options={[{ value: 'scheduled', label: '定时转账' }, { value: 'split', label: 'AA 收款' }]} />} />
-    {tab === 'scheduled' ? <ScheduledTransfers /> : <SplitCollections />}
-  </Card>
+export function PaymentPlans({ tab, onBusyChange }: { tab: 'scheduled' | 'split'; onBusyChange: (busy: boolean) => void }) {
+  return tab === 'scheduled'
+    ? <ScheduledTransfers onBusyChange={onBusyChange} />
+    : <SplitCollections onBusyChange={onBusyChange} />
 }
 
-function ScheduledTransfers() {
+function ScheduledTransfers({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const accounts = useAsync(() => api.listAccounts(), [])
   const banks = useAsync(() => api.listBanks(), [])
   const schedules = useAsync(() => api.listScheduledTransfers(), [])
@@ -32,7 +29,7 @@ function ScheduledTransfers() {
   const requestKey = useRef({ fingerprint: '', key: '' })
   const account = accounts.data?.[0]
   async function create() {
-    setBusy(true); setMessage('')
+    setBusy(true); onBusyChange(true); setMessage('')
     try {
       const cents = parseAmountInput(amount)
       if (!account || cents == null || cents <= 0 || !date || !confirmed) throw new Error('请完整填写指令并勾选授权确认')
@@ -42,13 +39,13 @@ function ScheduledTransfers() {
       await api.createScheduledTransfer({ ...request, confirmed: true, paymentPassword: password, clientRequestId: requestKey.current.key })
       setPassword(''); setConfirmed(false); setMessage('定时转账已保存，请在待执行清单核对。'); schedules.reload()
     } catch (error) { setPassword(''); setMessage(error instanceof Error ? error.message : '保存失败') }
-    finally { setBusy(false) }
+    finally { setBusy(false); onBusyChange(false) }
   }
   async function cancelSchedule(id: string, version: number) {
-    setBusy(true)
+    setBusy(true); onBusyChange(true)
     try { await api.cancelScheduledTransfer(id, version); setCancel(''); schedules.reload() }
     catch (error) { setMessage(error instanceof Error ? error.message : '取消失败') }
-    finally { setBusy(false) }
+    finally { setBusy(false); onBusyChange(false) }
   }
   const loadError = accounts.error || banks.error
   return <section className="mt-5 flex flex-col gap-4" aria-label="定时转账管理">
@@ -60,7 +57,7 @@ function ScheduledTransfers() {
       <label className="text-[13px] text-ink-soft">转账金额（{account.currency} 元）<input required inputMode="decimal" value={amount} onChange={event => { setAmount(event.target.value); setConfirmed(false) }} className={inputClass} /></label>
       <label className="text-[13px] text-ink-soft">执行时间（北京时间）<input required type="datetime-local" value={date} onChange={event => { setDate(event.target.value); setConfirmed(false) }} className={inputClass} /></label>
       <label className="text-[13px] text-ink-soft">转账备注<input value={memo} onChange={event => { setMemo(event.target.value); setConfirmed(false) }} className={inputClass} maxLength={140} /></label>
-      <div className="md:col-span-2"><PinInput label="定时转账支付密码" value={password} onChange={setPassword} disabled={busy} /></div>
+      <div className="md:col-span-2"><PinInput label="定时转账支付密码" value={password} onChange={setPassword} disabled={busy} className="max-w-[360px]" /></div>
       <label className="flex items-start gap-2 text-[13px] text-ink-soft md:col-span-2"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} />我确认在上述北京时间，从本人 {account.currency} 余额向 {name || '指定收款人'} 的账号 {number || '（待填写）'} 自动转出 {amount || '0'} 元，并已核对银行、账号及金额。</label>
       <div><Button type="submit" variant="primary" disabled={busy || password.length !== 6 || !confirmed}>保存定时转账</Button></div>
     </form>}
@@ -69,14 +66,14 @@ function ScheduledTransfers() {
   </section>
 }
 
-function SplitCollections() {
+function SplitCollections({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const collections = useAsync(() => api.listSplitCollections(), [])
   const [title, setTitle] = useState(''), [amount, setAmount] = useState(''), [names, setNames] = useState('')
   const [busy, setBusy] = useState(false), [message, setMessage] = useState('')
   const [payment, setPayment] = useState({ collection: '', participant: '', transaction: '' })
   const [cancel, setCancel] = useState('')
   const requestKey = useRef({ fingerprint: '', key: '' })
-  async function run(work: () => Promise<unknown>, success: string) { setBusy(true); setMessage(''); try { await work(); if (success) setMessage(success); collections.reload() } catch (error) { setMessage(error instanceof Error ? error.message : '操作失败') } finally { setBusy(false) } }
+  async function run(work: () => Promise<unknown>, success: string) { setBusy(true); onBusyChange(true); setMessage(''); try { await work(); if (success) setMessage(success); collections.reload() } catch (error) { setMessage(error instanceof Error ? error.message : '操作失败') } finally { setBusy(false); onBusyChange(false) } }
   function create() {
     const cents = parseAmountInput(amount)
     if (cents == null || cents <= 0) { setMessage('请输入有效金额，最多两位小数'); return }

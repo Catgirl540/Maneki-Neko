@@ -244,7 +244,7 @@ assert.equal(standardQuote.fee, 5_000, 'standard 境外转账按最低 ¥50 收�
 assert.equal(standardQuote.feeWaived, undefined)
 // quote → submit 同口径：standard 实付本金 + 手续费
 const standardBefore = standardAccount.balance
-await api.submitTransfer(overseas(100_000, standardAccount.id))
+await api.submitTransfer({ ...overseas(100_000, standardAccount.id), paymentPassword: '888888' })
 assert.equal(loadDb().accounts[0].balance, standardBefore - 100_000 - 5_000)
 console.log('PASS standard 境外转账收费 ¥50，quote 与 submit 同口径')
 
@@ -261,6 +261,7 @@ const demoBefore = demoAccount.balance
 await api.submitTransfer({
   ...overseas(100_000, demoAccount.id),
   confirmedQuote: { version: 1, fromCurrency: 'CNY', fee: demoQuote.fee, fx: null, submitBefore: Date.now() + 30_000 },
+  paymentPassword: '888888',
 })
 assert.equal(loadDb().accounts[0].balance, demoBefore - 100_000, '白金免手续费，只扣本金')
 // 直接调用共享规则也一致

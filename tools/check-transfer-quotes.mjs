@@ -7,7 +7,7 @@ const {resetDb,loadDb,FX_MID_RATES,persist}=await import('../app/src/api/mock/db
 const api=createMockApi({reviewThreshold:500000,holdWindowMs:300000})
 async function request(amount=500000) {
  const account=(await api.listAccounts())[0]
- const body={fromAccountId:account.id,channel:'bank',scope:'overseas',payeeName:'报价测试',payeeAccountNo:'123456789012',payeeBankCode:'004',payeeBankRegion:'HK',payeeCurrency:'HKD',amount,memo:'测试'}
+ const body={fromAccountId:account.id,channel:'bank',scope:'overseas',payeeName:'报价测试',payeeAccountNo:'123456789012',payeeBankCode:'004',payeeBankRegion:'HK',payeeCurrency:'HKD',amount,memo:'测试',paymentPassword:'888888'}
  const q=await api.quoteTransfer({...body,bankCode:body.payeeBankCode,bankRegion:body.payeeBankRegion})
  body.confirmedQuote={version:1,fromCurrency:account.currency,fee:q.fee,fx:Object.fromEntries(['fromCurrency','toCurrency','rate','fromAmount','toAmount','spread'].map(k=>[k,q.fx[k]])),submitBefore:Date.now()+30000}
  return {body,account:{...account}}

@@ -44,7 +44,7 @@ const report = (ok, title, lines = []) => {
   for (const line of lines) console.log(`      ${line}`)
 }
 
-const browser = await chromium.launch({ executablePath: await findChrome() })
+const browser = await chromium.launch({ executablePath: process.env.CHROME_PATH ?? await findChrome() })
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, locale: 'zh-CN' })
 const tab = await context.newPage()
 
@@ -59,6 +59,14 @@ tab.on('response', (res) => {
 await login(tab, BASE)
 
 await gotoInApp(tab, '/transfer')
+const brandLogo = await tab.locator('.workbench-brand img').first().getAttribute('src')
+await tab.getByLabel('转账金额', { exact: true }).fill('100')
+await tab.getByRole('button', { name: '下一步', exact: true }).click()
+await tab.getByRole('button', { name: '选择收款银行' }).waitFor()
+const picker = tab.getByRole('button', { name: '选择收款银行' })
+const initialMark = picker.locator('img')
+await initialMark.waitFor()
+report(await initialMark.getAttribute('src') === brandLogo, '本行已选行标与工作台品牌一致')
 
 /** 展开银行选择器并滚到底，让懒加载的 <img> 全部真正去取图 */
 async function collect(region) {
@@ -95,6 +103,12 @@ async function collect(region) {
 }
 
 const cn = await collect('CN')
+await picker.click()
+await tab.getByRole('listbox').getByRole('option', { name: /中国工商银行/ }).click()
+report(await picker.locator('img').getAttribute('src') === '/banks/cn-102.svg', '切换外行仍显示对应行标')
+await picker.click()
+await tab.getByRole('listbox').getByRole('option', { name: /招财猫银行/ }).click()
+report(await picker.locator('img').getAttribute('src') === brandLogo, '切回本行仍显示工作台品牌')
 await tab.getByRole('tab', { name: '境外' }).click()
 await tab.waitForTimeout(300)
 const hk = await collect('HK')
@@ -122,7 +136,11 @@ for (const e of expected) {
   }
   if (!row.logo) brokenRows.push(`${e.region}-${e.code} ${e.name} 的 <img> 消失了（加载失败已退化成色块）`)
   else if (row.loaded === false) brokenRows.push(`${e.region}-${e.code} ${e.name} 的 ${row.logo} 浏览器解码失败`)
-  else if (row.logo !== e.logo) brokenRows.push(`${e.region}-${e.code} ${e.name} 渲染的是 ${row.logo}，名录里是 ${e.logo}`)
+  else if (row.logo !== (e.code === 'LCB' ? brandLogo : e.logo)) brokenRows.push(`${e.region}-${e.code} ${e.name} 渲染的行标不正确：${row.logo}`)
+}
+const hkInternal = byRegion.HK.get('LCB')
+if (!brandLogo || !hkInternal || hkInternal.logo !== brandLogo || !hkInternal.loaded) {
+  brokenRows.push('香港模拟通道的本行行标未使用工作台品牌图或加载失败')
 }
 report(
   brokenRows.length === 0 && expected.length >= 53,

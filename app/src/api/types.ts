@@ -469,6 +469,11 @@ export interface TransferRequest {
   payeeCurrency?: Currency
   /** 收款地址，选填 */
   payeeAddress?: string
+  /**
+   * 6 位数字支付密码。即时转账在服务端与扣款同一事务内验密，前端提交时必须带上。
+   * 内部复用（如到账重提交、测试工具）不经过 HTTP 验密，可省略。
+   */
+  paymentPassword?: string
 }
 
 export interface TransferRecipientLookup {

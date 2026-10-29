@@ -546,6 +546,32 @@ export function verifyPayPassword(input: string): void {
 }
 
 /**
+ * 定时转账与在途结算的**内部执行授权**。
+ *
+ * 这两条路在受理时已经验过支付密码：定时转账在 `createScheduledTransfer`、
+ * 在途指令在冻结提交时。到点只是系统替用户执行已受理的指令，不能再要求一次密码。
+ *
+ * 授权挂在**本次调用对象**上，而不是某个请求字段：普通请求体会被重新反序列化，
+ * 永远不可能是 WeakSet 里的那个对象，因此没有「传个 flag 就跳过密码」的入口。
+ */
+const internallyAuthorizedTransfers = new WeakSet<object>()
+
+function authorizeInternalTransfer<T extends object>(request: T): T {
+  internallyAuthorizedTransfers.add(request)
+  return request
+}
+
+/** 即时转账请求可带支付密码；它只用于校验，不是业务参数。 */
+type TransferSubmitRequest = TransferRequest & { paymentPassword?: string }
+
+/** 支付密码绝不能进 `heldRequest`（会被持久化）：校验完立即剥离。 */
+function withoutPaymentPassword(req: TransferSubmitRequest): TransferRequest {
+  const copy: TransferSubmitRequest = { ...req }
+  delete copy.paymentPassword
+  return copy
+}
+
+/**
  * 扣制卡费用并落一笔流水。
  * 收钱必须留痕 —— 只改余额不记账，对账单上就凭空少了一笔。
  */
@@ -1126,11 +1152,18 @@ export function createMockApi(options?: {
       return { kind: 'external' as const, accountNoMasked: maskBankAccount(digits) }
     },
 
-    async submitTransfer(req: TransferRequest): Promise<TransferResult> {
+    async submitTransfer(req: TransferSubmitRequest): Promise<TransferResult> {
+      // Consume internal authorization before the first await so it cannot be replayed.
+      const internallyAuthorized = internallyAuthorizedTransfers.delete(req)
       await delay(420)
+      // 即时转账必须单独验支付密码：登录态不等于能扣钱。
+      // 先验密码，再碰任何业务状态，避免密码错误也走到冻结/扣款逻辑。
+      // 定时转账与在途结算走模块私有授权（受理时已验过），请求参数无法伪造。
+      if (!internallyAuthorized) verifyPayPassword(req.paymentPassword ?? '')
       const db = loadDb()
       const account = findAccount(req.fromAccountId)
-      req = { ...req, fromAccountId: account.id }
+      // 密码只服务于上面的校验：剥离后再进入业务，后面的 heldRequest 才会是无密码快照。
+      req = withoutPaymentPassword({ ...req, fromAccountId: account.id })
       const isFps = req.channel === 'fps'
 
       if (!Number.isSafeInteger(req.amount) || req.amount <= 0) {
@@ -1265,7 +1298,8 @@ export function createMockApi(options?: {
           },
           false,
         )
-        held.heldRequest = { ...req }
+        // 入口已剥离支付密码；这里再兜一次，确保冻结快照永远不会写入密码。
+        held.heldRequest = withoutPaymentPassword(req)
         held.heldFrozenAmount = total
         persist()
         return {
@@ -3051,7 +3085,10 @@ function browserPaymentPlans(api: () => BankApi) {
         return { sameOwner: found.profile.user.id === loadDb().user.id }
       }
       return api().resolveTransferRecipient({ bankCode: request.payeeBankCode ?? '', bankRegion: request.payeeBankRegion ?? 'CN', accountOrCardNo: request.payeeAccountNo ?? '', payeeName: request.payeeName })
-    }, executeTransfer: request => api().submitTransfer(request) })
+    },
+    // 定时转账创建时已验过密码；执行属内部路径，用对象级授权绕过重复校验。
+    executeTransfer: request => api().submitTransfer(authorizeInternalTransfer(request)),
+  })
 }
 
 /** Browser demo requires this explicit scan; the HTTP server owns the durable background scanner. */
@@ -3139,11 +3176,13 @@ export async function settleHeldTransfer(
   try {
     // 不带 reviewThreshold = 纯执行，不会再进窗口。
     // settleImmediately = 到账就落定，不再挂「模拟清算」——这笔已经等过窗口了。
+    // 在途指令提交冻结时已验过密码；到期/放行是内部执行，标记本次对象授权。
+    // 授权只挂在这次调用用的副本上，不给持久化的 heldRequest 留下长期授权。
     return await createMockApi({
       acceptedQuote: true,
       settleImmediately: true,
       settlementIdentity: { transactionId: rec.id, referenceNo: rec.detail.referenceNo },
-    }).submitTransfer(held)
+    }).submitTransfer(authorizeInternalTransfer({ ...held }))
   } catch (error) {
     // 极少数情况（如收款账户校验在窗口内失效）才走到这里：留痕，别静默吞掉
     rec.status = 'failed'

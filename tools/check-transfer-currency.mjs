@@ -51,6 +51,7 @@ const transferUsd = (amount, memo = '') => api.submitTransfer({
   fromAccountId: usd.id, channel: 'bank', scope: 'domestic',
   payeeName: RECIPIENT.name, payeeAccountNo: RECIPIENT.accountNo,
   payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount, memo,
+  paymentPassword: '888888',
 })
 
 // —— 美元转给只有人民币的收款人：同一账户下自动开立美元分区 ——
@@ -92,6 +93,7 @@ const cross = await api.submitTransfer({
   payeeName: RECIPIENT.name, payeeAccountNo: RECIPIENT.accountNo,
   payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount: 100000,
   payeeCurrency: 'HKD', memo: '人民币付、港币到',
+  paymentPassword: '888888',
 })
 assert.equal(cross.fx.fromCurrency, 'CNY')
 assert.equal(cross.fx.toCurrency, 'HKD')
@@ -112,6 +114,7 @@ await assert.rejects(
     fromAccountId: cny.id, channel: 'bank', scope: 'domestic',
     payeeName: RECIPIENT.name, payeeAccountNo: RECIPIENT.accountNo,
     payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount: 100, payeeCurrency: 'EUR', memo: '',
+    paymentPassword: '888888',
   }),
   error => error.code === 'INVALID_CURRENCY',
 )
@@ -125,6 +128,7 @@ await assert.rejects(
     fromAccountId: cny.id, channel: 'bank', scope: 'domestic',
     payeeName: RECIPIENT.name, payeeAccountNo: funding.accountNo,
     payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount: 100, memo: '',
+    paymentPassword: '888888',
   }),
   error => error.code === 'SAME_ACCOUNT',
 )
@@ -136,6 +140,7 @@ await api.submitTransfer({
   fromAccountId: cny.id, channel: 'bank', scope: 'domestic',
   payeeName: RECIPIENT.name, payeeAccountNo: RECIPIENT.accountNo,
   payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount: 12345, memo: '',
+  paymentPassword: '888888',
 })
 recipient = findProfileByPhone(RECIPIENT.phone)
 assert.equal(recipient.accounts[0].balance, cnyRecipientBefore + 12345, '人民币入主分区')

@@ -95,7 +95,7 @@ try {
     await assert.rejects(api.registerFps(registration), e => e.code === 'FPS_DUPLICATE')
     const resolved = await api.resolveFps('fpsid', registration.id); assert(resolved.registered)
     activateDb(payer)
-    const body = { fromAccountId: payerHKD.id, channel: 'fps', scope: 'overseas', fpsMethod: 'fpsid', fpsId: registration.id, payeeName: resolved.name, payeeBankCode: resolved.bankCode, payeeBankRegion: 'HK', payeeCurrency: 'HKD', amount: 10000, memo: 'registered-credit' }
+    const body = { fromAccountId: payerHKD.id, channel: 'fps', scope: 'overseas', fpsMethod: 'fpsid', fpsId: registration.id, payeeName: resolved.name, payeeBankCode: resolved.bankCode, payeeBankRegion: 'HK', payeeCurrency: 'HKD', amount: 10000, memo: 'registered-credit', paymentPassword: '888888' }
     await assert.rejects(api.submitTransfer({ ...body, fpsId: '7654322' }), e => e.code === 'FPS_NOT_REGISTERED')
     const before = (await api.getAccount(payerHKD.id)).balance
     await api.submitTransfer(body)
