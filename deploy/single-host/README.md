@@ -1,5 +1,7 @@
 # 单机 VPS 部署
 
+当前发布补充（2026-10-29）：源码与网页已切换到 `releases/20261029-transfer-security`，即时转账同事务校验支付密码、网页与 Android 转账币种录入、幂等提交已上线。源码提交 `0bdae490841807a20065429a35315c370d2420cd`，数据库结构版本保持 `2026102701`，四项服务正常，R2 安卓发布包为 `1.0.6 (7)`。详见 [本次部署验收](../../docs/deployments/bank-transfer-deployment-20261029.json)。
+
 当前发布补充（2026-10-28）：源码与网页已切换到 `releases/20261028-account-security`，登录密码强度、连续五次支付错误冻结和工作人员核验解冻已上线。官网客户使用演示库，工作人员在登录页选择“演示银行（官网客户）”或进入 `/staff/login?bank=demo`，通过独立 `/staff-demo-api/` 办理；原 `/staff-api/` 合作银行及运维入口保留。两库无结构迁移、对账通过，五项服务正常。详见 [安全模块部署验收](../../docs/deployments/bank-security-deployment-20261028.json)。
 
 当前发布补充（2026-10-27）：源码与网页均指向 `releases/20261027-function-fixes`，五项现行服务已验证，原 `luckycat-bridge` 仍停用。两库核心结构为 `2026102701`，目前两库均由 `maneki_owner` 持有，运行角色为 `maneki_app`；以实际运行配置为准，不套用下文历史角色名。详见 [本次部署验收](../../docs/bank-function-fixes-deployment-20261027.json)。下文为历史迁移记录。

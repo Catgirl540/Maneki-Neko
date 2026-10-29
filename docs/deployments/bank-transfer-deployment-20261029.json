@@ -1,0 +1,107 @@
+{
+  "release": "20261029-transfer-security",
+  "sourceCommit": "0bdae490841807a20065429a35315c370d2420cd",
+  "oldSource": "/srv/maneki-bank/releases/20261029-unified-environment",
+  "oldWeb": "/var/www/bank.waveflow.men/releases/20261029-unified-environment",
+  "newSource": "/srv/maneki-bank/releases/20261029-transfer-security",
+  "newWeb": "/var/www/bank.waveflow.men/releases/20261029-transfer-security",
+  "url": "https://bank.waveflow.men",
+  "staffDemoUrl": "https://bank.waveflow.men/staff/login?bank=demo",
+  "schemaMigration": false,
+  "schemaVersion": 2026102701,
+  "databaseBackup": null,
+  "sourceChanges": [
+    "即时转账在同一序列化事务内校验支付密码，凭据不写入快照或幂等记录",
+    "网页转账页支持付款币种与到账币种录入，并显示服务端支付密码能力声明",
+    "Android 转账接入线上后端，提交前核对报价、收款人与支付密码能力",
+    "转账请求使用幂等标识，重复提交不重复扣款"
+  ],
+  "generatedArtifactRebuild": {
+    "package": "framework/packages/bank-demo",
+    "reason": "本地未跟踪的 lib 构建产物落后于 TypeScript 源，首次启动工具策略校验失败",
+    "command": "framework/node_modules/.bin/tsc -p packages/bank-demo/tsconfig.json",
+    "policyCheck": "PASS 银行工具策略：58 项"
+  },
+  "web": {
+    "indexStatus": 200,
+    "indexAsset": "/assets/index-Du5Gdrgp.js",
+    "indexSha256": "67df18e30df44a6135ec44c1a715dd9e8b2f48e4d7be1143ad3aa57199a3c52c",
+    "bundleSha256": "22876f809bb6d420f5c22a78a15634db35afe3e15e8f9709161796cb55ec9bfc",
+    "androidManifestSha256": "bc5c1283f165bef9827c44f6b3e39b36fdcb9de25ad1d868a223003964b7f16c",
+    "fileCount": 335
+  },
+  "android": {
+    "versionCode": 7,
+    "versionName": "1.0.6",
+    "packageName": "com.moneymeow.bank",
+    "debuggable": false,
+    "minSdk": 26,
+    "targetSdk": 36,
+    "bytes": 10545137,
+    "sha256": "612a433fd5e5de03e72157155260b821fa054d31acf8acc24413aa48c3573092",
+    "signingCertificateSha256": "128eaf195f7d943a910c5a8296ba5241aff9a4dc3b19049f2ff142e2fe35389e",
+    "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-7.apk",
+    "manifestUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/latest.json",
+    "r2Objects": [
+      "android/app-7.apk",
+      "android/latest.json"
+    ],
+    "bundledUpdateSha256": "70cad3688f8858974ae1d66657f37a08f125c8396ab4385a98ba2089f42d0f2b",
+    "webManifestMatchesR2": true,
+    "downloadedApkMatchesManifest": true
+  },
+  "health": {
+    "bank": {
+      "ok": true,
+      "kind": "bank-partner-platform",
+      "database": "postgresql",
+      "integrationMode": "sandbox",
+      "commercialReady": false,
+      "bankConnection": "unconfigured",
+      "routes": 104
+    },
+    "services": {
+      "luckycat-bank-demo": "active",
+      "luckycat-agent-demo": "active",
+      "luckycat-staff-agent": "active",
+      "luckycat-ops-agent": "active"
+    },
+    "restartsAfterDeploy": 0
+  },
+  "onlineVerification": {
+    "unauthorizedApiStatus": 401,
+    "demoCustomerId": "u_0001",
+    "fundingAccountCount": 1,
+    "transferRequirements": {
+      "confirmedQuoteVersion": 1,
+      "confirmedRecipient": true,
+      "transferPaymentPassword": true
+    },
+    "checks": [
+      "网页根路径 200，生产构建索引与新资产哈希一致",
+      "未登录 /api/accounts 返回 401",
+      "演示客户登录后只返回一个储蓄资金账户，符合单一资金账户模型",
+      "/api/agent/transfer/requirements 返回 transferPaymentPassword=true，前后端能力契约一致",
+      "R2 下载 APK 大小与 SHA-256 和 latest.json、网页下载清单一致",
+      "四项服务 active，部署后重启计数为 0"
+    ],
+    "transfersExecuted": false,
+    "realFundsUsed": false,
+    "checkedAt": "2026-10-29T09:16:00Z"
+  },
+  "postgresqlIntegration": {
+    "status": "ALL PASS",
+    "tests": 141,
+    "fail": 0,
+    "scope": "本机临时 PostgreSQL 16 集成闸门"
+  },
+  "harnessHttp": "ALL PASS",
+  "status": "deployed-and-verified",
+  "completedAt": "2026-10-29T09:16:00Z",
+  "notes": [
+    "运行代码、工具与本次变更的文档/Android 源文件已覆盖到新发布目录；未变更的设计导出沿用上一发布目录",
+    "数据库结构版本未变化，未执行迁移或数据回填",
+    "验收只登录演示客户并读取能力声明与账户，未发起转账、未动用真实资金",
+    "旧发布目录保留，可回滚源码与网页符号链接"
+  ]
+}

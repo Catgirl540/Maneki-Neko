@@ -3,19 +3,21 @@
  * 发布安卓应用内更新到 Cloudflare R2（S3 兼容）。
  *
  * 做三件事：
- *  1. 把 `app-debug.apk` 上传到 `s3://<bucket>/android/app-<versionCode>.apk`
+ *  1. 把 release APK（或显式传入的 APK）上传到 `s3://<bucket>/android/app-<versionCode>.apk`
  *  2. 生成 `android/latest.json`（版本号、大小、sha256、下载地址）
- *  3. 因为桶没有公开域名，脚本会给 APK 与 manifest 各生成一个 7 天有效的
- *     预签名 URL，写进 `app/src/main/assets/update.json`，随应用一起打包。
+ *  3. 把版本清单地址写进 `app/src/main/assets/update.json`，随应用一起打包。
+ *
+ * 配置了 `PUBLIC_BASE_URL` 时使用固定公开地址；否则给 APK 与 manifest 各生成
+ * 一个 7 天有效的预签名 URL（SigV4 限制）。
  *
  * 用法：
  *   AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… \
  *   AWS_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com \
- *   BUCKET_NAME=defaut node tools/publish-android-update.mjs [--notes "更新说明"]
+ *   BUCKET_NAME=defaut PUBLIC_BASE_URL=https://pub-….r2.dev \
+ *   node tools/publish-android-update.mjs [APK路径] [--notes "更新说明"]
  *
- * 备注：预签名 URL 最长 7 天（SigV4 限制）。生产环境应给桶配公开域名
- * （或让后端代理），届时把 assets/update.json 里的 url 换成固定地址即可，
- * 客户端逻辑不用改。
+ * 默认取 release APK；脚本本身不做签名校验，发布前应先运行
+ * tools/package-android-download.mjs 核对版本、签名与非调试标记。
  */
 import { createHash, createHmac } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
@@ -24,9 +26,15 @@ import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
 const appDir = path.join(root, 'android-app')
-const apkPath = path.join(appDir, 'app/build/outputs/apk/debug/app-debug.apk')
+const defaultApkPath = path.join(appDir, 'app/build/outputs/apk/release/app-release.apk')
 const assetsDir = path.join(appDir, 'app/src/main/assets')
 const gradlePath = path.join(appDir, 'app/build.gradle.kts')
+
+const notesIndex = process.argv.indexOf('--notes')
+const notes = notesIndex > -1 ? process.argv[notesIndex + 1] : '例行更新'
+const apkArg = process.argv.slice(2).find((arg, index, all) =>
+  !arg.startsWith('--') && all[index - 1] !== '--notes')
+const apkPath = path.resolve(apkArg ?? defaultApkPath)
 
 const env = {
   AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
@@ -40,9 +48,6 @@ for (const key of ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_ENDPOINT_U
     process.exit(2)
   }
 }
-
-const notesIndex = process.argv.indexOf('--notes')
-const notes = notesIndex > -1 ? process.argv[notesIndex + 1] : '例行更新'
 
 const gradle = readFileSync(gradlePath, 'utf8')
 const versionCode = Number(/versionCode\s*=\s*(\d+)/.exec(gradle)?.[1] ?? 0)
@@ -115,17 +120,23 @@ if (!put.trim().endsWith('200')) {
   process.exit(1)
 }
 
-// 先给 APK 预签名，清单里带上它，旧版本客户端也能拿到最新下载地址
-const apkUrlForManifest = presign(key)
+// 配了公开域名就用稳定地址；否则给 APK 预签名，旧版本客户端也能拿到最新下载地址。
+const publicBase = (process.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, '')
+// 复用同一版本的已发布时间，避免重跑上传脚本时改动随包内置的 update.json。
+let publishedAt = new Date().toISOString()
+try {
+  const previous = JSON.parse(readFileSync(path.join(assetsDir, 'update.json'), 'utf8'))
+  if (previous.versionCode === versionCode && typeof previous.publishedAt === 'string') publishedAt = previous.publishedAt
+} catch { /* 首次发布没有内置清单 */ }
 const manifest = {
   versionCode,
   versionName,
   sha256,
   size: statSync(apkPath).size,
   key,
-  apkUrl: apkUrlForManifest,
+  apkUrl: publicBase ? `${publicBase}/${key}` : presign(key),
   notes,
-  publishedAt: new Date().toISOString(),
+  publishedAt,
 }
 const manifestKey = 'android/latest.json'
 const tmpManifest = path.join(appDir, 'build/latest.json')
@@ -138,8 +149,7 @@ if (!putManifest.trim().endsWith('200')) {
 }
 
 // 配了公开域名就用稳定地址（推荐）；否则退回 7 天预签名
-const publicBase = (process.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, '')
-const apkUrl = publicBase ? `${publicBase}/${key}` : presign(key)
+const apkUrl = manifest.apkUrl
 const manifestUrl = publicBase ? `${publicBase}/${manifestKey}` : presign(manifestKey)
 if (!publicBase && (!apkUrl.includes('X-Amz-Signature') || !manifestUrl.includes('X-Amz-Signature'))) {
   console.error('预签名失败：请检查 AWS 凭据与端点')
@@ -157,6 +167,6 @@ const bundled = {
   publishedAt: manifest.publishedAt,
 }
 writeFileSync(path.join(assetsDir, 'update.json'), JSON.stringify(bundled, null, 2))
-console.log('已写入 assets/update.json（含 7 天有效的预签名地址）')
+console.log(publicBase ? '已写入 assets/update.json（使用公开地址）' : '已写入 assets/update.json（含 7 天有效的预签名地址）')
 console.log(`版本：${versionName} (${versionCode}) · sha256 ${sha256.slice(0, 12)}…`)
 console.log(`APK：${apkUrl.slice(0, 96)}…`)

@@ -24,7 +24,30 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
   :app:assembleDebug
 ```
 
-产物：`app/build/outputs/apk/debug/app-debug.apk`
+产物：`app/build/outputs/apk/debug/app-debug.apk`（仅本地调试，不得发布）
+
+### 发布包
+
+发布签名从本机忽略文件 `android-app/keystore.properties` 读取，密钥和口令不进仓库：
+
+```properties
+storeFile=/absolute/path/to/release.keystore
+storePassword=…
+keyAlias=…
+keyPassword=…
+```
+
+```bash
+cd android-app
+JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
+  ~/.gradle/wrapper/dists/gradle-8.14-all/8mguqc37c200i71ledpgw8n5m/gradle-8.14/bin/gradle \
+  :app:assembleRelease -x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintVitalRelease
+```
+
+产物：`app/build/outputs/apk/release/app-release.apk`。发布前用
+`node tools/package-android-download.mjs <APK>` 核对包名、版本、非调试标记、
+大小和 SHA-256，再用 `tools/publish-android-update.mjs <APK> --notes "…"`
+上传到 R2 并更新版本清单；脚本会拒绝与元数据不符的包。
 
 银行和客户助手默认分别使用 `https://bank.waveflow.men/api/` 和
 `https://bank.waveflow.men/agent-api/`，与线上客户网页走同一入口。

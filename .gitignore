@@ -40,11 +40,8 @@ reference/
 .env.local
 .env.*.local
 
-# 独立本地 PostgreSQL 测试容器的连接配置与随机测试密码
-/.generated/local-postgres/
-/.generated/staff-im-test-runtime/
-/.generated/staff-im-checks/
-/.generated/backend-memory-lab/
+# 本地测试与构建产物（PostgreSQL 连接、截图、临时运行目录）
+/.generated/
 
 # 安卓客户端（android/）
 # local.properties 写的是本机 SDK 路径（这台机器的 SDK 在 /data 那个盘上），不进仓库
@@ -58,6 +55,9 @@ archive/**/build/
 archive/**/.gradle/
 archive/**/.kotlin/
 *.apk
+/android-app/keystore.properties
+/android-app/*.jks
+/android-app/*.keystore
 *.aab
 
 # 官网 APK 与元数据由 tools/package-android-download.mjs 生成，随构建产物发布

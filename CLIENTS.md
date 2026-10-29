@@ -1,6 +1,6 @@
 # 客户端版本指引
 
-更新于 2026-10-23。开始修改、构建或发布客户端前，先核对以下位置。
+更新于 2026-10-29。开始修改、构建或发布客户端前，先核对以下位置。
 
 ## 账户模型
 
@@ -17,7 +17,7 @@
 
 **当前安卓实现是 Kotlin（`android-app/`）。** 构建与运行见 [android-app/README.md](android-app/README.md)；也不使用归档的 Kotlin 工程。历史：本工作区曾在 2026-10-15 合入 Flutter 工程（`origin/main` 的 `d6fa636`，含 Flutter 新版、图标与银行卡修正、统一官网入口及员工留言）；该工程已随 2026-10-23 清理删除，只保留在 git 历史中。
 
-安卓安装包从 `android-app/app/build/outputs/apk/debug/app-debug.apk`（调试）获取并核对提交与版本；不从归档的旧 `android/` 工程取包。
+安卓发布包使用 `android-app/app/build/outputs/apk/release/app-release.apk`，经 `tools/package-android-download.mjs` 核对版本、签名与非调试标记后发布到 R2；`android-app/app/build/outputs/apk/debug/app-debug.apk` 只用于本地调试，不得作为发布包。不从归档的旧 `android/` 工程取包。
 
 ## 已归档版本
 

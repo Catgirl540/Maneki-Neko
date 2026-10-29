@@ -1,9 +1,9 @@
 {
   "manifestUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/latest.json",
-  "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-6.apk",
-  "versionCode": 6,
-  "versionName": "1.0.5",
-  "notes": "1.0.5：接入真实后端数据，清除界面写死数据",
+  "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-7.apk",
+  "versionCode": 7,
+  "versionName": "1.0.6",
+  "notes": "1.0.6：转账接入线上后端，支持收付款币种与支付密码确认",
   "expiresAt": null,
-  "publishedAt": "2026-10-26T08:57:48.436Z"
+  "publishedAt": "2026-10-29T08:22:00.000Z"
 }
