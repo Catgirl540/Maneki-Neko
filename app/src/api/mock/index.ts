@@ -9,6 +9,7 @@ import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../
 import { wealthHoldingLots, wealthHoldingState, wealthRedemptionQuote } from '../../../../shared/wealth-redemption.mjs'
 import { supportGuidance } from '../../../../shared/support-guidance.mjs'
 import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../../../shared/spend-platforms.mjs'
+import { classifySpendMerchant } from '../../../../shared/spend-rules.mjs'
 import {
   BUDGET_MAX_COUNT,
   BUDGET_PASS_EXTRA_CENTS,
@@ -424,6 +425,7 @@ function newCardCvv(): string {
 function applyClassification(txId: string, category: TransactionCategory, failed: boolean): void {
   const tx = loadDb().transactions.find(row => row.id === txId)
   if (!tx) return
+  if (tx.classificationState !== 'pending') return
   if (!failed && category) tx.category = category
   tx.classificationState = failed ? 'failed' : 'done'
   persist()
@@ -1808,6 +1810,7 @@ export function createMockApi(options?: {
       if (balance.available < amount) throw new ApiError('账户可用余额不足', 409, 'INSUFFICIENT_FUNDS')
       applyBalance(card.accountId, -amount, false)
       const classificationState = classify ? 'pending' : 'done'
+      const ruleCategory = classifySpendMerchant({ platformId: platform.id, merchantName })
       const transaction = pushTransaction({
         accountId: card.accountId,
         direction: 'out',
@@ -1815,7 +1818,7 @@ export function createMockApi(options?: {
         signedAmount: -amount,
         counterparty: platform.name,
         memo,
-        category: 'other',
+        category: classify ? 'other' : (ruleCategory ?? 'other'),
         classificationState,
         createdAt: new Date().toISOString(),
         status: 'success',
@@ -1836,7 +1839,7 @@ export function createMockApi(options?: {
       }, false)
       persist()
       if (classificationState === 'pending' && classify) {
-        // 后台分类：不阻塞响应，完成后回写分类与状态
+        // 后台分类：不阻塞响应，完成后回写分类与状态；模型失败时回落本地商户规则
         void Promise.resolve()
           .then(() => classify({
             counterparty: platform.name,
@@ -1846,10 +1849,14 @@ export function createMockApi(options?: {
             amount,
             currency: balance.currency,
           }))
-          .then(category => applyClassification(transaction.id, category ?? 'other', false))
-          .catch(() => applyClassification(transaction.id, 'other', true))
+          .then(category => {
+            // 分类器返回兜底 other 时，本地商户规则更可信
+            const decided = category && category !== 'other' ? category : (ruleCategory ?? category ?? 'other')
+            applyClassification(transaction.id, decided, category ? false : !ruleCategory)
+          })
+          .catch(() => applyClassification(transaction.id, ruleCategory ?? 'other', !ruleCategory))
       }
-      return { transaction, category: 'other', classificationState, available: balance.available, currency: balance.currency }
+      return { transaction, category: transaction.category, classificationState, available: balance.available, currency: balance.currency }
     },
 
     /* ------------------------------------------------------------ 开户 */

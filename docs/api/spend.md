@@ -72,7 +72,7 @@
 | 字段 | 说明 |
 | --- | --- |
 | `transaction` | 生成的流水（`Transaction`），`counterparty` 为商户名 |
-| `category` | 记账时的分类，恒为 `other`（真实分类由后台任务回写） |
+| `category` | 记账时的分类：未配置分类器时按本地商户规则即时归类（预设平台固定口径，自由商家按关键词兜底），配置了分类器时先为 `other` 再由后台任务回写 |
 | `classificationState` | `pending`（分类器启用）或 `done`（未启用分类器） |
 | `available` | 扣款后该卡绑定账户的可用余额快照 |
 | `currency` | 扣款币种 |
@@ -94,7 +94,7 @@
 - **确认**：属于写操作，走桥接的一次性确认卡（`prepare` → `approve` → `execute`），展示卡、商户、金额、账单详情；执行前按 `preview.cardState` 复核卡片状态与设置，变化则要求重新确认。
 - **不需要支付密码**：卡消费本身不验证支付密码；模型参数里也不接受任何密码字段。
 - **预检**：`prepare` 阶段先拒绝寄送中、锁定、关闭消费或关闭线上支付的卡，并复用 `shared/spend-platforms.mjs` 校验平台与商户名，避免用户确认后才被后端拒绝。
-- **结果口径**：返回银行回执 `{ transaction, category, classificationState, available, currency }`；`category` 恒为 `other`，分类由后台任务异步回写，助手不得把它描述成最终分类或真实商户收款。
+- **结果口径**：返回银行回执 `{ transaction, category, classificationState, available, currency }`；分类可能已经是本地商户规则给出的结果，也可能是后台任务稍后回写，助手不得把它描述成最终分类、真实商户收款或退款依据。
 
 ## 校验链（按执行顺序）
 
@@ -120,10 +120,12 @@
 ## 记账与后台分类
 
 1. `pushTransaction` 写入流水：`channel=card`、`paymentMethod=<卡产品名> 尾号 <last4>`、`detail.cardId`（单日限额累计依据）、商户编号/国家/城市/地点/收单机构、`merchantNote`。
-2. 有分类器时 `classificationState=pending`，随后调度后台任务：分类器按 `counterparty + memo` 判定类别并回写 `category` 与 `classificationState=done`；失败标 `failed`（分类保持 `other`）。
-3. 分类器模型链：`BANK_CATEGORIZE_MODEL` 可用逗号给首选模型，后面自动接默认回退模型；每个模型最多重试 3 次，全失败才降级 `other`。
-4. 重启恢复：服务启动时 `resumePendingClassifications()` 把未分完的流水重新排队（或标记 `failed`）。该恢复写库发生在**单元工作内**（`server/bank-api.mjs`），scoped 投影下缺了事务会启动即抛 `Scoped writes require an active database unit of work`。
-5. 客户端轮询：`SpendPage` 在回执为 `pending` 时每 1.5 秒查一次交易详情，最多约 20 秒，完成后回填分类并停止。
+2. 没有配置分类器（缺 `OPENROUTER_API_KEY`）时，按**本地商户规则**（`shared/spend-rules.mjs`）即时归类并落 `classificationState=done`：12 个预设平台口径固定，自由商家按商户名关键词兜底，认不出来才落 `other`。
+3. 配置了分类器时 `classificationState=pending`，随后调度后台任务：分类器按 `counterparty + memo` 判定类别并回写 `category` 与 `classificationState=done`；模型全部失败时回落到本地规则（有规则即 `done`，没有才标 `failed` 并保持 `other`）。
+4. 分类器模型链：`BANK_CATEGORIZE_MODEL` 可用逗号给首选模型，后面自动接默认回退模型；每个模型最多重试 3 次。
+5. 不会长期停在「正在分类」：后台任务带 70 秒看门狗，任务自身失败（写库被回滚等）也会按本地规则给流水结论；迟到的分类结果不会覆盖已完成的结论。
+6. 重启恢复：服务启动时 `resumePendingClassifications()` 把未分完的流水重新排队（未配置分类器时直接按本地规则归类，认不出来才标 `failed`），同时把更早构建遗留的「已完成 + other」卡消费按本地规则就地修正。该恢复写库发生在**单元工作内**（`server/bank-api.mjs`），scoped 投影下缺了事务会启动即抛 `Scoped writes require an active database unit of work`。
+7. 客户端轮询：`SpendPage` 在回执为 `pending` 时每 1.5 秒查一次交易详情，最多约 20 秒，完成后回填分类并停止。
 
 ## 网页交互
 
@@ -131,7 +133,7 @@
 - 选自由商家时出现「商户名称」输入（必填，2–40 字，未填时提交按钮禁用）。
 - 「账单详情（可选）」按所选平台给出示例提示（如美团「店铺 · 商品，如：嗉泰面（大朗店）· 猪扒包」）。
 - 金额支持 2 位小数与预设档位；超过单笔上限即时提示。
-- 回执展示商户、账单详情、金额、分类（含「正在分类…」与「分类器暂不可用」两种状态）、扣款后余额，并链接到交易详情与账单统计。
+- 回执展示商户、账单详情、金额、分类（未配置分类器时直接显示规则分类；配置了分类器时显示「正在分类…」，超时或失败显示「分类器暂不可用」）、扣款后余额，并链接到交易详情与账单统计。
 - 交易详情页「商品」行来自 `detail.merchantNote`。
 - 链接直达并预选平台：`/spend?merchant=meituan` 或 `/spend#meituan`。
 

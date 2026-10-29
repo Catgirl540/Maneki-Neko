@@ -57,6 +57,8 @@ const classify = categorizer.enabled
 classify.detailed = (tx) => categorizer.enabled
   ? categorizer.classifyDetailed(tx)
   : Promise.resolve({ category: 'other', failed: false })
+// 领域层据此判断「有没有真正的分类器」：没有时直接用本地商户规则同步归类
+classify.enabled = categorizer.enabled
 const bank = await createBankApi({
   security,
   database,

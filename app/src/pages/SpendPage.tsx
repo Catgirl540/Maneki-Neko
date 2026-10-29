@@ -287,7 +287,7 @@ export function SpendPage() {
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">分类</dt><dd className="text-right text-ink">
               {receipt.classificationState === 'pending'
                 ? <span className="inline-flex items-center gap-1.5 text-ink-mute"><span className="size-1.5 animate-pulse rounded-full bg-gold" />正在分类…</span>
-                : <>{CATEGORY_LABEL[classified ?? receipt.category]}<span className="ml-1 text-[11px] text-ink-mute">{receipt.classificationState === 'failed' ? '分类器暂不可用' : '分类器判定'}</span></>}
+                : <>{CATEGORY_LABEL[classified ?? receipt.category]}<span className="ml-1 text-[11px] text-ink-mute">{receipt.classificationState === 'failed' ? '分类暂不可用' : '自动分类'}</span></>}
             </dd></div>
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">扣款账户余额</dt><dd className="num text-right text-ink">{formatCurrency(receipt.available, receipt.currency)}</dd></div>
           </dl>

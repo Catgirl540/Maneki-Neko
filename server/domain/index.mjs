@@ -28,6 +28,7 @@ import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../
 import { wealthHoldingLots, wealthHoldingState, wealthRedemptionQuote } from '../../shared/wealth-redemption.mjs'
 import { supportGuidance } from '../../shared/support-guidance.mjs'
 import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../shared/spend-platforms.mjs'
+import { classifySpendMerchant } from '../../shared/spend-rules.mjs'
 import { BUDGET_MAX_COUNT, BUDGET_PASS_EXTRA_CENTS, BUDGET_PASS_MAX_FUTURE_DAYS, BUDGET_POINTS_PER_PASS, BudgetError, checkBudgetLimit, budgetPoints, budgetsOverview, shanghaiDay, settleBudgetPoints, validateBudgetInput, validateBudgetPatch, validatePassDay } from '../../shared/budgets.mjs'
 import { hashPassword, verifyPassword, needsRehash } from '../passwords.mjs';
 import { recordPaymentPasswordEvent } from '../payment-password-events.mjs';
@@ -268,50 +269,80 @@ function newCardCvv() {
     return String(randomInt(100, 1000));
 }
 let txClassifier = null;
+/** 是否真的有可用的模型分类器；false 时由本地商户规则同步归类。 */
+const hasClassifier = () => Boolean(txClassifier) && txClassifier.enabled !== false;
 /** 后台任务落库要开单元工作（scoped 投影）；由 createBankApi 注入，缺省直接执行。 */
 let unitRunner = (work) => work();
 /**
  * 后台分类：记账与响应都不等分类器 —— 流水先以 other 落库并标 pending，
- * 分类完成后回写 category 并把状态改成 done；全部模型重试失败标 failed（分类保持 other）。
+ * 分类完成后回写 category 并把状态改成 done。
+ * 模型不可用（没配密钥）、判定失败或超时，都回落到本地商户规则；规则也认不出来时才标 failed。
  * 分类器内部已按「每模型 3 次 × 模型链」重试，这里不再叠加。
  */
 const classifying = new Map();
+/** 后台分类最迟多久必须有结论：超过就把流水从「正在分类」里放出来，避免永久 pending。 */
+const CLASSIFY_WATCHDOG_MS = 70_000;
 function applyClassification(txId, category, failed) {
     const db = loadDb();
     const tx = db.transactions.find((row) => row.id === txId);
     if (!tx)
+        return;
+    // 迟到的分类结果（或看门狗）不覆盖已经完成的结论
+    if (tx.classificationState !== 'pending')
         return;
     if (!failed && category)
         tx.category = category;
     tx.classificationState = failed ? 'failed' : 'done';
     persist();
 }
-function scheduleClassification(txId, input) {
-    if (!txClassifier) {
-        applyClassification(txId, 'other', false);
+function scheduleClassification(txId, input, fallbackCategory = null) {
+    const ruleCategory = fallbackCategory ?? classifySpendMerchant({ platformId: input.platformId, merchantName: input.counterparty });
+    if (!hasClassifier()) {
+        applyClassification(txId, ruleCategory ?? 'other', false);
         return;
     }
     if (classifying.has(txId))
         return;
+    // 看门狗：任务本身失败（写库被回滚等）也要给流水一个结论
+    const watchdog = setTimeout(() => {
+        if (!classifying.has(txId))
+            return;
+        unitRunner(() => { applyClassification(txId, ruleCategory ?? 'other', !ruleCategory); }).catch(() => {});
+    }, CLASSIFY_WATCHDOG_MS);
+    watchdog.unref?.();
     const task = unitRunner(async () => {
         try {
             const detail = typeof txClassifier.detailed === 'function'
                 ? await txClassifier.detailed(input)
                 : { category: await txClassifier(input), failed: false };
-            applyClassification(txId, detail.category, detail.failed === true);
+            if (detail.failed === true) {
+                // 模型失败：有本地规则就按规则归类，没有才标 failed（分类停在 other）
+                applyClassification(txId, ruleCategory ?? 'other', !ruleCategory);
+            }
+            else {
+                // 分类器未启用时会直接返回兜底 other；这种「other」不该覆盖本地规则已知的商户类型
+                const decided = detail.category && detail.category !== 'other'
+                    ? detail.category
+                    : (ruleCategory ?? detail.category ?? 'other');
+                applyClassification(txId, decided, false);
+            }
         }
         catch {
-            applyClassification(txId, 'other', true);
+            applyClassification(txId, ruleCategory ?? 'other', !ruleCategory);
         }
     }).catch(() => {}).finally(() => classifying.delete(txId));
     classifying.set(txId, task);
 }
-/** 进程重启后接着分没分完的流水；分类器不可用时直接标 failed，不留永久「分类中」 */
+/** 进程重启后接着分没分完的流水；分类器不可用时按本地规则归类，不留永久「分类中」 */
 function resumePendingClassifications() {
     const rows = loadDb().transactions.filter((row) => row.classificationState === 'pending');
     for (const row of rows) {
-        if (!txClassifier) {
-            row.classificationState = 'failed';
+        const merchantName = row.counterparty;
+        if (!hasClassifier()) {
+            const ruleCategory = classifySpendMerchant({ merchantName });
+            if (ruleCategory)
+                row.category = ruleCategory;
+            row.classificationState = ruleCategory ? 'done' : 'failed';
             continue;
         }
         scheduleClassification(row.id, {
@@ -321,7 +352,14 @@ function resumePendingClassifications() {
             channel: row.detail?.channel,
             amount: row.amount,
             currency: row.detail?.settleCurrency,
-        });
+        }, classifySpendMerchant({ merchantName }));
+    }
+    // 更早的构建会把后台分类写成「已完成 + other」；本地规则能认出来的卡消费就地修正
+    for (const row of loadDb().transactions) {
+        if (row.classificationState !== 'done' || row.category !== 'other') continue;
+        if (row.detail?.channel !== 'card' || typeof row.counterparty !== 'string') continue;
+        const ruleCategory = classifySpendMerchant({ merchantName: row.counterparty });
+        if (ruleCategory && ruleCategory !== 'other') row.category = ruleCategory;
     }
     persist();
 }
@@ -342,7 +380,7 @@ async function pushTransaction(tx, detail, save = true, identity) {
         createdAt: identity?.createdAt ?? tx.createdAt,
         detail: { ...detail, referenceNo: identity?.referenceNo ?? makeReferenceNo(id), balanceBefore: 0, balanceAfter: 0 },
     };
-    if (txClassifier && created.category === 'other' && created.direction === 'out' && !created.businessType
+    if (hasClassifier() && created.category === 'other' && created.direction === 'out' && !created.businessType
         && tx.classificationState !== 'pending') {
         try {
             const category = await txClassifier({
@@ -1588,7 +1626,9 @@ export function createBankBusinessApi(options) {
             if (balance.available < amount)
                 throw new ApiError('账户可用余额不足', 409, 'INSUFFICIENT_FUNDS');
             applyBalance(card.accountId, -amount, false);
-            const classificationState = txClassifier ? 'pending' : 'done';
+            const classificationState = hasClassifier() ? 'pending' : 'done';
+            // 没有模型分类器时按本地商户规则即时归类（模型可用时仍由后台任务判定）
+            const ruleCategory = classifySpendMerchant({ platformId: platform.id, merchantName });
             const transaction = await pushTransaction({
                 accountId: card.accountId,
                 direction: 'out',
@@ -1596,7 +1636,7 @@ export function createBankBusinessApi(options) {
                 signedAmount: -amount,
                 counterparty: platform.name,
                 memo,
-                category: 'other',
+                category: classificationState === 'pending' ? 'other' : (ruleCategory ?? 'other'),
                 classificationState,
                 createdAt: new Date().toISOString(),
                 status: 'success',
@@ -1624,9 +1664,10 @@ export function createBankBusinessApi(options) {
                     channel: 'card',
                     amount,
                     currency: balance.currency,
-                });
+                    platformId: platform.id,
+                }, ruleCategory);
             }
-            return { transaction, category: 'other', classificationState, available: balance.available, currency: balance.currency };
+            return { transaction, category: transaction.category, classificationState, available: balance.available, currency: balance.currency };
         },
         /* ------------------------------------------------------------ 开户 */
         async sendSmsCode(phone) {

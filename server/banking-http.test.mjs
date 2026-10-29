@@ -184,7 +184,8 @@ test('bank HTTP transactions and security preserve customer budgets and balanced
     assert.equal(receipt.transaction.amount, 2500)
     assert.equal(receipt.transaction.direction, 'out')
     assert.equal(receipt.transaction.status, 'success')
-    assert.equal(receipt.category, 'other')
+    // 测试环境没有配置模型分类器：按本地商户规则即时归类，不再恒为 other
+    assert.equal(receipt.category, 'dining')
     assert(['pending', 'done', 'failed'].includes(receipt.classificationState))
     assert.equal(receipt.currency, before.currency)
     assert.equal(receipt.available, before.available - 2500)
