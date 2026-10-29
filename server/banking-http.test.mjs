@@ -602,7 +602,7 @@ test('single funding HTTP migration, currency transfers and fees remain atomic a
       body: { accountId: hkd.id, region: 'HK', currency: 'HKD', idType: 'fpsid', id: '9199911', paymentPassword: '888888' } }))
     const registration = ok(await app.call(routes.fpsResolve(), { method: 'POST', token: sender.token, body: { idType: 'fpsid', fpsId: '9199911' } }))
     const body = { fromAccountId: sender.accounts[0].id, channel: 'fps', scope: 'overseas', fpsMethod: 'fpsid', fpsId: '9199911',
-      payeeName: registration.name, payeeBankCode: 'LCB', payeeBankRegion: 'HK', payeeCurrency: 'HKD', amount: 100, memo: 'cross-currency FPS fixture' }
+      payeeName: registration.name, payeeBankCode: 'LCB', payeeBankRegion: 'HK', payeeCurrency: 'HKD', amount: 100, memo: 'cross-currency FPS fixture', paymentPassword: '888888' }
     const quote = ok(await app.call(routes.transferQuote(), { method: 'POST', token: sender.token, body }))
     body.confirmedQuote = { version: 1, submitBefore: Date.now() + 30000, fromCurrency: 'CNY', fee: quote.fee, fx: quote.fx }
     const before = await account(app, sender), key = `fps-${randomUUID()}`
@@ -629,7 +629,7 @@ test('single funding HTTP migration, currency transfers and fees remain atomic a
     const feeSender=await register(app,'13900000033','TEST ONLY overseas fee')
     ok(await app.call(routes.deposit(feeSender.accounts[0].id),{method:'POST',token:feeSender.token,body:{amount:800000,channel:'bank'}}))
     const body = { fromAccountId: feeSender.accounts[0].id, channel: 'bank', scope: 'overseas',
-      payeeBankCode: '004', payeeBankRegion: 'HK', payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY external', amount: 100, memo: 'fee transaction fixture' }
+      payeeBankCode: '004', payeeBankRegion: 'HK', payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY external', amount: 100, memo: 'fee transaction fixture', paymentPassword: '888888' }
     const before = await account(app, feeSender), key = `fee-${randomUUID()}`
     const result = ok(await app.call(routes.transfers(), { method: 'POST', token: feeSender.token, body, key }))
     assert.equal(result.fee, 5000)

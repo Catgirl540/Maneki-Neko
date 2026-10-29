@@ -52,6 +52,67 @@ test('recall confirmation validates authoritative currency, principal and reserv
   await assert.rejects(bank.execute(legacyRaw), /授权/)
 })
 
+test('transfer tools attach the confirmed payment password only to the final transfer request', async t => {
+  const token = 'b'.repeat(43)
+  const scenarios = [
+    {
+      toolName: 'bank_transfer',
+      args: { fromAccountId: 'acc1', amountCents: 1200, payeeCurrency: 'CNY', payeeAccountNo: '6217000000000000123', payeeName: '收款人', payeeBankCode: '004', payeeBankRegion: 'HK' },
+      account: { id: 'acc1', label: '测试账户', accountNo: '6222000000000001', currency: 'CNY', balance: 100000000, available: 100000000 },
+    },
+    {
+      toolName: 'bank_fps_transfer',
+      args: { fromAccountId: 'acc1', amountCents: 1200, payeeCurrency: 'HKD', fpsMethod: 'mobile', fpsIdentifier: '51234567' },
+      account: { id: 'acc1', label: '测试账户', accountNo: '6222000000000001', currency: 'HKD', balance: 100000000, available: 100000000 },
+    },
+  ]
+  for (const scenario of scenarios) {
+    const requests = []
+    const server = createServer(async (req, res) => {
+      const chunks = []
+      for await (const chunk of req) chunks.push(chunk)
+      const raw = Buffer.concat(chunks).toString('utf8')
+      const body = raw ? JSON.parse(raw) : undefined
+      requests.push({ path: req.url, method: req.method, body })
+      const send = (value, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
+      if (req.headers.authorization !== `Bearer ${token}`) return send({}, 401)
+      if (req.url === '/api/auth/profile') return send({ id: 'alice' })
+      if (req.url === '/api/agent/transfer/requirements') return send({ confirmedQuoteVersion: 1, confirmedRecipient: true, transferPaymentPassword: true })
+      if (req.url === '/api/accounts/acc1') return send(scenario.account)
+      if (req.url === '/api/transfers/recipient') return send({ kind: 'external' })
+      if (req.url === '/api/fps/resolve') return send({ registered: true, name: 'FPS 收款人', bankCode: '004', bankRegion: 'HK' })
+      if (req.url === '/api/banks') return send([{ code: '004', region: 'HK', name: '香港测试银行', internal: false }])
+      if (req.url === '/api/transfers/quote') return send({ fee: 300, singleLimit: 100000000, maxAmount: 100000000, etaText: '实时到账', requiresConfirm: false })
+      if (req.url === '/api/auth/payment-password/verify') return body?.paymentPassword === '888888' ? send({ ok: true }) : send({ message: '支付密码错误' }, 400)
+      if (req.url === '/api/transfers' && req.method === 'POST') return body?.paymentPassword === '888888' ? send({ transactionId: 'tx1', status: 'completed', amount: body.amount, fee: 300 }) : send({ message: '请输入支付密码' }, 400)
+      return send({}, 404)
+    })
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+    const bank = createBankAgent({ baseUrl: `http://127.0.0.1:${server.address().port}`, sessions: new Map([['owner', { ownerId: 'alice', bankToken: token, activity: {} }]]), publish() {} })
+    try {
+      const raw = input(scenario.toolName, scenario.args)
+      const card = await bank.prepare(raw)
+      assert.equal(card.verification, 'payment-password')
+      assert(!('body' in card), 'prepared confirmation must not expose the request body')
+      assert(!JSON.stringify(card).includes('888888'), 'payment password must not enter prepare parameters')
+      assert.equal(requests.filter(row => row.path === '/api/transfers').length, 0)
+      await bank.approve(card, '888888')
+      assert.equal(requests.filter(row => row.path === '/api/transfers').length, 0, 'approval alone must not submit the transfer')
+      const result = await bank.execute(raw)
+      assert.equal(result.result.transactionId, 'tx1')
+      assert(!JSON.stringify(result).includes('888888'), 'payment password must not enter the result')
+      const final = requests.filter(row => row.path === '/api/transfers')
+      assert.equal(final.length, 1)
+      assert.equal(final[0].body.paymentPassword, '888888', 'final /api/transfers body must carry the confirmed payment password')
+      const preSubmit = requests.filter(row => !['/api/transfers', '/api/auth/payment-password/verify'].includes(row.path))
+      assert(!JSON.stringify(preSubmit).includes('888888'), 'payment password must not leak into prepare or re-quote requests')
+      assert.equal(requests.filter(row => row.path === '/api/transfers/quote').length, 2, 'prepare and re-quote checks must still run')
+    } finally {
+      bank.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve))
+    }
+  }
+})
+
 test('real local bank Agent transfers and recalls USD only after exact consent and rejects stale or foreign recalls', { ...testOptions, timeout: 60000 }, async t => {
   const backend = await fixture({ reviewThreshold: 1000, holdSeconds: 300 })
   t.after(() => backend.close())
@@ -72,6 +133,7 @@ test('real local bank Agent transfers and recalls USD only after exact consent a
     await bank.approve(card, '888888')
     const result = (await bank.execute(raw)).result
     assert.equal(result.pendingReason, 'inflight')
+    assert(!JSON.stringify(result).includes('888888'), 'transfer result must not contain payment password')
     return result
   }
   const held = await transfer()

@@ -149,6 +149,8 @@ export async function createSecurityGateway(db, auth) {
 }
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`
+  // Payment credentials never enter the idempotency fingerprint: a deterministic
+  // SHA-256 over a six-digit PIN would be trivially brute-forceable at rest.
+  if (value && typeof value === 'object') return `{${Object.keys(value).filter(k => k !== 'paymentPassword').sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`
   return JSON.stringify(value)
 }

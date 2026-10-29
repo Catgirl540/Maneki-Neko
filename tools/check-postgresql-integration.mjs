@@ -21,6 +21,6 @@ const run = args => {
   if (result.error) throw result.error
   if (result.status !== 0) process.exit(result.status ?? 1)
 }
-run(['--test', '--test-concurrency=1', ...['postgres-database', 'pg-auth-support', 'pg-staff', 'staff-im', 'staff-unfreeze', 'bank-connect', 'banking-http', 'account-security', 'transfer-hold-currency', 'card-state', 'payment-plans', 'billing-reports', 'linked-plans', 'subscriptions', 'wealth-redemption', 'extended-banking'].map(name => `server/${name}.test.mjs`)])
+run(['--test', '--test-concurrency=1', ...['postgres-database', 'pg-auth-support', 'pg-staff', 'staff-im', 'staff-unfreeze', 'bank-connect', 'banking-http', 'account-security', 'transfer-payment-password', 'transfer-hold-currency', 'card-state', 'payment-plans', 'billing-reports', 'linked-plans', 'subscriptions', 'wealth-redemption', 'extended-banking'].map(name => `server/${name}.test.mjs`)])
 run(['--test', '--test-concurrency=1', ...readdirSync(resolve(root, 'framework/bridge')).filter(name => name.endsWith('.test.mjs')).sort().map(name => `framework/bridge/${name}`)])
 run(['tools/check-agent-http.mjs'])

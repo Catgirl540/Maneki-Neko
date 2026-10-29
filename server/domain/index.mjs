@@ -53,6 +53,16 @@ const delay = async () => {};
 async function passwordDigest(value) { return hashPassword(value); }
 const pad = (n) => String(n).padStart(2, '0');
 const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+/**
+ * 支付密码只在提交请求期间核对，验证后即丢弃。
+ * 任何落盘或对外返回的请求快照都必须剔除该字段，防止旧记录或内部调用把它带进在途指令与员工审批。
+ */
+function withoutPaymentPassword(input) {
+    if (!input || typeof input !== 'object' || !Object.hasOwn(input, 'paymentPassword'))
+        return input;
+    const { paymentPassword: _paymentPassword, ...rest } = input;
+    return rest;
+}
 /** 户口名称部分隐藏：梁乐怡 → 梁*怡，Ken Ho → K***o */
 function hideMiddle(name) {
     if (name.length <= 1)
@@ -1104,7 +1114,7 @@ export function createBankBusinessApi(options) {
                 location: '招财猫银行 App',
                 remark: req.memo.trim() || undefined,
             }, false);
-            held.heldRequest = { ...req };
+            held.heldRequest = withoutPaymentPassword({ ...req });
             held.heldFrozenAmount = total;
             persist();
             return {
@@ -2766,7 +2776,7 @@ export function getHeldTransfer(transactionId) {
         amount: rec.amount,
         payeeName: rec.heldRequest.payeeName,
         holdUntil: rec.holdUntil ?? new Date().toISOString(),
-        request: rec.heldRequest,
+        request: withoutPaymentPassword(rec.heldRequest),
     };
 }
 /**
@@ -2784,7 +2794,7 @@ export async function settleHeldTransfer(transactionId, outcome, reason) {
         throw new ApiError('没有找到在途的转账指令', 404, 'HELD_TRANSFER_NOT_FOUND');
     }
     const rec = db.transactions[index];
-    const held = rec.heldRequest;
+    const held = withoutPaymentPassword(rec.heldRequest);
     if (!held) {
         throw new ApiError('在途指令缺少快照，无法结算', 409, 'HELD_REQUEST_MISSING');
     }

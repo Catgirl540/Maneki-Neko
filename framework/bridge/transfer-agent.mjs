@@ -29,7 +29,7 @@ function checkQuote(q, body, currency) {
 }
 export async function prepareTransfer(a, fps, get, post) {
   const support = await get('/api/agent/transfer/requirements')
-  if (support.confirmedQuoteVersion !== 1 || (fps && !support.confirmedRecipient)) throw bankError('银行服务暂不支持报价条件校验，请在网页办理', 503)
+  if (support.transferPaymentPassword !== true || support.confirmedQuoteVersion !== 1 || (fps && !support.confirmedRecipient)) throw bankError('银行服务暂不支持安全转账，请稍后再试', 503)
   const account = await get(`/api/accounts/${enc(str(a.fromAccountId, '付款账户'))}`)
   if (!Number.isSafeInteger(a.amountCents) || a.amountCents <= 0) throw bankError('金额必须是大于 0 的整数分')
   const currency = a.payeeCurrency ?? (fps ? undefined : account.currency)

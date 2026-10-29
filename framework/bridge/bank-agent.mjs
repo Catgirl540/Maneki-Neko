@@ -573,7 +573,8 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
       }
       // 停止可能与重新核价并发，真正提交前再核对一次。
       if (entry.stopping || g.activity?.cancelled || g.activity !== entry.activity) throw bankError('本轮已停止，未提交银行操作', 409)
-      if (['bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
+      // 支付密码只在最终提交时附加到本次请求体，不写入准备参数、授权快照或返回结果。
+      if (['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
       const investmentWrite = ['bank_create_invest_plan', 'bank_update_invest_plan'].includes(input.toolName)
       if (investmentWrite && g.challenge.verification) body = { ...body, paymentPassword: g.password }
       if (extendedPasswordTools.includes(input.toolName)) body = { ...body, paymentPassword: g.password }

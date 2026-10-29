@@ -86,13 +86,21 @@ PostgreSQL 档案的单账户迁移保留退役账本行。旧分区 ID 和旧�
 - `GET /api/transactions/:id/receipt` → `ReceiptFile`；演示环境 `url=null`，需退回浏览器打印。
 - `GET /api/accounts/:id/transactions/export` → `ExportDataset`（后端给列与格式化值，前端落 CSV）。
 
+## 即时转账与支付密码
+
+`POST /api/transfers` 的请求体在付款账户、金额、收款人等原字段外必须携带六位数字 `paymentPassword`。服务端在同一业务事务中校验密码并完成扣款或冻结；缺失或格式错误返回 `INVALID_PAY_PASSWORD`，密码错误返回 `BAD_PAY_PASSWORD`（账号冻结时为 `ACCOUNT_FROZEN`），余额、冻结和流水均不发生变更。连续错误按 [账号安全规则](security.md) 的客户级计数累计并可能冻结账号；正确验密后清零连续错误次数。
+
+服务端只在本次请求处理期间使用该密码，不得把明文或可复用凭据写入在途转账记录、员工审批、审计或任何持久化字段；在途撤销、员工放行和后续清算都不需要也不读取支付密码。
+
+旧版服务端未定义该字段的校验语义。服务端需先升级，新客户端才可安全提交 `paymentPassword`；升级前客户端不得发送该字段，也不能把旧服务端的成功响应视为已经验密。
+
 ## 收款人备注、定时转账与 AA 收款
 
 `GET /api/payees?keyword=爱人` 只检索本人的已保存收款人，匹配姓名、银行、完整账号、FPS 标识及 `remark`；`PATCH /api/payees/:id` 请求 `{remark}` 可维护最多 140 字的备注。普通转账保存收款人时将交易备注作为初始备注，已有手动备注不覆盖。备注相同不证明同一人，重名或多个匹配仍须用户明确选定；内地 11 位手机号不能套用香港 FPS，未登记解析不虚构户名或银行。
 
 ### 一次性定时转账
 
-`GET /api/transfers/scheduled` 查询本人指令。`POST /api/transfers/scheduled` 创建，字段为原 `TransferRequest` 的付款账户、金额、收款人完整账号、银行及地区、备注，另加 `executeAt`、`paymentPassword`、`confirmed=true`、`clientRequestId`。必须明确授权具体收款人、金额和时间，并验证支付密码；密码不写入计划记录。当前只支持 `channel=bank,scope=domestic,payeeBankRegion=CN` 的同币种、零手续费路径，不支持 FPS、跨境换汇、按内地手机号路由或周期转账。账号限制 12–19 位，单笔金额 1–100000000 整数分，时间带 `Z` 或 `+08:00` 且在一分钟后至未来 366 天内，最多 50 条待执行指令。
+`GET /api/transfers/scheduled` 查询本人指令。`POST /api/transfers/scheduled` 创建，字段为原 `TransferRequest` 的付款账户、金额、收款人完整账号、银行及地区、备注，另加 `executeAt`、`paymentPassword`、`confirmed=true`、`clientRequestId`。必须明确授权具体收款人、金额和时间，并在创建时验证支付密码；密码只在创建请求中校验一次，不写入计划记录。到期执行仅重新核验资金与收款人，不读取、不重验也不保存密码。当前只支持 `channel=bank,scope=domestic,payeeBankRegion=CN` 的同币种、零手续费路径，不支持 FPS、跨境换汇、按内地手机号路由或周期转账。账号限制 12–19 位，单笔金额 1–100000000 整数分，时间带 `Z` 或 `+08:00` 且在一分钟后至未来 366 天内，最多 50 条待执行指令。
 
 保存时不扣款、不冻结，返回 `fundsReserved=false,status=scheduled,version=1`。同一客户 `clientRequestId` 重放原参数返回同一指令，改参数返回 `IDEMPOTENCY_CONFLICT`。`DELETE /api/transfers/scheduled/:id` 请求 `{version}` 仅取消本人待执行指令；版本变化返回 `VERSION_CONFLICT`。不能用取消定时指令撤回已执行付款，已进入在途的付款须另走在途撤销。
 

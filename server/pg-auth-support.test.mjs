@@ -167,6 +167,16 @@ test('PostgreSQL auth, one-use challenges and concurrent support/idempotency ret
     assert.deepEqual(await Promise.all([payment(), payment()]), [{ id: 'payment_once' }, { id: 'payment_once' }])
     assert.equal(executed, 1)
     await assert.rejects(db.transaction(() => security.idempotent(retryReq, 'submitTransfer', { amount: 101 })), { code: 'IDEMPOTENCY_CONFLICT' })
+    // The payment PIN is a credential, not a business field. It must not enter the
+    // stored fingerprint, because a deterministic six-digit PIN digest is guessable.
+    const pinReq = request('/api/transfers', {}, token)
+    pinReq.headers['idempotency-key'] = 'pg-pin-key-0001'
+    await db.transaction(() => security.idempotent(pinReq, 'submitTransfer', { amount: 100, paymentPassword: '888888' }, { id: 'pin_once' }))
+    const pinReplay = await db.transaction(() => security.idempotent(pinReq, 'submitTransfer', { amount: 100, paymentPassword: '000000' }))
+    assert.deepEqual(pinReplay, { hit: true, value: { id: 'pin_once' } }, 'a retry that only changes the PIN is the same request')
+    const pinRow = await db.prepare('SELECT request_hash FROM bank_idempotency WHERE owner_id=? AND key=?').get('customer_pg', 'pg-pin-key-0001')
+    const plainRow = await db.prepare('SELECT request_hash FROM bank_idempotency WHERE owner_id=? AND key=?').get('customer_pg', 'pg-retry-key-0001')
+    assert.equal(pinRow.request_hash, plainRow.request_hash, 'the request fingerprint must not depend on the PIN')
 
     const support = await createCustomerSupportApi({ db, auth })
     const post = async (path, body) => {

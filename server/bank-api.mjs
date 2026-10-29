@@ -552,12 +552,20 @@ export async function createBankApi({
           return undefined
         }
         assertAccountMethodAllowed(dbModule.loadDb(), entry.bankMethod)
-        const replay = await security.idempotent(req, entry.bankMethod, body)
+        // Immediate transfers require the PIN in this same serialized transaction.
+        // Do not pass credentials to the business snapshot or staff approval.
+        let businessBody = body
+        if (entry.bankMethod === 'submitTransfer') {
+          mockModule.verifyPayPassword(typeof body.paymentPassword === 'string' ? body.paymentPassword : '')
+          const { paymentPassword, ...safeBody } = body
+          businessBody = safeBody
+        }
+        const replay = await security.idempotent(req, entry.bankMethod, businessBody)
         if (replay?.hit) return replay.value
         await security.before(req, entry.bankMethod, body)
         let value
         try {
-          value = await api[entry.bankMethod](...entry.makeArgs(match.arg, body, url.searchParams))
+          value = await api[entry.bankMethod](...entry.makeArgs(match.arg, businessBody, url.searchParams))
         } catch (error) {
           if (entry.bankMethod === 'login') error.loginOwner = typeof body.phone === 'string' && /^\d{11}$/.test(body.phone) ? (await findProfileByPhone(body.phone))?.user?.id ?? null : null
           throw error
@@ -567,7 +575,7 @@ export async function createBankApi({
         if (entry.bankMethod === 'submitTransfer' && value?.pendingReason === 'inflight' && onTransferHeld) {
           await onTransferHeld({
             customerId: dbModule.loadDb().user.id,
-            request: body,
+            request: businessBody,
             result: value,
           })
         }
@@ -580,7 +588,7 @@ export async function createBankApi({
             reason: '用户主动撤销',
           })
         }
-        await security.idempotent(req, entry.bankMethod, body, value)
+        await security.idempotent(req, entry.bankMethod, businessBody, value)
         await database.db.prepare('INSERT INTO bank_request_audit (id,owner_id,method,path,result,created_at) VALUES(?,?,?,?,?,?)').run(requestId, dbModule.loadDb().user.id, req.method, url.pathname, 'success', new Date().toISOString())
         if (entry.bankMethod === 'changePassword') await auth.revokeOthers(req)
         if (auth && entry.bankMethod === 'changePhone') {
@@ -611,7 +619,7 @@ export async function createBankApi({
     transferRequirements: (req) => exclusive(async () => {
       if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入转账能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
       await activateRequestProfile(req, 'profile')
-      return { confirmedQuoteVersion: 1, confirmedRecipient: true }
+      return { confirmedQuoteVersion: 1, confirmedRecipient: true, transferPaymentPassword: true }
     }),
     wealthRequirements: (req) => exclusive(async () => {
       if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入此产品能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
