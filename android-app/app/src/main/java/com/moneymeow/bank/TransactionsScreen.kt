@@ -48,15 +48,18 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
     // 真实流水：登录后按分类筛选向服务端查询
     var rows by remember { mutableStateOf<List<TransactionDto>>(emptyList()) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    var loading by remember { mutableStateOf(true) }
     LaunchedEffect(chip) {
         if (!BankApi.hasToken()) return@LaunchedEffect
         loadError = null
+        loading = true
         runCatching {
             val account = BankApi.accounts().firstOrNull() ?: return@runCatching emptyList()
             BankApi.transactions(account.id, 30)
         }
             .onSuccess { rows = it }
             .onFailure { loadError = it.message }
+        loading = false
     }
     val categoryKeys = listOf("all", "dining", "shopping", "housing", "transport", "subscription")
     val visible = remember(rows, chip) {
@@ -74,8 +77,8 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
                     val monthRows = rows.filter { it.createdAt.startsWith(month) }
                     val expense = monthRows.filter { it.direction == "out" }.sumOf { it.amount }
                     val income = monthRows.filter { it.direction == "in" }.sumOf { it.amount }
-                    SummaryCard("本月支出", formatCents(expense), true, Modifier.weight(1f))
-                    SummaryCard("本月收入", formatCents(income), false, Modifier.weight(1f))
+                    SummaryCard("近期流水本月支出", if (loading || loadError != null) "—" else formatCents(expense), true, Modifier.weight(1f))
+                    SummaryCard("近期流水本月收入", if (loading || loadError != null) "—" else formatCents(income), false, Modifier.weight(1f))
                 }
                 ChipRow(
                     listOf("全部", "餐饮", "购物", "房租", "交通", "订阅"),
@@ -101,6 +104,7 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
                 ) { chip = it }
                 Column(Modifier.padding(horizontal = 14.dp)) {
                     when {
+                        loading -> Text("加载中…", fontSize = 12.sp, color = Tokens.Muted, modifier = Modifier.padding(vertical = 16.dp))
                         loadError != null -> Text(
                             "加载失败：$loadError",
                             fontSize = 12.sp,

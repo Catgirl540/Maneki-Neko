@@ -157,7 +157,7 @@ private fun AssetCard(
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("总资产", fontSize = 12.sp, color = Tokens.Muted)
+                Text("人民币储蓄余额", fontSize = 12.sp, color = Tokens.Muted)
                 HSpacer(6)
                 Icon(
                     Icons.Eye,
@@ -170,7 +170,7 @@ private fun AssetCard(
             }
             VSpacer(6)
             val cny = account?.currencyBalances?.firstOrNull { it.currency == "CNY" }?.balance
-                ?: account?.balance
+                ?: account?.takeIf { it.currency == "CNY" }?.balance
             when {
                 cny != null -> AmountText(if (visible) formatCents(cny) else "¥••••••")
                 loading -> AmountText("加载中…", 27)

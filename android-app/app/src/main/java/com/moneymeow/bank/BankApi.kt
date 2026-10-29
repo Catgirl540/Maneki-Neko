@@ -1,6 +1,7 @@
 package com.moneymeow.bank
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -12,12 +13,12 @@ import java.net.URL
 /**
  * 银行后端客户端：直连 `server/`（PostgreSQL）的 HTTP 接口。
  *
- * 模拟器访问宿主机用 `10.0.2.2`；真机联调时把 BASE_URL 换成局域网地址即可。
+ * 默认使用与客户网页相同的 HTTPS 入口；本地联调可另行设置 baseUrl。
  * 只依赖 JDK 自带的 HttpURLConnection 与 org.json，不额外引入网络库。
  */
 object BankApi {
-    /** 后端地址：Android 模拟器里 10.0.2.2 指向宿主机 127.0.0.1。 */
-    var baseUrl: String = "http://10.0.2.2:8080"
+    /** 客户 /api/ 由线上网关转发至演示银行。 */
+    var baseUrl: String = "https://bank.waveflow.men"
 
     private var token: String? = null
 
@@ -86,6 +87,7 @@ object BankApi {
                                     val row = balances.getJSONObject(i)
                                     add(
                                         CurrencyBalanceDto(
+                                            id = row.optString("id"),
                                             currency = row.optString("currency"),
                                             label = row.optString("label"),
                                             balance = row.optLong("balance"),
@@ -211,6 +213,40 @@ object BankApi {
         }
     }
 
+    /**
+     * 转账安全能力声明。只有 `transferPaymentPassword` 为 true 且报价确认版本为 1 时，
+     * 客户端才允许提交转账；查询失败一律按“不可用”处理。
+     */
+    suspend fun transferRequirements(): TransferRequirementsDto = withContext(Dispatchers.IO) {
+        val root = request("GET", "/api/agent/transfer/requirements", null)
+        TransferRequirementsDto(
+            transferPaymentPassword = root.optBoolean("transferPaymentPassword", false),
+            confirmedQuoteVersion = root.optInt("confirmedQuoteVersion", 0),
+            confirmedRecipient = root.optBoolean("confirmedRecipient", false),
+        )
+    }
+
+    /** 提交前核对收款账号；本行账号还会校验户名，失败则不能进入确认页。 */
+    suspend fun resolveTransferRecipient(
+        bankCode: String,
+        bankRegion: String,
+        accountOrCardNo: String,
+        payeeName: String,
+    ): TransferRecipientDto = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("bankCode", bankCode)
+            .put("bankRegion", bankRegion)
+            .put("accountOrCardNo", accountOrCardNo)
+            .put("payeeName", payeeName)
+        val root = request("POST", "/api/transfers/recipient", body)
+        TransferRecipientDto(
+            kind = root.optString("kind"),
+            holderNameMasked = root.optString("holderNameMasked"),
+            accountNoMasked = root.optString("accountNoMasked"),
+            cardLast4 = root.optString("cardLast4"),
+        )
+    }
+
     /** 转账报价：手续费、到账时间、单笔上限。 */
     suspend fun transferQuote(
         fromAccountId: String,
@@ -219,6 +255,7 @@ object BankApi {
         amount: Long,
         bankCode: String,
         bankRegion: String,
+        payeeCurrency: String,
     ): TransferQuoteDto = withContext(Dispatchers.IO) {
         val body = JSONObject()
             .put("fromAccountId", fromAccountId)
@@ -227,17 +264,25 @@ object BankApi {
             .put("amount", amount)
             .put("bankCode", bankCode)
             .put("bankRegion", bankRegion)
+            .put("payeeCurrency", payeeCurrency)
         val root = request("POST", "/api/transfers/quote", body)
         TransferQuoteDto(
-            fee = root.optLong("fee"),
+            fee = root.getLong("fee"),
             etaText = root.optString("etaText"),
-            maxAmount = root.optLong("maxAmount"),
-            singleLimit = root.optLong("singleLimit"),
+            maxAmount = root.getLong("maxAmount"),
+            singleLimit = root.getLong("singleLimit"),
             requiresConfirm = root.optBoolean("requiresConfirm"),
+            receiveAmount = root.optJSONObject("fx")?.optLong("toAmount"),
+            rate = root.optJSONObject("fx")?.optDouble("rate"),
         )
     }
 
-    /** 提交转账：返回交易号与清算状态。 */
+    /**
+     * 提交转账：返回交易号与清算状态。
+     *
+     * 提交前在同一流程内查询安全能力；服务端未声明支持支付密码或报价确认时拒绝提交。
+     * `paymentPassword` 只随本次请求发送，不写入任何本地存储。
+     */
     suspend fun submitTransfer(
         fromAccountId: String,
         channel: String,
@@ -248,7 +293,42 @@ object BankApi {
         bankCode: String,
         bankRegion: String,
         payeeAccountNo: String,
+        payeeCurrency: String,
+        paymentPassword: String,
+        confirmedQuote: TransferConfirmation,
+        idempotencyKey: String? = null,
     ): TransferResultDto = withContext(Dispatchers.IO) {
+        if (paymentPassword.length != 6 || !paymentPassword.all(Char::isDigit)) {
+            throw BankApiException(400, "请输入 6 位数字支付密码", "INVALID_PAY_PASSWORD_FORMAT")
+        }
+        if (payeeCurrency !in listOf("CNY", "USD", "HKD")) {
+            throw BankApiException(400, "请选择有效的到账币种", "INVALID_CURRENCY")
+        }
+        val support = try {
+            transferRequirements()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: BankApiException) {
+            if (error.status == 401) throw error
+            throw BankApiException(
+                503,
+                "无法确认转账支付密码保护，请稍后再试",
+                "TRANSFER_SECURITY_UNAVAILABLE",
+            )
+        } catch (error: Exception) {
+            throw BankApiException(
+                503,
+                "无法确认转账支付密码保护，请稍后再试",
+                "TRANSFER_SECURITY_UNAVAILABLE",
+            )
+        }
+        if (!support.transferPaymentPassword || support.confirmedQuoteVersion != 1) {
+            throw BankApiException(
+                503,
+                "银行服务暂不支持安全转账，请稍后再试",
+                "TRANSFER_SECURITY_UNAVAILABLE",
+            )
+        }
         val body = JSONObject()
             .put("fromAccountId", fromAccountId)
             .put("channel", channel)
@@ -259,14 +339,18 @@ object BankApi {
             .put("payeeBankCode", bankCode)
             .put("payeeBankRegion", bankRegion)
             .put("payeeAccountNo", payeeAccountNo)
-        val root = request("POST", "/api/transfers", body)
+            .put("payeeCurrency", payeeCurrency)
+            .put("paymentPassword", paymentPassword)
+            .put("confirmedQuote", confirmedQuote.toJson())
+        val root = request("POST", "/api/transfers", body, idempotencyKey)
         TransferResultDto(
             transactionId = root.optString("transactionId"),
             referenceNo = root.optString("referenceNo"),
             amount = root.optLong("amount"),
             fee = root.optLong("fee"),
             identifier = root.optString("identifier"),
-            settlementStatus = root.optString("settlementStatus").ifEmpty { "success" },
+            settlementStatus = root.optString("settlementStatus"),
+            currency = confirmedQuote.fromCurrency,
         )
     }
 
@@ -542,16 +626,27 @@ object BankApi {
         else -> "其他"
     }
 
-    private fun request(method: String, path: String, body: JSONObject?): JSONObject =
-        org.json.JSONTokener(requestRaw(method, path, body)).nextValue() as JSONObject
+    private fun request(
+        method: String,
+        path: String,
+        body: JSONObject?,
+        idempotencyKey: String? = null,
+    ): JSONObject =
+        org.json.JSONTokener(requestRaw(method, path, body, idempotencyKey)).nextValue() as JSONObject
 
-    private fun requestRaw(method: String, path: String, body: JSONObject?): String {
+    private fun requestRaw(
+        method: String,
+        path: String,
+        body: JSONObject?,
+        idempotencyKey: String? = null,
+    ): String {
         val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 8000
             readTimeout = 12000
             setRequestProperty("Accept", "application/json")
             token?.let { setRequestProperty("Authorization", "Bearer $it") }
+            idempotencyKey?.let { setRequestProperty("Idempotency-Key", it) }
             if (body != null) {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
@@ -561,14 +656,20 @@ object BankApi {
             body?.let { payload ->
                 connection.outputStream.use { it.write(payload.toString().toByteArray()) }
             }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            if (code !in 200..299) {
-                val message = runCatching { JSONObject(text).optString("message") }.getOrDefault("")
+            if (status !in 200..299) {
+                val error = runCatching { JSONObject(text) }.getOrNull()
+                val message = error?.optString("message").orEmpty()
+                val apiCode = error?.optString("code").orEmpty().ifEmpty { null }
+                // 支付密码错误也是 401，但它是业务校验失败，不能当成登录过期而清掉会话。
+                val isPaymentPasswordFailure = apiCode == "BAD_PAY_PASSWORD"
                 // 登录/验证码接口自己会报错，不触发全局登出，避免登录页被反复重置。
-                if (code == 401 && !path.startsWith("/api/auth/")) onUnauthorized?.invoke()
-                throw BankApiException(code, message.ifEmpty { "请求失败（$code）" })
+                if (status == 401 && !path.startsWith("/api/auth/") && !isPaymentPasswordFailure) {
+                    onUnauthorized?.invoke()
+                }
+                throw BankApiException(status, message.ifEmpty { "请求失败（$status）" }, apiCode)
             }
             return text
         } finally {
@@ -577,7 +678,11 @@ object BankApi {
     }
 }
 
-class BankApiException(val status: Int, override val message: String) : Exception(message)
+class BankApiException(
+    val status: Int,
+    override val message: String,
+    val code: String? = null,
+) : Exception(message)
 
 data class LoginResult(val token: String, val name: String, val phone: String)
 
@@ -592,6 +697,7 @@ data class AccountDto(
 )
 
 data class CurrencyBalanceDto(
+    val id: String,
     val currency: String,
     val label: String,
     val balance: Long,
@@ -606,6 +712,21 @@ data class TransferDraft(
     val bankCode: String = "CMB",
     val bankRegion: String = "CN",
     val amountCents: Long = 500_00,
+    /** bankCard / phone / fps；目前只有 bankCard 具备完整的确认与提交条件。 */
+    val method: String = "bankCard",
+)
+
+data class TransferRequirementsDto(
+    val transferPaymentPassword: Boolean,
+    val confirmedQuoteVersion: Int,
+    val confirmedRecipient: Boolean,
+)
+
+data class TransferRecipientDto(
+    val kind: String,
+    val holderNameMasked: String,
+    val accountNoMasked: String,
+    val cardLast4: String,
 )
 
 data class TransferQuoteDto(
@@ -614,7 +735,42 @@ data class TransferQuoteDto(
     val maxAmount: Long,
     val singleLimit: Long,
     val requiresConfirm: Boolean,
+    val receiveAmount: Long?,
+    val rate: Double?,
 )
+
+/** 客户在确认页看到的报价条件；提交时原样回传，服务端逐项复核。 */
+data class TransferConfirmation(
+    val fromCurrency: String,
+    val fee: Long,
+    val submitBefore: Long,
+    val fx: TransferFxConfirmation? = null,
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("version", 1)
+        put("fromCurrency", fromCurrency)
+        put("fee", fee)
+        put("fx", fx?.toJson() ?: JSONObject.NULL)
+        put("submitBefore", submitBefore)
+    }
+}
+
+data class TransferFxConfirmation(
+    val fromCurrency: String,
+    val toCurrency: String,
+    val rate: Double,
+    val fromAmount: Long,
+    val toAmount: Long,
+    val spread: Double,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("fromCurrency", fromCurrency)
+        .put("toCurrency", toCurrency)
+        .put("rate", rate)
+        .put("fromAmount", fromAmount)
+        .put("toAmount", toAmount)
+        .put("spread", spread)
+}
 
 data class TransferResultDto(
     val transactionId: String,
@@ -623,6 +779,7 @@ data class TransferResultDto(
     val fee: Long,
     val identifier: String,
     val settlementStatus: String,
+    val currency: String = "CNY",
 )
 
 data class CardDto(

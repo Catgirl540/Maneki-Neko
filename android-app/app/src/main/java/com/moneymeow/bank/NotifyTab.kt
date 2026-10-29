@@ -33,6 +33,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/** 通知的真实来源：银行流水或自动扣款预告。银行卡、安全类没有真实来源，不生成通知。 */
+private enum class NoticeKind { TRANSACTION, DEBIT }
+
 private data class Notice(
     val title: String,
     val body: String,
@@ -40,6 +43,7 @@ private data class Notice(
     val day: String,
     val icon: ImageVector,
     val unread: Boolean,
+    val kind: NoticeKind,
 )
 
 /** 通知由真实流水与自动扣款推导，不预置示例消息。 */
@@ -50,7 +54,7 @@ private fun buildNotices(transactions: List<TransactionDto>, debits: List<AutoDe
         date == today.minusDays(1) -> "昨天"
         else -> "${date.monthValue}月${date.dayOfMonth}日"
     }
-    val fromTx = transactions.mapIndexed { index, dto ->
+    val fromTx = transactions.map { dto ->
         val incoming = dto.direction == "in"
         val when_ = runCatching { java.time.LocalDateTime.parse(dto.createdAt.take(19)) }.getOrNull()
         val date = when_?.toLocalDate() ?: today
@@ -61,7 +65,8 @@ private fun buildNotices(transactions: List<TransactionDto>, debits: List<AutoDe
             time = when_?.let { "%02d:%02d".format(it.hour, it.minute) } ?: date.toString(),
             day = dayLabel(date),
             icon = if (incoming) Icons.DownIn else Icons.UpOut,
-            unread = index < 2,
+            unread = false,
+            kind = NoticeKind.TRANSACTION,
         )
     }
     val fromDebits = debits.filter { it.enabled }.mapNotNull { dto ->
@@ -70,11 +75,12 @@ private fun buildNotices(transactions: List<TransactionDto>, debits: List<AutoDe
         if (next.toLocalDate().isBefore(today)) return@mapNotNull null
         Notice(
             title = "自动扣款预告",
-            body = "「${dto.merchant}」将于 ${next.monthValue}月${next.dayOfMonth}日 扣款 ${formatCents(dto.amount)}（${dto.cycle}）。",
+            body = "「${dto.merchant}」将于 ${next.monthValue}月${next.dayOfMonth}日 扣款 ${formatCents(dto.amount)}。",
             time = "${next.monthValue}月${next.dayOfMonth}日",
             day = "待扣款提醒",
             icon = Icons.Receipt,
             unread = false,
+            kind = NoticeKind.DEBIT,
         )
     }
     // 待扣款是“还没发生的事”，放最前面；其余按流水时间顺序。
@@ -89,16 +95,29 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
     var notices by remember { mutableStateOf<List<Notice>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    // 扣款接口失败不能伪装成“没有提醒”，单独记录原因并在界面明确提示。
+    var debitError by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         runCatching {
             val account = BankApi.accounts().firstOrNull()
             val txns = account?.let { BankApi.transactions(it.id, 10) }.orEmpty()
-            val debits = runCatching { BankApi.autoDebits() }.getOrDefault(emptyList())
+            val debits = runCatching { BankApi.autoDebits() }
+                .onFailure { debitError = it.message ?: "未知错误" }
+                .getOrDefault(emptyList())
             buildNotices(txns, debits)
         }
             .onSuccess { notices = it }
             .onFailure { error = it.message }
         loading = false
+    }
+
+    // 顶部分类：0 全部、1 交易（流水）、2 银行卡、3 提醒（扣款预告）、4 安全。
+    // 银行卡与安全当前没有真实通知来源，始终为空态，不用假消息填充。
+    val visibleNotices = when (chip) {
+        1 -> notices.filter { it.kind == NoticeKind.TRANSACTION }
+        3 -> notices.filter { it.kind == NoticeKind.DEBIT }
+        2, 4 -> emptyList()
+        else -> notices
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -133,20 +152,37 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 16.dp),
             ) {
-                if (notices.isEmpty()) {
+                // 只有“全部”和“提醒”两个分类依赖扣款接口；接口失败时这两个分类要明确报错，
+                // 不能显示成“暂无扣款提醒/暂无通知”而让人误以为真的没有待扣款。
+                val showDebitError = debitError != null && (chip == 0 || chip == 3)
+                if (visibleNotices.isEmpty()) {
+                    val showError = (error != null || showDebitError) && chip != 2 && chip != 4
                     Text(
                         when {
+                            chip == 2 -> "暂无银行卡通知"
+                            chip == 4 -> "暂无安全通知"
                             loading -> "加载中…"
                             error != null -> "加载失败：$error"
+                            chip == 1 -> "暂无交易通知"
+                            showDebitError -> "扣款提醒加载失败：$debitError"
+                            chip == 3 -> "暂无扣款提醒"
                             else -> "暂无通知"
                         },
                         fontSize = 12.sp,
-                        color = if (error != null) Tokens.Coral else Tokens.Muted,
+                        color = if (showError) Tokens.Coral else Tokens.Muted,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp),
+                    )
+                } else if (showDebitError) {
+                    // 流水仍可展示时，单独提示扣款提醒未能加载，避免静默丢失。
+                    Text(
+                        "扣款提醒加载失败：$debitError",
+                        fontSize = 12.sp,
+                        color = Tokens.Coral,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                     )
                 }
                 var lastDay: String? = null
-                notices.forEach { notice ->
+                visibleNotices.forEach { notice ->
                     if (notice.day != lastDay) {
                         GroupLabel(notice.day)
                         lastDay = notice.day

@@ -9,7 +9,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * 智能助手客户端：直连 `framework/bridge/demo-server.mjs`（默认 8788）的 `/agent-api`。
+ * 智能助手客户端：使用与客户网页相同的 `/agent-api` 入口。
  *
  * 协议与网页 `app/src/api/agent.ts` 一致：
  *  - `POST /sessions` 建会话
@@ -18,8 +18,7 @@ import java.net.URL
  * 鉴权沿用银行 Bearer 令牌。
  */
 object AgentApi {
-    /** 模拟器访问宿主机。 */
-    var baseUrl: String = "http://10.0.2.2:8788/agent-api"
+    var baseUrl: String = "https://bank.waveflow.men/agent-api"
 
     private var tokenProvider: () -> String? = { null }
 
