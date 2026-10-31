@@ -91,6 +91,17 @@ Agent `bank_list_scheduled_transfers/bank_schedule_transfer/bank_cancel_schedule
 
 ### AA 收款
 
+网页统一使用“AA 收款 → 均分清单”：先按各项消费名单计算每人应付额，再在该清单中绑定注册手机号和转账备注，核对后发送付款通知，不再提供独立手机号收款页。members 可附 `allocation`（待收均分 `{amount,participants}` 或分项 `{collectorName,expenses}`）；服务器重算并逐人核对 members 的人数、顺序及金额，不一致报 `AA_ALLOCATION_MISMATCH` 且不送达通知。保存分项、本人份额及 splitName，保持清单与付款通知一致。
+
+手机号 AA 创建 `{title,currency,members:[{phone,amount,memo}],confirmed:true,clientRequestId}`。成员为 1–30 个不重复的本行注册手机号（不含本人），每人金额为整数分、转账备注必填且最多 140 字，总额最多 100000000 分。服务端先核对所有成员账号和币种，再在同一事务内保存收款单及成员站内通知；任一成员无效时整单失败，不部分送达、不扣款、不发送短信或微信。旧均分参数不能与 members 混用。
+
+`GET /api/transfers/aa-payments` 只查询本人收到的 AA 付款通知，包含收款人、金额、币种、原备注及 unpaid/processing/paid/cancelled 状态。网页“AA 付款”提供“待付款”和付款记录。`POST /api/transfers/aa-payments/:id/pay` 接受 `{version,confirmed:true,paymentPassword}`，金额、备注和收款账号来自原通知，不接受客户端覆盖；必须本人登录、独立确认并验证支付密码，冻结账号拒付。复用本行转账、在途审批及撤回规则，回款状态依据真实付款流水同步，重复/并发支付不重复扣款。备注写入双方流水和回单；密码不持久化。手机号通知、收款单和转账结果均随客户加密扩展域保存，重启后保留，不新增资金账户或修改数据库结构。
+
+取消手机号 AA 同步撤回未付款通知，保留已付流水；存在 processing 付款时先等待结果。legacy 清单仍按下列均分/手动匹配证据规则处理，不发站内通知。验证见 `server/aa-payments.test.mjs`、`server/aa-payments-http.test.mjs`、`tools/check-aa-payments.mjs`。
+
+
+分项 AA 创建 `{title,currency,collectorName,expenses:[{title,amount,participants}],clientRequestId}`：收款人须已垫付全部费用；每项为消费全额（整数分）、2–30 位参加者完整姓名，参加时必须包含收款人。最多 30 项、总人数不超过 30，总消费不超过 100000000 分。逐项均摊后按人合计，排除 `collectorName` 的本人份额，允许只有一位其他付款人。不得同时传旧字段 `amount/participants`。响应 `amount` 仍为待收总额，附 `expenseTotal/selfAmount/expenses[].shares` 供核对；幂等绑定每项金额、名单和顺序。
+
 `GET/POST /api/transfers/splits` 查询/创建本人收款单。创建 `{title,amount,currency,participants,clientRequestId}`，`participants` 为 2–30 个不重名的完整付款人姓名，金额至少每人 1 分，均分后余数按名单顺序每人加 1 分。`amount` 是待收总额，不包含已自付份额。API 支持 CNY/USD/HKD 并要求本人已有对应币种余额；网页入口目前为人民币。只保存清单，不扣参与者余额、不发送邀请或新建资金账户。
 
 `POST /api/transfers/splits/:id/payments` 请求 `{version,participantId,transactionId}`，只接受本人同币种余额、金额恰等于该份额、交易对方登记名等于参与者的 `success/in` 真实流水，排除账户内换汇；一笔流水只能证明一份 AA 款项。确认只关联证据，不增加余额，全部匹配后状态为 `complete`。`POST .../:id/reminders` 请求 `{version,participantId}`，为未收份额生成催收文字并记录准备次数，返回 `delivered=false`；文字须用户自行发送。`DELETE /api/transfers/splits/:id` 请求 `{version}` 取消仍待收的清单，保留已收证据，不退款。

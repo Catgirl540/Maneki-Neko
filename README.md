@@ -1,4 +1,4 @@
-> **简化归档版 · 2026-10-23**：本版本保存当前工作区快照，已清理旧 Flutter `mobile/` 工程。当前客户端位置见 [CLIENTS.md](CLIENTS.md)，历史实现可从 Git 提交记录查阅。
+> **简化归档版 · 2026-10-31**：本版本保存当前工作区快照，包含当前源码、整理后的维护文档及答辩交付材料。当前客户端位置见 [CLIENTS.md](CLIENTS.md)，历史实现可从 Git 提交记录查阅。
 
 > 当前后端为 PostgreSQL 16；SQLite 文档与旧演示脚本只保留迁移历史。启动、测试和生产模式以 [当前后端说明](server/README.md) 及 [启动指引](README-START.md) 为准。
 
@@ -56,28 +56,24 @@
 │   │   ├── pages/              客户端页面（含交易详情 / 电子回单）
 │   │   ├── store/session.tsx   登录态 + 路由守卫
 │   │   ├── lib/                金额/日期格式化、渠道文案、useAsync、storage
-│   │   ── styles/
+│   │   └── styles/
 │   │       ├── tokens.css      颜色、圆角、字体与通用动效
 │   │       ├── workbench.css   当前桌面工作台与业务页布局
 │   │       └── global.css      Tailwind 入口 + 字体 + 基础样式
 │   ├── public/fonts/           拉丁子集字体（约 70KB）；中文走系统字体栈
-│   ── .env.development        环境开关
-├── docs/design/                当前设计依据、客服资源与验证截图
-├── design/                     运维交接、审查及工作人员端资料
-├── archive/2026-10-15/          旧 Kotlin 工程与旧网页设计（不维护、不发布）
+│   └── .env.development        环境开关
+├── android-app/                安卓客户端（Kotlin + Jetpack Compose）
+├── staff/                      工作人员端
+├── server/                     Node.js + PostgreSQL 后端
+├── shared/                     前后端共用的纯规则模块（账户模型、产品规则、预算等）
+├── framework/                  银行 Agent 运行时（DSH 树外插件集，独立构建）
+├── docs/                       契约、产品规则、设计依据、验收与发布记录（见 docs/README.md）
+├── design/                     运维交接、代码审查、工作人员端资料、Logo 评审
+├── archive/                    历史归档：旧客户端与旧网页，不维护、默认不搜索
 ├── android/README.md            旧工程迁移提示（没有可构建工程）
 ├── CLIENTS.md                  客户端版本核对入口
-├── scripts/
-│   ├── gen_images.py           已停用的旧品牌生成入口（提示归档位置）
-│   └── fetch_bank_logos.py     抓取收款银行行标（可重跑，幂等）
-└── tools/
-    ├── shoot.mjs               Playwright 逐页截图脚本
-    ├── check-toggle.mjs        开关交互冒烟测试（乐观更新 / 无骨架屏）
-    ├── check-tx-detail.mjs     交易详情冒烟测试（对账 / 复制 / 打印 / 空状态）
-    ├── check-stale-data.mjs    本地数据过期 / 渲染崩溃的回归测试
-    ├── check-bank-data.mjs     收款银行名录的数据校验（纯静态，不需要浏览器）
-    ├── check-assets.mjs        静态资源引用检查（引用的图/字体是否真的存在）
-    └── check-watermark.mjs     水印可见性检查（位置 / 是否被顶栏盖住）
+├── scripts/                    银行行标抓取（可重跑，幂等）
+└── tools/                      检查脚本、截图与打包工具（见 tools/README.md）
 ```
 
 ## 2. 跑起来
@@ -402,108 +398,9 @@ Agent 重启后，新版会话会按登录客户恢复原生文字、图片和�
 `src/api/contract.ts` 里的 `routes` 就是给后端的接口清单，
 `types.ts` 就是返回体结构。后端按这套约定实现即可，前端一行不用改。
 
-已定义的接口面：
+已定义的接口面以 [接口文档](docs/api/README.md) 为单一事实源：端点、错误码、请求响应类型都在那里，本文不再重复维护一份会漂移的清单。
 
-```
-POST   /api/auth/login              登入
-POST   /api/auth/register           注册并开通唯一储蓄账户（身份证 + 短信 + 人脸 + 承诺）
-POST   /api/auth/logout             登出
-POST   /api/auth/phone              更换手机号（短信验证码 + 人脸票据）
-GET    /api/auth/profile            用户信息
-
-GET    /api/accounts                账户列表
-POST   /api/auth/sms-code           发送短信验证码（演示环境回传 demoCode）
-GET    /api/accounts/:id            单个账户
-GET    /api/accounts/:id/transactions?page&size&category&keyword   流水（分页/筛选/搜索）
-GET    /api/accounts/:id/transactions/export?from&to&category&keyword  流水导出数据集
-GET    /api/transactions/:id        单笔交易详情（凭证：交易编号/渠道/汇率/交易前后余额）
-GET    /api/transactions/:id/receipt                                   电子回单文件
-POST   /api/accounts/:id/deposit    转入
-
-GET    /api/banks                   收款银行列表（真实数据：内地行别代码 + 香港 HKICL 代码）
-POST   /api/cards/bin               卡 BIN 查询：卡号前 6 位 → 发卡行（见 §11 卡 BIN 识别）
-GET    /api/receiving               我的收款信息（户名 / 账户 / 转数快标识，见 §12.5）
-POST   /api/receiving/fps           模拟 FPS 登记（港币账户归属、标识唯一性、支付密码）
-GET    /api/payees                  历史收款人（按 lastUsedAt 排序）
-DELETE /api/payees/:id              删除一条历史收款人（不存在时 404）
-POST   /api/fps/resolve            转数快标识解析（返回登记姓名与收款银行）
-POST   /api/transfers/recipient     核对本行收款账户与户名
-POST   /api/transfers/quote         转账询价（手续费/到账时间/单笔上限/是否需二次确认/换汇报价）
-POST   /api/transfers               提交转账（channel=bank 走卡号；channel=fps 走四种汇款方式）
-POST   /api/transfers/:id/recall    撤销仍在延迟到账窗口内的转账
-
-GET    /api/cards                   银行卡列表
-GET    /api/cards/products          可申请的卡产品（费用与权益由后端给）
-POST   /api/cards/open              申请新卡（扣制卡费 + 邮寄地址 + 支付密码）
-POST   /api/cards/:id/lock          锁卡 / 解锁
-POST   /api/cards/:id/replace       换卡
-PATCH  /api/cards/:id/settings      消费开关（paymentEnabled）与渠道 / 商户限额
-POST   /api/cards/:id/spend         模拟消费：预设商户或自由商家（自定义 / Stripe 收单）刷卡，
-                                    从卡绑定账户扣款，分类由分类器判定；详见 docs/api/spend.md
-POST   /api/cards/:id/activate      激活卡片（待激活 → 使用中，需支付密码）
-GET    /api/cards/:id/secrets       查看完整卡号与安全码（需支付密码；见 §12.4）
-POST   /api/cards/:id/virtual       动态一次性卡号（单笔限额 + 有效期；仅创建时返回卡号）
-
-POST   /api/exchange/quote          账户内换汇报价（锁价；目标币种余额不存在则初始化，不另行开户）
-POST   /api/exchange                执行账户内换汇（需支付密码）
-
-GET    /api/savings/overview        存钱计划总览（目标 / 凑整规则 / 打卡 / 奖励）
-POST   /api/savings/goals           新建储蓄目标
-PATCH  /api/savings/goals/:id       修改储蓄目标
-DELETE /api/savings/goals/:id       删除储蓄目标
-PATCH  /api/savings/roundup         配置消费凑整转存规则
-
-GET    /api/invitations             邀请码 / 好友进度 / 奖励
-GET    /api/membership             会员中心：等级 / 月均 AUM / 权益 / 贵宾厅额度
-POST   /api/membership/lounge-pass 核销一次机场 / 高铁贵宾厅额度（年度次数）
-
-
-GET    /api/cashflow/salary         工资入账计划与到账预测
-PATCH  /api/cashflow/salary         设置发薪日与预计月薪
-GET    /api/cashflow/overdraft      备用金额度与占用
-POST   /api/cashflow/overdraft/activate 开通 / 关闭备用金
-
-GET    /api/credit/overview         授信额度 / 借款产品 / 借款 / 分期 / 信用培养
-POST   /api/credit/loans/apply      申请借款（放款至储蓄账户）
-POST   /api/credit/installments/:transactionId/plan 将某笔消费转分期
-
-GET    /api/wealth/cash-management          活钱余额 / 7 日年化 / 自动转入
-PATCH  /api/wealth/cash-management/sweep    设置活期保留额与自动转入
-GET    /api/wealth/investments              持有市值 / 定投计划 / 可投产品
-POST   /api/wealth/investments/plan         新建定投计划
-PATCH  /api/wealth/investments/plan/:id     暂停、恢复或取消本人计划（仅管理，自动扣款未开放）
-GET    /api/wealth/insurance                保单 / 可投保产品
-POST   /api/wealth/insurance/enroll         投保
-
-GET    /api/wealth/products                 理财产品列表
-GET    /api/wealth/products/:code            产品详情（净值/费率/穿透前后资产）
-GET    /api/wealth/overview                  总资产 + 持仓 + 风险测评状态
-GET    /api/wealth/risk/questions            风险承受能力问卷
-POST   /api/wealth/account/open      开立理财账户（见 §16）
-POST   /api/wealth/risk/assess               提交测评（结果有效期一年）
-POST   /api/wealth/subscribe                 申购（适当性 + 抄录确认 + 支付密码）
-POST   /api/wealth/redeem                    赎回（款项回到申购时使用的账户）
-
-GET    /api/analysis/spending?month=YYYY-MM   消费分析（分类占比 + 近 6 月走势）
-GET    /api/analysis/cashflow?days=7           现金流（逐日收入/支出）
-GET    /api/autodebits                        自动扣款列表
-PATCH  /api/autodebits/:id                    启停自动扣款
-
-GET    /api/security/overview       安全评分 / 设备 / 日志 / 风控规则
-POST   /api/security/password       重置登录密码
-POST   /api/security/payment-password  修改 / 核身重置支付密码
-POST   /api/security/verify
-PATCH  /api/security/rules/:id        开关某条风控规则
-
-
-
-GET    /api/support/messages        客服历史
-POST   /api/support/chat            客服对话
-GET    /api/support/tickets         本人的人工工单（分页）
-POST   /api/support/tickets         提交转人工请求
-GET    /api/support/tickets/:id      本人工单详情与回复
-POST   /api/support/tickets/:id/messages  客户补充留言
-```
+改接口的顺序固定：`types.ts` → `contract.ts` → `http.ts` → mock → 服务端 → 文档，然后用 `node tools/check-contract.mjs` 校验三层方法一致、`node tools/check-routes.mjs` 校验站内链接。
 
 ## 4. 换美术风格怎么改
 

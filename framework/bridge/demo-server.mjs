@@ -78,6 +78,7 @@ import { openImStore, migrateImBindingRevisions } from './im-store.mjs'
 import { createImBank } from './im-bank.mjs'
 import { createImChannels } from './im-channels.mjs'
 import { createImHttp } from './im-http.mjs'
+import { imDisabled } from './im-availability.mjs'
 import { createBankReminders } from './bank-reminders.mjs'
 import { createStaffImService, createStaffImWorker } from './staff-im-worker.mjs'
 
@@ -726,6 +727,13 @@ async function handle(req, res) {
   await sessionStore?.flush()
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`)
   const parts = pathParts(url.pathname)
+  // IM 是显式开关。没启用时回“功能未启用”，不要落到最后那条 404 —— 页面会把
+  // “未知路径：GET /agent-api/im/bindings”原样显示给员工，看着像路由写错了。
+  if (!imHttp && url.pathname.startsWith('/agent-api/im')) {
+    const notice = imDisabled(STAFF_MODE ? 'staff' : 'customer')
+    await sendJson(res, notice.status, notice.body)
+    return
+  }
   if (imHttp && await imHttp.handle(req, res, { pathname: url.pathname, readJson, sendJson })) return
 
   const internal = url.pathname === '/consent/challenge' || url.pathname === '/agent-api/questions' || url.pathname === '/internal/bank-tool' || url.pathname.startsWith('/internal/ops-tool/')

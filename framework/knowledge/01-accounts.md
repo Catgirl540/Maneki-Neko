@@ -4,7 +4,7 @@ title: "注册开户与账户"
 navigation: "账户"
 routes: ["/open-account", "/dashboard"]
 keywords: ["开户", "储蓄账户", "资金账户"]
-sources: ["app/src/pages/OpenAccountPage.tsx", "app/src/pages/DashboardPage.tsx", "app/src/pages/ReceivingPage.tsx", "app/src/lib/receiving.ts", "app/src/api/mock/index.ts"]
+sources: ["app/src/pages/OpenAccountPage.tsx", "app/src/pages/DashboardPage.tsx", "app/src/pages/ReceivingPage.tsx", "app/src/lib/receiving.ts", "app/src/api/mock/index.ts", "docs/product/account-model.md"]
 ---
 
 ## 注册开户需要什么？ {#register}
@@ -13,7 +13,7 @@ sources: ["app/src/pages/OpenAccountPage.tsx", "app/src/pages/DashboardPage.tsx"
 
 ## 账户、银行卡和理财账户有什么关系？没有银行卡还要开户吗？ {#relations}
 
-每位用户只有一个储蓄资金账户，可以关联多张银行卡，并持有多种币种余额。所有银行卡共享这个账户，卡片本身不单独存钱；申请新卡不会再开户，换汇只改变账户内的币种余额。旧账户编号兼容映射到同一资金账户，历史回单中的原账号快照保留，不表示仍有第二个账户。不同币种余额分别展示，不直接加总。理财账户用于投资资格和委托关系，申购扣款与赎回回款使用指定的结算资金账户。申请银行卡在「账户 → 银行卡 → 申请新卡」办理，无卡不需要重复开立储蓄账户。
+每位用户只有一个储蓄资金账户，可以关联多张银行卡，并持有多种币种余额。所有银行卡共享这个账户，卡片本身不单独存钱；申请新卡不会再开户，换汇只改变账户内的币种余额。旧账户编号兼容映射到同一资金账户，历史回单中的原账号快照保留，不表示仍有第二个账户。不同币种余额分别展示，不直接加总。理财账户用于投资资格和委托关系，申购扣款与赎回回款使用指定的结算资金账户。申请银行卡在「账户 → 银行卡 → 申请新卡」办理，无卡不需要重复开立储蓄账户。统一办理环境仍使用原客户的同一资金账户，不需要重新开户，也不合并不同环境的余额。
 
 ## 余额和可用余额为什么不一样？ {#balance}
 

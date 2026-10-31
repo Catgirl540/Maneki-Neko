@@ -4,11 +4,11 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto
 const digest = value => createHash('sha256').update(value).digest('hex')
 const fail = (message, status, code) => { throw Object.assign(new Error(message), { status, code }) }
 const IDEMPOTENT_METHODS = new Set(['submitTransfer', 'recallTransfer', 'submitExchange', 'subscribeWealth', 'redeemWealth', 'applyLoan', 'repayLoan', 'deposit', 'spendOnCard', 'openCard', 'replaceCard', 'createInvestPlan', 'updateInvestPlan'])
-for (const method of ['createScheduledTransfer', 'cancelScheduledTransfer', 'createSplitCollection', 'cancelSplitCollection', 'confirmSplitPayment', 'remindSplitParticipant', 'reportCardLost', 'recoverCard', 'createBirthdayPlan', 'cancelBirthdayPlan', 'confirmBirthdayOrder', 'updatePayeeRemark']) IDEMPOTENT_METHODS.add(method)
+for (const method of ['paySplitRequest', 'createScheduledTransfer', 'cancelScheduledTransfer', 'createSplitCollection', 'cancelSplitCollection', 'confirmSplitPayment', 'remindSplitParticipant', 'reportCardLost', 'recoverCard', 'createBirthdayPlan', 'cancelBirthdayPlan', 'confirmBirthdayOrder', 'updatePayeeRemark']) IDEMPOTENT_METHODS.add(method)
 // These operations currently have sandbox implementations only. Live processing must
 // be routed to an approved partner adapter, never fall through to the local simulator.
 const PARTNER_OPERATIONS = new Set([
-  'createScheduledTransfer', 'cancelScheduledTransfer', 'createSplitCollection', 'confirmSplitPayment',
+  'paySplitRequest', 'createScheduledTransfer', 'cancelScheduledTransfer', 'createSplitCollection', 'confirmSplitPayment',
   'remindSplitParticipant', 'cancelSplitCollection', 'reportCardLost', 'recoverCard',
   'createBirthdayPlan', 'cancelBirthdayPlan', 'confirmBirthdayOrder',
   'submitTransfer', 'recallTransfer', 'submitExchange', 'subscribeWealth', 'redeemWealth',
@@ -149,6 +149,8 @@ export async function createSecurityGateway(db, auth) {
 }
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
-  if (value && typeof value === 'object') return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`
+  // Payment credentials never enter the idempotency fingerprint: a deterministic
+  // SHA-256 over a six-digit PIN would be trivially brute-forceable at rest.
+  if (value && typeof value === 'object') return `{${Object.keys(value).filter(k => k !== 'paymentPassword').sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(',')}}`
   return JSON.stringify(value)
 }

@@ -45,7 +45,7 @@ const FROZEN_ALLOWED = new Set([
   'login', 'register', 'logout', 'profile', 'sendSmsCode', 'verifyIdentity',
   'listAccounts', 'getAccount', 'listTransactions', 'exportTransactions', 'getTransaction', 'getReceipt',
   'listBanks', 'getReceivingInfo', 'resolveCardBin', 'listPayees', 'resolveFps', 'quoteTransfer', 'resolveTransferRecipient',
-  'listScheduledTransfers', 'listSplitCollections', 'getBillingReport', 'exportBillingReport',
+  'listScheduledTransfers', 'listSplitCollections', 'listSplitPaymentRequests', 'getBillingReport', 'exportBillingReport',
   'listCards', 'listCardProducts', 'listWealthProducts', 'getWealthProduct', 'getWealthOverview', 'listRiskQuestions',
   'getSpending', 'getCashFlow', 'listAutoDebits', 'listBirthdayPlans', 'previewBirthdayPlan', 'listBudgets', 'getSecurityOverview',
   'listSupportMessages', 'sendSupportMessage', 'requestHumanSupport', 'listSupportTickets', 'getSupportTicket', 'replySupportTicket',

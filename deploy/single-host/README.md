@@ -1,19 +1,23 @@
 # 单机 VPS 部署
 
-当前发布补充（2026-10-28）：源码与网页已切换到 `releases/20261028-account-security`，登录密码强度、连续五次支付错误冻结和工作人员核验解冻已上线。官网客户使用演示库，工作人员在登录页选择“演示银行（官网客户）”或进入 `/staff/login?bank=demo`，通过独立 `/staff-demo-api/` 办理；原 `/staff-api/` 合作银行及运维入口保留。两库无结构迁移、对账通过，五项服务正常。详见 [安全模块部署验收](../../docs/deployments/bank-security-deployment-20261028.json)。
+当前发布（2026-10-29，已上线）：官网、工作人员、运维和三类 Agent 共用现有 `8081 / maneki_bank_demo`。工作人员统一从 `/staff/login` 登录，不再选择办理环境；标准 `/staff-api/` 与旧 `/staff-demo-api/` 兼容入口均连接同一银行后端，客服、主管与运维权限仍由后端校验。已验证同库 7 位客户、三位原员工密码 hash 保留且 `auth_version=3`、原库全部表保全、双库对账及标准/兼容 API 角色权限一致。原 live writer 已停止、禁用并加启动防护，四项现行服务 active。详见 [统一银行环境说明](../../docs/unified-bank-environment.md) 和 [部署验收](../../docs/deployments/bank-unified-environment-deployment-20261029.json)。
 
-当前发布补充（2026-10-27）：源码与网页均指向 `releases/20261027-function-fixes`，五项现行服务已验证，原 `luckycat-bridge` 仍停用。两库核心结构为 `2026102701`，目前两库均由 `maneki_owner` 持有，运行角色为 `maneki_app`；以实际运行配置为准，不套用下文历史角色名。详见 [本次部署验收](../../docs/bank-function-fixes-deployment-20261027.json)。下文为历史迁移记录。
+当前源码为 `/srv/maneki-bank/releases/20261029-unified-environment`，网页为 `/var/www/bank.waveflow.men/releases/20261029-unified-environment`，两处 `current` 已切换；切换前备份为 `/var/backups/maneki-unify-20261029T025532Z`。2026-10-29 12:19（北京时间）增量修复员工 IM：适配器与通知 Worker 已启用，客服/主管绑定列表 200、真实二维码生成和取消、通知签名及主管网页均验收通过；修复前备份为 `/var/backups/maneki-staff-im-20261029T041917360705Z`。员工本人尚需扫码绑定和私聊激活，真实投递未验收。运维终端继续关闭。详见[员工微信 IM 开通手册](../../docs/staff-im-enablement.md)和[本次验收](../../docs/deployments/bank-staff-im-fix-deployment-20261029.json)。
+
+历史发布记录（2026-10-28）：源码与网页切换到 `releases/20261028-account-security`，登录密码强度、连续五次支付错误冻结和工作人员核验解冻上线。当时官网客户使用演示库，工作人员在登录页选择“演示银行（官网客户）”或进入 `/staff/login?bank=demo`，通过独立 `/staff-demo-api/` 办理；原 `/staff-api/` 合作银行及运维入口保留。两库无结构迁移、对账通过，五项服务正常。详见 [安全模块部署验收](../../docs/deployments/bank-security-deployment-20261028.json)。
+
+历史发布记录（2026-10-27）：源码与网页均指向 `releases/20261027-function-fixes`，五项现行服务已验证，原 `luckycat-bridge` 仍停用。两库核心结构为 `2026102701`，当时两库均由 `maneki_owner` 持有，运行角色为 `maneki_app`；以实际运行配置为准，不套用下文历史角色名。详见 [本次部署验收](../../docs/deployments/bank-function-fixes-deployment-20261027.json)。
 
 2026-10-19 起，`https://bank.waveflow.men/` 的网页、银行 API、客户/员工/运维 Agent 与 PostgreSQL 16 位于新 VPS `15.235.241.158`。原 guga 静态托管及 `120.48.123.112` 银行部署退出该域名的运行链路。旧机数据保留，但银行六项服务已停止并禁用自启动，禁止直接启动形成双写。
 
-## 版本与路径
+## 历史版本与路径（2026-10-20）
 
-- 当前代码：`main` 的 `df39575d4ffe64296a1a59557ec3da7bf0763036`，2026-10-20 北京时间 09:28 发布；DSH `0.2.1-rc.2`，Node `24.21.0`，IM `5.1.0`。验收见 [部署记录](../../docs/bank-deployment-20261020.json)。
+- 当前代码：`main` 的 `df39575d4ffe64296a1a59557ec3da7bf0763036`，2026-10-20 北京时间 09:28 发布；DSH `0.2.1-rc.2`，Node `24.21.0`，IM `5.1.0`。验收见 [部署记录](../../docs/deployments/bank-deployment-20261020.json)。
 - 包含已提交的 Agent/银行、统计、定投计划及网页更新；客户与员工网页统一生产构建，未使用 mock。
 - 服务源码：`/srv/maneki-bank/current` → `/srv/maneki-bank/releases/20261020-df39575`；六项服务通过 `90-release-df39575.conf` drop-in 指向新目录。
 - 网页：`/var/www/bank.waveflow.men/current` → `releases/20261020-df39575`，员工入口 `/staff/`。保留旧指纹资源和原下载包。
 - `/srv/maneki-neko`、`/srv/maneki-bank/demo-20261017` 兼容链接仍指向旧发布目录，客户原生日志、附件及 IM 状态保留原路径；额外环境文件显式指定状态目录。**不能删除旧 release**，也不要把兼容链接随意切到空的新状态目录。
-- 本目录两个 Nginx 模板分别安装为 `/etc/nginx/sites-available/bank.waveflow.men` 与 `/etc/nginx/snippets/maneki-single-host.conf`。修改后先 `nginx -t`，再 reload。
+- 当前站点实际 include 为 `/etc/nginx/maneki-locations.conf`；部署时按它承载 `maneki-single-host.conf` 的路由及 `staff-demo.conf` 的兼容路由，不假设历史 snippets 路径仍生效。修改后先 `nginx -t`，再 reload。
 - Flutter 下载清单及 APK 在网页发布目录的 `downloads/`，本机直接提供。沿用既有 `android-v1.0.2` 发布包，SHA256 为 `b8b8c2be47c81cdca3ea8daecff7cb38681728becca5bbe17e335405edf7d6d6`；本次不重新构建安卓客户端。
 
 客户端构建沿用根路径：
@@ -22,16 +26,18 @@
 VITE_USE_MOCK=false VITE_BASE_PATH=/ VITE_API_BASE_URL='' VITE_AGENT_URL=/agent-api npm --prefix app run build
 ```
 
-## 通道与隔离
+## 当前统一通道与权限
 
-- 客户 `/api/` → `luckycat-bank-demo`，8081，数据库 `maneki_bank_demo`，独立 sandbox 演示环境，页面显示验证码。
-- 客户 `/agent-api/` → `luckycat-agent-demo`，8891，使用同一演示库中 `customer` namespace。
-- 员工 `/staff-api/` → `luckycat-bank`，8080，数据库 `maneki_bank`；保留原员工及后台记录。
-- `/staff-agent-api/` → `luckycat-staff-agent`，8789，`staff` namespace。
-- `/staff-ops-agent-api/` → `luckycat-ops-agent`，8790，`ops` namespace。
-- 原客户 `luckycat-bridge` 保留为本机 8898 的 live 通道，不作为公开演示客户上游。
+- 客户 `/api/` → `luckycat-bank-demo`，8081，数据库 `maneki_bank_demo`，沿用 sandbox 演示规则和现有客户数据。
+- 员工 `/staff-api/`、运维终端 `/staff-api/ops/terminal/` → 同一 8081 后端。`staff-demo.conf` 为旧 `/staff-demo-api/`（含终端）提供同源兼容映射；需与主站模板一起 include。
+- 客户 `/agent-api/` → `luckycat-agent-demo`，8891，银行地址为 8081，AI 会话为同一库的 `customer` namespace。
+- `/staff-agent-api/` → `luckycat-staff-agent`，8789，银行地址为 8081，AI 会话为同一库的 `staff` namespace。
+- `/staff-ops-agent-api/` → `luckycat-ops-agent`，8790，银行地址为 8081，AI 会话为同一库的 `ops` namespace。
+- 原 `luckycat-bank`（8080）在 2026-10-29 12:51（北京时间）完成移除：旧 unit 与 drop-in 已移至受保护备份，服务名已 mask，8080 无监听；员工与运维 Agent 的基础 unit 依赖已改为 `luckycat-bank-demo.service`（不能仅依赖 drop-in 中的空 `Requires=` 清除原依赖）。四项现用服务 PID 保持不变，Nginx 与公网入口检查通过。`luckycat-bridge`（8898）继续停用，`maneki_bank` 不承接统一入口的新业务写入；原库、密钥配置与历史备份保留。详见[移除验收](../../docs/deployments/bank-retire-8080-deployment-20261029.json)。
 
-银行、Agent、PostgreSQL 都只监听环回地址。六项业务服务由 systemd 启用。员工及运维权限、银行确认与商用闸门保持原行为；迁移不会启用真实银行接入或公网 Shell。
+银行、Agent、PostgreSQL 都只监听环回地址。统一数据源不合并客户、客服、主管与运维权限，终端继续遵守独立启用、运维鉴权及凭据校验。保留匹配的银行字段密钥、各 namespace 的 AI 密钥及 IM 状态；不得用原 live 环境文件整份覆盖 demo 配置。统一仍为演示业务，`commercialReady=false`，不启用真实银行通道。
+
+2026-10-29 切换前只读核对：原 live 的两个种子客户都已在 demo 中存在，ID 与手机号匹配，没有仅在 live 的客户；live 的工单、审批、AI 会话及 IM 绑定均为空。原 live 的资金快照与 84 条审计和 demo 不同，两库字段密钥也不同，须保留在原库及切换前备份，不与 demo 相加或覆盖。三位同 ID、同角色工作人员的 live 密码 hash 已升级为 scrypt、`auth_version=2`，但验证结果表明现有密码仍为原演示密码，不匹配环境文件中的初始化密码；hash 升级不代表密码已修改或强度提高。目标是核验身份后保留 live 数据库现有 hash，并将 demo 的 `auth_version` 提升到大于两边原最大值；不使用 env 初始化值覆盖现有密码，demo 额外的已撤销测试员工保留。staff/ops 两边会话空间均为空，无需历史迁移；客户 namespace 不动。两边终端原本关闭，统一后保持关闭。当前未发现维护 timer，不能把下文旧迁移记录中的定时任务当作已启用。
 
 ## 数据和凭据
 
@@ -41,7 +47,7 @@ VITE_USE_MOCK=false VITE_BASE_PATH=/ VITE_API_BASE_URL='' VITE_AGENT_URL=/agent-
 
 本次仅重启演示客户 Agent，其他银行及 Agent 服务的进程未变。新增 drop-in `/etc/systemd/system/luckycat-agent-demo.service.d/50-im.conf` 设置 `LUCKYCAT_IM_ENABLED=1` 和 HTTPS `LUCKYCAT_IM_PUBLIC_URL`；无需修改 Nginx。上游 `@xmanrui/dsh-im@5.1.0` 独立安装于 `/home/ubuntu/im-rollout-20261019/vendor`，通过当前 framework 的 `node_modules/@xmanrui/dsh-im` 链接加载。后续完整发布使用仓库已锁定的 npm 依赖，并保留匹配 IM 密钥和状态目录。
 
-当前 release 包含 IM 增量覆盖文件；原 bridge 备份、包清单与接口检查位于服务器 `/home/ubuntu/im-rollout-20261019/`。部署记录见 [IM 启用记录](../../docs/bank-im-deployment-20261019.json)。管理页及脚本返回 200，未认证管理/客户接口返回 401，服务无自动重启。模型合成请求验证成功；服务器微信扫码、客户绑定及真实银行查询尚待用户验收，不把部署检查当作端到端验收。
+当前 release 包含 IM 增量覆盖文件；原 bridge 备份、包清单与接口检查位于服务器 `/home/ubuntu/im-rollout-20261019/`。部署记录见 [IM 启用记录](../../docs/deployments/bank-im-deployment-20261019.json)。管理页及脚本返回 200，未认证管理/客户接口返回 401，服务无自动重启。模型合成请求验证成功；服务器微信扫码、客户绑定及真实银行查询尚待用户验收，不把部署检查当作端到端验收。
 
 若回退，先停演示客户 Agent，恢复备份的 `demo-server.mjs`，撤除本次新增 drop-in，`daemon-reload` 后启动原服务。保留 IM 状态、依赖和备份；不回退数据库，不删除会话或资金数据。
 

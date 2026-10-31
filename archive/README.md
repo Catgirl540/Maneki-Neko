@@ -17,3 +17,10 @@
 ## 2026-10-19
 
 - [DSH 0.1.6-alpha.2 旧版框架](2026-10-19/dsh-before-0.2.1/README.md)：升级前的 `framework/` 源码快照，退出日常维护与部署。当前银行 Agent 维护根目录 `framework/`，版本 `0.2.1-rc.2`；以仓库内安装和版本检查为准，不使用归档或全局 CLI 判断银行运行版本。
+
+## 2026-10-27
+
+整理仓库时从工作目录移出的已过期文档，内容不再维护：
+
+- [PostgreSQL 单账户整合草稿](2026-10-27/postgresql-single-account-draft.md)：单账户模型合并前的测试记录，结论已并入 [账户模型](../docs/product/account-model.md) 与 [后端说明](../server/README.md)。
+- [后端内存变更清单](2026-10-27/backend-memory-change-list-20261022.md)：一次性改动清单，结论保留在 [后端内存维护说明](../docs/backend-memory-20261022.md)。

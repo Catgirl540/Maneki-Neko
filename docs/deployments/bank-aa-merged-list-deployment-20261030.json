@@ -1,0 +1,73 @@
+{
+  "status": "deployed-and-verified",
+  "backup": "/var/backups/maneki-aa-merged-20261030T132208Z",
+  "source": "/srv/maneki-bank/releases/20261029-transfer-security",
+  "web": "/var/www/bank.waveflow.men/releases/20261029-transfer-security",
+  "services": {
+    "luckycat-bank-demo": "active",
+    "luckycat-agent-demo": "active",
+    "luckycat-staff-agent": "active",
+    "luckycat-ops-agent": "active"
+  },
+  "health": {
+    "8081": {
+      "ok": true,
+      "kind": "bank-partner-platform",
+      "database": "postgresql",
+      "integrationMode": "sandbox",
+      "commercialReady": false,
+      "bankConnection": "unconfigured",
+      "routes": 106
+    },
+    "8891": {
+      "authenticationRequired": true,
+      "status": 401
+    },
+    "8789": {
+      "authenticationRequired": true,
+      "status": 401
+    },
+    "8790": {
+      "authenticationRequired": true,
+      "status": 401
+    }
+  },
+  "files": {
+    "app/src/components/account/PaymentPlans.tsx": "28b991fe8eb99d9711dcd79fe809f937cbd8d49e4c7cb208948c225e5748e87f",
+    "app/src/components/account/AaPayments.tsx": "bc240b32384fdbf9c502511ccac21dbfddef145fdeddf485f535d6b355438bf0",
+    "app/src/api/types.ts": "8210040823372bdf4451c7c5ec01203200905b331b6c1afaf7aeb5636cd85391",
+    "shared/aa-payments.mjs": "ab18df91e23627f609d468723b8618bf7a722a852685160def92a9713f6a08ae",
+    "shared/aa-payments.d.mts": "e10ce8410dc78e48cccdcb109ca643a309e9fe9defa0b8f3398b82bbd65b44b0",
+    "framework/bridge/extended-bank-tools.mjs": "54d5781eab6758d68c75653974e4def5b8babd13910b21e0070bfd48ec7f8b4b",
+    "framework/packages/bank-demo/src/extended-http-tools.ts": "113c91082ca1a813b1f03184fc50b5904c0476a1b3d2a91c9631c350de4cd64f",
+    "framework/skills/bank-transfer/SKILL.md": "e8821a8593034c1771b94c4e80b86862d231f74e90e3787be76679bd8df7e5cc",
+    "framework/knowledge/02-transfers.md": "b029ea1c9c2f6b6f586d5b76b1e0e397bb66dc2b69a56d80c5f2dbbdd81b4b23",
+    "server/aa-payments.test.mjs": "1ba4100d83cb91441b0566a2bdcc2232c72fd33359e4d38b7c50e9b39c50121d",
+    "server/aa-payments-http.test.mjs": "6b7badaf40b5bbc97dd17493e629959a84c9fcb5381c0c59285ea697b7c99b2e",
+    "framework/bridge/split-collection.test.mjs": "86b5a8633545a027109ab7965ce051c36613313b28973a2433e36a5f0dd6b4e7",
+    "tools/check-aa-payments-ui.mjs": "562fa005476efd2fa127a284bce77a0bcf61037c6773391c77e067eb42f9d05f",
+    "tools/check-payment-tools-ui.mjs": "b9253e47b9baa453ae6ac7423bccda276926b06551cf2ad4455bb6e94b8a8a42",
+    "framework/packages/bank-demo/lib/extended-http-tools.js": "ab14ea8264e9b4e38a2320382114c8d16d1e603994cf26559c39aa38bc28066a",
+    "framework/packages/bank-demo/lib/extended-http-tools.d.ts": "4aaeb60abc1306f38a979c219e4a20d2e04d7af78c81267251b56511be657e5e",
+    "framework/.generated/knowledge/corpus.json": "21a1da4b6f5652d32799ca513e23bf59a1ebb1e293a217f90cb130d4d62297b2"
+  },
+  "databaseMigration": false,
+  "databaseRestore": false,
+  "completedAt": "2026-10-30T13:22:13.699461+00:00",
+  "feature": "Merged phone collection into equal-split list; per-activity shares map to phones and payment memos before confirmation",
+  "publicUrl": "https://bank.waveflow.men/transfer",
+  "verification": {
+    "postgresqlAndRelatedRegression": {
+      "tests": 18,
+      "pass": 18,
+      "fail": 0,
+      "skip": 0
+    },
+    "publishedBrowser": "passed against real published HTML/JS/CSS with isolated in-memory bank APIs; verified removed standalone tab, exact per-activity shares, phone-bound notifications, pending inbox, PIN payment and both ledger memos",
+    "legacyBrowser": "scheduled transfer, equal split with phone notifications and reports passed",
+    "accountModel": "passed",
+    "productionBuild": "passed",
+    "realCustomerFinancialActionsDuringSmoke": false
+  },
+  "clientCompletedAt": "2026-10-30T21:24:28.767856+08:00"
+}

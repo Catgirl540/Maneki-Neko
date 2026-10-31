@@ -1,5 +1,9 @@
 # 工作人员端维护说明
 
+工作人员与客户网站使用同一套银行业务数据，登录页不再选择办理环境。所有工作人员业务请求统一使用 `/staff-api/`；旧登录链接中的 `?bank=demo`、`?bank=live` 和浏览器中遗留的环境选择均不影响请求路由。客服、主管、运维仍按原角色权限登录，工作人员助手、IM 和运维功能沿用各自的鉴权通道。
+
+上线统一环境后，沿用原工作人员数据库中的现有凭据，不重置密码；初始化环境变量不覆盖已有工作人员密码。工作人员使用各自现有账号密码登录，登录页不展示账号密码。合并时提升工作人员鉴权版本，使旧会话失效后重新登录。
+
 ## IM 机器人设计
 
 客服与主管的微信接入、任务自动提醒和配置见 [工作人员 IM 维护说明](../docs/api/staff-im.md)，原方案见 [设计方案](../docs/product/staff-im-robot-design.md)。入口为「IM 机器人」；代码已实现，默认关闭，尚未上线或进行真实微信投递验收。运维暂不在本次范围。
@@ -50,6 +54,7 @@ npm --prefix app run dev
 ```bash
 VITE_USE_MOCK=false VITE_BASE_PATH=/staff/ npm --prefix staff run build
 npm --prefix staff run lint
+node tools/check-staff-unified.mjs
 node tools/check-staff-agent.mjs --browser
 node tools/check-ops-agent.mjs --browser
 node tools/check-agent-streaming.mjs
@@ -57,3 +62,5 @@ node tools/check-agent-http.mjs --browser
 ```
 
 浏览器检查可通过 `CHROME_BIN` 指定 Chromium。夹具使用临时数据库与本地模型协议，覆盖图片、语音、角色隔离、确认卡及手机布局。共享代码修改后同时回归客户端；真实计费抽查使用 `tools/check-staff-media-live.mjs`，详见 Agent 文档。
+
+`check-staff-unified.mjs` 在构建后的 `staff/dist/` 上运行 Chromium，使用本地 HTTP 夹具验证旧环境链接与缓存、客服/主管/运维路由、助手与 IM 通道、员工令牌隔离、退出及 Agent 401。此检查无需数据库或模型服务。

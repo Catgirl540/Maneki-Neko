@@ -1,0 +1,39 @@
+{
+  "status": "retired-and-verified",
+  "backup": "/var/backups/maneki-retire-8080-20261029T045117Z",
+  "retiredUnit": "luckycat-bank.service",
+  "moved": [
+    "/etc/systemd/system/luckycat-bank.service",
+    "/etc/systemd/system/luckycat-bank.service.d"
+  ],
+  "databasesModified": false,
+  "currentServicesRestarted": false,
+  "dependencyEdits": [
+    "/etc/systemd/system/luckycat-staff-agent.service",
+    "/etc/systemd/system/luckycat-ops-agent.service"
+  ],
+  "completedAt": "2026-10-29T04:51:19.315033+00:00",
+  "legacyState": "masked",
+  "listeners": [
+    "127.0.0.1:8081"
+  ],
+  "health": {
+    "ok": true,
+    "database": "postgresql",
+    "integrationMode": "sandbox",
+    "commercialReady": false
+  },
+  "publicChecks": {
+    "/": 200,
+    "/staff/login": 200,
+    "/api/accounts": 401,
+    "/staff-api/customers": 401,
+    "/staff-demo-api/customers": 401
+  },
+  "currentPids": {
+    "luckycat-bank-demo.service": "305320",
+    "luckycat-agent-demo.service": "305322",
+    "luckycat-staff-agent.service": "305380",
+    "luckycat-ops-agent.service": "305323"
+  }
+}

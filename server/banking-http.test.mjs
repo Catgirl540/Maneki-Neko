@@ -184,7 +184,7 @@ test('bank HTTP transactions and security preserve customer budgets and balanced
     assert.equal(receipt.transaction.amount, 2500)
     assert.equal(receipt.transaction.direction, 'out')
     assert.equal(receipt.transaction.status, 'success')
-    assert.equal(receipt.category, 'other')
+    assert.equal(receipt.category, 'dining')
     assert(['pending', 'done', 'failed'].includes(receipt.classificationState))
     assert.equal(receipt.currency, before.currency)
     assert.equal(receipt.available, before.available - 2500)
@@ -601,7 +601,7 @@ test('single funding HTTP migration, currency transfers and fees remain atomic a
       body: { accountId: hkd.id, region: 'HK', currency: 'HKD', idType: 'fpsid', id: '9199911', paymentPassword: '888888' } }))
     const registration = ok(await app.call(routes.fpsResolve(), { method: 'POST', token: sender.token, body: { idType: 'fpsid', fpsId: '9199911' } }))
     const body = { fromAccountId: sender.accounts[0].id, channel: 'fps', scope: 'overseas', fpsMethod: 'fpsid', fpsId: '9199911',
-      payeeName: registration.name, payeeBankCode: 'LCB', payeeBankRegion: 'HK', payeeCurrency: 'HKD', amount: 100, memo: 'cross-currency FPS fixture' }
+      payeeName: registration.name, payeeBankCode: 'LCB', payeeBankRegion: 'HK', payeeCurrency: 'HKD', amount: 100, memo: 'cross-currency FPS fixture', paymentPassword: '888888' }
     const quote = ok(await app.call(routes.transferQuote(), { method: 'POST', token: sender.token, body }))
     body.confirmedQuote = { version: 1, submitBefore: Date.now() + 30000, fromCurrency: 'CNY', fee: quote.fee, fx: quote.fx }
     const before = await account(app, sender), key = `fps-${randomUUID()}`
@@ -628,7 +628,7 @@ test('single funding HTTP migration, currency transfers and fees remain atomic a
     const feeSender=await register(app,'13900000033','TEST ONLY overseas fee')
     ok(await app.call(routes.deposit(feeSender.accounts[0].id),{method:'POST',token:feeSender.token,body:{amount:800000,channel:'bank'}}))
     const body = { fromAccountId: feeSender.accounts[0].id, channel: 'bank', scope: 'overseas',
-      payeeBankCode: '004', payeeBankRegion: 'HK', payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY external', amount: 100, memo: 'fee transaction fixture' }
+      payeeBankCode: '004', payeeBankRegion: 'HK', payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY external', amount: 100, memo: 'fee transaction fixture', paymentPassword: '888888' }
     const before = await account(app, feeSender), key = `fee-${randomUUID()}`
     const result = ok(await app.call(routes.transfers(), { method: 'POST', token: feeSender.token, body, key }))
     assert.equal(result.fee, 5000)
@@ -705,7 +705,7 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
     const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardSpend','cardActivate','cardLock','cardReplace','cardSecrets','budgets','budgetPass','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
     const patches = new Set(['cardSettings','autoDebit','budget','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     const deletes = new Set(['payee'])
-    for (const name of ['scheduledTransfers','splitCollections','splitPayment','splitReminder','cardLost','cardRecover','birthdayPlanPreview','birthdayPlans','birthdayPlanCancel','birthdayPlanOrder']) posts.add(name)
+    for (const name of ['splitPay','scheduledTransfers','splitCollections','splitPayment','splitReminder','cardLost','cardRecover','birthdayPlanPreview','birthdayPlans','birthdayPlanCancel','birthdayPlanOrder']) posts.add(name)
     patches.add('payee')
     deletes.add('scheduledTransfer'); deletes.add('splitCollection')
     for (const [name, build] of Object.entries(routes)) {

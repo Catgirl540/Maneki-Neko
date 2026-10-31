@@ -122,6 +122,8 @@ export function createHttpApi(): BankApi {
     createScheduledTransfer: req => post(routes.scheduledTransfers(), req),
     cancelScheduledTransfer: (id, version) => del(routes.scheduledTransfer(encodeURIComponent(id)), { version }),
     listSplitCollections: () => request(routes.splitCollections()),
+    listSplitPaymentRequests: () => request(routes.splitPaymentRequests()),
+    paySplitRequest: (id, input) => post(routes.splitPay(encodeURIComponent(id)), input),
     createSplitCollection: req => post(routes.splitCollections(), req),
     cancelSplitCollection: (id, version) => del(routes.splitCollection(encodeURIComponent(id)), { version }),
     confirmSplitPayment: (id, req) => post(routes.splitPayment(encodeURIComponent(id)), req),
@@ -132,7 +134,11 @@ export function createHttpApi(): BankApi {
     resolveFps: (idType, fpsId) => post(routes.fpsResolve(), { idType, fpsId }),
     quoteTransfer: (req: TransferQuoteRequest) => post(routes.transferQuote(), req),
     resolveTransferRecipient: (req) => post(routes.transferRecipient(), req),
-    submitTransfer: (req: TransferRequest) => post(routes.transfers(), req),
+    submitTransfer: async (req: TransferRequest) => {
+      const support = await request<{ transferPaymentPassword?: boolean }>("/api/agent/transfer/requirements")
+      if (support.transferPaymentPassword !== true) throw new ApiError("银行服务暂不支持转账支付密码保护，请稍后再试", 503, "TRANSFER_SECURITY_UNAVAILABLE")
+      return post(routes.transfers(), req)
+    },
     recallTransfer: (transactionId: string) =>
       post<TransferRecallResult>(routes.transferRecall(transactionId), {}),
 

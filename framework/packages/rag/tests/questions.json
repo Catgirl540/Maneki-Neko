@@ -407,5 +407,7 @@
   { "query": "能为家人生日留款并提前准备鲜花蛋糕吗", "source": "kb-analysis#birthday-plan", "critical": true },
   { "query": "设置登录密码至少几位，需要大小写和特殊字符吗", "source": "kb-security#password", "critical": true },
   { "query": "支付密码连续输错五次冻结账号后怎么解冻", "source": "kb-security#paypassword", "critical": true },
-  { "query": "支付密码输错后重新登录或人脸重置可以解冻账号吗", "source": "kb-security#paypassword", "critical": true }
+  { "query": "支付密码输错后重新登录或人脸重置可以解冻账号吗", "source": "kb-security#paypassword", "critical": true },
+  { "query": "工作人员登录办理客户工单还要切换环境吗", "source": "kb-assistant#staff-workspace", "critical": true },
+  { "query": "统一办理环境还需要重新开户资金账户吗", "source": "kb-accounts#relations", "critical": true }
 ]

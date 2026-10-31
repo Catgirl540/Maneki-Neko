@@ -101,6 +101,11 @@ export interface Transaction {
   createdAt: string
   status: TransactionStatus
   /**
+   * 记账币种（由服务端按流水归属的币种分区反查）。
+   * 列表要按它渲染金额符号 —— 外币流水不能套人民币符号；旧数据缺省按 CNY。
+   */
+  currency?: Currency
+  /**
    * 后台分类状态。
    * `pending` = 分类器还在判定（页面显示「正在分类」），`done` = 已回写分类，
    * `failed` = 模型链全部重试失败，分类保持 other。
@@ -260,11 +265,23 @@ export interface ScheduledTransfer {
   currency: Currency; fee: Cents; fundsReserved: false; status: 'scheduled' | 'executed' | 'failed' | 'cancelled';
   transactionId?: string; settlementStatus?: 'success' | 'pending'; failureReason?: string;
 }
-export interface SplitCollectionRequest { title: string; amount: Cents; currency: Currency; participants: string[]; clientRequestId: string }
+export type AaAllocation = { amount: Cents; participants: string[]; collectorName?: never; expenses?: never } | { collectorName: string; expenses: SplitExpense[]; amount?: never; participants?: never }
+export interface AaMemberRequest { phone: string; amount: Cents; memo: string }
+export interface AaPaymentInput { version: number; confirmed: true; paymentPassword: string }
+export interface AaPaymentRequest { id: string; collectionId: string; collectorName: string; collectorAccountNo: string; title: string; amount: Cents; currency: Currency; memo: string; status: 'unpaid' | 'processing' | 'paid' | 'cancelled'; version: number; createdAt: string; transactionId?: string; paidAt?: string }
+export interface SplitExpense { title: string; amount: Cents; participants: string[] }
+export interface SplitExpenseDetail extends SplitExpense { shares: { name: string; amount: Cents }[] }
+export type SplitCollectionRequest = { title: string; currency: Currency; clientRequestId: string } & (
+  { amount: Cents; participants: string[]; members?: never; collectorName?: never; expenses?: never } |
+  { collectorName: string; expenses: SplitExpense[]; members?: never; amount?: never; participants?: never } |
+  { members: AaMemberRequest[]; allocation?: AaAllocation; confirmed: true; amount?: never; participants?: never; collectorName?: never; expenses?: never }
+)
 export interface SplitCollection {
+  delivery?: 'account-inbox';
+  collectorName?: string; expenseTotal?: Cents; selfAmount?: Cents; expenses?: SplitExpenseDetail[];
   id: string; version: number; title: string; amount: Cents; currency: Currency; accountId: string; accountNo: string;
   status: 'open' | 'complete' | 'cancelled'; createdAt: string; updatedAt: string;
-  participants: { id: string; name: string; amount: Cents; status: 'unpaid' | 'paid'; reminders: number; lastRemindedAt?: string; transactionId?: string; paidAt?: string }[];
+  participants: { id: string; name: string; amount: Cents; phone?: string; memo?: string; splitName?: string; userId?: string; requestId?: string; status: 'unpaid' | 'processing' | 'paid' | 'cancelled'; reminders: number; lastRemindedAt?: string; transactionId?: string; paidAt?: string }[];
 }
 
 export interface Payee {
@@ -464,6 +481,11 @@ export interface TransferRequest {
   payeeCurrency?: Currency
   /** 收款地址，选填 */
   payeeAddress?: string
+  /**
+   * 6 位数字支付密码。即时转账在服务端与扣款同一事务内验密，前端提交时必须带上。
+   * 内部复用（如到账重提交、测试工具）不经过 HTTP 验密，可省略。
+   */
+  paymentPassword?: string
 }
 
 export interface TransferRecipientLookup {

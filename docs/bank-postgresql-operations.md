@@ -1,6 +1,25 @@
 # PostgreSQL 后端运维手册
 
-> 当前主机与配置路径：2026-10-19 已迁往 `15.235.241.158`，两库分别服务客户演示和员工后台，实际路径与定时任务见 [单机部署说明](../deploy/single-host/README.md)。下文原 `120.48.123.112`、`/etc/luckycat-bank/` 和静态目录为原 PostgreSQL 改造的部署约定；执行命令前按当前部署说明替换，不能启动旧机写入服务。
+> 当前主机与配置路径：2026-10-19 已迁往 `15.235.241.158`。2026-10-29 已将官网、工作人员和运维统一到 `8081 / maneki_bank_demo`，原 `maneki_bank` 全部表留作历史保全，原 live writer 已停止、禁用并加启动防护；详见 [统一银行环境说明](unified-bank-environment.md) 与 [部署验收](deployments/bank-unified-environment-deployment-20261029.json)。下文第 1–9 节保留原 live PostgreSQL 改造的流程和部署实证；其中 `120.48.123.112`、`/etc/luckycat-bank/`、8080 及旧 service 名不能直接用于统一环境，也不能启动旧机写入服务。实际路径与定时任务见 [单机部署说明](../deploy/single-host/README.md)。
+
+## 统一环境维护约定
+
+统一入口继续使用现有 `maneki_bank_demo` 及其匹配的 `BANK_DATA_KEY`，不新建空库、不覆盖官网客户、余额、流水、安全状态或工单。原 `maneki_bank` 及其匹配密钥、发布和服务配置完整保全；不按相同客户 ID、员工 ID 或姓名盲目拼接两库记录。员工身份、历史工单、审计及会话如何保留或迁入，必须在部署验收中逐项记录。
+
+| 对象 | 当前统一环境与维护要求 |
+| --- | --- |
+| 银行 HTTP | `luckycat-bank-demo.service`，`127.0.0.1:8081`，官网与 `/staff-api/` 共用 |
+| 银行配置 | 当前 systemd 实际加载的受保护环境文件，单机配置目录为 `/etc/maneki-vps2/`；不得覆盖既有匹配密钥 |
+| 运行模式 | 沿用 demo 的 `BANK_INTEGRATION_MODE=sandbox` 与匹配的非 production 配置，`BANK_AUTO_MIGRATE=false`；不能直接套用下文 live 示例 |
+| AI 会话 | 同一业务库内保留 `customer`、`staff`、`ops` namespace 及各自密钥；每类进程只有一个 writer |
+| 数据库连接身份 | 切换前运行 URL 使用 `maneki_owner`，本次保留现行身份，不额外迁移角色；下文最小权限角色为既定设计，不能记为当前验收事实 |
+| IM | 客户与员工状态、绑定和密钥分别保留；工作人员适配器仍未启用，未来启用时另验服务鉴权及真实投递 |
+| 活跃备份与对账 | 2026-10-29 切换前未发现维护 timer；若后续安装，须核对实际库名、调度及备份/应用/运维页状态文件，单独完成验收 |
+| 原 live 库 | 全部表及备份保留供历史查询，writer 已停止、禁用并加启动防护，不承接统一入口新写入；双库对账通过 |
+
+维护前先核对 systemd 的 `EnvironmentFiles`、实际进程、端口和目标库名，只输出脱敏结果；不要打印含密码的 URL 或密钥。改变配置前备份两库、Nginx、systemd 环境、AI 原生日志、上传目录及 IM 状态；停止相关 writer 后再移动会话数据，不能同时启动同一 namespace 的新旧进程。切换后的新业务继续写入统一库，回退发布或流量时不得恢复旧快照覆盖这些写入。
+
+本文第 6.1 节的 `deploy/postgres/admin.py` 仍是原 live 专用入口：它固定检查 `luckycat-bank.service` 和 production 环境，不能用于当前 demo 服务的密码维护。仅改 `--env-file` 或停止 8080 不能证明 8081 已停止。适配维护服务检查、匹配环境与互斥锁并验证之前，不套用该节命令；账号解冻继续通过工作人员关联工单、核验身份的受审计流程办理。
 
 适用范围：本次 PostgreSQL 16 改造，以及中国内地人民币零售场景下、合作持牌银行托管资金并执行支付的平台后端。本文取代旧版手册中的 SQLite 在线运维流程；旧库、旧部署记录和旧脚本只用于留存迁移证据，不能用于维护 PostgreSQL 在线库。前端静态文件不在本次发布范围。
 

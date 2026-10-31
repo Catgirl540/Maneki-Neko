@@ -4,6 +4,8 @@
 
 业务模式是中国内地人民币零售、合作持牌银行托管资金并执行支付。合作银行尚未确定，当前真实银行通道关闭：`commercialReady=false`。平台保存支付意图、授权和经验证的回执；创建支付意图不扣余额、不生成成功到账。生产包没有虚构银行适配器、模拟签名或自动放行开关。
 
+公开演示站点已于 2026-10-29 统一上线：官网、工作人员与运维共用现有 `127.0.0.1:8081 / maneki_bank_demo`。标准 `/staff-api/` 和旧 `/staff-demo-api/` 兼容入口进入同一银行后端；三类 Agent 使用同一库中的 `customer`、`staff`、`ops` namespace，继续按客户及员工角色鉴权。原 `maneki_bank` 全部表留作历史保全，未直接合并或覆盖记录，原 live writer 已停止、禁用并加启动防护。部署及数据保全结果见 [统一银行环境说明](../docs/unified-bank-environment.md) 和 [部署验收](../docs/deployments/bank-unified-environment-deployment-20261029.json)。
+
 账户模型以 [单资金账户约束](../docs/product/account-model.md) 为准：多张卡共用一个资金账户，外币是余额分区；档案 v20 保留被合并的历史账本行，禁止按卡开户和换汇开户。每个卡组织至多一张在用卡（`CARD_NETWORK_LIMIT`，先于验密与收费）；会员等级按上月日均储蓄资产评定，规则共享在 `shared/membership.mjs`，制卡费减免与换汇点差在此结算，`assetSnapshots` 为评定凭证。旧 SQLite 适配仅用于显式测试夹具，不是生产入口。
 
 ## 启动和结构部署
@@ -17,9 +19,9 @@ node bootstrap-postgres.mjs   # 仅数据库所有者执行结构部署
 node index.mjs
 ```
 
-运行时需要 `BANK_DATA_KEY`（32 字节规范 Base64，沿用迁移源的密钥），`BANK_INTEGRATION_MODE=live`，`BANK_AUTO_MIGRATE=false`。`NODE_ENV=production` 时缺省为 `live`，显式配置 `sandbox` 会拒绝启动；模拟业务仅在隔离测试环境运行。所有者、HTTP 应用、未来银行 worker、AI 会话使用独立角色。连接密码和私钥禁止写入仓库。参考 `deploy/postgres/grants.sql` 安装最小权限。
+运行时需要 `BANK_DATA_KEY`（32 字节规范 Base64，沿用该数据库匹配密钥）和 `BANK_AUTO_MIGRATE=false`。真实合作银行部署使用 `BANK_INTEGRATION_MODE=live`；`NODE_ENV=production` 时缺省为 `live`，显式配置 `sandbox` 会拒绝启动。公开演示站点沿用现有 demo 的非 production 配置及 `BANK_INTEGRATION_MODE=sandbox`，统一入口不改变这一规则。既定权限设计将所有者、HTTP 应用、未来银行 worker 与 AI 会话分离，参考 `deploy/postgres/grants.sql`；本次统一保留现行 `maneki_owner` 连接身份，不把角色设计当作已完成的权限迁移。连接密码和私钥禁止写入仓库。
 
-`live` 模式拒绝未接入的短信、身份核验和旧模拟资金功能；`sandbox` 仅供隔离测试，生产切换后不提供演示余额冒充银行资金。历史兼容账户标记为 `legacy_demo`，真实账户只来自 `banking.account_links` 的银行确认数据。
+`live` 模式拒绝未接入的短信、身份核验和旧模拟资金功能；`sandbox` 用于明确标识的演示与隔离测试。演示站点合并工作人员入口不会把演示余额变成银行资金，也不会使 `commercialReady` 变为通过。历史兼容账户标记为 `legacy_demo`，真实账户只来自 `banking.account_links` 的银行确认数据。
 
 ## 数据结构
 
@@ -29,7 +31,7 @@ node index.mjs
 
 ## 内存与容量
 
-HTTP 运行时采用按需客户投影、变更流水持久化和 pending 客户扫账；启动不全库 hydrate。当前核心结构版本 `2026102701` 在原 `2026102201` 上增加正式挂失状态和 `bank_background_tasks` 到期索引。所有者结构迁移按有限分页读取加密扩展域回填计划索引，保存计划与索引同事务；运行时只加载有待结算流水或到期任务的客户，不解密全库找计划。部署前运行所有者 bootstrap，并重新应用 `deploy/postgres/grants.sql` 授予新表既定权限；已于 2026-10-27 部署，见 [发布记录](../docs/bank-function-fixes-deployment-20261027.json)。原内存容量结果与限制见 [后端内存维护说明](../docs/backend-memory-20261022.md)。离线兼容接口可读取全库，不能用于新 HTTP 路径。
+HTTP 运行时采用按需客户投影、变更流水持久化和 pending 客户扫账；启动不全库 hydrate。当前核心结构版本 `2026102701` 在原 `2026102201` 上增加正式挂失状态和 `bank_background_tasks` 到期索引。所有者结构迁移按有限分页读取加密扩展域回填计划索引，保存计划与索引同事务；运行时只加载有待结算流水或到期任务的客户，不解密全库找计划。部署前运行所有者 bootstrap，并重新应用 `deploy/postgres/grants.sql` 授予新表既定权限；已于 2026-10-27 部署，见 [发布记录](../docs/deployments/bank-function-fixes-deployment-20261027.json)。原内存容量结果与限制见 [后端内存维护说明](../docs/backend-memory-20261022.md)。离线兼容接口可读取全库，不能用于新 HTTP 路径。
 
 ## 交易自动分类
 
@@ -61,6 +63,6 @@ node smoke.mjs
 
 `server/sqlite-legacy-database.mjs` 已移除：它没有调用方且不符合现版异步事务接口。`bank-schema.sql` 仍作为只读迁移源与 SQLite 导入测试的结构依据。旧 `tools/` SQLite 集成入口保留明确拒绝，不能通过删除保护导入来启动现版后端。运维 PTY 检查另用 `node --test server/ops-terminal.test.mjs`；root 环境拒绝 PTY，相关真实终端测试会明确跳过，不能据此宣称完成终端交互验收。
 
-`smoke.mjs` 只查询已有服务，默认 `BANK_SMOKE_BASE_URL=http://127.0.0.1:8080`，不发送短信、不开户、不转账。`/health` 和 `/ready` 表示后端技术可达性，另有 `commercialReady` 和 `bankConnection` 表明银行接入状态；员工可查询 `/staff-api/bank-connection/readiness`。
+`smoke.mjs` 只查询已有服务，默认 `BANK_SMOKE_BASE_URL=http://127.0.0.1:8080`；统一演示环境须显式设置 `BANK_SMOKE_BASE_URL=http://127.0.0.1:8081`。它不发送短信、不开户、不转账。`/health` 和 `/ready` 表示后端技术可达性，另有 `commercialReady` 和 `bankConnection` 表明银行接入状态；员工可查询 `/staff-api/bank-connection/readiness`。
 
 [运维手册](../docs/bank-postgresql-operations.md) · [数据库设计](../docs/bank-database-design.md)

@@ -40,5 +40,18 @@ for (const target of ['server', 'browser']) {
   assert.notEqual(created.id, originalId)
   const report = await api.getBillingReport({ period: 'year', value: new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 4), currency: 'CNY' })
   assert(report.totalExpense >= 101); assert.equal(report.months.length, 12)
+  const splitRequest = { title: '分项AA', currency: 'CNY', collectorName: '本人', clientRequestId: `${target}-split`, expenses: [
+    { title: '聚餐', amount: 30000, participants: ['本人', '张三', '李四'] },
+    { title: '后续活动', amount: 20000, participants: ['本人', '张三'] },
+  ] }
+  const balanceBeforeSplit = structuredClone(state.loadDb().accounts)
+  const split = await api.createSplitCollection(splitRequest)
+  assert.deepEqual(split.participants.map(person => person.amount), [20000, 10000])
+  assert.equal(split.selfAmount, 20000); assert.equal(split.amount, 30000)
+  assert.deepEqual(state.loadDb().accounts, balanceBeforeSplit)
+  if (state.discardCache) state.discardCache()
+  else state.activateDb(structuredClone(state.loadDb()))
+  assert.deepEqual((await api.listSplitCollections()).find(row => row.id === split.id).expenses, split.expenses)
+  assert.equal((await api.createSplitCollection(splitRequest)).id, split.id)
   console.log(`PASS ${target}: schedule → durable instruction → exact own debit/recipient credit → one execution → saved payee memo search → reload → unique IDs → annual report`)
 }

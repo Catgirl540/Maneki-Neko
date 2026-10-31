@@ -11,7 +11,8 @@ Object.assign(process.env,{VITE_USE_MOCK:'false',VITE_API_BASE_URL:'',VITE_BASE_
 const web=await createServer({root:join(root,'staff'),configFile:join(root,'staff/vite.config.ts'),logLevel:'error',server:{host:'127.0.0.1',port:0,hmr:false}})
 const qrImage=await(await loadImVendor()).qrImage('fixture:staff-im-only')
 const staff=[{id:'staff_wang',name:'王小明',role:'csr'},{id:'staff_li',name:'李主管',role:'supervisor'}]
-const state={bindings:[],qr:null,claims:0,tests:0,prefs:{enabled:true,quiet_start:null,quiet_end:null,urgent_override:false,version:1,binding:null},rules:{csrIds:[],supervisorIds:['staff_li'],start:'00:00',end:'00:00',version:1},writes:[],confirmed:false}
+const state={bindings:[],qr:null,claims:0,tests:0,prefs:{enabled:true,quiet_start:null,quiet_end:null,urgent_override:false,version:1,binding:null},rules:{csrIds:[],supervisorIds:['staff_li'],start:'00:00',end:'00:00',version:1},writes:[],confirmed:false,disabled:false,disabledStatus:503,qrFailure:null}
+const imOffNotice='员工微信 IM 尚未启用。请联系运维在员工桥接服务开通后刷新本页；在此之前不会生成二维码，也不会发送任务提醒。'
 const errors=[];let browser
 async function install(page){
   page.on('pageerror',e=>errors.push(e.message))
@@ -36,6 +37,8 @@ async function install(page){
   await page.route('**/staff-agent-api/**',async route=>{
     const req=route.request(),path=new URL(req.url()).pathname,method=req.method(),body=req.postDataJSON()
     let data,status=200
+    if(state.disabled&&path.startsWith('/staff-agent-api/im/')){await route.fulfill({status:state.disabledStatus,contentType:'application/json',body:JSON.stringify(state.disabledStatus===404?{error:'未知路径：GET /agent-api/im/bindings'}:{error:'员工微信 IM 尚未启用',code:'IM_DISABLED'})});return}
+    if(state.qrFailure&&path==='/staff-agent-api/im/weixin/qr'&&method==='POST'){const {status,...body}=state.qrFailure;await route.fulfill({status,contentType:'application/json',body:JSON.stringify(body)});return}
     if(path==='/staff-agent-api/im'){
       const html=(await readFile(join(root,'framework/bridge/im-portal.html'),'utf8')).replace('<html lang="zh-CN">','<html lang="zh-CN" data-audience="staff">').replace('src="/agent-api/im/portal.js"','src="/staff-agent-api/im/portal.js"')
       await route.fulfill({contentType:'text/html',body:html});return
@@ -64,6 +67,14 @@ try{
   await page.goto(base+'/im');await page.getByLabel('密码',{exact:true}).fill('fixture-password');await page.getByRole('button',{name:'登录',exact:true}).click()
   await page.getByRole('heading',{name:'IM 机器人',exact:true}).waitFor()
   assert.equal(await page.getByRole('heading',{name:'团队接收规则',exact:true}).count(),0)
+  // IM 已启用时，具体操作的 404 不能把整页误判为未开通。
+  state.qrFailure={status:404,error:'扫码任务不存在或不属于当前账户'}
+  await page.getByRole('button',{name:'生成微信连接二维码',exact:true}).click()
+  await page.getByRole('alert').filter({hasText:'扫码任务不存在或不属于当前账户'}).waitFor()
+  assert.equal(await page.getByText(imOffNotice,{exact:true}).count(),0)
+  assert.equal(await page.getByRole('button',{name:'生成微信连接二维码',exact:true}).isDisabled(),false)
+  assert.equal(await page.getByRole('link',{name:'使用私聊绑定码或打开业务确认页 ↗',exact:true}).count(),1)
+  state.qrFailure=null
   await page.getByRole('button',{name:'生成微信连接二维码',exact:true}).click()
   await page.getByRole('img',{name:'本人微信连接二维码'}).waitFor();assert.equal(state.claims,0)
   await page.screenshot({path:join(output,'staff-im-qr.png'),fullPage:true,animations:'disabled'})
@@ -89,6 +100,29 @@ try{
   await supervisor.getByRole('button',{name:'核对并保存团队规则'}).click();assert(!state.writes.includes('rules'))
   await supervisor.getByRole('button',{name:'确认保存',exact:true}).click();assert(state.writes.includes('rules'));assert.deepEqual(state.rules.csrIds,['staff_wang'])
   await supervisor.screenshot({path:join(output,'staff-im-supervisor.png'),fullPage:true,animations:'disabled'})
+  // 新部署的 503 和旧部署 bindings 探测的 404 都应显示开通指引。
+  for(const status of [503,404]){
+    state.disabled=true;state.disabledStatus=status
+    const disabled=await browser.newPage({viewport:{width:1440,height:1100}});await install(disabled);await disabled.goto(base+'/im')
+    await disabled.getByLabel('员工姓名',{exact:true}).fill('王小明');await disabled.getByLabel('密码',{exact:true}).fill('fixture-password');await disabled.getByRole('button',{name:'登录',exact:true}).click()
+    await disabled.getByText(imOffNotice,{exact:true}).waitFor()
+    assert.equal(await disabled.getByRole('button',{name:'生成微信连接二维码',exact:true}).isDisabled(),true)
+    assert.equal(await disabled.getByText(/未知路径|staff-agent-api|agent-api/).count(),0)
+    await disabled.screenshot({path:join(output,status===503?'staff-im-disabled.png':'staff-im-legacy-disabled.png'),fullPage:true,animations:'disabled'})
+    state.disabled=false
+    await disabled.getByRole('button',{name:'刷新状态',exact:true}).click()
+    await disabled.getByText(imOffNotice,{exact:true}).waitFor({state:'hidden'})
+    assert.equal(await disabled.getByRole('button',{name:'生成微信连接二维码',exact:true}).isDisabled(),false)
+    if(status===503){
+      // 操作途中真实停用的 503 IM_DISABLED 仍应切换为未开通状态。
+      state.qrFailure={status:503,error:'员工微信 IM 尚未启用',code:'IM_DISABLED'}
+      await disabled.getByRole('button',{name:'生成微信连接二维码',exact:true}).click()
+      await disabled.getByText(imOffNotice,{exact:true}).waitFor()
+      assert.equal(await disabled.getByRole('button',{name:'生成微信连接二维码',exact:true}).isDisabled(),true)
+      state.qrFailure=null
+    }
+    await disabled.close()
+  }
   const mobile=await browser.newPage({viewport:{width:390,height:844}});await install(mobile)
   state.bindings=[{id:'im-fixture',sessionId:'staff-session',label:'微信私聊 · 夹具',connected:true,notificationReady:true}]
   await mobile.goto(base+'/staff-agent-api/im#session=staff-session')
@@ -100,5 +134,5 @@ try{
   await mobile.getByRole('button',{name:'确认操作',exact:true}).click();assert.equal(state.confirmed,true)
   assert.equal(await mobile.locator('body').evaluate(el=>el.scrollWidth>window.innerWidth),false)
   assert.deepEqual(errors,[])
-  console.log('PASS staff IM browser: QR/manual confirmation, activation, reminder settings, supervisor rules, revoke, unknown state and mobile customer-verification card; no real bank, model or WeChat used.')
+  console.log('PASS staff IM browser: QR/manual confirmation, operation 404, disabled 503/legacy bindings 404 and recovery, activation, reminder settings, supervisor rules, revoke, unknown state and mobile customer-verification card; no real bank, model or WeChat used.')
 }finally{await browser?.close();await web.close()}

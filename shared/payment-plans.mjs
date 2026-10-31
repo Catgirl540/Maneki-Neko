@@ -1,3 +1,5 @@
+import { createAaPayments } from './aa-payments.mjs'
+import { calculateSplitCollection } from './split-collection.mjs'
 import { findBalance, internalExchange as internalExchangeTransaction } from './account-model.mjs'
 
 const fail = (message, code, status = 400) => Object.assign(new Error(message), { status, code })
@@ -18,7 +20,8 @@ const publicSchedule = row => {
 }
 
 /** A standing instruction is independent of an in-flight transfer and stores no password. */
-export function createPaymentPlans({ getDb, persist, nextId, verifyPassword, resolveRecipient, executeTransfer, now = Date.now }) {
+export function createPaymentPlans({ getDb, persist, nextId, verifyPassword, resolveRecipient, executeTransfer, findProfileByPhone, findProfileByUserId, persistRelatedProfiles, now = Date.now }) {
+  const aa = createAaPayments({ getDb, nextId, verifyPassword, executeTransfer, findProfileByPhone, findProfileByUserId, persistRelatedProfiles, now })
   const schedules = () => getDb().scheduledTransfers ?? []
   const splits = () => getDb().splitCollections ?? []
   const getSchedule = id => {
@@ -94,26 +97,29 @@ export function createPaymentPlans({ getDb, persist, nextId, verifyPassword, res
       }
       return outcomes
     },
-    async listSplitCollections() { return clone(splits()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) },
+    async listSplitCollections() { for (const row of splits()) await aa.refreshCollection(row); return clone(splits()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) },
+    listSplitPaymentRequests: () => aa.listRequests(),
+    paySplitRequest: (id, input) => aa.payRequest(id, input),
     async createSplitCollection(input) {
-      const db = getDb(), amount = cents(input.amount), title = text(input.title, '收款事由'), clientRequestId = keyOf(input)
+      if (input.members !== undefined) return aa.createCollection(input)
+      const db = getDb(), title = text(input.title, '收款事由'), clientRequestId = keyOf(input)
+      const calculation = calculateSplitCollection(input), { amount } = calculation
       if (!['CNY', 'USD', 'HKD'].includes(input.currency)) throw fail('币种无效', 'INVALID_CURRENCY')
       const account = [ ...db.accounts, ...(db.currencyBalances ?? []) ].find(row => row.currency === input.currency)
       if (!account) throw fail('请先开通该币种余额', 'ACCOUNT_NOT_FOUND')
-      if (!Array.isArray(input.participants) || input.participants.length < 2 || input.participants.length > 30) throw fail('AA 参与人数须为 2 至 30 人', 'INVALID_SPLIT_PARTICIPANTS')
-      const names = input.participants.map(name => text(name, '参与者姓名', 40))
-      if (new Set(names).size !== names.length || amount < names.length) throw fail('参与者须不重名，每人至少分摊 1 分', 'INVALID_SPLIT_PARTICIPANTS')
-      const fingerprint = JSON.stringify({ amount, title, currency: input.currency, names })
+      const names = calculation.participants.map(item => item.name)
+      const fingerprint = JSON.stringify({ amount, title, currency: input.currency, names, ...(calculation.expenses ? { collectorName: calculation.collectorName, expenses: calculation.expenses } : {}) })
       const prior = splits().find(row => row.clientRequestId === clientRequestId)
       if (prior) { if (prior.fingerprint !== fingerprint) throw fail('幂等标识已用于其他收款单', 'IDEMPOTENCY_CONFLICT', 409); return clone(prior) }
       if (splits().filter(row => row.status === 'open').length >= 50) throw fail('最多保留 50 条待收款 AA 单', 'SPLIT_LIMIT')
       const createdAt = new Date(now()).toISOString()
       const row = { id: nextId('split'), clientRequestId, fingerprint, title, amount, currency: input.currency, accountId: account.id, accountNo: db.accounts[0].accountNo, status: 'open', version: 1, createdAt, updatedAt: createdAt,
-        participants: names.map((name, index) => ({ id: nextId('participant'), name, amount: Math.floor(amount / names.length) + (index < amount % names.length ? 1 : 0), status: 'unpaid', reminders: 0 })) }
+        ...calculation, participants: calculation.participants.map(person => ({ ...person, id: nextId('participant'), status: 'unpaid', reminders: 0 })) }
       ;(db.splitCollections ??= []).push(row); persist(); return clone(row)
     },
     async confirmSplitPayment(id, input) {
       const db = getDb(), row = getSplit(id)
+      if (row.delivery === 'account-inbox') throw fail('请由成员在 AA 付款中确认支付', 'AA_PAYMENT_REQUIRED')
       checkedVersion(row, input.version)
       if (row.status !== 'open') throw fail('收款单已关闭', 'SPLIT_CLOSED', 409)
       const participant = row.participants.find(item => item.id === input.participantId)
@@ -135,6 +141,7 @@ export function createPaymentPlans({ getDb, persist, nextId, verifyPassword, res
     async cancelSplitCollection(id, version) {
       const row = getSplit(id); checkedVersion(row, version)
       if (row.status !== 'open') throw fail('收款单已关闭', 'SPLIT_CLOSED', 409)
+      if (row.delivery === 'account-inbox') return aa.cancelCollection(row)
       row.status = 'cancelled'; row.version++; row.updatedAt = new Date(now()).toISOString(); persist(); return clone(row)
     },
   }

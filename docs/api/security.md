@@ -35,7 +35,7 @@
 
 工作人员可从“客户查询 → 完整资料 → 办理账号解冻”进入表单。live 模式也可读取客户基本身份和 `accountSecurity` 并解冻；未接入的资金资料返回空列表及 `financialDataAvailable=false`，不展示历史演示资金。
 
-官网客户使用演示银行时，工作人员登录页选择“演示银行（官网客户）”，或使用 `/staff/login?bank=demo`；工作人员请求通过 `/staff-demo-api/` 进入同一演示库。合作银行入口仍使用 `/staff-api/`。切换环境会重新加载并清除内存登录令牌；演示入口不接入正式工作人员助手、IM 或运维终端。
+统一环境实现使用 `/staff/login` 登录，工作人员不再选择办理环境。官网客户、工作人员 API 及工作人员/运维 Agent 共用现有 `maneki_bank_demo`；标准 `/staff-api/` 与旧 `/staff-demo-api/` 兼容入口连接同一后端，旧 `?bank=demo`、`?bank=live` 链接不再选择其他数据源。客户、客服、主管与运维的鉴权和角色权限保持独立，运维仍不能代客解冻；重启银行后工作人员须重新登录。连接、历史数据保全及线上验收状态见 [统一银行环境说明](../unified-bank-environment.md)。
 
 ## 回归
 

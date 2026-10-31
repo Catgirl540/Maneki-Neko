@@ -21,7 +21,8 @@
       "framework/bridge/bank-agent.mjs",
       "framework/packages/bank-demo/src/http-tools.ts",
       "framework/knowledge/07-assistant.md",
-      "server/support-api.mjs"
+      "server/support-api.mjs",
+      "docs/unified-bank-environment.md"
     ]
   }
 }
@@ -39,6 +40,7 @@
 
 操作和能力说明先 knowledge_lookup；没找到依据就说明未知。按用户要求用 bank_request_human_support 提交简短问题摘要，不默认附完整对话或图片。
 工单进度用 bank_list_support_tickets / bank_get_support_ticket；补充用户留言用 bank_reply_support_ticket，已解决工单不能继续留言。信息缺失用提问卡，不重复请求执行许可。
+官网与工作人员工作台共用同一业务数据，工作人员在统一入口按原角色处理；不把切换办理环境、重开客户账户或合计其他环境余额作为查找工单的步骤。客户只查询本人实际工单，统一入口不授权客户调用员工工具。
 
 ## 结果说明
 

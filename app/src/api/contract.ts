@@ -6,6 +6,8 @@
 
 import type {
   Account,
+  AaPaymentRequest,
+  AaPaymentInput,
   RegistrationRequest,
   RegistrationResult,
   AutoDebit,
@@ -137,6 +139,8 @@ export const routes = {
   scheduledTransfers: () => '/api/transfers/scheduled',
   scheduledTransfer: (id: string) => `/api/transfers/scheduled/${id}`,
   splitCollections: () => '/api/transfers/splits',
+  splitPaymentRequests: () => '/api/transfers/aa-payments',
+  splitPay: (id: string) => `/api/transfers/aa-payments/${id}/pay`,
   splitCollection: (id: string) => `/api/transfers/splits/${id}`,
   splitPayment: (id: string) => `/api/transfers/splits/${id}/payments`,
   splitReminder: (id: string) => `/api/transfers/splits/${id}/reminders`,
@@ -297,6 +301,8 @@ export interface BankApi {
   createScheduledTransfer(req: ScheduledTransferRequest): Promise<ScheduledTransfer>
   cancelScheduledTransfer(id: string, version: number): Promise<ScheduledTransfer>
   listSplitCollections(): Promise<SplitCollection[]>
+  listSplitPaymentRequests(): Promise<AaPaymentRequest[]>
+  paySplitRequest(id: string, input: AaPaymentInput): Promise<AaPaymentRequest>
   createSplitCollection(req: SplitCollectionRequest): Promise<SplitCollection>
   cancelSplitCollection(id: string, version: number): Promise<SplitCollection>
   confirmSplitPayment(id: string, req: { version: number; participantId: string; transactionId: string }): Promise<SplitCollection>

@@ -9,6 +9,7 @@ import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../
 import { wealthHoldingLots, wealthHoldingState, wealthRedemptionQuote } from '../../../../shared/wealth-redemption.mjs'
 import { supportGuidance } from '../../../../shared/support-guidance.mjs'
 import { FREE_MERCHANT_NAME_MAX, SPEND_MAX_CENTS, findFreeMerchant, findSpendPlatform } from '../../../../shared/spend-platforms.mjs'
+import { classifySpendMerchant } from '../../../../shared/spend-rules.mjs'
 import {
   BUDGET_MAX_COUNT,
   BUDGET_PASS_EXTRA_CENTS,
@@ -244,6 +245,33 @@ function withDerived(account: Account): Account {
 }
 
 /**
+ * 收款方按到账币种取记账分区。
+ *
+ * 同一资金账户下缺这个币种时开立一个 0 余额分区 —— 与换汇首次兑换**完全同一套结构**：
+ * 只多一条 `currencyBalances`，对客账户号不变，不是新账户、也不是按卡建户。
+ * 本行外币收款必须走这里：`findRecipientByNumber` 只按对客账户号命中主分区，
+ * 直接往主分区加钱会把美元记成人民币。
+ */
+function ensureRecipientCurrencyBalance(profile: MockDb, currency: Currency): Account {
+  const existing = ledgerBalances(profile).find((row) => row.currency === currency)
+  if (existing) return existing
+  const created: Account = {
+    id: nextId('balance'),
+    kind: 'savings',
+    label: `${currency} 余额`,
+    accountNo: `ledger:${profile.user.id}:${currency}`,
+    currency,
+    balance: 0,
+    available: 0,
+    interestRate: 0.0155,
+    monthNetChange: 0,
+  }
+  profile.currencyBalances ??= []
+  profile.currencyBalances.push(created)
+  return created
+}
+
+/**
  * 生成换汇报价。扣账币种与收款币种相同时返回 undefined —— 不需要换汇。
  * 报价带 quotedAt / quoteTtlSeconds，调用方（UI）据此倒计时并在过期后重新询价。
  */
@@ -397,6 +425,7 @@ function newCardCvv(): string {
 function applyClassification(txId: string, category: TransactionCategory, failed: boolean): void {
   const tx = loadDb().transactions.find(row => row.id === txId)
   if (!tx) return
+  if (tx.classificationState !== 'pending') return
   if (!failed && category) tx.category = category
   tx.classificationState = failed ? 'failed' : 'done'
   persist()
@@ -517,6 +546,32 @@ export function verifyPayPassword(input: string): void {
 }
 
 /**
+ * 定时转账与在途结算的**内部执行授权**。
+ *
+ * 这两条路在受理时已经验过支付密码：定时转账在 `createScheduledTransfer`、
+ * 在途指令在冻结提交时。到点只是系统替用户执行已受理的指令，不能再要求一次密码。
+ *
+ * 授权挂在**本次调用对象**上，而不是某个请求字段：普通请求体会被重新反序列化，
+ * 永远不可能是 WeakSet 里的那个对象，因此没有「传个 flag 就跳过密码」的入口。
+ */
+const internallyAuthorizedTransfers = new WeakSet<object>()
+
+function authorizeInternalTransfer<T extends object>(request: T): T {
+  internallyAuthorizedTransfers.add(request)
+  return request
+}
+
+/** 即时转账请求可带支付密码；它只用于校验，不是业务参数。 */
+type TransferSubmitRequest = TransferRequest & { paymentPassword?: string }
+
+/** 支付密码绝不能进 `heldRequest`（会被持久化）：校验完立即剥离。 */
+function withoutPaymentPassword(req: TransferSubmitRequest): TransferRequest {
+  const copy: TransferSubmitRequest = { ...req }
+  delete copy.paymentPassword
+  return copy
+}
+
+/**
  * 扣制卡费用并落一笔流水。
  * 收钱必须留痕 —— 只改余额不记账，对账单上就凭空少了一笔。
  */
@@ -620,6 +675,8 @@ export function createMockApi(options?: {
     createScheduledTransfer: planApi.createScheduledTransfer,
     cancelScheduledTransfer: planApi.cancelScheduledTransfer,
     listSplitCollections: planApi.listSplitCollections,
+    listSplitPaymentRequests: planApi.listSplitPaymentRequests,
+    paySplitRequest: planApi.paySplitRequest,
     createSplitCollection: planApi.createSplitCollection,
     confirmSplitPayment: planApi.confirmSplitPayment,
     remindSplitParticipant: planApi.remindSplitParticipant,
@@ -1032,6 +1089,10 @@ export function createMockApi(options?: {
       const current =
         findAccount(req.fromAccountId)
       const isFps = req.channel === 'fps'
+      // 收款币种只支持三种记账分区；不拦下来 fxRate 会算出 NaN 报价
+      if (req.payeeCurrency !== undefined && !['CNY', 'USD', 'HKD'].includes(req.payeeCurrency)) {
+        throw new ApiError('收款币种无效', 400, 'INVALID_CURRENCY')
+      }
       const singleLimit = isFps ? FPS_SINGLE_LIMIT : BANK_SINGLE_LIMIT
 
       // FPS 走香港即时结算通道，免手续费；境外转账费按会员等级减免（金卡+）
@@ -1093,16 +1154,28 @@ export function createMockApi(options?: {
       return { kind: 'external' as const, accountNoMasked: maskBankAccount(digits) }
     },
 
-    async submitTransfer(req: TransferRequest): Promise<TransferResult> {
+    async submitTransfer(req: TransferSubmitRequest): Promise<TransferResult> {
+      // Consume internal authorization before the first await so it cannot be replayed.
+      const internallyAuthorized = internallyAuthorizedTransfers.delete(req)
       await delay(420)
+      // 即时转账必须单独验支付密码：登录态不等于能扣钱。
+      // 先验密码，再碰任何业务状态，避免密码错误也走到冻结/扣款逻辑。
+      // 定时转账与在途结算走模块私有授权（受理时已验过），请求参数无法伪造。
+      if (!internallyAuthorized) verifyPayPassword(req.paymentPassword ?? '')
       const db = loadDb()
       const account = findAccount(req.fromAccountId)
-      req = { ...req, fromAccountId: account.id }
+      // 密码只服务于上面的校验：剥离后再进入业务，后面的 heldRequest 才会是无密码快照。
+      req = withoutPaymentPassword({ ...req, fromAccountId: account.id })
       const isFps = req.channel === 'fps'
 
       if (!Number.isSafeInteger(req.amount) || req.amount <= 0) {
         throw new ApiError('转账金额必须是大于 0 的整数分', 400, 'INVALID_AMOUNT')
       }
+      // 到账币种：银行通道省略即＝付款币种；给出时表示收款人收到的币种（可跨币种）
+      if (req.payeeCurrency !== undefined && !['CNY', 'USD', 'HKD'].includes(req.payeeCurrency)) {
+        throw new ApiError('收款币种无效', 400, 'INVALID_CURRENCY')
+      }
+      const destCurrency = req.payeeCurrency ?? account.currency
 
       // —— 收款标识校验 ——
       // 跨境支付通无论用哪种汇款方式都要指定收款银行（款项要路由到具体收款行）
@@ -1182,9 +1255,8 @@ export function createMockApi(options?: {
         if (recipient.profile.user.id === db.user.id) {
           throw new ApiError('付款和收款账户不能相同', 400, 'SAME_ACCOUNT')
         }
-        if (recipient.account.currency !== (isFps ? req.payeeCurrency : account.currency)) {
-          throw new ApiError('本行账户币种不一致', 400, 'CURRENCY_MISMATCH')
-        }
+        // 币种不在这里拦：本行收款方按到账币种取（必要时开立）记账分区，
+        // 同一资金账户可持有多币种余额，不是「收款账户币种不一致」。
         if (req.payeeName.trim() !== (isFps ? hideMiddle(recipient.profile.user.name) : recipient.profile.user.name)) {
           throw new ApiError('收款人姓名与该账户登记户名不一致', 400, 'PAYEE_NAME_MISMATCH')
         }
@@ -1228,7 +1300,8 @@ export function createMockApi(options?: {
           },
           false,
         )
-        held.heldRequest = { ...req }
+        // 入口已剥离支付密码；这里再兜一次，确保冻结快照永远不会写入密码。
+        held.heldRequest = withoutPaymentPassword(req)
         held.heldFrozenAmount = total
         persist()
         return {
@@ -1248,16 +1321,20 @@ export function createMockApi(options?: {
 
       if (recipient) {
         const sender = findBalance(db, account.id)!
+        // 到账分区：同币种沿用，缺币种则在**同一资金账户**下开立（不新建账户）
+        const hadCurrency = ledgerBalances(recipient.profile).some((row) => row.currency === destCurrency)
+        const target = ensureRecipientCurrencyBalance(recipient.profile, destCurrency)
+        const credited = quotedFx?.toAmount ?? req.amount
         sender.balance -= req.amount
         sender.available -= req.amount
-        recipient.account.balance += quotedFx?.toAmount ?? req.amount
-        recipient.account.available += quotedFx?.toAmount ?? req.amount
+        target.balance += credited
+        target.available += credited
         const isOwnAccount = recipient.profile.user.id === db.user.id
         const createdAt = new Date().toISOString()
         const outgoing = pushTransaction({
           accountId: sender.id, direction: 'out', amount: req.amount,
           signedAmount: -req.amount, counterparty: `转账 · ${req.payeeName.trim()}`,
-          memo: req.memo || `本行转账至尾号 ${recipient.account.accountNo.slice(-4)}`,
+          memo: req.memo || `本行转账至尾号 ${recipient.profile.accounts[0].accountNo.slice(-4)}`,
           category: 'transfer', createdAt, status: 'success',
         }, {
           channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: sender.label,
@@ -1270,15 +1347,15 @@ export function createMockApi(options?: {
         const incomingId = nextId('txn')
         recipient.profile.transactions.unshift({
           id: incomingId,
-          accountId: recipient.account.id, direction: 'in', amount: quotedFx?.toAmount ?? req.amount,
-          signedAmount: quotedFx?.toAmount ?? req.amount, counterparty: `本行转入 · ${db.user.name}`,
-          memo: req.memo || `本行转入自尾号 ${sender.accountNo.slice(-4)}`,
+          accountId: target.id, direction: 'in', amount: credited,
+          signedAmount: credited, counterparty: `本行转入 · ${db.user.name}`,
+          memo: req.memo || `本行转入自尾号 ${db.accounts[0].accountNo.slice(-4)}`,
           category: 'transfer', createdAt, status: 'success',
           detail: {
             referenceNo: makeReferenceNo(incomingId), balanceBefore: 0, balanceAfter: 0,
-            channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: recipient.account.label,
-            accountLabel: recipient.account.label, accountNo: recipient.profile.accounts[0].accountNo,
-            settleCurrency: recipient.account.currency, counterpartyName: db.user.name,
+            channel: isOwnAccount ? 'account' : 'transfer', paymentMethod: target.label,
+            accountLabel: target.label, accountNo: recipient.profile.accounts[0].accountNo,
+            settleCurrency: target.currency, counterpartyName: db.user.name,
             counterpartyAccountNo: maskBankAccount(db.accounts[0].accountNo),
             counterpartyBank: '招财猫银行', location: '招财猫银行 App',
             remark: req.memo.trim() || undefined,
@@ -1292,8 +1369,14 @@ export function createMockApi(options?: {
           db.payees = priorPayees
           sender.balance += req.amount
           sender.available += req.amount
-          recipient.account.balance -= quotedFx?.toAmount ?? req.amount
-          recipient.account.available -= quotedFx?.toAmount ?? req.amount
+          target.balance -= credited
+          target.available -= credited
+          // 这次才开出来的空分区一并撤掉：失败不能给收款人留下新币种
+          if (!hadCurrency && target.balance === 0 && target.available === 0) {
+            const list = recipient.profile.currencyBalances ?? []
+            const index = list.findIndex((row) => row.id === target.id)
+            if (index >= 0) list.splice(index, 1)
+          }
           db.transactions.splice(db.transactions.findIndex((row) => row.id === outgoing.id), 1)
           recipient.profile.transactions.splice(
             recipient.profile.transactions.findIndex((row) => row.id === incomingId), 1,
@@ -1763,6 +1846,7 @@ export function createMockApi(options?: {
       if (balance.available < amount) throw new ApiError('账户可用余额不足', 409, 'INSUFFICIENT_FUNDS')
       applyBalance(card.accountId, -amount, false)
       const classificationState = classify ? 'pending' : 'done'
+      const ruleCategory = classifySpendMerchant({ platformId: platform.id, merchantName })
       const transaction = pushTransaction({
         accountId: card.accountId,
         direction: 'out',
@@ -1770,7 +1854,7 @@ export function createMockApi(options?: {
         signedAmount: -amount,
         counterparty: platform.name,
         memo,
-        category: 'other',
+        category: classify ? 'other' : (ruleCategory ?? 'other'),
         classificationState,
         createdAt: new Date().toISOString(),
         status: 'success',
@@ -1791,7 +1875,7 @@ export function createMockApi(options?: {
       }, false)
       persist()
       if (classificationState === 'pending' && classify) {
-        // 后台分类：不阻塞响应，完成后回写分类与状态
+        // 后台分类：不阻塞响应，完成后回写分类与状态；模型失败时回落本地商户规则
         void Promise.resolve()
           .then(() => classify({
             counterparty: platform.name,
@@ -1801,10 +1885,14 @@ export function createMockApi(options?: {
             amount,
             currency: balance.currency,
           }))
-          .then(category => applyClassification(transaction.id, category ?? 'other', false))
-          .catch(() => applyClassification(transaction.id, 'other', true))
+          .then(category => {
+            // 分类器返回兜底 other 时，本地商户规则更可信
+            const decided = category && category !== 'other' ? category : (ruleCategory ?? category ?? 'other')
+            applyClassification(transaction.id, decided, category ? false : !ruleCategory)
+          })
+          .catch(() => applyClassification(transaction.id, ruleCategory ?? 'other', !ruleCategory))
       }
-      return { transaction, category: 'other', classificationState, available: balance.available, currency: balance.currency }
+      return { transaction, category: transaction.category, classificationState, available: balance.available, currency: balance.currency }
     },
 
     /* ------------------------------------------------------------ 开户 */
@@ -2989,7 +3077,7 @@ export interface HeldTransferInfo {
 }
 
 function browserPaymentPlans(api: () => BankApi) {
-  return createPaymentPlans({ getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword,
+  return createPaymentPlans({ getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword, findProfileByPhone, findProfileByUserId, persistRelatedProfiles,
     resolveRecipient: async request => {
       if (request.payeeBankCode === 'LCB') {
         const found = findRecipientByNumber(request.payeeAccountNo ?? '')
@@ -2999,7 +3087,10 @@ function browserPaymentPlans(api: () => BankApi) {
         return { sameOwner: found.profile.user.id === loadDb().user.id }
       }
       return api().resolveTransferRecipient({ bankCode: request.payeeBankCode ?? '', bankRegion: request.payeeBankRegion ?? 'CN', accountOrCardNo: request.payeeAccountNo ?? '', payeeName: request.payeeName })
-    }, executeTransfer: request => api().submitTransfer(request) })
+    },
+    // 定时转账创建时已验过密码；执行属内部路径，用对象级授权绕过重复校验。
+    executeTransfer: request => api().submitTransfer(authorizeInternalTransfer(request)),
+  })
 }
 
 /** Browser demo requires this explicit scan; the HTTP server owns the durable background scanner. */
@@ -3087,11 +3178,13 @@ export async function settleHeldTransfer(
   try {
     // 不带 reviewThreshold = 纯执行，不会再进窗口。
     // settleImmediately = 到账就落定，不再挂「模拟清算」——这笔已经等过窗口了。
+    // 在途指令提交冻结时已验过密码；到期/放行是内部执行，标记本次对象授权。
+    // 授权只挂在这次调用用的副本上，不给持久化的 heldRequest 留下长期授权。
     return await createMockApi({
       acceptedQuote: true,
       settleImmediately: true,
       settlementIdentity: { transactionId: rec.id, referenceNo: rec.detail.referenceNo },
-    }).submitTransfer(held)
+    }).submitTransfer(authorizeInternalTransfer({ ...held }))
   } catch (error) {
     // 极少数情况（如收款账户校验在窗口内失效）才走到这里：留痕，别静默吞掉
     rec.status = 'failed'

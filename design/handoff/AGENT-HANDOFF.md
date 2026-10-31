@@ -77,6 +77,8 @@ npm --prefix server run check:integration
 
 ## 6. 公网实际状态
 
+2026-10-29 更新：统一环境已上线，官网、工作人员与运维共用现有 `8081 / maneki_bank_demo`，三类 Agent 按 namespace 隔离；源码与网页 `current` 均指向 `releases/20261029-unified-environment`。原 live 数据保全、三位原员工凭据保留及 `auth_version=3`、公网/API 验证见 [统一银行环境说明](../../docs/unified-bank-environment.md) 和 [部署验收](../../docs/deployments/bank-unified-environment-deployment-20261029.json)。本节下方发布目录与双库分流仍为历史记录，不得据此重新启动原 writer；该服务已停止、禁用并加启动防护。
+
 域名 `https://bank.waveflow.men/` 已迁往 **15.235.241.158**，网页、银行 API、Agent、PostgreSQL 16 与 Flutter 下载均在新机。
 
 **线上仍是 `b006b6d` 加两项已部署的 Agent 健康检查修复，不包含后来推送的客服视频、头像过渡及导航去重。** 上一轮尝试同步导航时 SSH/SCP 连接中断，未完成切换；不能看到 main 已更新就认定公网已更新。接手应重新确认连接和 current 指向，只发布明确目标版本，不复用未完成上传包。
@@ -88,7 +90,7 @@ npm --prefix server run check:integration
 - live 客户 bridge 保留在本机 8898，不是公开演示客户上游。
 - 密钥及连接配置在 `/etc/maneki-vps2/`，root 目录 0700、环境文件 0600；不打印或提交内容。
 
-完整通道、备份、兼容路径及回滚见 [单机部署说明](../../deploy/single-host/README.md) 和 [迁移记录](../../docs/bank-vps2-deployment-20261019.json)。原服务器的银行服务已停止并禁用自启动；数据及备份保留，不能恢复旧机写入或直接切回旧库造成双写/丢失新操作。
+完整通道、备份、兼容路径及回滚见 [单机部署说明](../../deploy/single-host/README.md) 和 [迁移记录](../../docs/deployments/bank-vps2-deployment-20261019.json)。原服务器的银行服务已停止并禁用自启动；数据及备份保留，不能恢复旧机写入或直接切回旧库造成双写/丢失新操作。
 
 ## 7. 接手边界
 

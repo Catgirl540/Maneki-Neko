@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { ApiError } from '@/api'
 import { useSession } from '@/store/session-context'
-import { changeStaffEnvironment, isDemoStaff, staffEnvironmentLabel } from '@/api/environment'
 import { WorkbenchBrand } from '../../../app/src/components/brand/WorkbenchBrand'
 import { AlertIcon, ArrowLeftIcon, EyeIcon, EyeOffIcon, ArrowRightIcon } from '../../../app/src/components/ui/icons'
 
@@ -35,14 +34,6 @@ export function LoginPage() {
           <div className="login-card-content">
             <span className="staff-login-eyebrow">工作人员工作空间</span>
             <h1 id="staff-login-title">登录工作人员账户</h1>
-            <div className="my-4 text-sm">
-              <label htmlFor="staff-bank">办理环境</label>
-              <select id="staff-bank" aria-label="办理环境" value={isDemoStaff ? 'demo' : 'live'} onChange={event => changeStaffEnvironment(event.target.value === 'demo' ? 'demo' : 'live')} className="ml-3 rounded border border-line p-2">
-                <option value="live">合作银行环境</option>
-                <option value="demo">演示银行（官网客户）</option>
-              </select>
-              <p className="mt-2 text-xs text-ink-mute">当前：{staffEnvironmentLabel}。账号解冻需与客户所在环境一致。</p>
-            </div>
             <form className="login-form" onSubmit={submit}>
               <div><label htmlFor="staff-name">员工姓名</label><input id="staff-name" value={name} onChange={e => setName(e.target.value)} autoComplete="username" required /></div>
               <div><label htmlFor="staff-password">密码</label><div className="staff-login-password"><input id="staff-password" type={reveal ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" required /><button type="button" className="login-reveal" aria-label={reveal ? '隐藏密码' : '显示密码'} aria-pressed={reveal} onClick={() => setReveal(value => !value)}>{reveal ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}</button></div></div>
@@ -50,7 +41,7 @@ export function LoginPage() {
               <button type="submit" disabled={busy} className="login-submit">{busy ? '登录中…' : '登录'}<ArrowRightIcon size={16} /></button>
             </form>
           </div>
-          <div className="login-card-footer staff-login-help"><details><summary>演示账号</summary><p>王小明（客服）/ 李主管（主管）/ 运维人员<br />密码均为 123456</p></details></div>
+          <div className="login-card-footer staff-login-help"><details><summary>工作人员账号</summary><p>请使用管理员分配的工作人员姓名和密码登录。<br />客服、主管及运维人员按各自角色办理业务。</p></details></div>
         </section>
         <footer className="login-footer"><span>© MONEY MEOW BANK</span><span>工作人员端</span></footer>
       </main>
