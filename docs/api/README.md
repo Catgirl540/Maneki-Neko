@@ -66,6 +66,7 @@
 | POST | `/api/auth/register` | 注册并开立默认储蓄账户 | 已实现 |
 | POST | `/api/auth/logout` | 退出登录 | 已实现 |
 | GET | `/api/auth/profile` | 当前用户 | 已实现 |
+| PATCH | `/api/auth/profile/avatar` | 换头像（只接受 `avatar-01`…`avatar-10`） | 已实现 |
 | PATCH | `/api/auth/phone` | 更换登录手机号（人脸 + 新号短信） | 已实现 |
 | GET | `/api/accounts` | 资金账户列表（多币种） | 已实现 |
 | GET | `/api/accounts/:id` | 单个账户 | 已实现 |
@@ -121,6 +122,42 @@
 | POST | `/api/membership/lounge-pass` | 核销一次机场 / 高铁贵宾厅额度（年度次数） | 已实现 |
 
 详见 [profile.md](./profile.md)。
+
+#### 姓名展示（不暴露全名）
+
+用户资料额外下发三个字段，界面只用这三个，不再渲染 `user.name`：
+
+| 字段 | 用途 | 示例 |
+| --- | --- | --- |
+| `displayName` | 列表 / 问候语：姓氏 + 称呼 | `林女士`、`马先生` |
+| `maskedName` | 个人资料详情：保留首尾的脱敏姓名 | `林*满`（两字名 `林*`） |
+| `honorific` | 称呼来源：`mr` / `ms` | `ms` |
+
+- 称呼取开户录入的 18 位身份证号第 17 位（奇数为先生、偶数为女士）；判定不了（演示账号、老数据）用默认称呼 `ms`。
+- `name` 仍保留在服务端记录里（转账凭证、流水对手方需要真实姓名），但客户端界面不再展示。
+- 规则唯一来源 `shared/name-display.mjs`；安卓镜像 `NameDisplay.kt`；`node tools/check-name-display.mjs` 核对两边一致。
+
+#### 用户昵称
+
+昵称与姓名是**两件事**：姓名是实名（对外只给 `maskedName`），昵称只做展示。
+
+| 字段 | 说明 |
+| --- | --- |
+| `nickname` | 实际展示用的值：自定义优先，否则等于 `displayName` |
+| `customNickname` | 用户自己设的值；空串表示跟随默认称呼 |
+
+- `PATCH /api/auth/profile/nickname`，请求体 `{ nickname }`；空串表示恢复默认称呼，超过 16 个字返回 `400 INVALID_NICKNAME`。
+- 展示位：首页问候、「我的」页头部、个人资料页头部、侧栏与顶栏。
+- 规则唯一来源 `shared/nickname.mjs`；安卓镜像在 `NameDisplay.kt`；`node tools/check-name-display.mjs` 核对一致。
+
+#### 用户头像
+
+头像池固定 10 张，id 为 `avatar-01` … `avatar-10`，唯一来源是 `shared/avatars.mjs`：
+
+- `GET /api/auth/profile` 与登录 / 注册响应里的 `user.avatarId` 即当前头像；历史数据没有该字段时，服务端按用户 id 稳定派生一张（同一用户每次一致），不会随机跳动。
+- `PATCH /api/auth/profile/avatar`，请求体 `{ avatarId }`；不在池内返回 `400 INVALID_AVATAR`，成功返回更新后的用户资料。
+- 新用户注册时随机分配一张；之后由用户在「个人资料」里更换。**不支持上传**，避免存储、裁剪与内容审核链路。
+- 网页端文件在 `app/public/avatars/<id>.png`，安卓端在 `res/drawable-nodpi/avatar_NN.png`；改池子要跑 `node tools/check-avatar-pool.mjs` 对齐三端。
 
 ### 5 现有业务（摘要）
 

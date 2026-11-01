@@ -3,6 +3,10 @@ import { useEffect, useState } from 'react'
 import { api, ApiError } from '@/api'
 import type { SecurityOverview } from '@/api/types'
 import { MEMBER_TIER_RULES } from '../../../shared/membership.mjs'
+import { AVATAR_IDS, avatarUrl } from '../../../shared/avatars.mjs'
+import { NICKNAME_MAX } from '../../../shared/nickname.mjs'
+import { Avatar } from '@/components/ui/Avatar'
+import { userDisplayName, userMaskedName, userNickname } from '@/lib/user-name'
 import { isValidLoginPassword, LOGIN_PASSWORD_REQUIREMENTS } from '../../../shared/password-policy.mjs'
 import { Button } from '@/components/ui/Button'
 import { useResetOnOpen } from '@/lib/usePresence'
@@ -19,6 +23,7 @@ import {
   ChevronRightIcon,
   DeviceIcon,
   LockIcon,
+  PencilIcon,
   PhoneIcon,
   ShieldIcon,
   SlidersIcon,
@@ -38,11 +43,33 @@ export function SecurityPage() {
   const [payPasswordOpen, setPayPasswordOpen] = useState(false)
   const [phoneOpen, setPhoneOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [avatarOpen, setAvatarOpen] = useState(false)
+  const [nicknameOpen, setNicknameOpen] = useState(false)
+  /** 昵称的默认值就是「姓氏 + 称呼」，清空自定义后回落到它。 */
+  const defaultNickname = userDisplayName(user)
+  const [avatarSaving, setAvatarSaving] = useState<string | null>(null)
 
   const score = overview.data?.score ?? 0
   const phone = user?.phone ?? ''
   const accountSecurity = overview.data?.accountSecurity
   const frozen = accountSecurity?.frozen === true
+
+  /** 头像只从池里选，不做上传；成功后同步会话里的用户，顶栏和侧栏立刻跟着变。 */
+  async function chooseAvatar(avatarId: string) {
+    if (!user || avatarSaving !== null || user.avatarId === avatarId) return
+    setAvatarSaving(avatarId)
+    try {
+      const next = await api.updateAvatar(avatarId)
+      updateUser({ avatarId: next.avatarId })
+      setAvatarOpen(false)
+      setNotice('头像已更新')
+      window.setTimeout(() => setNotice(null), 2400)
+    } catch (error) {
+      toast.show(error instanceof ApiError ? error.message : '头像更新失败，请稍后重试', 'error')
+    } finally {
+      setAvatarSaving(null)
+    }
+  }
 
   useEffect(() => {
     if (frozen) {
@@ -94,8 +121,34 @@ export function SecurityPage() {
       <Card>
         <CardHeader title="个人信息" />
         <div className="mt-4 flex items-center gap-4">
-          <span className="grid size-12 shrink-0 place-items-center rounded-chip bg-gold-wash text-[18px] font-semibold text-gold-deep">{user?.avatarInitial}</span>
-          <span><span className="block text-[18px] font-semibold text-ink">{user?.name}</span><span className="mt-1 block text-[13px] text-ink-mute">{MEMBER_TIER_RULES[user?.memberTier ?? 'standard'].label}</span></span>
+          {/* 换头像入口就做在头像上：右下角一个铅笔角标，点开弹窗再挑。 */}
+          <button
+            type="button"
+            aria-label="更换头像"
+            disabled={frozen}
+            onClick={() => setAvatarOpen(true)}
+            className="group relative shrink-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-deep"
+          >
+            <Avatar avatarId={user?.avatarId} initial={user?.avatarInitial} size={52} />
+            <span className="absolute -right-1 -bottom-1 grid size-[22px] place-items-center rounded-full bg-ink text-white ring-2 ring-white transition group-hover:bg-gold-deep">
+              <PencilIcon size={11} />
+            </span>
+          </button>
+          <span className="min-w-0">
+            <span className="flex items-center gap-1.5">
+              <span className="truncate text-[18px] font-semibold text-ink">{userNickname(user)}</span>
+              <button
+                type="button"
+                aria-label="修改昵称"
+                disabled={frozen}
+                onClick={() => setNicknameOpen(true)}
+                className="shrink-0 rounded-full p-1 text-ink-mute transition hover:bg-surface-warm hover:text-ink"
+              >
+                <PencilIcon size={13} />
+              </button>
+            </span>
+            <span className="mt-1 block text-[13px] text-ink-mute">{userMaskedName(user)} · {MEMBER_TIER_RULES[user?.memberTier ?? 'standard'].label}</span>
+          </span>
         </div>
       </Card>
 
@@ -346,11 +399,154 @@ export function SecurityPage() {
           overview.reload()
         }}
       />
+
+      <NicknameModal
+        open={nicknameOpen && !frozen}
+        custom={user?.customNickname ?? ''}
+        fallback={defaultNickname}
+        onClose={() => setNicknameOpen(false)}
+        onDone={(next) => {
+          updateUser({ nickname: next.nickname, customNickname: next.customNickname })
+          setNotice(next.customNickname ? '昵称已更新' : '昵称已恢复默认')
+          window.setTimeout(() => setNotice(null), 2400)
+        }}
+      />
+
+      <AvatarModal
+        open={avatarOpen && !frozen}
+        current={user?.avatarId ?? ''}
+        saving={avatarSaving}
+        onClose={() => setAvatarOpen(false)}
+        onPick={(id) => void chooseAvatar(id)}
+      />
     </div>
   )
 }
 
 /* ------------------------------------------------------------ 重置登录密码 */
+
+/** 昵称弹窗：默认显示称呼，可改成自定义昵称；留空即恢复默认。 */
+function NicknameModal({
+  open,
+  custom,
+  fallback,
+  onClose,
+  onDone,
+}: {
+  open: boolean
+  custom: string
+  fallback: string
+  onClose: () => void
+  onDone: (next: { nickname: string; customNickname: string }) => void
+}) {
+  const toast = useToast()
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useResetOnOpen(open, () => {
+    setValue(custom)
+    setError(null)
+  })
+
+  async function save(next: string) {
+    setBusy(true)
+    setError(null)
+    try {
+      const updated = await api.updateNickname(next)
+      onDone({ nickname: updated.nickname, customNickname: updated.customNickname })
+      onClose()
+    } catch (failure) {
+      const message = failure instanceof ApiError ? failure.message : '昵称保存失败，请稍后重试'
+      setError(message)
+      toast.show(message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="修改昵称"
+      closeDisabled={busy}
+    >
+      <Field
+        label="昵称"
+        value={value}
+        maxLength={NICKNAME_MAX}
+        placeholder={fallback}
+        autoComplete="off"
+        error={error ?? undefined}
+        onChange={(e) => { setValue(e.target.value); setError(null) }}
+      />
+      <p className="mt-2 text-[12px] text-ink-mute">最多 {NICKNAME_MAX} 个字。</p>
+      <div className="mt-5 flex items-center gap-3">
+        {custom && (
+          <Button variant="ghost" disabled={busy} onClick={() => void save('')}>恢复默认</Button>
+        )}
+        <div className="flex-1" />
+        <Button variant="ghost" disabled={busy} onClick={onClose}>取消</Button>
+        <Button loading={busy} onClick={() => void save(value)}>保存</Button>
+      </div>
+    </Modal>
+  )
+}
+
+/** 头像弹窗：只列头像池里的 10 张，点一张即保存并关闭。 */
+function AvatarModal({
+  open,
+  current,
+  saving,
+  onClose,
+  onPick,
+}: {
+  open: boolean
+  current: string
+  saving: string | null
+  onClose: () => void
+  onPick: (id: string) => void
+}) {
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="选择头像"
+      description="从默认头像里挑一个，选中后立即保存。"
+      closeDisabled={saving !== null}
+      width="max-w-[420px]"
+    >
+      <div role="radiogroup" aria-label="选择头像" className="grid grid-cols-5 gap-3">
+        {AVATAR_IDS.map((id) => {
+          const active = id === current
+          const busy = saving === id
+          return (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={`头像 ${id.slice(-2)}`}
+              disabled={saving !== null}
+              onClick={() => onPick(id)}
+              className={`relative aspect-square rounded-full border-2 p-0.5 transition ${
+                active ? 'border-gold-deep' : 'border-transparent hover:border-line'
+              } ${busy ? 'opacity-60' : ''}`}
+            >
+              <img src={avatarUrl(id)} alt="" className="size-full rounded-full bg-white object-cover" />
+              {active && (
+                <span className="absolute -right-0.5 -bottom-0.5 grid size-5 place-items-center rounded-full bg-gold-deep text-white">
+                  <CheckIcon size={12} />
+                </span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </Modal>
+  )
+}
 
 function PasswordModal({
   open,

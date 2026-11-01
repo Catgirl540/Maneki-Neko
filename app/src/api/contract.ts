@@ -114,6 +114,10 @@ export const routes = {
   register: () => '/api/auth/register',
   logout: () => '/api/auth/logout',
   profile: () => '/api/auth/profile',
+  /** 换头像：只接受头像池里的 id，不支持上传 */
+  profileAvatar: () => '/api/auth/profile/avatar',
+  /** 改昵称：空串表示恢复默认称呼 */
+  profileNickname: () => '/api/auth/profile/nickname',
 
   accounts: () => '/api/accounts',
   account: (id: string) => `/api/accounts/${id}`,
@@ -272,6 +276,10 @@ export interface BankApi {
   register(req: RegistrationRequest): Promise<RegistrationResult>
   logout(): Promise<void>
   profile(): Promise<User>
+  /** 从头像池选一张作为头像，返回更新后的用户资料 */
+  updateAvatar(avatarId: string): Promise<User>
+  /** 设置自定义昵称；传空串恢复默认称呼。昵称只影响展示，不改实名 */
+  updateNickname(nickname: string): Promise<User>
 
   // —— 账户与流水 ——
   listAccounts(): Promise<Account[]>

@@ -6,6 +6,8 @@ import { MEMBER_TIER_RULES } from '../../../../shared/membership.mjs'
 import { useSession } from '@/store/session-context'
 import { activeServiceTarget, serviceGroups } from './navigation'
 import { NotificationsButton } from './NotificationsButton'
+import { Avatar } from '@/components/ui/Avatar'
+import { userNickname } from '@/lib/user-name'
 
 export function Sidebar() {
   const { user } = useSession()
@@ -51,9 +53,9 @@ export function Sidebar() {
       </nav>
     </div>
     <div className="workbench-profile">
-      <Link to="/security" aria-label={`${user?.name ?? ''}个人与安全设置`} aria-current={pathname.startsWith('/security') ? 'page' : undefined}>
-        <span className="workbench-avatar">{user?.avatarInitial ?? '喵'}</span>
-        <span className="workbench-profile-copy">{user?.name}<small>{MEMBER_TIER_RULES[user?.memberTier ?? 'standard'].label}</small></span>
+      <Link to="/security" aria-label={`${userNickname(user)}个人与安全设置`} aria-current={pathname.startsWith('/security') ? 'page' : undefined}>
+        <span className="workbench-avatar"><Avatar avatarId={user?.avatarId} initial={user?.avatarInitial} size={32} /></span>
+        <span className="workbench-profile-copy">{userNickname(user)}<small>{MEMBER_TIER_RULES[user?.memberTier ?? 'standard'].label}</small></span>
         <ChevronRightIcon size={15} />
       </Link>
       <NotificationsButton collapsed />

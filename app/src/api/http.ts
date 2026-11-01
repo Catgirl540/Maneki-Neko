@@ -79,6 +79,8 @@ export function createHttpApi(): BankApi {
     register: (req) => post(routes.register(), req),
     logout: () => post<void>(routes.logout()),
     profile: () => request<User>(routes.profile()),
+    updateAvatar: (avatarId) => patch<User>(routes.profileAvatar(), { avatarId }),
+    updateNickname: (nickname) => patch<User>(routes.profileNickname(), { nickname }),
 
     listAccounts: () => request<Account[]>(routes.accounts()),
     getAccount: (id) => request<Account>(routes.account(id)),

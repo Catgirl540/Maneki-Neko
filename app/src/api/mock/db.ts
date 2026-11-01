@@ -1300,6 +1300,12 @@ function seed(): MockDb {
       phone: '13800138000',
       memberTier: 'platinum',
       avatarInitial: '林',
+      avatarId: 'avatar-02',
+      honorific: 'ms',
+      displayName: '林女士',
+      maskedName: '林*满',
+      nickname: '',
+      customNickname: '',
     },
     passwordDigest: '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92',
     payPassword: DEFAULT_PAY_PASSWORD,
@@ -1771,7 +1777,7 @@ function ensureDemoRecipient(): void {
   const all = profiles()
   if (all['13600136000']) return
   const demo = seed()
-  demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberTier: 'standard', avatarInitial: '陈' }
+  demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberTier: 'standard', avatarInitial: '陈', avatarId: 'avatar-07', honorific: 'ms', displayName: '陈女士', maskedName: '陈*禾', nickname: '', customNickname: '' }
   demo.accounts = [{
     id: 'acc_demo_chen', kind: 'savings', label: '储蓄账户',
     accountNo: '8820000000124471', currency: 'CNY',

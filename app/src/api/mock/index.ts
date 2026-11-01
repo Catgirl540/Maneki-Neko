@@ -1,4 +1,7 @@
 import { prepareSpendSubscription } from '../../../../shared/spend-subscription.mjs'
+import { avatarIdFor, isAvatarId, randomAvatarId } from '../../../../shared/avatars.mjs'
+import { DEFAULT_HONORIFIC, displayNameOf, maskedNameOf } from '../../../../shared/name-display.mjs'
+import { normalizeNickname, validateNickname } from '../../../../shared/nickname.mjs'
 import { isValidLoginPassword, LOGIN_PASSWORD_REQUIREMENTS } from '../../../../shared/password-policy.mjs'
 import { assertAccountActive as assertSharedAccountActive, paymentSecurityStatus, recordPaymentPasswordFailure, resetPaymentPasswordFailures, paymentPasswordFailureError, protectAccountApi } from '../../../../shared/account-security.mjs'
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../../../shared/account-model.mjs'
@@ -33,6 +36,25 @@ import {
    ========================================================================== */
 
 import { ApiError, type BankApi, type TransactionQuery } from '../contract'
+
+/** 历史数据没有 avatarId 时按 id 派生一张固定头像；同时补齐对外展示用的姓名，和真后端保持一致。 */
+function withAvatar<T extends { id: string; name?: string; phone?: string; avatarId?: string; honorific?: string; nickname?: string }>(
+  user: T,
+): T & { avatarId: string; honorific: 'mr' | 'ms'; displayName: string; maskedName: string; nickname: string; customNickname: string } {
+  const avatarId = user.avatarId && isAvatarId(user.avatarId) ? user.avatarId : avatarIdFor(user.id || user.phone)
+  const honorific = user.honorific === 'mr' || user.honorific === 'ms' ? user.honorific : (DEFAULT_HONORIFIC as 'mr' | 'ms')
+  const displayName = displayNameOf(user.name, honorific)
+  const customNickname = normalizeNickname(user.nickname)
+  return {
+    ...user,
+    avatarId,
+    honorific,
+    displayName,
+    maskedName: maskedNameOf(user.name),
+    nickname: customNickname || displayName,
+    customNickname,
+  }
+}
 import { CATEGORY_LABEL } from '@/lib/categories'
 import {
   digitsOnly,
@@ -716,7 +738,7 @@ export function createMockApi(options?: {
       live.pendingSms = null
       // 登录不重置支付密码错误次数或解除账号冻结。
       persist()
-      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: live.user }
+      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: withAvatar(live.user) }
     },
 
     async register(req): Promise<RegistrationResult> {
@@ -765,6 +787,12 @@ export function createMockApi(options?: {
         phone,
         memberTier: 'standard',
         avatarInitial: req.holderName.trim().slice(0, 1),
+        avatarId: randomAvatarId(),
+        honorific: DEFAULT_HONORIFIC as 'mr' | 'ms',
+        displayName: displayNameOf(req.holderName.trim(), DEFAULT_HONORIFIC),
+        maskedName: maskedNameOf(req.holderName.trim()),
+        nickname: '',
+        customNickname: '',
       }
       next.passwordDigest = await passwordDigest(req.password)
       next.accounts = [account]
@@ -787,7 +815,7 @@ export function createMockApi(options?: {
       next.riskAssessment = { done: false, level: 'C1', score: 0, assessedAt: '', expiresAt: '', expired: true }
       next.security = { ...next.security, score: 72, level: '基础防护', devices: [], logs: [], identityVerified: true }
       activateDb(next)
-      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: next.user, account, openedAt: now }
+      return { token: `mock.${btoa(phone)}.${Date.now()}`, user: withAvatar(next.user), account, openedAt: now }
     },
 
     async logout() {
@@ -799,7 +827,26 @@ export function createMockApi(options?: {
       await delay(140)
       const db = loadDb()
       if (evaluateMembership(db)) persist()
-      return db.user
+      return withAvatar(db.user)
+    },
+
+    async updateNickname(nickname: string): Promise<User> {
+      await delay(120)
+      const problem = validateNickname(nickname)
+      if (problem !== null) throw new ApiError(problem, 400, 'INVALID_NICKNAME')
+      const db = loadDb()
+      db.user.nickname = normalizeNickname(nickname)
+      persist()
+      return withAvatar(db.user)
+    },
+
+    async updateAvatar(avatarId: string): Promise<User> {
+      await delay(120)
+      if (!isAvatarId(avatarId)) throw new ApiError('请选择头像池里的头像', 400, 'INVALID_AVATAR')
+      const db = loadDb()
+      db.user.avatarId = avatarId
+      persist()
+      return withAvatar(db.user)
     },
 
     async listAccounts() {

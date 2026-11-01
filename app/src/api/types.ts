@@ -18,6 +18,18 @@ export interface User {
   /** 由 AUM 派生的会员等级；展示文案取 MEMBER_TIER_RULES[tier].label */
   memberTier: MemberTier
   avatarInitial: string
+  /** 头像池 id（`avatar-01` … `avatar-10`），默认注册时随机分配，可在个人资料里改。 */
+  avatarId: string
+  /** 列表展示用：姓氏 + 称呼（林女士 / 马先生），不暴露全名 */
+  displayName: string
+  /** 详情展示用：保留首尾的脱敏姓名（林*满） */
+  maskedName: string
+  /** 称呼来源：'mr' 先生 / 'ms' 女士 */
+  honorific: 'mr' | 'ms'
+  /** 展示用昵称：自定义优先，否则等于 displayName */
+  nickname: string
+  /** 用户自己设的昵称；空串表示跟随默认称呼 */
+  customNickname: string
 }
 
 /**
