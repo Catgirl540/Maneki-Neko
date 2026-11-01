@@ -40,7 +40,7 @@ reference/
 .env.local
 .env.*.local
 
-# 本地测试与构建产物（PostgreSQL 连接、截图、临时运行目录）
+# 生成物：本地 PostgreSQL 测试库、截图、测试日志与临时运行时，整体不进仓库
 /.generated/
 
 # 安卓客户端（android/）
@@ -55,9 +55,6 @@ archive/**/build/
 archive/**/.gradle/
 archive/**/.kotlin/
 *.apk
-/android-app/keystore.properties
-/android-app/*.jks
-/android-app/*.keystore
 *.aab
 
 # 官网 APK 与元数据由 tools/package-android-download.mjs 生成，随构建产物发布
@@ -71,3 +68,8 @@ android-app/local.properties
 android-app/**/build/
 android-app/.gradle/
 android-app/.kotlin/
+
+# 答辩材料生成过程的临时目录、Python 缓存与 Office 锁文件
+/deliverables/.ppt-work/
+/deliverables/__pycache__/
+/deliverables/~$*

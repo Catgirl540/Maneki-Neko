@@ -92,6 +92,7 @@ import { INTERNAL_ACCOUNT_PREFIX } from './card-bin'
 export const MOCK_SCHEMA = 24
 
 export interface MockDb {
+  aaPaymentRequests?: import('../types').AaPaymentRequest[]
   birthdayPlans?: import('../../../../shared/linked-plans.mjs').BirthdayPlan[]
   scheduledTransfers?: { id: string }[]
   splitCollections?: { id: string; participants: { id: string }[] }[]

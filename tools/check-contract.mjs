@@ -23,7 +23,6 @@ const read = (p) => readFile(path.join(ROOT, p), 'utf8')
 const contract = await read('app/src/api/contract.ts')
 const http = await read('app/src/api/http.ts')
 const mock = await read('app/src/api/mock/index.ts')
-const readme = await read('README.md')
 
 let failures = 0
 const report = (ok, title, lines = []) => {
@@ -62,10 +61,8 @@ const apiMethods = new Set(
   [...apiBlock.matchAll(/^\s{2}(\w+)\(/gm)].map((m) => m[1]),
 )
 
-/** createHttpApi 的对象字面量方法名 */
-const httpMethods = new Set(
-  [...http.matchAll(/^\s{4}(\w+):\s*\(/gm)].map((m) => m[1]),
-)
+/** createHttpApi 的对象字面量方法名。用 AST 读取，缩进变了也不会漏（曾因 6 条写成 2 空格而误判「http 缺方法」）。 */
+const httpMethods = returnedApiMethods(http, 'createHttpApi')
 
 /** Read the returned object, independent of indentation; do not collect nested helper methods. */
 const mockMethods = returnedApiMethods(mock, 'createMockApi')
@@ -115,25 +112,28 @@ report(deadRoutes.length === 0, '③ routes 里没有无人引用的死键', [
   deadRoutes.length ? `死键：${deadRoutes.join('、')}` : `${routeEntries.length} 个键都被引用`,
 ])
 
-/* ------------------------------------------------ ④ README 的接口清单与实际一致 */
-const readmeBlock = readme.slice(readme.indexOf('已定义的接口面：'))
-// 只取接口清单那一个代码块：README 后面还有别的代码块，扫全文会把示例路径也算进来
-const codeBlockEnd = readmeBlock.indexOf('```', readmeBlock.indexOf('```') + 3)
-const readmeList = new Set(
-  [...readmeBlock
-    .slice(0, codeBlockEnd > 0 ? codeBlockEnd : undefined)
-    .matchAll(/^(?:GET|POST|PATCH|PUT|DELETE)\s+(\S+)/gm)].map((m) => normPath(m[1])),
-)
+/* ------------------------------------------------ ④ 接口文档的端点清单与实际一致
+   清单的唯一事实源是 docs/api/README.md。根 README 只保留原则与链接，
+   不再重复维护一份会漂移的清单（曾经漂过：漏 6 条、多写 2 条）。 */
+const apiDoc = await read('docs/api/README.md')
+// 两种写法都要收：独立表格行 `| POST | `/api/x` |`，以及一行里多个端点 `| 转账 | `GET /api/banks`、… |`。
+const documentedPaths = new Set([
+  ...[...apiDoc.matchAll(/`(?:GET|POST|PATCH|PUT|DELETE)\s+(\/api\/[^`\s]+)`/g)].map((m) => m[1]),
+  ...[...apiDoc.matchAll(/`(\/api\/[^`\s]+)`/g)].map((m) => m[1]),
+]
+  // `/api/*` 是概述里的通配写法，不是端点
+  .filter((p) => !p.includes('*'))
+  .map(normPath))
 const actualPaths = new Set(routeEntries.map((r) => normPath(r.path)))
-const notDocumented = [...actualPaths].filter((p) => !readmeList.has(p))
-const notImplemented = [...readmeList].filter((p) => !actualPaths.has(p))
+const notDocumented = [...actualPaths].filter((p) => !documentedPaths.has(p))
+const notImplemented = [...documentedPaths].filter((p) => !actualPaths.has(p))
 report(
-  notDocumented.length === 0 && notImplemented.length === 0,
-  '④ README 的接口清单与 routes 表一致',
+  documentedPaths.size > 0 && notDocumented.length === 0 && notImplemented.length === 0,
+  '④ 接口文档（docs/api/README.md）的端点清单与 routes 表一致',
   [
-    `README 列了 ${readmeList.size} 条，routes 有 ${actualPaths.size} 条`,
-    notDocumented.length ? `README 漏了：${notDocumented.join('、')}` : '',
-    notImplemented.length ? `README 多写了：${notImplemented.join('、')}` : '',
+    `文档列了 ${documentedPaths.size} 条，routes 有 ${actualPaths.size} 条`,
+    notDocumented.length ? `文档漏了：${notDocumented.join('、')}` : '',
+    notImplemented.length ? `文档多写了：${notImplemented.join('、')}` : '',
   ].filter(Boolean),
 )
 

@@ -3,7 +3,6 @@ import type { Bank, BankRegion } from '@/api/types'
 import { CheckIcon, ChevronDownIcon, SearchIcon } from './icons'
 import { BANK_REGION_LABEL, describeBank } from '@/lib/bank'
 import { cn } from '@/lib/cn'
-import brandCat from '@/assets/design/brand-cat.png'
 
 /**
  * 收款银行下拉选择器。
@@ -92,7 +91,7 @@ export function BankPicker({
         )}
       >
         {value ? (
-          <BankMark key={`${value.region}-${value.code}`} bank={value} />
+          <BankMark bank={value} />
         ) : (
           <span className="grid size-8 shrink-0 place-items-center rounded-tile bg-sunk text-ink-mute">
             <SearchIcon size={16} />
@@ -200,7 +199,7 @@ export function BankPicker({
 /**
  * 银行行标。
  *
- * 本行复用工作台品牌图；其他行标来自 `app/public/banks/`，不依赖第三方图床 ——
+ * 图标是**下载到本仓库**的真实行标（`app/public/banks/`），不依赖第三方图床 ——
  * 实测那些服务对解析不到的域名会静默返回一张灰色占位图，等于把假数据当真的用。
  *
  * 加载失败时退回「品牌色块 + 行名首字」，不留破图：真后端如果换素材 URL，
@@ -208,12 +207,11 @@ export function BankPicker({
  */
 function BankMark({ bank, size = 32 }: { bank: Bank; size?: number }) {
   const [failed, setFailed] = useState(false)
-  const logo = bank.internal && bank.code === 'LCB' ? brandCat : bank.logo
 
-  if (logo && !failed) {
+  if (bank.logo && !failed) {
     return (
       <img
-        src={logo}
+        src={bank.logo}
         // 行名就在旁边，图是装饰性的
         alt=""
         width={size}

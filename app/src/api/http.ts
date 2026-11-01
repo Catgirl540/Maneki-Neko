@@ -122,6 +122,8 @@ export function createHttpApi(): BankApi {
     createScheduledTransfer: req => post(routes.scheduledTransfers(), req),
     cancelScheduledTransfer: (id, version) => del(routes.scheduledTransfer(encodeURIComponent(id)), { version }),
     listSplitCollections: () => request(routes.splitCollections()),
+    listSplitPaymentRequests: () => request(routes.splitPaymentRequests()),
+    paySplitRequest: (id, input) => post(routes.splitPay(encodeURIComponent(id)), input),
     createSplitCollection: req => post(routes.splitCollections(), req),
     cancelSplitCollection: (id, version) => del(routes.splitCollection(encodeURIComponent(id)), { version }),
     confirmSplitPayment: (id, req) => post(routes.splitPayment(encodeURIComponent(id)), req),

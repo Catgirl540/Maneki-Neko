@@ -265,11 +265,23 @@ export interface ScheduledTransfer {
   currency: Currency; fee: Cents; fundsReserved: false; status: 'scheduled' | 'executed' | 'failed' | 'cancelled';
   transactionId?: string; settlementStatus?: 'success' | 'pending'; failureReason?: string;
 }
-export interface SplitCollectionRequest { title: string; amount: Cents; currency: Currency; participants: string[]; clientRequestId: string }
+export type AaAllocation = { amount: Cents; participants: string[]; collectorName?: never; expenses?: never } | { collectorName: string; expenses: SplitExpense[]; amount?: never; participants?: never }
+export interface AaMemberRequest { phone: string; amount: Cents; memo: string }
+export interface AaPaymentInput { version: number; confirmed: true; paymentPassword: string }
+export interface AaPaymentRequest { id: string; collectionId: string; collectorName: string; collectorAccountNo: string; title: string; amount: Cents; currency: Currency; memo: string; status: 'unpaid' | 'processing' | 'paid' | 'cancelled'; version: number; createdAt: string; transactionId?: string; paidAt?: string }
+export interface SplitExpense { title: string; amount: Cents; participants: string[] }
+export interface SplitExpenseDetail extends SplitExpense { shares: { name: string; amount: Cents }[] }
+export type SplitCollectionRequest = { title: string; currency: Currency; clientRequestId: string } & (
+  { amount: Cents; participants: string[]; members?: never; collectorName?: never; expenses?: never } |
+  { collectorName: string; expenses: SplitExpense[]; members?: never; amount?: never; participants?: never } |
+  { members: AaMemberRequest[]; allocation?: AaAllocation; confirmed: true; amount?: never; participants?: never; collectorName?: never; expenses?: never }
+)
 export interface SplitCollection {
+  delivery?: 'account-inbox';
+  collectorName?: string; expenseTotal?: Cents; selfAmount?: Cents; expenses?: SplitExpenseDetail[];
   id: string; version: number; title: string; amount: Cents; currency: Currency; accountId: string; accountNo: string;
   status: 'open' | 'complete' | 'cancelled'; createdAt: string; updatedAt: string;
-  participants: { id: string; name: string; amount: Cents; status: 'unpaid' | 'paid'; reminders: number; lastRemindedAt?: string; transactionId?: string; paidAt?: string }[];
+  participants: { id: string; name: string; amount: Cents; phone?: string; memo?: string; splitName?: string; userId?: string; requestId?: string; status: 'unpaid' | 'processing' | 'paid' | 'cancelled'; reminders: number; lastRemindedAt?: string; transactionId?: string; paidAt?: string }[];
 }
 
 export interface Payee {

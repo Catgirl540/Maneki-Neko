@@ -105,6 +105,8 @@
 | POST | `/api/cards/:id/virtual` | 动态一次性卡号 | 已实现 |
 | POST | `/api/cards/:id/spend` | 模拟消费（演示刷卡，含自定义商家 / Stripe 收单） | 已实现 |
 | POST | `/api/cards/:id/activate` | 激活待激活卡（需支付密码） | 已实现 |
+| POST | `/api/cards/:id/lost` | 正式挂失（需支付密码；挂失前状态记入 `lostFromStatus`） | 已实现 |
+| POST | `/api/cards/:id/recover` | 解挂，恢复挂失前状态，支付开关保持关闭 | 已实现 |
 
 详见 [cards.md](./cards.md)；模拟消费的平台目录、校验链、后台分类与页面交互见 [spend.md](./spend.md)。
 
@@ -122,9 +124,14 @@
 
 | 域 | 端点 | 状态 |
 | --- | --- | --- |
-| 转账 | `GET /api/banks`、`GET /api/receiving`、`POST /api/cards/bin`、`GET /api/payees`、`POST /api/fps/resolve`、`POST /api/transfers/quote`、`POST /api/transfers/recipient`、`POST /api/transfers`、`POST /api/transfers/:id/recall` | 已实现 |
+| 转账 | `GET /api/banks`、`GET /api/receiving`、`POST /api/receiving/fps`、`POST /api/cards/bin`、`GET /api/payees`、`PATCH /api/payees/:id`、`DELETE /api/payees/:id`、`POST /api/fps/resolve`、`POST /api/transfers/quote`、`POST /api/transfers/recipient`、`POST /api/transfers`、`POST /api/transfers/:id/recall` | 已实现 |
+| 定时转账 | `GET /api/transfers/scheduled`、`POST /api/transfers/scheduled`、`DELETE /api/transfers/scheduled/:id` | 已实现 |
+| AA 付款 | `GET /api/transfers/aa-payments`、`POST /api/transfers/aa-payments/:id/pay` | 已实现 |
+| AA 收款 | `GET /api/transfers/splits`、`POST /api/transfers/splits`、`DELETE /api/transfers/splits/:id`、`POST /api/transfers/splits/:id/payments`、`POST /api/transfers/splits/:id/reminders` | 已实现 |
 | 理财 | `GET /api/wealth/products`、`GET /api/wealth/products/:code`、`GET /api/wealth/overview`、`POST /api/wealth/account/open`、`GET /api/wealth/risk/questions`、`POST /api/wealth/risk/assess`、`POST /api/wealth/subscribe`、`POST /api/wealth/redeem` | 已实现 |
-| 财务分析 | `GET /api/analysis/spending`、`GET /api/analysis/cashflow`、`GET /api/autodebits`、`PATCH /api/autodebits/:id` | 已实现 |
+| 财务分析 | `GET /api/analysis/spending`、`GET /api/analysis/cashflow`、`GET /api/statistics/report`、`GET /api/statistics/report/export`、`GET /api/autodebits`、`PATCH /api/autodebits/:id` | 已实现 |
+| 支出预算 | `GET /api/budgets`、`POST /api/budgets`、`PATCH /api/budgets/:id`、`DELETE /api/budgets/:id`、`POST /api/budgets/:id/passes` | 已实现 |
+| 场景联动 | `GET /api/linked/birthdays`、`POST /api/linked/birthdays`、`POST /api/linked/birthdays/preview`、`POST /api/linked/birthdays/:id/cancel`、`POST /api/linked/birthdays/:id/order` | 已实现 |
 | 安全中心 | `GET /api/security/overview`、`PATCH /api/security/rules/:id`、`POST /api/security/password`、`POST /api/security/payment-password`、`POST /api/security/verify` | 已实现 |
 | 智能客服 | `GET /api/support/messages`、`POST /api/support/chat` | 已实现 |
 

@@ -36,14 +36,7 @@
 | 补充员工工具与 PostgreSQL 专项 | 26 项通过；增加真实统计、合法转派、额外客户提醒、创建审批和 IM 只读授权的闭环验证 |
 | 员工 IM 浏览器 | 通过；客服与主管页面、扫码/确认、激活、提醒保存确认、团队规则、解绑、未知状态和手机核验卡 |
 
-浏览器预览截图只包含夹具数据和测试二维码：
-
-- [扫码页面](../.generated/staff-im-checks/staff-im-qr.png)
-- [已绑定与通知设置](../.generated/staff-im-checks/staff-im-bound.png)
-- [主管接收规则](../.generated/staff-im-checks/staff-im-supervisor.png)
-- [手机业务核验卡](../.generated/staff-im-checks/staff-im-mobile-consent.png)
-
-截图和完整集成日志保存在忽略的 `.generated/staff-im-checks/`，不作为真实微信送达证据，也不包含在发布包中。
+浏览器预览截图只包含夹具数据和测试二维码，四张（扫码页面 / 已绑定与通知设置 / 主管接收规则 / 手机业务核验卡）保存在忽略的 `.generated/staff-im-checks/`，不随仓库分发、不作为真实微信送达证据，也不包含在发布包中。
 
 ## 回归中处理的问题
 

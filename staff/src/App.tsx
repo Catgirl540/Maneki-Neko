@@ -13,7 +13,6 @@ import { TicketsPage } from '@/pages/tickets/TicketsPage'
 import { StaffImPage } from '@/pages/im/StaffImPage'
 import { RequireAuth, SessionProvider } from '@/store/session'
 import { useSession } from '@/store/session-context'
-import { isDemoStaff } from '@/api/environment'
 
 /**
  * 登录页的入口。
@@ -64,9 +63,9 @@ export default function App() {
             }
           >
             <Route path="/operations" element={<RequireOperations />} />
-            <Route path="/assistant" element={isDemoStaff ? <Navigate to="/workbench" replace /> : <AssistantPage />} />
+            <Route path="/assistant" element={<AssistantPage />} />
             <Route element={<RequireBusiness />}>
-            <Route path="/im" element={isDemoStaff ? <Navigate to="/workbench" replace /> : <StaffImPage />} />
+            <Route path="/im" element={<StaffImPage />} />
             <Route path="/workbench" element={<WorkbenchPage />} />
             <Route path="/tickets" element={<TicketsPage />} />
             <Route path="/approvals" element={<ApprovalsPage />} />

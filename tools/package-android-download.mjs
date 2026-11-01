@@ -9,7 +9,6 @@ import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
 const destination = path.join(root, 'app/public/downloads')
-const archive = path.join(root, 'android-app/build/download-archive')
 const manifest = path.join(destination, 'android.json')
 const args = process.argv.slice(2)
 assert(args.length <= 1, '用法：node tools/package-android-download.mjs [APK 路径 | --check]')
@@ -18,7 +17,7 @@ async function sha256(file) {
   for await (const chunk of createReadStream(file)) hash.update(chunk)
   return hash.digest('hex')
 }
-async function check(data, base = destination) {
+async function check(data) {
   assert.equal(data.schemaVersion, 1, '元数据版本错误')
   assert.equal(data.packageName, 'com.moneymeow.bank', '不是招财猫安装包')
   assert.match(data.versionName, /^[\w.+-]{1,40}$/)
@@ -30,14 +29,7 @@ async function check(data, base = destination) {
   assert.match(data.fileName, /^luckycat-android-[a-f0-9]{12}\.apk$/)
   assert.match(data.sha256, /^[a-f0-9]{64}$/)
   assert.equal(data.fileName, `luckycat-android-${data.sha256.slice(0, 12)}.apk`)
-  let file = path.join(base, data.fileName)
-  try {
-    await stat(file)
-  } catch (error) {
-    // 对象存储发布时本地只保留回滚副本，构建检查仍要核对同一安装包。
-    if (base !== destination || !data.apkUrl || error.code !== 'ENOENT') throw error
-    file = path.join(archive, data.fileName)
-  }
+  const file = path.join(destination, data.fileName)
   const info = await stat(file)
   assert(info.isFile() && info.size > 1024 && info.size === data.bytes, 'APK 缺失或大小与元数据不符')
   const handle = await open(file)
@@ -90,33 +82,22 @@ try {
       })(),
     }
     assert.equal(data.packageName, 'com.moneymeow.bank', '拒绝发布其他应用的安装包')
-    // 配了 PUBLIC_BASE_URL 时 APK 由对象存储托管，清单里只写固定地址。
-    const publicBase = (process.env.PUBLIC_BASE_URL ?? '').replace(/\/$/, '')
-    const manifestData = publicBase
-      ? { ...data, apkUrl: `${publicBase}/android/app-${data.versionCode}.apk` }
-      : data
     await mkdir(destination, { recursive: true })
-    await mkdir(archive, { recursive: true })
-    if (publicBase) {
-      // 本地只留回滚副本，不进 dist。
-      await copyFile(source, path.join(archive, data.fileName))
-    } else {
-      const target = path.join(destination, data.fileName)
-      await copyFile(source, target + '.tmp')
-      await rename(target + '.tmp', target)
-    }
-    await check(manifestData, publicBase ? archive : destination)
-    await writeFile(manifest + '.tmp', JSON.stringify(manifestData, null, 2) + '\n')
+    const target = path.join(destination, data.fileName)
+    await copyFile(source, target + '.tmp')
+    await rename(target + '.tmp', target)
+    await check(data)
+    await writeFile(manifest + '.tmp', JSON.stringify(data, null, 2) + '\n')
     await rename(manifest + '.tmp', manifest)
     // 旧包留在本机构建目录供回滚，不让每次网页构建携带所有历史 APK。
+    const archive = path.join(root, 'android-app/build/download-archive')
+    await mkdir(archive, { recursive: true })
     for (const name of await readdir(destination)) {
-      if (/^luckycat-android-[a-f0-9]{12}\.apk$/.test(name)) {
+      if (/^luckycat-android-[a-f0-9]{12}\.apk$/.test(name) && name !== data.fileName) {
         await rename(path.join(destination, name), path.join(archive, name))
       }
     }
-    console.log(publicBase
-      ? `已写入下载清单，APK 由对象存储提供：${manifestData.apkUrl}`
-      : '已准备官网静态下载文件，构建时会一并复制到 app/dist/downloads/')
+    console.log('已准备官网静态下载文件，构建时会一并复制到 app/dist/downloads/')
   }
 } catch (error) {
   console.error(`FAIL ${error.message}\n先构建 Android APK（android-app 的 :app:assembleDebug），再运行 npm --prefix app run prepare:android；不会生成无效下载链接。`)

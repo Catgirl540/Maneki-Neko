@@ -55,6 +55,8 @@ const ROUTES = [
   ['POST', 'scheduledTransfers', 'createScheduledTransfer', (id, b) => [b]],
   ['DELETE', 'scheduledTransfer', 'cancelScheduledTransfer', (id, b) => [id, b.version]],
   ['GET', 'splitCollections', 'listSplitCollections', () => []],
+  ['GET', 'splitPaymentRequests', 'listSplitPaymentRequests', () => []],
+  ['POST', 'splitPay', 'paySplitRequest', (id, b) => [id, b]],
   ['POST', 'splitCollections', 'createSplitCollection', (id, b) => [b]],
   ['DELETE', 'splitCollection', 'cancelSplitCollection', (id, b) => [id, b.version]],
   ['POST', 'splitPayment', 'confirmSplitPayment', (id, b) => [id, b]],
@@ -572,10 +574,10 @@ export async function createBankApi({
         }
         if (auth?.security && entry.bankMethod === 'getSecurityOverview') return auth.security(req, value)
         // 大额转账进在途窗口：通知 server 侧建记录（清单 §9.4，只在真后端演示开启）
-        if (entry.bankMethod === 'submitTransfer' && value?.pendingReason === 'inflight' && onTransferHeld) {
+        if (['submitTransfer', 'paySplitRequest'].includes(entry.bankMethod) && value?.pendingReason === 'inflight' && onTransferHeld) {
           await onTransferHeld({
             customerId: dbModule.loadDb().user.id,
-            request: businessBody,
+            request: entry.bankMethod === 'paySplitRequest' ? dbModule.loadDb().transactions.find(row => row.id === value.transactionId)?.heldRequest : businessBody,
             result: value,
           })
         }

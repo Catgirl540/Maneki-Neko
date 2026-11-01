@@ -25,17 +25,6 @@ PostgreSQL 档案的单账户迁移保留退役账本行。旧分区 ID 和旧�
 
 员工客户档案的 `accounts[].currencyBalances` 与 `recentTransactions[].currency` 指明金额币种；显示外币不得加人民币符号。未提供交易币种的旧客户端夹具仍按原人民币契约兼容。
 
-### 转账的币种分区
-
-`POST /api/transfers` 的 `fromAccountId` 可以是 `currencyBalances[].id`：报价、单笔上限、手续费、在途冻结与回执都按该分区币种，不换汇时只扣该分区。本行收款方（`payeeBankCode=LCB`、`payeeBankRegion=CN`）按 `payeeCurrency` 入账，省略时等于付款币种：
-
-- 收款人同一资金账户下已有该币种分区 → 直接贷记；
-- 没有 → 自动开立 0 余额分区再入账，`accountNo` 与卡片归属不变，仍是一个资金账户；
-- `payeeCurrency` 与付款币种不同时按报价折算，回执带 `fx`；
-- 不在 `CNY/USD/HKD` 内的币种返回 400 `INVALID_CURRENCY`，两侧余额不变。
-
-外币入账产生的分区与换汇首次兑换同一结构（`bank_accounts` 多一行、开账分录一次），表行数增加不代表客户多开账户。
-
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | string | 账户 ID |
@@ -86,21 +75,13 @@ PostgreSQL 档案的单账户迁移保留退役账本行。旧分区 ID 和旧�
 - `GET /api/transactions/:id/receipt` → `ReceiptFile`；演示环境 `url=null`，需退回浏览器打印。
 - `GET /api/accounts/:id/transactions/export` → `ExportDataset`（后端给列与格式化值，前端落 CSV）。
 
-## 即时转账与支付密码
-
-`POST /api/transfers` 的请求体在付款账户、金额、收款人等原字段外必须携带六位数字 `paymentPassword`。服务端在同一业务事务中校验密码并完成扣款或冻结；缺失或格式错误返回 `INVALID_PAY_PASSWORD`，密码错误返回 `BAD_PAY_PASSWORD`（账号冻结时为 `ACCOUNT_FROZEN`），余额、冻结和流水均不发生变更。连续错误按 [账号安全规则](security.md) 的客户级计数累计并可能冻结账号；正确验密后清零连续错误次数。
-
-服务端只在本次请求处理期间使用该密码，不得把明文或可复用凭据写入在途转账记录、员工审批、审计或任何持久化字段；在途撤销、员工放行和后续清算都不需要也不读取支付密码。
-
-旧版服务端未定义该字段的校验语义。服务端需先升级，新客户端才可安全提交 `paymentPassword`；升级前客户端不得发送该字段，也不能把旧服务端的成功响应视为已经验密。
-
 ## 收款人备注、定时转账与 AA 收款
 
 `GET /api/payees?keyword=爱人` 只检索本人的已保存收款人，匹配姓名、银行、完整账号、FPS 标识及 `remark`；`PATCH /api/payees/:id` 请求 `{remark}` 可维护最多 140 字的备注。普通转账保存收款人时将交易备注作为初始备注，已有手动备注不覆盖。备注相同不证明同一人，重名或多个匹配仍须用户明确选定；内地 11 位手机号不能套用香港 FPS，未登记解析不虚构户名或银行。
 
 ### 一次性定时转账
 
-`GET /api/transfers/scheduled` 查询本人指令。`POST /api/transfers/scheduled` 创建，字段为原 `TransferRequest` 的付款账户、金额、收款人完整账号、银行及地区、备注，另加 `executeAt`、`paymentPassword`、`confirmed=true`、`clientRequestId`。必须明确授权具体收款人、金额和时间，并在创建时验证支付密码；密码只在创建请求中校验一次，不写入计划记录。到期执行仅重新核验资金与收款人，不读取、不重验也不保存密码。当前只支持 `channel=bank,scope=domestic,payeeBankRegion=CN` 的同币种、零手续费路径，不支持 FPS、跨境换汇、按内地手机号路由或周期转账。账号限制 12–19 位，单笔金额 1–100000000 整数分，时间带 `Z` 或 `+08:00` 且在一分钟后至未来 366 天内，最多 50 条待执行指令。
+`GET /api/transfers/scheduled` 查询本人指令。`POST /api/transfers/scheduled` 创建，字段为原 `TransferRequest` 的付款账户、金额、收款人完整账号、银行及地区、备注，另加 `executeAt`、`paymentPassword`、`confirmed=true`、`clientRequestId`。必须明确授权具体收款人、金额和时间，并验证支付密码；密码不写入计划记录。当前只支持 `channel=bank,scope=domestic,payeeBankRegion=CN` 的同币种、零手续费路径，不支持 FPS、跨境换汇、按内地手机号路由或周期转账。账号限制 12–19 位，单笔金额 1–100000000 整数分，时间带 `Z` 或 `+08:00` 且在一分钟后至未来 366 天内，最多 50 条待执行指令。
 
 保存时不扣款、不冻结，返回 `fundsReserved=false,status=scheduled,version=1`。同一客户 `clientRequestId` 重放原参数返回同一指令，改参数返回 `IDEMPOTENCY_CONFLICT`。`DELETE /api/transfers/scheduled/:id` 请求 `{version}` 仅取消本人待执行指令；版本变化返回 `VERSION_CONFLICT`。不能用取消定时指令撤回已执行付款，已进入在途的付款须另走在途撤销。
 
@@ -109,6 +90,17 @@ PostgreSQL 档案的单账户迁移保留退役账本行。旧分区 ID 和旧�
 Agent `bank_list_scheduled_transfers/bank_schedule_transfer/bank_cancel_scheduled_transfer` 使用同一接口；创建走独立确认卡与安全支付密码输入，查询权限不能代替执行授权。网页 `/transfer` 有指令管理、北京时间输入、授权确认和取消入口。
 
 ### AA 收款
+
+网页统一使用“AA 收款 → 均分清单”：先按各项消费名单计算每人应付额，再在该清单中绑定注册手机号和转账备注，核对后发送付款通知，不再提供独立手机号收款页。members 可附 `allocation`（待收均分 `{amount,participants}` 或分项 `{collectorName,expenses}`）；服务器重算并逐人核对 members 的人数、顺序及金额，不一致报 `AA_ALLOCATION_MISMATCH` 且不送达通知。保存分项、本人份额及 splitName，保持清单与付款通知一致。
+
+手机号 AA 创建 `{title,currency,members:[{phone,amount,memo}],confirmed:true,clientRequestId}`。成员为 1–30 个不重复的本行注册手机号（不含本人），每人金额为整数分、转账备注必填且最多 140 字，总额最多 100000000 分。服务端先核对所有成员账号和币种，再在同一事务内保存收款单及成员站内通知；任一成员无效时整单失败，不部分送达、不扣款、不发送短信或微信。旧均分参数不能与 members 混用。
+
+`GET /api/transfers/aa-payments` 只查询本人收到的 AA 付款通知，包含收款人、金额、币种、原备注及 unpaid/processing/paid/cancelled 状态。网页“AA 付款”提供“待付款”和付款记录。`POST /api/transfers/aa-payments/:id/pay` 接受 `{version,confirmed:true,paymentPassword}`，金额、备注和收款账号来自原通知，不接受客户端覆盖；必须本人登录、独立确认并验证支付密码，冻结账号拒付。复用本行转账、在途审批及撤回规则，回款状态依据真实付款流水同步，重复/并发支付不重复扣款。备注写入双方流水和回单；密码不持久化。手机号通知、收款单和转账结果均随客户加密扩展域保存，重启后保留，不新增资金账户或修改数据库结构。
+
+取消手机号 AA 同步撤回未付款通知，保留已付流水；存在 processing 付款时先等待结果。legacy 清单仍按下列均分/手动匹配证据规则处理，不发站内通知。验证见 `server/aa-payments.test.mjs`、`server/aa-payments-http.test.mjs`、`tools/check-aa-payments.mjs`。
+
+
+分项 AA 创建 `{title,currency,collectorName,expenses:[{title,amount,participants}],clientRequestId}`：收款人须已垫付全部费用；每项为消费全额（整数分）、2–30 位参加者完整姓名，参加时必须包含收款人。最多 30 项、总人数不超过 30，总消费不超过 100000000 分。逐项均摊后按人合计，排除 `collectorName` 的本人份额，允许只有一位其他付款人。不得同时传旧字段 `amount/participants`。响应 `amount` 仍为待收总额，附 `expenseTotal/selfAmount/expenses[].shares` 供核对；幂等绑定每项金额、名单和顺序。
 
 `GET/POST /api/transfers/splits` 查询/创建本人收款单。创建 `{title,amount,currency,participants,clientRequestId}`，`participants` 为 2–30 个不重名的完整付款人姓名，金额至少每人 1 分，均分后余数按名单顺序每人加 1 分。`amount` 是待收总额，不包含已自付份额。API 支持 CNY/USD/HKD 并要求本人已有对应币种余额；网页入口目前为人民币。只保存清单，不扣参与者余额、不发送邀请或新建资金账户。
 
@@ -126,7 +118,7 @@ Agent `bank_list_scheduled_transfers/bank_schedule_transfer/bank_cancel_schedule
 
 Agent 的 `bank_recall_transfer` 仍逐次确认，无需支付密码，有效 IM 只读权限不能自动批准撤销。确认卡用本人账户权威币种显示本金、冻结合计和记录的费用，历史未记费用时明确说明。执行前重读交易/币种；快照变化、过期、清算/已结算/拦截/撤回、跨客户均拒绝，不自动重做。错误包括 `NOT_FOUND`、`NOT_RECALLABLE`、`CONSENT_REQUIRED`；不能把撤销在途等同于取消定时转账任务。
 
-验证：`server/transfer-hold-currency.test.mjs` 用真实隔离 PostgreSQL 和实际换汇/转账核对多币种同时冻结、撤销、员工拦截/放行、费用注入失败回滚与重试，并覆盖本行外币收款在同一资金账户下开立分区；`framework/bridge/transfer-recall.test.mjs` 覆盖 Agent 原币种确认、一次性授权、状态重读、客户隔离、非法金额和历史指令；`tools/check-transfer-currency.mjs` 在浏览器模拟后端验证同账户外币入账、跨币种到账、非法币种拒绝与人民币回归。本地整合门禁必须包含外币冻结与外币入账回归。
+验证：`server/transfer-hold-currency.test.mjs` 用真实隔离 PostgreSQL 和实际换汇/转账核对多币种同时冻结、撤销、员工拦截/放行、费用注入失败回滚与重试；`framework/bridge/transfer-recall.test.mjs` 覆盖 Agent 原币种确认、一次性授权、状态重读、客户隔离、非法金额和历史指令。本地整合门禁必须包含外币冻结回归。
 
 本次修复待处理指令的解冻查找，不批量修正历史已结单可能遗留的冻结。历史余额与可用余额的差额可能包含其他有效预留，需依据原指令及账务逐笔核对，不能直接抹平差额；本轮未读取远程库确认是否存在此类记录。
 

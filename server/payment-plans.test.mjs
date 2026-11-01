@@ -98,3 +98,41 @@ test('execution errors including 4xx propagate to the bank transaction instead o
   assert.equal(persisted, 0, 'partial execution must never be persisted by scheduler')
   assert.equal((await api.listScheduledTransfers()).find(row => row.id === plan.id).status, 'scheduled')
 })
+
+
+test('AA splits each activity by its own attendees, excludes collector, persists breakdown and binds idempotency', async () => {
+  const f = fixture(), initial = structuredClone(f.db.accounts)
+  const request = { title: '聚餐和后续活动', currency: 'CNY', collectorName: '王明', clientRequestId: 'items', expenses: [
+    { title: '聚餐', amount: 30000, participants: ['王明', '张三', '李四'] },
+    { title: '后续活动', amount: 20000, participants: ['王明', '张三'] },
+  ] }
+  const row = await f.api.createSplitCollection(request)
+  assert.equal(row.amount, 30000); assert.equal(row.expenseTotal, 50000); assert.equal(row.selfAmount, 20000)
+  assert.deepEqual(row.participants.map(({ name, amount }) => [name, amount]), [['张三', 20000], ['李四', 10000]])
+  assert.deepEqual(row.expenses[1].shares, [{ name: '王明', amount: 10000 }, { name: '张三', amount: 10000 }])
+  assert.equal((await f.restart().createSplitCollection(request)).id, row.id)
+  await assert.rejects(f.api.createSplitCollection({ ...request, expenses: [...request.expenses].reverse() }), { code: 'IDEMPOTENCY_CONFLICT' })
+  const payer = row.participants[0]
+  f.db.transactions.push({ id: 'combined', direction: 'in', status: 'success', amount: 20000, accountId: 'cn', detail: { counterpartyName: payer.name }, createdAt: '2026-10-27T00:00:00Z' })
+  assert.equal((await f.api.confirmSplitPayment(row.id, { participantId: payer.id, version: row.version, transactionId: 'combined' })).participants[0].status, 'paid')
+  assert.deepEqual(f.db.accounts, initial)
+})
+
+test('AA rounds per activity before aggregating and supports one other payer; invalid items never write', async () => {
+  const f = fixture(), request = { title: '两项', currency: 'CNY', collectorName: '王明', clientRequestId: 'round', expenses: [
+    { title: '一', amount: 101, participants: ['王明', '张三'] },
+    { title: '二', amount: 101, participants: ['王明', '张三'] },
+  ] }
+  const row = await f.api.createSplitCollection(request)
+  assert.equal(row.selfAmount, 102); assert.equal(row.amount, 100)
+  assert.equal(row.participants.length, 1); assert.equal(row.participants[0].amount, 100)
+  const writes = f.writes
+  for (const patch of [
+    { expenses: [] }, { collectorName: '' }, { expenses: [null] }, { amount: 202 }, { participants: ['张三'] },
+    { expenses: [{ ...request.expenses[0], amount: 1 }] },
+    { expenses: [{ ...request.expenses[0], participants: ['张三', ' 张三 '] }] },
+    { expenses: [{ ...request.expenses[0], amount: 1.1 }] },
+    { expenses: request.expenses.map(item => ({ ...item, amount: 100000000 })) },
+  ]) await assert.rejects(f.api.createSplitCollection({ ...request, ...patch }), error => error.status === 400)
+  assert.equal(f.writes, writes)
+})

@@ -63,6 +63,7 @@ const TRANSFER_TABS = [
   { value: 'instant', label: '即时转账' },
   { value: 'scheduled', label: '定时转账' },
   { value: 'split', label: 'AA 收款' },
+  { value: 'payable', label: 'AA 付款' },
 ] as const
 type TransferTab = typeof TRANSFER_TABS[number]['value']
 
@@ -120,6 +121,9 @@ export function TransferPage() {
       </div>
       <div id="transfer-panel-split" role="tabpanel" aria-labelledby="transfer-tab-split" hidden={tab !== 'split'}>
         {tab === 'split' && <div className="mx-auto w-full max-w-[860px]"><PaymentPlans tab="split" onBusyChange={setBusy} /></div>}
+      </div>
+      <div id="transfer-panel-payable" role="tabpanel" aria-labelledby="transfer-tab-payable" hidden={tab !== 'payable'}>
+        {tab === 'payable' && <div className="mx-auto w-full max-w-[860px]"><PaymentPlans tab="payable" onBusyChange={setBusy} /></div>}
       </div>
     </Card>
     {busy && <p role="status" className="text-[13px] text-ink-soft">正在处理，请稍候…</p>}

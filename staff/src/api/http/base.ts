@@ -4,7 +4,6 @@
    ========================================================================== */
 
 import { ApiError, routes } from '../contract'
-import { staffRequestPath } from '../environment'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
 const TIMEOUT_MS = 15_000
@@ -24,7 +23,7 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
-    const res = await fetch(BASE_URL + staffRequestPath(path), {
+    const res = await fetch(BASE_URL + path, {
       ...init,
       signal: controller.signal,
       headers: {

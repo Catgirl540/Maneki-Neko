@@ -4,7 +4,7 @@ title: "助手能力与对话"
 navigation: "助手"
 routes: ["/support"]
 keywords: ["助手", "图片", "语音", "历史记录", "人工客服", "转人工", "工单", "投诉"]
-sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "server/support-api.mjs", "app/src/components/support/HumanSupport.tsx", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs", "framework/bridge/im-bank.mjs", "docs/api/im-agent.md", "shared/support-guidance.mjs", "server/staff-im.mjs", "docs/api/staff-im.md"]
+sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/src/lib/agentSessions.ts", "framework/bridge/demo-server.mjs", "framework/bridge/bank-agent.mjs", "server/support-api.mjs", "app/src/components/support/HumanSupport.tsx", "framework/bridge/session-store.mjs", "framework/bridge/sdk-session-resume.mjs", "framework/bridge/im-bank.mjs", "docs/api/im-agent.md", "shared/support-guidance.mjs", "server/staff-im.mjs", "docs/api/staff-im.md", "staff/src/layout/LoginPage.tsx", "docs/unified-bank-environment.md"]
 ---
 
 ## 助手能办理什么？哪些功能暂不支持？ {#capabilities}
@@ -54,3 +54,7 @@ sources: ["app/src/pages/SupportPage.tsx", "app/src/lib/useAgentChat.ts", "app/s
 ## 客户提交任务后会通过微信提醒工作人员吗？ {#staff-im-notification}
 
 在银行启用工作人员微信通道、员工本人绑定并开通提醒、主管配置接收规则后，保存成功的客户工单和补充会自动进入提醒队列，通知值班客服或当前负责人；转派、审批和超时升级按规则通知主管。网页关闭不阻止已开通的员工提醒。未开通或渠道异常时不保证微信通知；渠道确认发送不代表微信已读、人工已接手或业务已经完成。客户仍以本人“人工工单”的实际状态与回复为准，不能因提醒推断资金已执行。
+
+## 工作人员登录办理客户工单还要切换环境吗？ {#staff-workspace}
+
+工作人员在统一登录入口登录，办理官网客户工单无需选择其他环境；官网与工作人员工作台使用同一业务数据。客户在自己的“人工工单”查询进度与回复，无需登录工作人员端或重新开户。统一入口不扩大权限：客服、主管和运维仍按各自角色操作，运维不能代客解冻。工单是否已受理、回复或完成，以实际状态为准，不能因登录成功就声称业务完成。

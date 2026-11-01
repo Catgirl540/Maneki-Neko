@@ -1,3 +1,5 @@
+import { calculateAaAllocation, normalizeAaMembers } from '../../shared/aa-payments.mjs'
+import { calculateSplitCollection } from '../../shared/split-collection.mjs'
 import { bankError } from './bank-error.mjs'
 const enc = encodeURIComponent
 const text = (value, label) => { if (typeof value !== 'string' || !value.trim() || value.length > 160) throw bankError(`请提供有效的${label}`); return value.trim() }
@@ -51,12 +53,32 @@ export async function prepareExtendedBankOperation(name, a, { get, post, request
       return { path: path + '/' + enc(id), method: 'PATCH', body: { remark: a.remark }, preview: { extendedSnapshot: { path, id, record: payee } }, fields: [field('收款人', payee.name), field('新备注', a.remark || '清空备注', true)] }
     }
     case 'bank_create_split_collection': {
-      let participants
-      try { participants = JSON.parse(a.participantNames) } catch { throw bankError('参与者须为姓名 JSON 数组') }
-      if (!Array.isArray(participants) || participants.length < 2 || participants.length > 30 || participants.some(name => typeof name !== 'string' || !name.trim()) || new Set(participants).size !== participants.length) throw bankError('请提供 2–30 个不重名的真实参与者姓名')
-      const amount = cents(a.amountCents)
-      if (!['CNY', 'USD', 'HKD'].includes(a.currency) || amount < participants.length) throw bankError('币种无效或金额不足每人一分')
-      return { path: '/api/transfers/splits', body: { title: text(a.title, '收款事由'), amount, currency: a.currency, participants, clientRequestId: requestId }, fields: [field('AA 事由', a.title), field('总金额', money(amount, a.currency), true), ...participants.map((name, i) => field(name, money(Math.floor(amount / participants.length) + (i < amount % participants.length ? 1 : 0), a.currency))), field('说明', '创建收款记录，不扣参与者资金、不发送催收；回款须匹配本人成功转入流水。')] }
+      if (a.members !== undefined) {
+        if (['amountCents', 'participantNames', 'collectorName', 'expenses'].some(key => a[key] !== undefined)) throw bankError('手机号 AA 请仅提供 members，不混用旧均分参数')
+        let raw
+        try { raw = JSON.parse(a.members) } catch { throw bankError('AA 成员须为 JSON 数组') }
+        const { members, amount } = normalizeAaMembers(raw)
+        let allocationInput
+        if (a.allocation !== undefined) {
+          try { allocationInput = JSON.parse(a.allocation) } catch { throw bankError('均分清单须为有效 JSON') }
+        }
+        const allocation = calculateAaAllocation(allocationInput, members)
+
+        if (!['CNY', 'USD', 'HKD'].includes(a.currency)) throw bankError('币种无效')
+        return { path: '/api/transfers/splits', body: { title: text(a.title, '收款事由'), currency: a.currency, members, ...(allocationInput !== undefined ? { allocation: allocationInput } : {}), confirmed: true, clientRequestId: requestId }, fields: [field('AA 事由', a.title), ...(allocation?.expenses ? allocation.expenses.map(item => field(item.title, `${money(item.amount, a.currency)}；${item.shares.map(share => `${share.name} ${money(share.amount, a.currency)}`).join('，')}`)) : []), ...members.map(item => field(item.phone, `${money(item.amount, a.currency)}；转账备注：${item.memo}`)), field('待收总额', money(amount, a.currency), true), field('通知范围', '确认后向这些手机号对应的本行账号发送站内付款通知，可在 AA 付款的待付款模块查看；成员须自行确认并验证支付密码，不自动扣款，不发送短信或微信。')] }
+      }
+
+      let input
+      try {
+        input = a.expenses !== undefined
+          ? { collectorName: a.collectorName, expenses: JSON.parse(a.expenses), ...(a.amountCents !== undefined ? { amount: a.amountCents } : {}), ...(a.participantNames !== undefined ? { participants: JSON.parse(a.participantNames) } : {}) }
+          : { amount: a.amountCents, participants: JSON.parse(a.participantNames) }
+      } catch { throw bankError('参与者或分项消费须为有效 JSON 数组') }
+      const result = calculateSplitCollection(input)
+      if (!['CNY', 'USD', 'HKD'].includes(a.currency)) throw bankError('币种无效')
+      return { path: '/api/transfers/splits', body: { title: text(a.title, '收款事由'), currency: a.currency, ...input, clientRequestId: requestId }, fields: [field('AA 事由', a.title),
+        ...(result.expenses ? [field('收款人（已垫付全部消费）', result.collectorName), ...result.expenses.map(item => field(item.title, `${money(item.amount, a.currency)}；${item.shares.map(share => `${share.name} ${money(share.amount, a.currency)}`).join('，')}`)), field('本人份额', money(result.selfAmount, a.currency))] : []),
+        field('待收总额', money(result.amount, a.currency), true), ...result.participants.map(person => field(person.name, money(person.amount, a.currency))), field('说明', '创建收款记录，不扣参与者资金、不发送催收；回款须匹配本人成功转入流水。')] }
     }
     case 'bank_cancel_split_collection':
     case 'bank_confirm_split_payment':

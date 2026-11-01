@@ -2,6 +2,8 @@
 
 适用于当前仓库的本地 Windows / PowerShell 环境。维护对象为银行后端、客户端、工作人员端和可选的运维助手；交接时应同时记录实际部署目录、端口、数据库路径和提交号。
 
+公网统一环境的连接、历史数据保全及验收状态见 [统一银行环境说明](unified-bank-environment.md)。本文 8080、5181 及本地演示凭据仅用于本地开发，不表示公网 8081 的配置或凭据；旧 SQLite 备份与恢复段落不能用于当前 PostgreSQL 在线库，线上维护以 [PostgreSQL 运维手册](bank-postgresql-operations.md) 为准。
+
 ## 1. 入口与职责
 
 在 <http://127.0.0.1:5181/login> 使用运维账号登录，进入 `/operations` 查看监控，进入 `/assistant` 使用运维助手。演示账号为 `运维人员 / 123456`。

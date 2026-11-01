@@ -675,6 +675,8 @@ export function createMockApi(options?: {
     createScheduledTransfer: planApi.createScheduledTransfer,
     cancelScheduledTransfer: planApi.cancelScheduledTransfer,
     listSplitCollections: planApi.listSplitCollections,
+    listSplitPaymentRequests: planApi.listSplitPaymentRequests,
+    paySplitRequest: planApi.paySplitRequest,
     createSplitCollection: planApi.createSplitCollection,
     confirmSplitPayment: planApi.confirmSplitPayment,
     remindSplitParticipant: planApi.remindSplitParticipant,
@@ -3075,7 +3077,7 @@ export interface HeldTransferInfo {
 }
 
 function browserPaymentPlans(api: () => BankApi) {
-  return createPaymentPlans({ getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword,
+  return createPaymentPlans({ getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword, findProfileByPhone, findProfileByUserId, persistRelatedProfiles,
     resolveRecipient: async request => {
       if (request.payeeBankCode === 'LCB') {
         const found = findRecipientByNumber(request.payeeAccountNo ?? '')

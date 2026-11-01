@@ -2846,7 +2846,7 @@ export async function settleHeldTransfer(transactionId, outcome, reason) {
  */
 function paymentPlans(options, api) {
     return createPaymentPlans({
-        getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword,
+        getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword, findProfileByPhone, findProfileByUserId, persistRelatedProfiles,
         resolveRecipient: async request => {
             if (request.payeeBankCode === 'LCB') {
                 const found = await findRecipientByNumber(request.payeeAccountNo);

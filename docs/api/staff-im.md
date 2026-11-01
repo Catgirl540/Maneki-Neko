@@ -2,6 +2,8 @@
 
 2026-10-21：已实现本地代码，覆盖客服 `csr` 和主管 `supervisor`；未部署、未进行真实微信扫码或投递验收。运维不进入工作人员 IM。
 
+2026-10-29：已在统一环境启用员工 IM 与通知 Worker，客服/主管绑定列表、通知服务签名及真实二维码生成/取消验收通过；本人扫码绑定和真实投递尚待员工完成，详见[本次修复验收](../deployments/bank-staff-im-fix-deployment-20261029.json)。
+
 入口为工作人员网页「IM 机器人」：同站部署 `/staff/im`，工作人员独立开发服务 `/im`。页面提供本人的页内微信扫码、明确绑定、私聊激活状态、提醒开关与静默时段、连接测试、解绑和投递记录；主管可维护值班客服、备用主管与值班时段。手机业务确认入口为同源 `/staff-agent-api/im`。
 
 ## 业务能力
@@ -18,7 +20,7 @@
 
 沿用已有银行 PostgreSQL、员工 AI 会话库、员工 profile、模型和会话数据密钥，先阅读[启动说明](../../README-START.md)及[员工 Agent](staff-agent.md)。本功能不初始化、重置或替换现有客户资金数据。
 
-数据库结构由数据库拥有者通过既有 `server/bootstrap-postgres.mjs` 升级；新增结构在 `server/staff-im-schema.sql`，员工权限版本和工单版本在 `ensureStaffSchema()`。生产应用仍保持 `BANK_AUTO_MIGRATE=false`，升级后按既有 `deploy/postgres/grants.sql` 重新授予运行权限。触发器和普通查询不要求应用获得 DDL 权限。
+数据库结构由数据库拥有者通过既有 `server/bootstrap-postgres.mjs` 升级；新增结构在 `server/staff-im-schema.sql`，员工权限版本和工单版本在 `ensureStaffSchema()`。生产应用仍保持 `BANK_AUTO_MIGRATE=false`，升级后按实际数据库和运行角色授予权限；历史 `deploy/postgres/grants.sql` 中的 `maneki_bank` 不可直接套用到统一库。本次七张表、事件触发器及 `maneki_app` 权限预检已通过，无需结构迁移。触发器和普通查询不要求应用获得 DDL 权限。
 
 银行后端与员工 Bridge **都配置相同**的 `LUCKYCAT_STAFF_IM_SERVICE_KEY`，至少 32 字节，使用独立随机服务密钥，仅放服务进程环境；不要放 `VITE_*`、网页存储或仓库。银行后端还应配置正确的 `LUCKYCAT_STAFF_IM_PUBLIC_URL`，用于通知中的银行链接。
 
@@ -95,6 +97,8 @@ Worker 使用唯一逻辑通知键、数据库租约和唯一发送尝试。发�
 业务 PostgreSQL 保存 `staff_im_bindings/preferences/rules/outbox/cycles/notifications/attempts` 和员工请求结果；渠道真实路由及凭据保存在员工 Bridge 受保护目录。数据库备份不包含渠道文件，恢复需同时保存匹配密钥；不得从旧快照重新广播不确定发送。上游上下文目录并非全部加密，按敏感资料限制访问与备份。
 
 ## 验证与当前限制
+
+未启用员工 IM 时（`LUCKYCAT_STAFF_IM_ENABLED` 未设为 `1`），Bridge 不挂载 `/agent-api/im/*`。旧部署落到通用 404，页面会原样显示 `未知路径：GET /agent-api/im/bindings`；当前代码改为 `503 {"code":"IM_DISABLED"}`，页面显示「员工微信 IM 尚未启用」并禁用生成二维码。这只修正提示，真正开通还需银行与 Bridge 的服务密钥、数据库结构和重启，步骤见[员工微信 IM 开通手册](../staff-im-enablement.md)。
 
 ```powershell
 npm --prefix staff run build

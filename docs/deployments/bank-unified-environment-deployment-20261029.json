@@ -1,0 +1,350 @@
+{
+  "release": "20261029-unified-environment",
+  "startedAt": "20261029T025532Z",
+  "oldSource": "/srv/maneki-bank/releases/20261028-account-security",
+  "oldWeb": "/var/www/bank.waveflow.men/releases/20261028-account-security",
+  "newSource": "/srv/maneki-bank/releases/20261029-unified-environment",
+  "newWeb": "/var/www/bank.waveflow.men/releases/20261029-unified-environment",
+  "backup": "/var/backups/maneki-unify-20261029T025532Z",
+  "schemaMigration": false,
+  "phase": "deployed-and-verified",
+  "publicSwitched": true,
+  "staffCredentialsPreserved": [
+    "staff_li",
+    "staff_ops",
+    "staff_wang"
+  ],
+  "credentialChangeCommitted": true,
+  "completedAt": "2026-10-29T02:56:01.990812+00:00",
+  "health": {
+    "ok": true,
+    "kind": "bank-partner-platform",
+    "database": "postgresql",
+    "integrationMode": "sandbox",
+    "commercialReady": false,
+    "bankConnection": "unconfigured",
+    "routes": 104
+  },
+  "services": {
+    "luckycat-bank-demo": "active",
+    "luckycat-agent-demo": "active",
+    "luckycat-staff-agent": "active",
+    "luckycat-ops-agent": "active"
+  },
+  "archivedWriter": "stopped-and-disabled",
+  "database": "maneki_bank_demo",
+  "publicUrl": "https://bank.waveflow.men",
+  "databases": {
+    "maneki_bank": {
+      "dumpSha256": "254bc9831266e305bce794561699eec5d241f323696453203588ca4f44a61450",
+      "changedTables": [],
+      "reconciled": true
+    },
+    "maneki_bank_demo": {
+      "dumpSha256": "898f80ee9ffed648cd3990b8e2547e2802fa38c1ee93f2c702c89b390d5a2206",
+      "changedTables": [
+        "public.audit_logs",
+        "public.staff_users"
+      ],
+      "reconciled": true
+    }
+  },
+  "status": "deployed-and-verified",
+  "localCompletedAt": "2026-10-29T10:56:01.990812+08:00",
+  "dataStrategy": {
+    "activeDatabase": "maneki_bank_demo",
+    "legacyDatabase": "maneki_bank",
+    "legacyDisposition": "Preserved unchanged as historical evidence; writer stopped, disabled and guarded",
+    "legacyCustomerIdsAlreadyPresent": 2,
+    "uniqueLegacyCustomers": 0,
+    "activeCustomers": 7,
+    "legacyTicketsApprovalsSessionsAndImBindings": 0,
+    "financialSnapshotsCombined": false,
+    "customerBalanceTransactionsFreezeAndSecurityStateChanged": false,
+    "staffCredentials": "Original staff identity, role and password hashes retained; auth versions raised to 3",
+    "customerSessionNamespaceAndEncryptionKey": "Preserved unchanged",
+    "staffAndOpsSessionNamespaces": "Connected to same database with original namespace-specific keys; empty before cutover"
+  },
+  "verification": {
+    "postgresqlIntegration": {
+      "pass": 136,
+      "fail": 0,
+      "skip": 0
+    },
+    "bridgeIntegration": {
+      "pass": 99,
+      "fail": 0,
+      "skip": 2,
+      "skipped": "Optional installed DSH IM runtime and private-chat browser scenario"
+    },
+    "harnessHttp": "ALL PASS",
+    "localBrowserRegression": {
+      "cases": 9,
+      "status": "passed"
+    },
+    "accountModelAndSecurity": "passed",
+    "knowledgeRulesAndRetrieval": "passed (29 tests; Top3 99/99)",
+    "skillsValidation": "passed (10 skills)",
+    "disposableTestDatabasesRemoved": 4,
+    "onlineApi": {
+      "release": "20261029-unified-environment",
+      "origin": "https://bank.waveflow.men",
+      "checks": [
+        "Canonical, compatibility, terminal, Agent and customer routes require authentication",
+        "Published staff HTML/assets match verified build; old link displays unified login",
+        "All three original staff credentials preserved; same token works through old and canonical routes",
+        "CSR/supervisor both see every website customer and existing tickets; ops routes remain forbidden",
+        "Staff can read website customer account-security state through unified backend",
+        "Ops overview and own Agent use unified bank; business access forbidden; terminal keeps prior disabled state",
+        "Logout invalidates staff tokens",
+        "Separate legacy writer stopped and disabled"
+      ],
+      "customerCount": 7,
+      "ok": true
+    },
+    "onlineBrowser": {
+      "checkedAt": "2026-10-29T02:59:52.891Z",
+      "base": "https://bank.waveflow.men",
+      "cases": [
+        {
+          "bank": "demo",
+          "role": "csr",
+          "login": true,
+          "selectorRemoved": true,
+          "genericHint": true,
+          "landing": "/staff/workbench",
+          "nav": [
+            "工作台",
+            "工作人员助手",
+            "IM 机器人",
+            "工单中心",
+            "客户查询",
+            "代客办理",
+            "处置中心"
+          ],
+          "assistant": true,
+          "assistantHealth": 200,
+          "im": true,
+          "logout": true,
+          "pageErrors": 0,
+          "imUnavailableNotice": "未知路径：GET /agent-api/im/bindings 重试"
+        },
+        {
+          "bank": "demo",
+          "role": "supervisor",
+          "login": true,
+          "selectorRemoved": true,
+          "genericHint": true,
+          "landing": "/staff/workbench",
+          "nav": [
+            "工作台",
+            "工作人员助手",
+            "IM 机器人",
+            "工单中心",
+            "客户查询",
+            "代客办理",
+            "处置中心",
+            "审计日志"
+          ],
+          "assistant": true,
+          "assistantHealth": 200,
+          "im": true,
+          "logout": true,
+          "pageErrors": 0,
+          "imUnavailableNotice": "未知路径：GET /agent-api/im/bindings 重试"
+        },
+        {
+          "bank": "demo",
+          "role": "ops",
+          "login": true,
+          "selectorRemoved": true,
+          "genericHint": true,
+          "landing": "/staff/operations",
+          "nav": [
+            "工作人员助手",
+            "运维监控"
+          ],
+          "assistant": true,
+          "assistantHealth": 200,
+          "im": null,
+          "logout": true,
+          "pageErrors": 0
+        },
+        {
+          "bank": "live",
+          "role": "csr",
+          "login": true,
+          "selectorRemoved": true,
+          "genericHint": true,
+          "landing": "/staff/workbench",
+          "nav": [
+            "工作台",
+            "工作人员助手",
+            "IM 机器人",
+            "工单中心",
+            "客户查询",
+            "代客办理",
+            "处置中心"
+          ],
+          "assistant": true,
+          "assistantHealth": 200,
+          "im": true,
+          "logout": true,
+          "pageErrors": 0,
+          "imUnavailableNotice": "未知路径：GET /agent-api/im/bindings 重试"
+        },
+        {
+          "bank": "live",
+          "role": "supervisor",
+          "login": true,
+          "selectorRemoved": true,
+          "genericHint": true,
+          "landing": "/staff/workbench",
+          "nav": [
+            "工作台",
+            "工作人员助手",
+            "IM 机器人",
+            "工单中心",
+            "客户查询",
+            "代客办理",
+            "处置中心",
+            "审计日志"
+          ],
+          "assistant": true,
+          "assistantHealth": 200,
+          "im": true,
+          "logout": true,
+          "pageErrors": 0,
+          "imUnavailableNotice": "未知路径：GET /agent-api/im/bindings 重试"
+        },
+        {
+          "bank": "live",
+          "role": "ops",
+          "login": true,
+          "selectorRemoved": true,
+          "genericHint": true,
+          "landing": "/staff/operations",
+          "nav": [
+            "工作人员助手",
+            "运维监控"
+          ],
+          "assistant": true,
+          "assistantHealth": 200,
+          "im": null,
+          "logout": true,
+          "pageErrors": 0
+        }
+      ],
+      "blockedMutations": [],
+      "failures": [],
+      "apiErrors": [],
+      "knownConfigurationLimits": [
+        {
+          "bank": "demo",
+          "role": "csr",
+          "path": "/staff-agent-api/im/bindings",
+          "status": 404,
+          "reason": "Staff IM Bridge was not enabled before this unification; existing server configuration retained"
+        },
+        {
+          "bank": "demo",
+          "role": "supervisor",
+          "path": "/staff-agent-api/im/bindings",
+          "status": 404,
+          "reason": "Staff IM Bridge was not enabled before this unification; existing server configuration retained"
+        },
+        {
+          "bank": "live",
+          "role": "csr",
+          "path": "/staff-agent-api/im/bindings",
+          "status": 404,
+          "reason": "Staff IM Bridge was not enabled before this unification; existing server configuration retained"
+        },
+        {
+          "bank": "live",
+          "role": "supervisor",
+          "path": "/staff-agent-api/im/bindings",
+          "status": 404,
+          "reason": "Staff IM Bridge was not enabled before this unification; existing server configuration retained"
+        }
+      ]
+    },
+    "finalDataAudit": {
+      "databases": {
+        "maneki_bank": {
+          "tables": 81,
+          "changedTables": [],
+          "financialAndSecurityStateUnchanged": true,
+          "historicalDatabaseUntouched": true,
+          "dumpSha256": "254bc9831266e305bce794561699eec5d241f323696453203588ca4f44a61450"
+        },
+        "maneki_bank_demo": {
+          "tables": 81,
+          "changedTables": [
+            "public.audit_logs",
+            "public.bank_request_audit",
+            "public.customer_access_logs",
+            "public.operations_events",
+            "public.staff_login_attempts",
+            "public.staff_users"
+          ],
+          "financialAndSecurityStateUnchanged": true,
+          "historicalDatabaseUntouched": false,
+          "dumpSha256": "898f80ee9ffed648cd3990b8e2547e2802fa38c1ee93f2c702c89b390d5a2206"
+        }
+      },
+      "staffOriginalCredentialsRetained": true,
+      "staffAuthVersions": {
+        "staff_wang": 3,
+        "staff_li": 3,
+        "staff_ops": 3
+      },
+      "services": {
+        "luckycat-bank-demo": {
+          "active": true,
+          "currentSource": true
+        },
+        "luckycat-agent-demo": {
+          "active": true,
+          "currentSource": true
+        },
+        "luckycat-staff-agent": {
+          "active": true,
+          "currentSource": true
+        },
+        "luckycat-ops-agent": {
+          "active": true,
+          "currentSource": true
+        }
+      },
+      "configurationAndStateBackupSha256": "843e59a36efe7c3c48de791a7681099f22f683de99b07705f331732d81fd522e",
+      "ok": true
+    }
+  },
+  "preservedConfigurationLimits": {
+    "staffImAdapter": "Previously not enabled; bindings route remains unavailable; no robot setup or real message delivery tested",
+    "opsTerminal": "Previously disabled; remains disabled; role-gated listing checked, no PTY started",
+    "maintenanceTimers": "No existing maintenance timers; no new schedule installed",
+    "realBankConnection": "Unconfigured; commercialReady=false"
+  },
+  "publishedStaffEntry": "https://bank.waveflow.men/staff/login",
+  "oldEnvironmentUrls": "Both ?bank=demo and ?bank=live resolve to same login and database",
+  "initialPatchSha256": "7eab5671f71bfd41a91c40e25462e7f97c00b55059b371faccb0e01ed821a511",
+  "finalEvidenceManifest": "release-unify-evidence-manifest.json",
+  "scopeNotes": [
+    "No database schema changes, database resets or financial data overwrites",
+    "No Android APK update; existing shared customer API remains available",
+    "No Git commit or push performed"
+  ],
+  "knowledgeCorpusVersion": "e2e0c7c71a3f767d",
+  "localDocumentationCorpusVersion": "a6bb8893def5e4b3",
+  "finalEvidenceSync": {
+    "status": "incomplete",
+    "reason": "Server repeatedly closed SSH command and file-transfer channels after successful authentication",
+    "publicFeatureDeploymentAffected": false,
+    "localEvidenceComplete": true,
+    "remoteCutoverReport": "/var/backups/maneki-unify-20261029T025532Z/report.json",
+    "remoteOnlineVerification": "/home/ubuntu/unify-environments-20261029-online.json",
+    "remoteDataAudit": "/home/ubuntu/unify-environments-20261029-final-audit.json"
+  }
+}

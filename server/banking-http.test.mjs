@@ -184,7 +184,6 @@ test('bank HTTP transactions and security preserve customer budgets and balanced
     assert.equal(receipt.transaction.amount, 2500)
     assert.equal(receipt.transaction.direction, 'out')
     assert.equal(receipt.transaction.status, 'success')
-    // 测试环境没有配置模型分类器：按本地商户规则即时归类，不再恒为 other
     assert.equal(receipt.category, 'dining')
     assert(['pending', 'done', 'failed'].includes(receipt.classificationState))
     assert.equal(receipt.currency, before.currency)
@@ -706,7 +705,7 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
     const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardSpend','cardActivate','cardLock','cardReplace','cardSecrets','budgets','budgetPass','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
     const patches = new Set(['cardSettings','autoDebit','budget','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     const deletes = new Set(['payee'])
-    for (const name of ['scheduledTransfers','splitCollections','splitPayment','splitReminder','cardLost','cardRecover','birthdayPlanPreview','birthdayPlans','birthdayPlanCancel','birthdayPlanOrder']) posts.add(name)
+    for (const name of ['splitPay','scheduledTransfers','splitCollections','splitPayment','splitReminder','cardLost','cardRecover','birthdayPlanPreview','birthdayPlans','birthdayPlanCancel','birthdayPlanOrder']) posts.add(name)
     patches.add('payee')
     deletes.add('scheduledTransfer'); deletes.add('splitCollection')
     for (const [name, build] of Object.entries(routes)) {

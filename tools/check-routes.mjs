@@ -137,7 +137,20 @@ if (broken.length === 0) {
 // `/` 由兜底 `<Navigate to="/">` 落到，单独放行；`*` 本身不是页面。
 const reachable = new Set(links.map(l => l.target.split(/[?#]/)[0]))
 // 兼容旧地址的重定向不是页面，不需要再提供独立入口；其目标仍由链接检查验证。
-const redirects = new Set([...appSource.matchAll(/<Route\s+path="([^"]+)"\s+element=\{<Navigate\b/g)].map(match => match[1]))
+// 两种写法都认：内联 `<Navigate …/>`，和命名组件（组件体里渲染 `<Navigate>`）。
+// 后者不能靠名字猜：`RemindersRedirect` 还要转发 hash，所以它是个组件而不是内联语句。
+// 这里直接读组件定义，确认它真的渲染 Navigate 才放行。
+const redirectComponents = new Set(
+  [...appSource.matchAll(/function\s+(\w+)\s*\([^)]*\)\s*\{[\s\S]*?\n\}/g)]
+    .filter(match => /<Navigate\b/.test(match[0]))
+    .map(match => match[1]),
+)
+const redirects = new Set([
+  ...[...appSource.matchAll(/<Route\s+path="([^"]+)"\s+element=\{<Navigate\b/g)].map(match => match[1]),
+  ...[...appSource.matchAll(/<Route\s+path="([^"]+)"\s+element=\{<(\w+)\s*\/>\}/g)]
+    .filter(match => redirectComponents.has(match[2]))
+    .map(match => match[1]),
+])
 const orphans = [...exact].filter(route => !reachable.has(route) && !redirects.has(route) && route !== '/' && route !== '')
 if (orphans.length === 0) {
   ok('路由表里没有走不到的页面（每条都至少被一处链接指着）')
