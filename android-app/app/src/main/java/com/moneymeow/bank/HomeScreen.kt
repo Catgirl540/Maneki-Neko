@@ -58,7 +58,7 @@ private data class Txn(
 )
 
 @Composable
-fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
+fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onOpenTx: (String) -> Unit) {
     var balanceVisible by remember { mutableStateOf(true) }
     var transferInOpen by remember { mutableStateOf(false) }
     // 真实数据：登录后从 server/ 拉账户与最近流水；没有数据就显示空态，不用占位数字。
@@ -95,7 +95,7 @@ fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit) {
         Spacer(Modifier.height(12.dp))
         EntryGrid(onOpen, onSwitchTab) { transferInOpen = true }
         Spacer(Modifier.height(4.dp))
-        RecentTransactions(onOpen, recentRows, loading, loadError)
+        RecentTransactions(onOpen, recentRows, loading, loadError, onOpenTx)
     }
 
     if (transferInOpen) {
@@ -259,6 +259,7 @@ private fun RecentTransactions(
     rows: List<TransactionDto>,
     loading: Boolean,
     loadError: String?,
+    onOpenTx: (String) -> Unit,
 ) {
     Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
         Row(
@@ -312,7 +313,7 @@ private fun RecentTransactions(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .clickable { onOpen("交易详情") }
+                            .clickable { onOpenTx(rows[index].id) }
                             .padding(vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

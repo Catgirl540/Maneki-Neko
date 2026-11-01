@@ -203,7 +203,7 @@ fun BankApp() {
                 ) {
                 if (route == null) {
                     when (state.tab) {
-                        0 -> HomeScreen(onOpen = push, onSwitchTab = { tab = it })
+                        0 -> HomeScreen(onOpen = push, onSwitchTab = { tab = it }, onOpenTx = { id -> selectedTxId = id; push("交易详情") })
                         1 -> WealthTab(
                             onOpenProduct = { code -> selectedProductCode = code; push("产品详情") },
                             onOpenPlans = { push("储蓄与计划") },
@@ -256,6 +256,7 @@ fun BankApp() {
                             onTransferIn = { push("转入") },
                             onTransferOut = { push("转出") },
                         )
+                        "转入" -> TransferInSheet(onDismiss = pop)
                         "换汇" -> ExchangeScreen(onBack = pop)
                         "交易详情" -> TxDetailScreen(onBack = pop, transactionId = selectedTxId)
                         "寄送信息" -> DeliveryScreen(onBack = pop)

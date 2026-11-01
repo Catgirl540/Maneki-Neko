@@ -24,12 +24,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import kotlinx.coroutines.launch
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -37,14 +36,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 /**
  * 登录与开户共用的骨架：顶部返回栏、可滚动内容、**底部固定主按钮**
  * （截图里「登入 / 下一步 / 完成开户」都贴底）。
- */@Composable
+ */
+@Composable
 private fun AuthScaffold(
     title: String,
     onBack: (() -> Unit)? = null,
@@ -111,7 +113,7 @@ fun LoginScreen(
                     value = phone,
                     onValueChange = { phone = it.filter(Char::isDigit).take(11) },
                     placeholder = "请输入手机号",
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone,
+                    keyboardType = KeyboardType.Phone,
                 )
                 Spacer(Modifier.height(14.dp))
                 TextFieldRow(
@@ -127,7 +129,7 @@ fun LoginScreen(
                     value = smsCode,
                     onValueChange = { smsCode = it.filter(Char::isDigit).take(6) },
                     placeholder = "6 位验证码",
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                    keyboardType = KeyboardType.Number,
                     trailing = {
                         Box(
                             Modifier
@@ -242,59 +244,195 @@ private fun StepHeader(step: Int, title: String, lead: String) {
     }
 }
 
+/** 整个开户流程共享的草稿；只活在未登录流程内，不写入本地存储。 */
+private class OpenAccountDraft {
+    var phone by mutableStateOf("")
+    var smsCode by mutableStateOf("")
+    var loginPassword by mutableStateOf("")
+    var confirmLoginPassword by mutableStateOf("")
+    var holderName by mutableStateOf("")
+    var idNumber by mutableStateOf("")
+    var faceTicket by mutableStateOf("")
+    var paymentPassword by mutableStateOf("")
+    var confirmPaymentPassword by mutableStateOf("")
+    var pledge by mutableStateOf(false)
+}
+
+private val PHONE_PATTERN = Regex("^1[3-9]\\d{9}$")
+private val ID_PATTERN = Regex("^\\d{17}[\\dXx]$")
+
 @Composable
-fun OpenPhoneScreen(onBack: () -> Unit, onNext: () -> Unit) {
+private fun PhoneStep(draft: OpenAccountDraft, onBack: () -> Unit, onNext: () -> Unit) {
+    var sending by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var hint by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun sendCode() {
+        if (sending) return
+        if (!PHONE_PATTERN.matches(draft.phone)) {
+            error = "请输入正确的 11 位手机号"
+            return
+        }
+        sending = true
+        error = null
+        scope.launch {
+            runCatching { BankApi.sendSmsCode(draft.phone) }
+                .onSuccess { demo ->
+                    hint = if (demo != null) "演示验证码：$demo" else "验证码已发送，请查看短信"
+                }
+                .onFailure { error = it.message }
+            sending = false
+        }
+    }
+
     AuthScaffold(
         title = "注册开户",
         onBack = onBack,
         content = {
             StepHeader(1, "先验证手机号", "这个号码会成为你的登录账号，也用于接收账户变动通知。")
             Column(Modifier.padding(horizontal = 20.dp)) {
-                Field("手机号", "138 0013 8000")
+                TextFieldRow(
+                    label = "手机号",
+                    value = draft.phone,
+                    onValueChange = { draft.phone = it.filter(Char::isDigit).take(11) },
+                    placeholder = "请输入 11 位手机号",
+                    keyboardType = KeyboardType.Phone,
+                )
                 Spacer(Modifier.height(14.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f)) { Field("短信验证码", "6 位验证码") }
-                    Spacer(Modifier.size(8.dp))
-                    Box(
-                        Modifier
-                            .height(46.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Tokens.Surface)
-                            .border(1.dp, Tokens.Border, RoundedCornerShape(8.dp))
-                            .padding(horizontal = 13.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { Text("获取验证码", fontSize = 12.5.sp, color = Tokens.Ink2) }
+                TextFieldRow(
+                    label = "短信验证码",
+                    value = draft.smsCode,
+                    onValueChange = { draft.smsCode = it.filter(Char::isDigit).take(6) },
+                    placeholder = "6 位验证码",
+                    keyboardType = KeyboardType.Number,
+                    trailing = {
+                        Box(
+                            Modifier
+                                .height(46.dp)
+                                .clip(CircleShape)
+                                .background(Tokens.Surface)
+                                .border(1.dp, Tokens.Border, CircleShape)
+                                .clickable(enabled = !sending) { sendCode() }
+                                .padding(horizontal = 15.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(if (sending) "发送中…" else "获取验证码", fontSize = 12.5.sp, color = Tokens.Ink2)
+                        }
+                    },
+                )
+                if (hint != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(hint!!, fontSize = 11.sp, color = Tokens.Ink2)
+                }
+                Spacer(Modifier.height(14.dp))
+                TextFieldRow(
+                    label = "登录密码",
+                    value = draft.loginPassword,
+                    onValueChange = { draft.loginPassword = it },
+                    placeholder = "设置登录密码",
+                    password = true,
+                )
+                Spacer(Modifier.height(14.dp))
+                TextFieldRow(
+                    label = "确认登录密码",
+                    value = draft.confirmLoginPassword,
+                    onValueChange = { draft.confirmLoginPassword = it },
+                    placeholder = "再输一次登录密码",
+                    password = true,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    PasswordPolicy.requirements,
+                    fontSize = 11.sp,
+                    color = Tokens.Muted,
+                    lineHeight = 17.sp,
+                )
+                if (error != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(error!!, fontSize = 11.5.sp, color = Tokens.Coral)
                 }
             }
         },
-        footer = { PrimaryButton("下一步", onNext) },
+        footer = {
+            PrimaryButton("下一步", onClick = {
+                error = null
+                when {
+                    !PHONE_PATTERN.matches(draft.phone) -> error = "请输入正确的 11 位手机号"
+                    draft.smsCode.length != 6 -> error = "请输入 6 位短信验证码"
+                    !PasswordPolicy.isValid(draft.loginPassword) -> error = PasswordPolicy.requirements
+                    draft.loginPassword != draft.confirmLoginPassword -> error = "两次输入的登录密码不一致"
+                    else -> onNext()
+                }
+            })
+        },
     )
 }
 
 @Composable
-fun OpenRealNameScreen(onBack: () -> Unit, onNext: () -> Unit) {
+private fun RealNameStep(draft: OpenAccountDraft, onBack: () -> Unit, onNext: () -> Unit) {
+    var error by remember { mutableStateOf<String?>(null) }
     AuthScaffold(
         title = "实名信息",
         onBack = onBack,
         content = {
             StepHeader(2, "填写实名信息", "姓名与证件号需与本人证件一致，开户后不可自行修改。")
             Column(Modifier.padding(horizontal = 20.dp)) {
-                Field("姓名", "陈嘉禾")
+                TextFieldRow(
+                    label = "姓名",
+                    value = draft.holderName,
+                    onValueChange = { draft.holderName = it.take(40) },
+                    placeholder = "请输入真实姓名",
+                )
                 Spacer(Modifier.height(14.dp))
-                Field("身份证号", "3101**********1234", hint = "演示环境已自动填入示例证件号")
+                TextFieldRow(
+                    label = "身份证号",
+                    value = draft.idNumber,
+                    onValueChange = {
+                        draft.idNumber = it.filter { ch -> ch.isDigit() || ch == 'X' || ch == 'x' }
+                            .uppercase()
+                            .take(18)
+                    },
+                    placeholder = "18 位身份证号",
+                    keyboardType = KeyboardType.Ascii,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "证件信息仅用于本次开户核验，不写入本地存储。",
+                    fontSize = 11.sp,
+                    color = Tokens.Muted,
+                )
+                if (error != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(error!!, fontSize = 11.5.sp, color = Tokens.Coral)
+                }
             }
         },
-        footer = { PrimaryButton("下一步", onNext) },
+        footer = {
+            PrimaryButton("下一步", onClick = {
+                error = when {
+                    draft.holderName.isBlank() -> "请填写姓名"
+                    !ID_PATTERN.matches(draft.idNumber) -> "请输入 18 位身份证号"
+                    else -> null
+                }
+                if (error == null) onNext()
+            })
+        },
     )
 }
 
 @Composable
-fun OpenFaceScreen(onBack: () -> Unit, onNext: () -> Unit) {
+private fun FaceStep(draft: OpenAccountDraft, onBack: () -> Unit, onNext: () -> Unit) {
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val verified = draft.faceTicket.isNotEmpty()
+
     AuthScaffold(
         title = "身份核验",
         onBack = onBack,
         content = {
-            StepHeader(3, "人脸核验", "把脸放进框内，按提示完成动作。核验只用于确认是本人开户。")
+            StepHeader(3, "人脸核验", "核验结果只用于确认是本人开户。票证 5 分钟内有效。")
             Column(
                 Modifier
                     .fillMaxWidth()
@@ -310,50 +448,216 @@ fun OpenFaceScreen(onBack: () -> Unit, onNext: () -> Unit) {
                 ) {
                     androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
                         drawCircle(
-                            color = Tokens.Border,
+                            color = if (verified) Tokens.Primary else Tokens.Border,
                             style = androidx.compose.ui.graphics.drawscope.Stroke(
                                 width = 1.dp.toPx(),
-                                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(
+                                pathEffect = if (verified) null else androidx.compose.ui.graphics.PathEffect.dashPathEffect(
                                     floatArrayOf(5.dp.toPx(), 4.dp.toPx()),
                                 ),
                             ),
                         )
                     }
-                    Icon(Icons.Person, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(52.dp))
+                    Icon(
+                        if (verified) Icons.Check else Icons.Person,
+                        contentDescription = null,
+                        tint = if (verified) Tokens.Primary else Tokens.Muted,
+                        modifier = Modifier.size(52.dp),
+                    )
                 }
                 Spacer(Modifier.height(14.dp))
                 Text(
-                    "光线充足时识别更快\n演示环境不会调用真实摄像头",
+                    if (verified) "身份核验已通过" else "演示环境通过银行核身接口签发人脸票据，不调用摄像头",
                     fontSize = 12.sp,
-                    color = Tokens.Muted,
+                    color = if (verified) Tokens.Ink2 else Tokens.Muted,
                     lineHeight = 19.sp,
                     textAlign = TextAlign.Center,
                 )
+                if (error != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(error!!, fontSize = 11.5.sp, color = Tokens.Coral)
+                }
             }
         },
-        footer = { PrimaryButton("开始人脸核验", onNext) },
+        footer = {
+            PrimaryButton(
+                when {
+                    busy -> "核验中…"
+                    verified -> "下一步"
+                    else -> "开始人脸核验"
+                },
+                onClick = {
+                    if (busy) return@PrimaryButton
+                    if (verified) {
+                        onNext()
+                        return@PrimaryButton
+                    }
+                    busy = true
+                    error = null
+                    scope.launch {
+                        runCatching { BankApi.verifyIdentity("face") }
+                            .onSuccess { draft.faceTicket = it }
+                            .onFailure { error = it.message ?: "人脸核验失败，请重试" }
+                        busy = false
+                    }
+                },
+            )
+        },
     )
 }
 
 @Composable
-fun OpenPasswordScreen(onBack: () -> Unit, onDone: () -> Unit) {
+private fun PasswordStep(
+    draft: OpenAccountDraft,
+    onBack: () -> Unit,
+    onDone: (RegistrationResultDto) -> Unit,
+    onRestart: () -> Unit,
+) {
+    var submitting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    var hint by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun submit() {
+        if (submitting) return
+        error = when {
+            !Regex("^\\d{6}$").matches(draft.paymentPassword) -> "请设置 6 位数字支付密码"
+            draft.paymentPassword != draft.confirmPaymentPassword -> "两次输入的支付密码不一致"
+            !draft.pledge -> "请阅读并确认合法开立和使用账户承诺"
+            else -> null
+        }
+        if (error != null) return
+        submitting = true
+        failed = false
+        scope.launch {
+            runCatching {
+                BankApi.register(
+                    phone = draft.phone,
+                    password = draft.loginPassword,
+                    paymentPassword = draft.paymentPassword,
+                    holderName = draft.holderName.trim(),
+                    idNumber = draft.idNumber,
+                    smsCode = draft.smsCode,
+                    faceTicket = draft.faceTicket,
+                    pledge = ACCOUNT_OPENING_PLEDGE,
+                )
+            }
+                .onSuccess { result ->
+                    SessionStore.save(LoginResult(result.token, result.name, result.phone))
+                    submitting = false
+                    onDone(result)
+                }
+                .onFailure { throwable ->
+                    error = throwable.message ?: "开户失败，请稍后重试"
+                    failed = true
+                    if ((throwable as? BankApiException)?.code == "BAD_PAY_PASSWORD") {
+                        draft.paymentPassword = ""
+                        draft.confirmPaymentPassword = ""
+                    }
+                    submitting = false
+                }
+        }
+    }
+
     AuthScaffold(
         title = "设置支付密码",
         onBack = onBack,
         content = {
             StepHeader(4, "设置 6 位支付密码", "转账、办卡等敏感操作需要输入这个密码，请勿与登录密码相同。")
             Column(Modifier.padding(horizontal = 20.dp)) {
-                Field("支付密码", "6 位数字", placeholder = true)
+                TextFieldRow(
+                    label = "支付密码",
+                    value = draft.paymentPassword,
+                    onValueChange = { draft.paymentPassword = it.filter(Char::isDigit).take(6) },
+                    placeholder = "6 位数字",
+                    keyboardType = KeyboardType.Number,
+                    password = true,
+                )
                 Spacer(Modifier.height(14.dp))
-                Field("确认支付密码", "再输一次", placeholder = true)
+                TextFieldRow(
+                    label = "确认支付密码",
+                    value = draft.confirmPaymentPassword,
+                    onValueChange = { draft.confirmPaymentPassword = it.filter(Char::isDigit).take(6) },
+                    placeholder = "再输一次",
+                    keyboardType = KeyboardType.Number,
+                    password = true,
+                )
+                Spacer(Modifier.height(18.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Tokens.SurfaceWarm)
+                        .padding(12.dp),
+                ) {
+                    Column {
+                        Text(
+                            ACCOUNT_MISUSE_PENALTY,
+                            fontSize = 11.sp,
+                            color = Tokens.Coral,
+                            lineHeight = 17.sp,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickableNoRipple { draft.pledge = !draft.pledge },
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Box(
+                                Modifier
+                                    .padding(top = 1.dp)
+                                    .size(20.dp)
+                                    .clip(CircleShape)
+                                    .background(if (draft.pledge) Tokens.Primary else Tokens.Surface)
+                                    .border(1.dp, if (draft.pledge) Tokens.Primary else Tokens.Border, CircleShape),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (draft.pledge) Text("✓", fontSize = 11.sp, color = Color.White)
+                            }
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                ACCOUNT_OPENING_PLEDGE,
+                                fontSize = 11.5.sp,
+                                color = Tokens.Ink2,
+                                lineHeight = 18.sp,
+                            )
+                        }
+                    }
+                }
+                if (error != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(error!!, fontSize = 11.5.sp, color = Tokens.Coral, lineHeight = 18.sp)
+                }
+                if (failed) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "验证码已失效或已被使用？返回第 1 步重新获取验证码，并重新完成人脸核验。",
+                        fontSize = 11.sp,
+                        color = Tokens.Muted,
+                        lineHeight = 17.sp,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    GhostButton("重新验证并获取验证码", onRestart)
+                }
+                if (hint != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(hint!!, fontSize = 11.sp, color = Tokens.Muted)
+                }
             }
         },
-        footer = { PrimaryButton("完成开户", onDone) },
+        footer = {
+            PrimaryButton(if (submitting) "开户中…" else "完成开户", onClick = { submit() })
+        },
     )
 }
 
 @Composable
-fun OpenDoneScreen(onBack: () -> Unit, onHome: () -> Unit) {
+fun OpenDoneScreen(
+    onBack: (() -> Unit)? = null,
+    onHome: () -> Unit,
+    result: RegistrationResultDto? = null,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -365,55 +669,147 @@ fun OpenDoneScreen(onBack: () -> Unit, onHome: () -> Unit) {
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 26.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
+            if (result == null) {
+                Column(
                     Modifier
-                        .size(62.dp)
-                        .clip(CircleShape)
-                        .background(Tokens.Primary),
-                    contentAlignment = Alignment.Center,
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp, vertical = 40.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Icon(Icons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    Text("没有可展示的开户结果", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "请返回登录页，从「注册并开户」重新进入。",
+                        fontSize = 12.5.sp,
+                        color = Tokens.Muted,
+                        textAlign = TextAlign.Center,
+                    )
                 }
-                Spacer(Modifier.height(14.dp))
-                Text("开户成功", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-                Spacer(Modifier.height(6.dp))
-                Text("储蓄账户已开立，借记卡随后寄出", fontSize = 12.5.sp, color = Tokens.Muted)
+            } else {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 26.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Box(
+                        Modifier
+                            .size(62.dp)
+                            .clip(CircleShape)
+                            .background(Tokens.Primary),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text("开户成功", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        (result.accountLabel.ifEmpty { "储蓄账户" }) + "已开立，登录状态已建立",
+                        fontSize = 12.5.sp,
+                        color = Tokens.Muted,
+                    )
+                }
+                KvCard(
+                    listOf(
+                        "户名" to result.name,
+                        "账户号码" to result.accountNo,
+                        "账户类型" to result.accountLabel.ifEmpty { "储蓄账户" },
+                        "开户时间" to formatDateTime(result.openedAt),
+                        "支付密码" to "已设置",
+                    ),
+                    Modifier.padding(horizontal = 14.dp),
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "借记卡需在「银行卡」中另行申请，本页不展示尚未发生的卡片状态。",
+                    fontSize = 11.sp,
+                    color = Tokens.Muted,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                    lineHeight = 17.sp,
+                )
             }
-            KvCard(
-                listOf(
-                    "户名" to "陈嘉禾",
-                    "账户号码" to "1024 ···· 8821",
-                    "借记卡" to "尾号 8821 · 待签收",
-                    "支付密码" to "已设置",
-                ),
-                Modifier.padding(horizontal = 14.dp),
-            )
         }
         Column(
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 14.dp, vertical = 14.dp),
         ) {
-            PrimaryButton("进入首页", onHome)
+            PrimaryButton(if (result == null) "返回登录页" else "进入首页", result?.let { onHome } ?: (onBack ?: onHome))
         }
     }
 }
 
+/* ───────────────── 旧路由占位（保持 MainActivity 编译） ───────────────── */
+
+/**
+ * 开户流程现在由 [AuthGate] 在未登录根流程内一次持有全部草稿；
+ * 老的四段独立路由无法跨路由保存手机号 / 验证码 / 人脸票据，继续展示表单会误导用户。
+ * 这里明确提示从登录页重新进入，避免再从零散路由伪造成功。
+ */
+@Composable
+private fun LegacyOpenAccountNotice(onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize().background(Tokens.Page)) {
+        TopBar("注册开户", onBack)
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(horizontal = 24.dp, vertical = 32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("请从登录页进入开户", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "开户需要连续完成手机号、实名、人脸核验和支付密码四步；请返回登录页，点击「注册并开户」。",
+                fontSize = 12.5.sp,
+                color = Tokens.Muted,
+                textAlign = TextAlign.Center,
+                lineHeight = 20.sp,
+            )
+            Spacer(Modifier.height(22.dp))
+            PrimaryButton("返回登录页", onBack)
+        }
+    }
+}
+
+@Suppress("UNUSED_PARAMETER")
+@Composable
+fun OpenPhoneScreen(onBack: () -> Unit, onNext: () -> Unit) {
+    LegacyOpenAccountNotice(onBack)
+}
+
+@Suppress("UNUSED_PARAMETER")
+@Composable
+fun OpenRealNameScreen(onBack: () -> Unit, onNext: () -> Unit) {
+    LegacyOpenAccountNotice(onBack)
+}
+
+@Suppress("UNUSED_PARAMETER")
+@Composable
+fun OpenFaceScreen(onBack: () -> Unit, onNext: () -> Unit) {
+    LegacyOpenAccountNotice(onBack)
+}
+
+@Suppress("UNUSED_PARAMETER")
+@Composable
+fun OpenPasswordScreen(onBack: () -> Unit, onDone: () -> Unit) {
+    LegacyOpenAccountNotice(onBack)
+}
+
 /* ───────────────── 未登录根流程 ───────────────── */
+
+private enum class AuthRoute { Login, Phone, RealName, Face, Password, Done }
 
 /**
  * 未登录时的唯一入口：登录页 + 开户四步，全部在这一层内切换。
- * 开户流程是演示表单，完成后回到登录页，不会伪造登录态。
+ * 草稿只保存在内存里；提交成功后保存真实令牌，并由「开户完成」页展示服务端返回的账户信息。
  */
 @Composable
 fun AuthGate(onLoggedIn: () -> Unit) {
-    var route by remember { mutableStateOf<String?>(null) }
+    var route by remember { mutableStateOf(AuthRoute.Login) }
+    var draft by remember { mutableStateOf(OpenAccountDraft()) }
+    var result by remember { mutableStateOf<RegistrationResultDto?>(null) }
+
     // 根页面不在 Scaffold 内，需要自己让开状态栏与导航条。
     Box(
         Modifier
@@ -422,18 +818,51 @@ fun AuthGate(onLoggedIn: () -> Unit) {
             .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
-    when (route) {
-        null -> LoginScreen(
-            root = true,
-            onBack = {},
-            onLogin = onLoggedIn,
-            onRegister = { route = "开户·手机号" },
-        )
-        "开户·手机号" -> OpenPhoneScreen(onBack = { route = null }, onNext = { route = "开户·实名" })
-        "开户·实名" -> OpenRealNameScreen(onBack = { route = "开户·手机号" }, onNext = { route = "开户·核验" })
-        "开户·核验" -> OpenFaceScreen(onBack = { route = "开户·实名" }, onNext = { route = "开户·支付密码" })
-        "开户·支付密码" -> OpenPasswordScreen(onBack = { route = "开户·核验" }, onDone = { route = "开户完成" })
-        else -> OpenDoneScreen(onBack = { route = "开户·支付密码" }, onHome = { route = null })
-    }
+        when (route) {
+            AuthRoute.Login -> LoginScreen(
+                root = true,
+                onBack = {},
+                onLogin = onLoggedIn,
+                onRegister = {
+                    draft = OpenAccountDraft()
+                    result = null
+                    route = AuthRoute.Phone
+                },
+            )
+            AuthRoute.Phone -> PhoneStep(
+                draft = draft,
+                onBack = { route = AuthRoute.Login },
+                onNext = { route = AuthRoute.RealName },
+            )
+            AuthRoute.RealName -> RealNameStep(
+                draft = draft,
+                onBack = { route = AuthRoute.Phone },
+                onNext = { route = AuthRoute.Face },
+            )
+            AuthRoute.Face -> FaceStep(
+                draft = draft,
+                onBack = { route = AuthRoute.RealName },
+                onNext = { route = AuthRoute.Password },
+            )
+            AuthRoute.Password -> PasswordStep(
+                draft = draft,
+                onBack = { route = AuthRoute.Face },
+                onDone = {
+                    result = it
+                    route = AuthRoute.Done
+                },
+                onRestart = {
+                    // 人脸票据与短信挑战都已被服务端消费，重来必须重新获取。
+                    draft.faceTicket = ""
+                    draft.smsCode = ""
+                    route = AuthRoute.Phone
+                },
+            )
+            AuthRoute.Done -> OpenDoneScreen(
+                onBack = onLoggedIn,
+                onHome = onLoggedIn,
+                result = result,
+            )
+        }
     }
 }

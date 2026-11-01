@@ -109,7 +109,6 @@ fun AssistantScreen(onBack: () -> Unit) {
     val turns = remember { mutableStateListOf<Turn>() }
     var input by remember { mutableStateOf("") }
     var thinking by remember { mutableStateOf(false) }
-    var pendingConsent by remember { mutableStateOf<Turn?>(null) }
     // 真实的待确认事项（网页 ConsentCard 对应）
     var challenge by remember { mutableStateOf<org.json.JSONObject?>(null) }
     var consentBusy by remember { mutableStateOf(false) }
@@ -204,92 +203,9 @@ fun AssistantScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    fun reply(text: String) {
-        thinking = true
-        scope.launch {
-            delay(700)
-            val lower = text.trim()
-            val reply = when {
-                lower.contains("智能转账") -> Turn(
-                    fromUser = false,
-                    text = "好的，请确认收款人与金额。核对无误后输入支付密码，我再执行转账。",
-                    steps = listOf("读取历史收款人", "生成转账草稿"),
-                )
-                lower.contains("理财顾问") -> Turn(
-                    fromUser = false,
-                    text = "你的理财持仓市值 ¥0.00，尚未开通理财。开通需要先完成风险测评，再签投资协议。",
-                    steps = listOf("查询理财概览", "检查风险测评状态"),
-                )
-                lower.contains("账单分析") -> Turn(
-                    fromUser = false,
-                    text = "本月支出共 ¥12,807.14，比上月少 25.3%。最多的是房租 ¥6,500.00，其次是购物 ¥4,108.74。",
-                    steps = listOf("查询本月支出统计", "按分类汇总"),
-                )
-                lower.contains("银行卡管家") -> Turn(
-                    fromUser = false,
-                    text = "你名下有 5 张卡，其中云闪付联名卡已锁定、星享借记卡已换卡。需要我帮你解锁或查看交易设置吗？",
-                    steps = listOf("查询卡片列表"),
-                )
-                lower.contains("换汇助手") -> Turn(
-                    fromUser = false,
-                    text = "当前参考汇率 1 CNY ≈ 1.09 HKD。要换多少？我可以先给你报价，确认后需要输入支付密码。",
-                    steps = listOf("获取换汇报价"),
-                )
-                lower.contains("储蓄规划") -> Turn(
-                    fromUser = false,
-                    text = "你有 2 个存钱目标，累计已存 ¥30,600.00。计划只保存规则，自动归集尚未开放。",
-                    steps = listOf("查询存钱目标"),
-                )
-                lower.contains("借款测算") -> Turn(
-                    fromUser = false,
-                    text = "按你当前流水测算，可用额度约 ¥50,000.00，年化 4.35% 起。具体额度以审批结果为准。",
-                    steps = listOf("读取现金流", "测算额度"),
-                )
-                lower.contains("保险咨询") -> Turn(
-                    fromUser = false,
-                    text = "你有 2 份保单，合计保额 ¥7,000,000.00。保险保障不计入投资资产与收益。",
-                    steps = listOf("查询保单"),
-                )
-                lower.contains("安全助手") -> Turn(
-                    fromUser = false,
-                    text = "安全评分 90 · 防护优秀，实名已通过，当前 2 台设备登录。需要检查设备或改密码可以继续问我。",
-                    steps = listOf("查询安全概览"),
-                )
-                lower.contains("智能客服") -> Turn(
-                    fromUser = false,
-                    text = "常见问题我都能答；需要人工可以转接客服工单。你想先问哪一类？",
-                    steps = listOf("加载常见问题"),
-                )
-                lower.contains("余额") -> Turn(
-                    fromUser = false,
-                    text = "你的储蓄账户当前余额是 ¥1,284,595.55，其中人民币活期 ¥1,284,595.55、港币 HK$0.00。",
-                    steps = listOf("查询资金账户余额", "读取各币种余额分区"),
-                )
-                lower.contains("支出") || lower.contains("花") -> Turn(
-                    fromUser = false,
-                    text = "本月支出共 ¥12,807.14，比上月少 25.3%。最多的是房租 ¥6,500.00，其次是购物 ¥4,108.74。",
-                    steps = listOf("查询本月支出统计", "按分类汇总", "对比上月"),
-                )
-                lower.contains("换汇") -> Turn(
-                    fromUser = false,
-                    text = "当前参考汇率 1 CNY ≈ 1.09 HKD。要换多少？我可以先给你报价，确认后需要输入支付密码。",
-                    steps = listOf("获取换汇报价"),
-                )
-                lower.contains("转账") -> Turn(
-                    fromUser = false,
-                    text = "好的，请确认收款人与金额。核对无误后输入支付密码，我再执行转账。",
-                    steps = listOf("读取历史收款人", "生成转账草稿"),
-                )
-                else -> Turn(
-                    fromUser = false,
-                    text = "我可以帮你查账、转账、看支出、换汇和看理财。直接说想做的事就行。",
-                    steps = listOf("理解意图"),
-                )
-            }
-            turns.add(reply)
-            thinking = false
-            if (lower.contains("转账")) pendingConsent = reply
-        }
+    fun reply() {
+        turns.add(Turn(fromUser = false, text = "助手暂时无法连接，无法确认请求是否执行。请先查看交易记录，再决定是否重试。"))
+        thinking = false
     }
 
     fun send(text: String) {
@@ -308,7 +224,7 @@ fun AssistantScreen(onBack: () -> Unit) {
             val online = agentOnline ?: AgentApi.health().also { agentOnline = it }
             if (!online) {
                 thinking = false
-                reply(question)
+                reply()
                 return@launch
             }
             runCatching {
@@ -322,7 +238,7 @@ fun AssistantScreen(onBack: () -> Unit) {
             }.onFailure {
                 agentError = it.message
                 thinking = false
-                reply(question)
+                reply()
             }
         }
     }
@@ -335,7 +251,7 @@ fun AssistantScreen(onBack: () -> Unit) {
     ) {
         AssistantHeader(
             onBack = onBack,
-            onNewChat = { turns.clear(); pendingConsent = null },
+            onNewChat = { turns.clear() },
             onHistory = { historyOpen = true },
         )
 
@@ -480,7 +396,7 @@ fun AssistantScreen(onBack: () -> Unit) {
                             onRegenerate = {
                                 val question = turns.getOrNull(index - 1)?.text ?: ""
                                 turns.removeAt(index)
-                                reply(question)
+                                reply()
                             },
                             onEdit = { input = turn.text },
                         )
@@ -532,28 +448,6 @@ fun AssistantScreen(onBack: () -> Unit) {
                                             consentBusy = false
                                         }
                                 }
-                            },
-                        )
-                    }
-                }
-
-                pendingConsent?.let { turn ->
-                    item {
-                        ConsentCard(
-                            onApprove = { password ->
-                                pendingConsent = null
-                                turns.add(
-                                    Turn(
-                                        fromUser = false,
-                                        text = "已提交转账，回单可在「交易记录」里查看。",
-                                        steps = listOf("校验支付密码", "提交转账"),
-                                    )
-                                )
-                                password.hashCode()
-                            },
-                            onReject = {
-                                pendingConsent = null
-                                turns.add(Turn(fromUser = false, text = "已取消这笔转账，没有扣款。"))
                             },
                         )
                     }

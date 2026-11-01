@@ -123,11 +123,11 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
             SectionHeader("连接与偏好")
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
                 Column {
-                    IconRow(Icons.Bell, "IM 连接", "未绑定") { onOpen("IM 连接") }
+                    IconRow(Icons.Bell, "IM 连接", "前往绑定") { onOpen("IM 连接") }
                     Hairline()
-                    IconRow(Icons.Dots, "通知设置", "全部开启") { onOpen("通知设置") }
+                    IconRow(Icons.Dots, "通知设置", "管理") { onOpen("通知设置") }
                     Hairline()
-                    IconRow(Icons.Globe, "语言与地区", "简体中文") { onOpen("语言与地区") }
+                    IconRow(Icons.Globe, "语言与地区", "管理") { onOpen("语言与地区") }
                 }
             }
 
@@ -144,7 +144,7 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
 
             Spacer(Modifier.height(20.dp))
             Text(
-                "招财猫银行 v1.0.0",
+                "招财猫银行 v${BuildConfig.VERSION_NAME}",
                 fontSize = 11.sp,
                 color = Tokens.Muted,
                 modifier = Modifier

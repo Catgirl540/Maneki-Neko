@@ -66,6 +66,55 @@ object BankApi {
         Unit
     }
 
+    /** 人脸核身票据；注册与开理财户时交给服务端消费，票据 5 分钟内有效。 */
+    suspend fun verifyIdentity(channel: String = "face"): String = withContext(Dispatchers.IO) {
+        val root = request("POST", "/api/security/verify", JSONObject().put("channel", channel))
+        root.optString("ticket").ifEmpty {
+            throw BankApiException(502, "身份核验未返回有效票据", "IDENTITY_TICKET_MISSING")
+        }
+    }
+
+    /**
+     * 注册并开立唯一的储蓄账户。
+     *
+     * 与网页 `OpenAccountPage` 使用同一契约：手机号 / 登录密码 / 支付密码 /
+     * 实名信息 / 短信验证码 / 人脸票据 / 合法开立账户承诺，服务端逐项校验。
+     */
+    suspend fun register(
+        phone: String,
+        password: String,
+        paymentPassword: String,
+        holderName: String,
+        idNumber: String,
+        smsCode: String,
+        faceTicket: String,
+        pledge: String,
+    ): RegistrationResultDto = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("phone", phone)
+            .put("password", password)
+            .put("paymentPassword", paymentPassword)
+            .put("holderName", holderName)
+            .put("idNumber", idNumber)
+            .put("smsCode", smsCode)
+            .put("faceTicket", faceTicket)
+            .put("pledge", pledge)
+        val root = request("POST", "/api/auth/register", body)
+        val newToken = root.getString("token")
+        token = newToken
+        val user = root.optJSONObject("user")
+        val account = root.optJSONObject("account")
+        RegistrationResultDto(
+            token = newToken,
+            name = user?.optString("name").orEmpty(),
+            phone = user?.optString("phone").orEmpty(),
+            accountId = account?.optString("id").orEmpty(),
+            accountLabel = account?.optString("label").orEmpty(),
+            accountNo = account?.optString("accountNo").orEmpty(),
+            openedAt = root.optString("openedAt"),
+        )
+    }
+
     suspend fun accounts(): List<AccountDto> = withContext(Dispatchers.IO) {
         val text = requestRaw("GET", "/api/accounts", null)
         val array = org.json.JSONTokener(text).nextValue() as JSONArray
@@ -162,6 +211,9 @@ object BankApi {
         val risk = root.optJSONObject("risk")
         WealthOverviewDto(
             opened = account?.optBoolean("opened") ?: false,
+            wealthAccountNo = account?.optString("accountNo").orEmpty(),
+            wealthOpenedAt = account?.optString("openedAt").orEmpty(),
+            settlementAccountId = account?.optString("settlementAccountId").orEmpty(),
             totalValue = root.optLong("totalValue"),
             totalPrincipal = root.optLong("totalPrincipal"),
             totalProfit = root.optLong("totalProfit"),
@@ -169,22 +221,16 @@ object BankApi {
             holdings = root.optJSONArray("holdings")?.let { array ->
                 buildList {
                     for (i in 0 until array.length()) {
-                        val row = array.getJSONObject(i)
-                        add(
-                            HoldingDto(
-                                id = row.optString("id"),
-                                productName = row.optString("productName"),
-                                shares = row.optLong("shares"),
-                                marketValue = row.optLong("marketValue"),
-                                profit = row.optLong("profit"),
-                                closed = row.optBoolean("closed"),
-                            )
-                        )
+                        add(parseHolding(array.getJSONObject(i)))
                     }
                 }
             }.orEmpty(),
             riskLevel = risk?.optString("level")?.ifEmpty { null },
+            riskScore = if (risk == null || risk.isNull("score")) null else risk.optInt("score"),
             riskDone = risk?.optBoolean("done") ?: false,
+            riskExpired = risk?.optBoolean("expired") ?: false,
+            riskStatus = risk?.optString("status").orEmpty(),
+            riskEligible = risk?.optBoolean("eligible") ?: false,
             riskExpiresAt = risk?.optString("expiresAt").orEmpty(),
         )
     }
@@ -194,22 +240,202 @@ object BankApi {
         val array = org.json.JSONTokener(text).nextValue() as JSONArray
         buildList {
             for (i in 0 until array.length()) {
+                add(parseWealthProduct(array.getJSONObject(i)))
+            }
+        }
+    }
+
+    /** 单只产品详情；网页与安卓共用同一组披露字段。 */
+    suspend fun wealthProduct(code: String): WealthProductDto = withContext(Dispatchers.IO) {
+        parseWealthProduct(request("GET", "/api/wealth/products/$code", null))
+    }
+
+    /**
+     * 开立理财账户（投资账户）—— 不装钱，只建立委托关系。
+     *
+     * 前置：已实名、短信验证码、人脸票据、有效期内风险测评、签署投资协议、
+     * 绑定一个 CNY 资金账户（申购扣款与赎回到账都走它）。
+     */
+    suspend fun openWealthAccount(
+        smsCode: String,
+        faceTicket: String,
+        settlementAccountId: String,
+        agreement: String,
+    ): WealthAccountDto = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("smsCode", smsCode)
+            .put("faceTicket", faceTicket)
+            .put("settlementAccountId", settlementAccountId)
+            .put("agreement", agreement)
+        val root = request("POST", "/api/wealth/account/open", body)
+        WealthAccountDto(
+            opened = root.optBoolean("opened"),
+            accountNo = root.optString("accountNo"),
+            openedAt = root.optString("openedAt"),
+            settlementAccountId = root.optString("settlementAccountId"),
+            agreementSignedAt = root.optString("agreementSignedAt"),
+            riskLevelAtOpening = root.optString("riskLevelAtOpening"),
+        )
+    }
+
+    suspend fun riskQuestions(): List<RiskQuestionDto> = withContext(Dispatchers.IO) {
+        val text = requestRaw("GET", "/api/wealth/risk/questions", null)
+        val array = org.json.JSONTokener(text).nextValue() as JSONArray
+        buildList {
+            for (i in 0 until array.length()) {
                 val row = array.getJSONObject(i)
+                val options = row.optJSONArray("options")
                 add(
-                    WealthProductDto(
-                        code = row.optString("code"),
-                        name = row.optString("name"),
-                        risk = row.optString("risk"),
-                        category = row.optString("category"),
-                        nav = row.optDouble("nav", 0.0),
-                        sevenDayYield = if (row.isNull("sevenDayYield")) null else row.optDouble("sevenDayYield"),
-                        minAmount = row.optLong("minAmount"),
-                        stepAmount = row.optLong("stepAmount"),
-                        term = row.optString("term"),
-                        openEnded = row.optBoolean("openEnded"),
+                    RiskQuestionDto(
+                        id = row.optString("id"),
+                        question = row.optString("question"),
+                        options = buildList {
+                            if (options != null) {
+                                for (j in 0 until options.length()) {
+                                    val option = options.getJSONObject(j)
+                                    add(
+                                        RiskOptionDto(
+                                            label = option.optString("label"),
+                                            score = option.optInt("score"),
+                                        )
+                                    )
+                                }
+                            }
+                        },
                     )
                 )
             }
+        }
+    }
+
+    /** 提交全部题目（选项下标）；服务端按共享判分规则计算 C1–C5。 */
+    suspend fun submitRiskAssessment(answers: List<Int>): RiskAssessmentDto = withContext(Dispatchers.IO) {
+        val array = JSONArray()
+        answers.forEach { array.put(it) }
+        val root = request("POST", "/api/wealth/risk/assess", JSONObject().put("answers", array))
+        parseRisk(root)
+    }
+
+    /** 申购并返回确认结果（确认份额、净值、费用、确认时间）。 */
+    suspend fun subscribeWealthDetailed(
+        productCode: String,
+        amount: Long,
+        paymentPassword: String,
+        acknowledgement: String,
+    ): WealthSubscribeResultDto = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("productCode", productCode)
+            .put("amount", amount)
+            .put("paymentPassword", paymentPassword)
+            .put("riskAcknowledgement", acknowledgement)
+        val root = request("POST", "/api/wealth/subscribe", body)
+        val holding = root.optJSONObject("holding")
+        WealthSubscribeResultDto(
+            holdingId = holding?.optString("id").orEmpty(),
+            productName = holding?.optString("productName").orEmpty(),
+            shares = root.optDouble("shares", 0.0),
+            nav = root.optDouble("nav", 0.0),
+            fees = root.optLong("fees"),
+            confirmedAt = root.optString("confirmedAt"),
+            holdingMarketValue = holding?.optLong("marketValue") ?: 0L,
+            holdingPrincipal = holding?.optLong("principal") ?: 0L,
+        )
+    }
+
+    /** 赎回；[shares] 省略表示全部赎回，返回实际记账结果。 */
+    suspend fun redeemWealthDetailed(holdingId: String, shares: Double? = null): WealthRedeemResultDto =
+        withContext(Dispatchers.IO) {
+            val body = JSONObject().put("holdingId", holdingId)
+            if (shares != null) body.put("shares", shares)
+            val root = request("POST", "/api/wealth/redeem", body)
+            WealthRedeemResultDto(
+                holdingId = root.optString("holdingId"),
+                acceptedAt = root.optString("acceptedAt"),
+                shares = root.optDouble("shares", 0.0),
+                estimatedAmount = root.optLong("estimatedAmount"),
+                fees = root.optLong("fees"),
+                settlementMode = root.optString("settlementMode"),
+                settledAt = root.optString("settledAt"),
+                etaText = root.optString("etaText"),
+            )
+        }
+
+    private fun parseRisk(root: JSONObject): RiskAssessmentDto = RiskAssessmentDto(
+        done = root.optBoolean("done"),
+        level = root.optString("level").ifEmpty { null },
+        score = if (root.isNull("score")) null else root.optInt("score"),
+        assessedAt = root.optString("assessedAt"),
+        expiresAt = root.optString("expiresAt"),
+        expired = root.optBoolean("expired"),
+        status = root.optString("status"),
+        eligible = root.optBoolean("eligible"),
+    )
+
+    private fun parseHolding(row: JSONObject): HoldingDto = HoldingDto(
+        id = row.optString("id"),
+        productCode = row.optString("productCode"),
+        productName = row.optString("productName"),
+        risk = row.optString("risk"),
+        shares = row.optDouble("shares", 0.0),
+        principal = row.optLong("principal"),
+        marketValue = row.optLong("marketValue"),
+        profit = row.optLong("profit"),
+        profitRate = row.optDouble("profitRate", 0.0),
+        purchasedAt = row.optString("purchasedAt"),
+        redeemableAt = if (row.isNull("redeemableAt")) null else row.optString("redeemableAt").ifEmpty { null },
+        redeemableShares = row.optDouble(
+            "redeemableShares",
+            if (row.optBoolean("closed")) 0.0 else row.optDouble("shares", 0.0),
+        ),
+        closed = row.optBoolean("closed"),
+    )
+
+    private fun parseWealthProduct(row: JSONObject): WealthProductDto {
+        val benchmark = row.optJSONObject("benchmark")
+        val benchmarkText = when (benchmark?.optString("kind")) {
+            "range" -> String.format(
+                java.util.Locale.US,
+                "%.2f%%–%.2f%%",
+                benchmark.optDouble("low") * 100,
+                benchmark.optDouble("high") * 100,
+            )
+            "formula" -> benchmark.optString("formula")
+            else -> benchmark?.optString("formula").orEmpty()
+        }
+        return WealthProductDto(
+            code = row.optString("code"),
+            name = row.optString("name"),
+            issuer = row.optString("issuer"),
+            risk = row.optString("risk"),
+            category = row.optString("category"),
+            nav = row.optDouble("nav", 0.0),
+            navDate = row.optString("navDate"),
+            sevenDayYield = if (row.isNull("sevenDayYield")) null else row.optDouble("sevenDayYield"),
+            sinceInception = row.optDouble("sinceInception", 0.0),
+            volatility = row.optDouble("volatility", 0.0),
+            minAmount = row.optLong("minAmount"),
+            stepAmount = row.optLong("stepAmount"),
+            term = row.optString("term"),
+            openEnded = row.optBoolean("openEnded"),
+            priorityRestricted = row.optBoolean("priorityRestricted"),
+            benchmark = benchmarkText,
+            benchmarkBasis = benchmark?.optString("basis").orEmpty(),
+            ongoingFees = parseFees(row.optJSONArray("ongoingFees")),
+            transactionFees = parseFees(row.optJSONArray("transactionFees")),
+        )
+    }
+
+    private fun parseFees(array: JSONArray?): List<WealthFeeDto> = buildList {
+        if (array == null) return@buildList
+        for (i in 0 until array.length()) {
+            val row = array.getJSONObject(i)
+            add(
+                WealthFeeDto(
+                    label = row.optString("label"),
+                    rate = row.optDouble("rate", 0.0),
+                    holdingDaysLessThan = if (row.isNull("holdingDaysLessThan")) null else row.optInt("holdingDaysLessThan"),
+                )
+            )
         }
     }
 
@@ -588,20 +814,14 @@ object BankApi {
             Unit
         }
 
-    suspend fun subscribeWealth(productCode: String, amount: Long, paymentPassword: String, acknowledgement: String): Unit =
-        withContext(Dispatchers.IO) {
-            val body = JSONObject()
-                .put("productCode", productCode)
-                .put("amount", amount)
-                .put("paymentPassword", paymentPassword)
-                .put("riskAcknowledgement", acknowledgement)
-            request("POST", "/api/wealth/subscribe", body)
-            Unit
-        }
+    /** 兼容旧调用：真实提交后丢弃回执；新界面请用 [subscribeWealthDetailed] 展示确认信息。 */
+    suspend fun subscribeWealth(productCode: String, amount: Long, paymentPassword: String, acknowledgement: String) {
+        subscribeWealthDetailed(productCode, amount, paymentPassword, acknowledgement)
+    }
 
-    suspend fun redeemWealth(holdingId: String): Unit = withContext(Dispatchers.IO) {
-        request("POST", "/api/wealth/redeem", JSONObject().put("holdingId", holdingId))
-        Unit
+    /** 兼容旧调用：全部赎回并丢弃回执；新界面请用 [redeemWealthDetailed]。 */
+    suspend fun redeemWealth(holdingId: String) {
+        redeemWealthDetailed(holdingId)
     }
 
     suspend fun openCard(productCode: String, paymentPassword: String, recipient: String, phone: String, region: String, detail: String): Unit =
@@ -798,36 +1018,125 @@ data class CardDto(
 
 data class HoldingDto(
     val id: String,
+    val productCode: String,
     val productName: String,
-    val shares: Long,
+    val risk: String,
+    /** 份额是小数，不是金额分；不能用 formatCents 显示。 */
+    val shares: Double,
+    val principal: Long,
     val marketValue: Long,
     val profit: Long,
+    val profitRate: Double,
+    val purchasedAt: String,
+    val redeemableAt: String?,
+    val redeemableShares: Double,
     val closed: Boolean,
 )
 
 data class WealthOverviewDto(
     val opened: Boolean,
+    val wealthAccountNo: String,
+    val wealthOpenedAt: String,
+    val settlementAccountId: String,
     val totalValue: Long,
     val totalPrincipal: Long,
     val totalProfit: Long,
     val yesterdayProfit: Long,
     val holdings: List<HoldingDto>,
     val riskLevel: String?,
+    val riskScore: Int?,
     val riskDone: Boolean,
+    val riskExpired: Boolean,
+    val riskStatus: String,
+    val riskEligible: Boolean,
     val riskExpiresAt: String,
-)
+) {
+    val riskValid: Boolean get() = riskDone && !riskExpired
+}
 
 data class WealthProductDto(
     val code: String,
     val name: String,
+    val issuer: String,
     val risk: String,
     val category: String,
     val nav: Double,
+    val navDate: String,
     val sevenDayYield: Double?,
+    val sinceInception: Double,
+    val volatility: Double,
     val minAmount: Long,
     val stepAmount: Long,
     val term: String,
     val openEnded: Boolean,
+    val priorityRestricted: Boolean,
+    val benchmark: String,
+    val benchmarkBasis: String,
+    val ongoingFees: List<WealthFeeDto>,
+    val transactionFees: List<WealthFeeDto>,
+)
+
+data class WealthFeeDto(
+    val label: String,
+    val rate: Double,
+    val holdingDaysLessThan: Int?,
+)
+
+data class RiskOptionDto(val label: String, val score: Int)
+data class RiskQuestionDto(val id: String, val question: String, val options: List<RiskOptionDto>)
+
+data class RiskAssessmentDto(
+    val done: Boolean,
+    val level: String?,
+    val score: Int?,
+    val assessedAt: String,
+    val expiresAt: String,
+    val expired: Boolean,
+    val status: String,
+    val eligible: Boolean,
+) {
+    val valid: Boolean get() = done && !expired
+}
+
+data class WealthAccountDto(
+    val opened: Boolean,
+    val accountNo: String,
+    val openedAt: String,
+    val settlementAccountId: String,
+    val agreementSignedAt: String,
+    val riskLevelAtOpening: String,
+)
+
+data class RegistrationResultDto(
+    val token: String,
+    val name: String,
+    val phone: String,
+    val accountId: String,
+    val accountLabel: String,
+    val accountNo: String,
+    val openedAt: String,
+)
+
+data class WealthSubscribeResultDto(
+    val holdingId: String,
+    val productName: String,
+    val shares: Double,
+    val nav: Double,
+    val fees: Long,
+    val confirmedAt: String,
+    val holdingMarketValue: Long,
+    val holdingPrincipal: Long,
+)
+
+data class WealthRedeemResultDto(
+    val holdingId: String,
+    val acceptedAt: String,
+    val shares: Double,
+    val estimatedAmount: Long,
+    val fees: Long,
+    val settlementMode: String,
+    val settledAt: String,
+    val etaText: String,
 )
 
 data class TransactionDto(
