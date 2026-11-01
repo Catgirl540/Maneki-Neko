@@ -3,9 +3,6 @@ package com.moneymeow.bank
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * SubScreens 专用的补充接口。
@@ -230,37 +227,7 @@ internal object SubScreensApi {
     private fun request(method: String, path: String, body: JSONObject?): JSONObject =
         org.json.JSONTokener(requestRaw(method, path, body)).nextValue() as JSONObject
 
-    private fun requestRaw(method: String, path: String, body: JSONObject?): String {
-        val connection = (URL(BankApi.baseUrl + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 8000
-            readTimeout = 12000
-            setRequestProperty("Accept", "application/json")
-            BankApi.currentToken()?.let { setRequestProperty("Authorization", "Bearer $it") }
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-            }
-        }
-        try {
-            body?.let { payload ->
-                connection.outputStream.use { it.write(payload.toString().toByteArray()) }
-            }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            if (status !in 200..299) {
-                val error = runCatching { JSONObject(text) }.getOrNull()
-                val message = error?.optString("message").orEmpty()
-                val apiCode = error?.optString("code").orEmpty().ifEmpty { null }
-                // 支付密码错误也是 401，但它只是业务校验失败，不能当成登录过期。
-                val isPaymentPasswordFailure = apiCode == "BAD_PAY_PASSWORD"
-                if (status == 401 && !isPaymentPasswordFailure) BankApi.onUnauthorized?.invoke()
-                throw BankApiException(status, message.ifEmpty { "请求失败（$status）" }, apiCode)
-            }
-            return text
-        } finally {
-            connection.disconnect()
-        }
-    }
+    private fun requestRaw(method: String, path: String, body: JSONObject?): String =
+        // I/O 由 BankHttp 统一实现（超时、错误体、401 语义与主接口一致）。
+        BankHttp.raw(method = method, path = path, body = body)
 }

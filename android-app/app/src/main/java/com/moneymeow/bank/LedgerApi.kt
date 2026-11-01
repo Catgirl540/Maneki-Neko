@@ -6,9 +6,6 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import java.time.Instant
 import java.time.LocalDate
@@ -59,6 +56,7 @@ internal data class TxQuery(
     val category: String? = null,
     val from: String? = null,
     val to: String? = null,
+    val keyword: String? = null,
 )
 
 internal data class TxRecord(
@@ -110,13 +108,14 @@ internal object LedgerApi {
             query.category?.let { add("category=${enc(it)}") }
             query.from?.let { add("from=${enc(it)}") }
             query.to?.let { add("to=${enc(it)}") }
+            query.keyword?.let { add("keyword=${enc(it)}") }
         }
         val root = getJson("/api/accounts/${enc(accountId)}/transactions?${params.joinToString("&")}")
-        val items = root.optJSONArray("items")
+        val items = root.getJSONArray("items")
+        require(root.has("total") && root.getInt("total") >= 0) { "流水分页响应不完整" }
         val rows = buildList {
             if (items != null) {
-                for (index in 0 until items.length()) {
-                    val row = items.getJSONObject(index)
+                items.forEachObject { row ->
                     add(
                         TxRecord(
                             id = row.optString("id"),
@@ -143,21 +142,28 @@ internal object LedgerApi {
         partitions: List<CurrencyPartition>,
         size: Int = 30,
         query: TxQuery = TxQuery(),
+        pages: Int = 1,
     ): RecentTx = coroutineScope {
-        val pages = partitions.map { partition ->
+        val loadedPages = partitions.map { partition ->
             async {
-                transactions(
+                val first = transactions(
                     accountId = partition.id,
                     size = size,
                     query = query,
                     fallbackCurrency = partition.currency,
                 )
+                val all = first.items.toMutableList()
+                for (page in 2..pages) {
+                    if (all.size >= first.total) break
+                    all += transactions(partition.id, page, size, query, partition.currency).items
+                }
+                TxPage(all, first.total)
             }
         }.awaitAll()
         RecentTx(
-            items = pages.flatMap { it.items }
+            items = loadedPages.flatMap { it.items }.distinctBy { it.id }
                 .sortedWith(compareByDescending { parseBankTime(it.createdAt)?.toInstant() ?: Instant.EPOCH }),
-            total = pages.sumOf { it.total },
+            total = loadedPages.sumOf { it.total },
         )
     }
 
@@ -175,30 +181,54 @@ internal object LedgerApi {
         )
     }
 
+    suspend fun report(period: String, value: String, currency: String): JSONObject = withContext(Dispatchers.IO) {
+        require(period in listOf("month", "year") && currency in listOf("CNY", "USD", "HKD"))
+        getJson("/api/statistics/report?period=${enc(period)}&value=${enc(value)}&currency=${enc(currency)}")
+    }
+
+    suspend fun reportCsv(period: String, value: String, currency: String): String = withContext(Dispatchers.IO) {
+        require(period in listOf("month", "year") && currency in listOf("CNY", "USD", "HKD"))
+        val data = getJson("/api/statistics/report/export?period=${enc(period)}&value=${enc(value)}&currency=${enc(currency)}")
+        datasetsCsv(listOf(data))
+    }
+
+    suspend fun transactionsCsv(partitions: List<CurrencyPartition>, query: TxQuery): String = withContext(Dispatchers.IO) {
+        require(partitions.isNotEmpty()) { "没有可导出的币种分区" }
+        val params = buildList {
+            query.direction?.let { add("direction=${enc(it)}") }
+            query.category?.let { add("category=${enc(it)}") }
+            query.from?.let { add("from=${enc(it)}") }
+            query.to?.let { add("to=${enc(it)}") }
+            query.keyword?.let { add("keyword=${enc(it)}") }
+        }.joinToString("&")
+        val datasets = partitions.map { getJson("/api/accounts/${enc(it.id)}/transactions/export" + if (params.isEmpty()) "" else "?$params") }
+        datasetsCsv(datasets)
+    }
+
+    internal fun datasetsCsv(datasets: List<JSONObject>): String {
+        val columns = datasets.first().getJSONArray("columns")
+        fun cell(value: String): String {
+            val numeric = value.matches(Regex("[+-]?[0-9]+(\\.[0-9]+)?"))
+            val text = if (!numeric && value.trimStart().firstOrNull() in setOf('=', '+', '-', '@')) "'$value" else value
+            return if (text.any { it in ",\"\r\n" }) "\"${text.replace("\"", "\"\"")}\"" else text
+        }
+        val keys = (0 until columns.length()).map { columns.getJSONObject(it).getString("key") }
+        val lines = mutableListOf((0 until columns.length()).joinToString(",") { cell(columns.getJSONObject(it).getString("label")) })
+        for (data in datasets) {
+            require(data.getJSONArray("columns").toString() == columns.toString()) { "币种导出列不一致" }
+            val rows = data.getJSONArray("rows")
+            rows.forEachObject { row ->
+                lines += keys.joinToString(",") { cell(row.optString(it, "")) }
+            }
+        }
+        return "\uFEFF" + lines.joinToString("\r\n") + "\r\n"
+    }
+
     private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
 
-    private fun getJson(path: String): JSONObject {
-        val connection = (URL(BankApi.baseUrl + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 8000
-            readTimeout = 12000
-            setRequestProperty("Accept", "application/json")
-            BankApi.currentToken()?.let { setRequestProperty("Authorization", "Bearer $it") }
-        }
-        try {
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            if (status !in 200..299) {
-                val error = runCatching { JSONObject(text) }.getOrNull()
-                val message = error?.optString("message").orEmpty()
-                val code = error?.optString("code").orEmpty().ifEmpty { null }
-                if (status == 401) BankApi.onUnauthorized?.invoke()
-                throw BankApiException(status, message.ifEmpty { "请求失败（$status）" }, code)
-            }
-            return org.json.JSONTokener(text).nextValue() as JSONObject
-        } finally {
-            connection.disconnect()
-        }
-    }
+    private fun getJson(path: String): JSONObject = org.json.JSONTokener(getText(path)).nextValue() as JSONObject
+
+    private fun getText(path: String): String =
+        // I/O 由 BankHttp 统一实现；只读接口同样走统一的错误体与 401 语义。
+        BankHttp.raw(method = "GET", path = path)
 }

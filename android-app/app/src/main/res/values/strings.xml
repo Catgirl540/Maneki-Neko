@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 正式包名；dev 构建类型用 resValue 覆盖成「招财猫 Dev」 -->
+    <string name="app_name">招财猫银行</string>
+</resources>

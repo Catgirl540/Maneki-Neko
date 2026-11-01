@@ -91,7 +91,9 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
     PushScreen(title = "产品详情", onBack = onBack) {
         when {
             loading -> {
-                Text("产品加载中…", fontSize = 12.5.sp, color = Tokens.Muted, modifier = Modifier.padding(20.dp))
+                PageColumn {
+                    repeat(2) { HairlineCard(Modifier.fillMaxWidth()) { SkeletonCardLines(4) } }
+                }
             }
             product == null -> {
                 Text(
@@ -125,7 +127,7 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                         Spacer(Modifier.height(13.dp))
                         Hairline()
                         Spacer(Modifier.height(12.dp))
-                        Text("单位净值", fontSize = 11.sp, color = Tokens.Muted)
+                        Text("单位净值", style = Tokens.Text.hint)
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(
                                 formatNav(item.nav),
@@ -178,7 +180,7 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                 Spacer(Modifier.height(12.dp))
                 HairlineCard(Modifier.padding(horizontal = 14.dp)) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("费用", fontSize = 11.sp, color = Tokens.Muted)
+                        Text("费用", style = Tokens.Text.hint)
                         Spacer(Modifier.height(8.dp))
                         if (item.ongoingFees.isNotEmpty()) {
                             item.ongoingFees.forEach { fee ->
@@ -194,7 +196,7 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                             }
                         }
                         if (item.ongoingFees.isEmpty() && item.transactionFees.isEmpty()) {
-                            Text("费率以产品说明书为准", fontSize = 12.sp, color = Tokens.Muted)
+                            Text("费率以产品说明书为准", style = Tokens.Text.note)
                         }
                     }
                 }
@@ -314,7 +316,7 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                 KvRow("申购费率", purchaseFeeLabel(item))
                 Spacer(Modifier.height(10.dp))
 
-                Text("申购金额（元）", fontSize = 11.sp, color = Tokens.Muted)
+                Text("申购金额（元）", style = Tokens.Text.hint)
                 Spacer(Modifier.height(6.dp))
                 Box(
                     Modifier
@@ -361,7 +363,7 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                 )
                 Spacer(Modifier.height(14.dp))
 
-                Text("风险确认语句", fontSize = 11.sp, color = Tokens.Muted)
+                Text("风险确认语句", style = Tokens.Text.hint)
                 Spacer(Modifier.height(6.dp))
                 Box(
                     Modifier
@@ -373,7 +375,7 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                     Text(RISK_ACKNOWLEDGEMENT, fontSize = 12.sp, color = Tokens.Ink, lineHeight = 18.sp)
                 }
                 Spacer(Modifier.height(8.dp))
-                Text("请逐字抄录上方语句（不是勾选）", fontSize = 10.5.sp, color = Tokens.Muted)
+                Text("请逐字抄录上方语句（不是勾选）", style = Tokens.Text.caption)
                 Spacer(Modifier.height(6.dp))
                 Box(
                     Modifier
@@ -426,7 +428,7 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                 )
                 Spacer(Modifier.height(12.dp))
 
-                Text("支付密码", fontSize = 11.sp, color = Tokens.Muted)
+                Text("支付密码", style = Tokens.Text.hint)
                 Spacer(Modifier.height(6.dp))
                 Box(
                     Modifier
@@ -574,7 +576,7 @@ private fun GateCard(
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("申购条件", fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.weight(1f))
+                Text("申购条件", style = Tokens.Text.hint, modifier = Modifier.weight(1f))
                 Text(
                     if (opened && riskValid && matched) "已满足" else "未满足",
                     fontSize = 11.sp,

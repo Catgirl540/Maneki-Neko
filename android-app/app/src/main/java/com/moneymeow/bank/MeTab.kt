@@ -22,6 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -34,17 +35,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
     // 会员档位与持卡数量取真实接口，未加载时不显示编造的数字。
     var membership by remember { mutableStateOf<MembershipDto?>(null) }
+    // 头像跟着资料走：进页面拉一次，失败就退回品牌猫。
+    var avatarId by remember { mutableStateOf<String?>(null) }
     var cardCount by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(Unit) {
+    var refreshing by remember { mutableStateOf(false) }
+    var refreshKey by remember { mutableIntStateOf(0) }
+    LaunchedEffect(refreshKey) {
+        runCatching { BankApi.profile() }.onSuccess { avatarId = it.avatarId }
         runCatching { BankApi.membership() }.onSuccess { membership = it }
         runCatching { BankApi.cards() }.onSuccess { cardCount = it.size }
+        refreshing = false
     }
     Column(Modifier.fillMaxSize()) {
-        TabBar("我的")
+        TabBar("我的", onRefresh = { if (!refreshing) { refreshing = true; BankApi.invalidateReads(); refreshKey++ } }, refreshing = refreshing)
+        BankPullRefresh(
+            isRefreshing = refreshing,
+            onRefresh = {
+                if (!refreshing) {
+                    refreshing = true
+                    BankApi.invalidateReads()
+                    refreshKey++
+                }
+            },
+            modifier = Modifier.weight(1f),
+        ) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -59,31 +78,17 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    Modifier
-                        .size(54.dp)
-                        .clip(CircleShape)
-                        .background(Tokens.SurfaceWarm)
-                        .border(1.dp, Tokens.Border, CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        painter = painterResource(R.drawable.brand_cat),
-                        contentDescription = null,
-                        modifier = Modifier.size(44.dp),
-                        contentScale = ContentScale.Fit,
-                    )
-                }
+                UserAvatar(avatarId = avatarId, size = 54.dp)
                 Spacer(Modifier.size(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
-                        SessionStore.name().ifEmpty { "我的账户" },
+                        SessionStore.nickname().ifEmpty { "我的账户" },
                         fontSize = 16.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Tokens.Ink,
                     )
                     Spacer(Modifier.height(3.dp))
-                    Text(maskPhone(SessionStore.phone()), fontSize = 12.sp, color = Tokens.Muted)
+                    Text(maskPhone(SessionStore.phone()), style = Tokens.Text.note)
                 }
                 Row(
                     Modifier
@@ -110,7 +115,7 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                     IconRow(Icons.Card, "银行卡管理", cardCount?.let { "$it 张" } ?: "—") { onOpen("银行卡") }
                     Hairline()
                     IconRow(
-                        Icons.Wealth,
+                        Icons.Crown,
                         "会员等级",
                         membership?.let {
                             val gap = it.nextThreshold - it.aum
@@ -152,6 +157,7 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                     .padding(vertical = 8.dp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
+        }
         }
     }
 }

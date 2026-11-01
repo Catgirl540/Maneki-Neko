@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -63,14 +64,12 @@ private data class ProductRow(
 fun WealthTab(
     onOpenProduct: (String) -> Unit,
     onOpenPlans: () -> Unit,
-    onRedeemed: (productName: String, amount: Long) -> Unit,
+    initialTab: Int = 0,
 ) {
-    var tab by remember { mutableIntStateOf(0) }
+    var tab by remember(initialTab) { mutableIntStateOf(initialTab) }
     var overview by remember { mutableStateOf<WealthOverviewDto?>(null) }
     var catalog by remember { mutableStateOf<List<WealthProductDto>>(emptyList()) }
     var accounts by remember { mutableStateOf<List<AccountDto>>(emptyList()) }
-    var records by remember { mutableStateOf<List<TransactionDto>>(emptyList()) }
-    var recordsError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableIntStateOf(0) }
@@ -85,6 +84,7 @@ fun WealthTab(
     var redeemError by remember { mutableStateOf<String?>(null) }
     var redeemResult by remember { mutableStateOf<WealthRedeemResultDto?>(null) }
     val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
     val redeemSheetState = rememberModalBottomSheetState()
     val resultSheetState = rememberModalBottomSheetState()
 
@@ -92,7 +92,6 @@ fun WealthTab(
         if (!BankApi.hasToken()) return@LaunchedEffect
         loading = overview == null
         error = null
-        recordsError = null
         runCatching { BankApi.wealthOverview() }
             .onSuccess { overview = it }
             .onFailure { error = it.message }
@@ -100,26 +99,22 @@ fun WealthTab(
             .onSuccess { catalog = it }
         runCatching { BankApi.accounts() }
             .onSuccess { accounts = it }
-        val settlementId = overview?.settlementAccountId.orEmpty()
-        if (overview?.opened == true && settlementId.isNotBlank()) {
-            runCatching { BankApi.transactions(settlementId, 50) }
-                .onSuccess { list ->
-                    records = list.filter {
-                        it.counterparty.startsWith("申购 · ") || it.counterparty.startsWith("赎回 · ")
-                    }
-                }
-                .onFailure { recordsError = it.message }
-        } else {
-            records = emptyList()
-        }
         loading = false
+        refreshing = false
     }
 
     Column(Modifier.fillMaxSize()) {
-        TabBar("理财")
+        TabBar("理财", onRefresh = { if (!loading) { refreshing = true; BankApi.invalidateReads(); refreshKey++ } }, refreshing = loading)
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
             SegTabs(listOf("总览", "产品", "持仓", "记录"), tab) { tab = it }
         }
+        BankPullRefresh(
+            isRefreshing = refreshing,
+            onRefresh = {
+                if (!refreshing) { refreshing = true; BankApi.invalidateReads(); refreshKey++ }
+            },
+            modifier = Modifier.weight(1f),
+        ) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -145,6 +140,7 @@ fun WealthTab(
                 2 -> WealthHoldings(
                     overview = overview,
                     loading = loading,
+                    onBrowse = { tab = 1 },
                     onRedeem = { target ->
                         redeemMode = 0
                         redeemSharesText = formatShares(target.redeemableShares).replace(",", "")
@@ -152,13 +148,9 @@ fun WealthTab(
                         redeemTarget = target
                     },
                 )
-                else -> WealthRecords(
-                    records = records,
-                    loading = loading,
-                    error = recordsError,
-                    opened = overview?.opened == true,
-                )
+                else -> WealthRecords(accountId = overview?.settlementAccountId.orEmpty(), opened = overview?.opened == true, onBrowse = { tab = 1 })
             }
+        }
         }
     }
 
@@ -339,20 +331,23 @@ private fun WealthOverviewContent(
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("持仓市值", fontSize = 12.sp, color = Tokens.Muted)
+                Text("持仓市值", style = Tokens.Text.note)
                 Spacer(Modifier.size(6.dp))
                 Icon(Icons.Eye, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(15.dp))
             }
             Spacer(Modifier.height(6.dp))
-            AmountText(
-                when {
-                    overview != null -> formatCents(overview.totalValue)
-                    error != null -> "加载失败"
-                    loading -> "加载中…"
-                    else -> "—"
-                },
-                27,
-            )
+            if (overview == null && loading) {
+                SkeletonBox(Modifier.width(178.dp).height(27.dp), RoundedCornerShape(6.dp))
+            } else {
+                AmountText(
+                    when {
+                        overview != null -> formatCents(overview.totalValue)
+                        error != null -> "加载失败"
+                        else -> "—"
+                    },
+                    27,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Hairline()
             Spacer(Modifier.height(10.dp))
@@ -379,16 +374,19 @@ private fun WealthOverviewContent(
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("理财账户", fontSize = 12.sp, color = Tokens.Muted, modifier = Modifier.weight(1f))
+                Text("理财账户", style = Tokens.Text.note, modifier = Modifier.weight(1f))
                 if (overview?.opened == true) {
                     Text("已开立", fontSize = 11.sp, color = Tokens.Ink2)
                 }
             }
             Spacer(Modifier.height(6.dp))
             if (overview == null) {
-                Text("加载中…", fontSize = 12.5.sp, color = Tokens.Muted)
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    SkeletonBox(Modifier.fillMaxWidth(0.4f).height(14.dp), RoundedCornerShape(4.dp))
+                    SkeletonBox(Modifier.fillMaxWidth(0.8f).height(11.dp), RoundedCornerShape(4.dp))
+                }
             } else if (!overview.opened) {
-                Text("尚未开立理财账户", fontSize = 13.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                Text("尚未开立理财账户", style = Tokens.Text.body, fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(3.dp))
                 Text(
                     "开立后才有投资资格；它不是第二个存款账户，申购扣款与赎回到账都走你的储蓄账户。",
@@ -397,7 +395,7 @@ private fun WealthOverviewContent(
                     lineHeight = 17.sp,
                 )
                 Spacer(Modifier.height(10.dp))
-                GhostButton("开立理财账户", onOpenAccount)
+                PrimaryButton("开立理财账户", onOpenAccount)
             } else {
                 val settlement = accounts.firstOrNull { it.id == overview.settlementAccountId }
                 Text(
@@ -429,12 +427,13 @@ private fun WealthOverviewContent(
                 .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Check, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
+            Icon(Icons.Shield, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(20.dp))
             Spacer(Modifier.size(8.dp))
             Column(Modifier.weight(1f)) {
-                Text(
+                if (overview == null) {
+                    SkeletonBox(Modifier.fillMaxWidth(0.7f).height(12.dp), RoundedCornerShape(4.dp))
+                } else Text(
                     when {
-                        overview == null -> "风险测评加载中…"
                         !overview.riskValid && overview.riskExpired -> "风险测评已过期，需重新测评"
                         !overview.riskValid -> "尚未完成风险测评 · 申购前需先测评"
                         else -> "风险测评 " + toleranceText(overview.riskLevel) + " · 可购买 " +
@@ -478,7 +477,7 @@ fun KvInline(label: String, value: String, color: Color = Tokens.Ink2) {
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(label, fontSize = 12.sp, color = Tokens.Muted)
+        Text(label, style = Tokens.Text.note)
         Text(value, fontSize = 12.sp, color = color, fontWeight = FontWeight.Medium)
     }
 }
@@ -490,20 +489,17 @@ private fun QuickCard(label: String, icon: androidx.compose.ui.graphics.vector.I
             Modifier
                 .fillMaxWidth()
                 .clickable { onClick() }
-                .padding(13.dp),
+                .padding(horizontal = 13.dp, vertical = 15.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier
-                    .size(30.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Tokens.SurfaceWarm),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(16.dp))
-            }
-            Spacer(Modifier.size(10.dp))
-            Text(label, fontSize = 13.sp, color = Tokens.Ink)
+            Icon(
+                Icons.bolder(icon),
+                contentDescription = null,
+                tint = Tokens.Ink2,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(Modifier.size(12.dp))
+            Text(label, style = Tokens.Text.body)
         }
     }
 }
@@ -517,7 +513,7 @@ private fun WealthProducts(
     var chip by remember { mutableIntStateOf(0) }
     val categories = listOf("all", "cash", "fixed", "mixed", "equity", "derivative")
     ChipRow(listOf("全部", "现金管理", "固定收益", "混合", "权益", "商品"), chip) { chip = it }
-    Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    PageColumn {
         val shownProducts = catalog
             .filter { categories.getOrNull(chip) == "all" || it.category == categories.getOrNull(chip) }
             .map { dto ->
@@ -582,7 +578,7 @@ private fun WealthProducts(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text(product.meta, fontSize = 11.sp, color = Tokens.Muted)
+                        Text(product.meta, style = Tokens.Text.hint)
                         Text(
                             product.matchLabel,
                             fontSize = 11.sp,
@@ -598,7 +594,7 @@ private fun WealthProducts(
 @Composable
 private fun MetricBlock(label: String, value: String) {
     Column {
-        Text(label, fontSize = 10.5.sp, color = Tokens.Muted)
+        Text(label, style = Tokens.Text.caption)
         Spacer(Modifier.height(2.dp))
         Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
     }
@@ -627,11 +623,12 @@ fun RiskBadge(risk: String) {
 private fun WealthHoldings(
     overview: WealthOverviewDto?,
     loading: Boolean,
+    onBrowse: () -> Unit,
     onRedeem: (HoldingDto) -> Unit,
 ) {
     var chip by remember { mutableIntStateOf(0) }
     ChipRow(listOf("全部", "可赎回", "封闭期"), chip) { chip = it }
-    Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    PageColumn {
         val all = overview?.holdings.orEmpty()
         val shownHoldings = when (chip) {
             1 -> all.filter { !it.closed && it.redeemableShares > 0 }
@@ -639,16 +636,10 @@ private fun WealthHoldings(
             else -> all
         }
         if (shownHoldings.isEmpty()) {
-            Text(
-                when {
-                    overview == null && loading -> "加载中…"
-                    all.isEmpty() -> "暂无持仓"
-                    else -> "当前分类暂无持仓"
-                },
-                fontSize = 12.sp,
-                color = Tokens.Muted,
-                modifier = Modifier.padding(vertical = 16.dp),
-            )
+            if (loading && overview == null) SkeletonCardLines()
+            else BankEmptyState(if (overview == null) "持仓暂不可用" else if (all.isEmpty()) "还没有理财持仓" else "当前分类暂无持仓",
+                if (overview == null) "请刷新后查看。" else "了解产品风险与期限，再选择适合自己的产品。", Icons.Portfolio,
+                if (overview != null) "去产品市场" else null, if (overview != null) onBrowse else null)
         }
         shownHoldings.forEach { dto ->
             val redeemable = !dto.closed && dto.redeemableShares > 0
@@ -669,7 +660,7 @@ private fun WealthHoldings(
                         MetricBlock("市值", formatCents(dto.marketValue))
                         MetricBlock("份额", formatShares(dto.shares))
                         Column {
-                            Text("盈亏", fontSize = 10.5.sp, color = Tokens.Muted)
+                            Text("盈亏", style = Tokens.Text.caption)
                             Spacer(Modifier.height(2.dp))
                             Text(
                                 formatCents(dto.profit) + "（" + String.format(Locale.US, "%.2f%%", dto.profitRate * 100) + "）",
@@ -713,7 +704,7 @@ private fun WealthHoldings(
                                 Text("赎回", fontSize = 12.sp, color = Color.White)
                             }
                         } else {
-                            Text("暂不可赎回", fontSize = 11.sp, color = Tokens.Muted)
+                            Text("暂不可赎回", style = Tokens.Text.hint)
                         }
                     }
                 }
@@ -723,52 +714,42 @@ private fun WealthHoldings(
 }
 
 @Composable
-private fun WealthRecords(
-    records: List<TransactionDto>,
-    loading: Boolean,
-    error: String?,
-    opened: Boolean,
-) {
-    var chip by remember { mutableIntStateOf(0) }
-    ChipRow(listOf("全部", "申购", "赎回"), chip) { chip = it }
-    Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        val shown = when (chip) {
-            1 -> records.filter { it.counterparty.startsWith("申购 · ") }
-            2 -> records.filter { it.counterparty.startsWith("赎回 · ") }
-            else -> records
-        }
-        if (!opened) {
-            EmptyNote("开立理财账户后\n申购与赎回记录会显示在这里")
-        } else if (error != null) {
-            Text("理财记录加载失败：$error", fontSize = 11.sp, color = Tokens.Coral, lineHeight = 17.sp)
-        } else if (shown.isEmpty()) {
-            EmptyNote(if (loading) "加载中…" else "暂无理财记录\n申购与赎回成功后会出现在这里")
-        }
-        shown.forEach { tx ->
-            val incoming = tx.direction == "in"
-            HairlineCard {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            tx.counterparty,
-                            fontSize = 13.sp,
-                            color = Tokens.Ink,
-                            fontWeight = FontWeight.Medium,
-                        )
-                        Spacer(Modifier.height(3.dp))
-                        Text(formatDateTime(tx.createdAt), fontSize = 10.5.sp, color = Tokens.Muted)
+private fun WealthRecords(accountId: String, opened: Boolean, onBrowse: () -> Unit) {
+    var kind by remember { mutableIntStateOf(0) }
+    var page by remember(kind) { mutableIntStateOf(1) }
+    var records by remember { mutableStateOf<List<TxRecord>>(emptyList()) }
+    var total by remember { mutableIntStateOf(0) }
+    var loading by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf<String?>(null) }
+    var refresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(accountId, kind, page, refresh) {
+        records = emptyList(); failure = null
+        if (!opened || accountId.isBlank()) return@LaunchedEffect
+        loading = true
+        runCatching { LedgerApi.transactions(accountId, page, 10, TxQuery(category = "other", keyword = if (kind == 0) "申购 · " else "赎回 · ")) }
+            .onSuccess { records = it.items; total = it.total }
+            .onFailure { failure = it.message ?: "理财记录加载失败" }
+        loading = false
+    }
+    PageColumn {
+        ChipRow(listOf("申购", "赎回"), kind) { kind = it }
+        when {
+            !opened -> EmptyNote("开立理财账户后可查看申购与赎回记录")
+            loading -> SkeletonCardList()
+            failure != null -> { Text(failure!!, color = Tokens.Coral, fontSize = 12.sp); GhostButton("重试", { refresh++ }) }
+            records.isEmpty() -> BankEmptyState("暂无理财记录", "成功申购或赎回后的资金记录会显示在这里。", Icons.Hist, "去产品市场", onBrowse)
+            else -> {
+                Text("资金记账记录，以实际份额和到账回执为准", style = Tokens.Text.hint)
+                records.forEach { tx -> HairlineCard {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(tx.counterparty, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                        Text("${formatCents(tx.amount, tx.currency)} · ${tx.createdAt}", style = Tokens.Text.hint)
                     }
-                    Text(
-                        (if (incoming) "+" else "-") + formatCents(tx.amount),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = if (incoming) Tokens.Ink else Tokens.Ink2,
-                    )
+                } }
+                Row {
+                    androidx.compose.material3.TextButton(enabled = page > 1, onClick = { page-- }) { Text("上一页") }
+                    Text("第 $page 页 · 共 $total 笔", fontSize = 11.sp, modifier = Modifier.padding(top = 12.dp))
+                    androidx.compose.material3.TextButton(enabled = page * 10 < total, onClick = { page++ }) { Text("下一页") }
                 }
             }
         }

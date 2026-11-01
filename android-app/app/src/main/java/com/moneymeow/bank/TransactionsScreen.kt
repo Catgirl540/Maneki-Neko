@@ -1,5 +1,8 @@
 package com.moneymeow.bank
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -21,12 +24,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.time.LocalDate
@@ -100,6 +109,7 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
     var filters by remember { mutableStateOf(TxFilters()) }
     var filterOpen by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableIntStateOf(0) }
+    var pageCount by remember(filters, reloadKey) { mutableIntStateOf(1) }
 
     var partitions by remember { mutableStateOf<List<CurrencyPartition>>(emptyList()) }
     var partitionsReady by remember { mutableStateOf(false) }
@@ -109,10 +119,24 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
     var totalCount by remember { mutableIntStateOf(0) }
     var listError by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var exportBusy by remember { mutableStateOf(false) }
+    var exportData by remember { mutableStateOf<String?>(null) }
+    var exportMessage by remember { mutableStateOf<String?>(null) }
+    val exportScope = rememberCoroutineScope()
+    val exportContext = LocalContext.current
+    val saveCsv = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        val data = exportData
+        exportData = null
+        if (uri != null && data != null) exportScope.launch {
+            runCatching { withContext(Dispatchers.IO) { exportContext.contentResolver.openOutputStream(uri)?.use { it.write(data.toByteArray(Charsets.UTF_8)) } ?: error("无法打开文件") } }
+                .onSuccess { exportMessage = "流水已保存" }.onFailure { exportMessage = it.message ?: "保存失败" }
+        }
+    }
 
     var report by remember { mutableStateOf<MonthReport?>(null) }
     var reportError by remember { mutableStateOf<String?>(null) }
     var reportLoading by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
 
     val summaryCurrency = if (filters.currency == "all") "CNY" else filters.currency
 
@@ -134,7 +158,7 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
             }
     }
 
-    LaunchedEffect(filters, partitions, partitionsReady, reloadKey) {
+    LaunchedEffect(filters, partitions, partitionsReady, reloadKey, pageCount) {
         if (!partitionsReady) return@LaunchedEffect
         if (accountError != null) {
             rows = emptyList()
@@ -152,10 +176,11 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
         }
         loading = true
         listError = null
-        runCatching { LedgerApi.recent(selected, size = 30, query = filters.toQuery()) }
+        runCatching { LedgerApi.recent(selected, size = 30, query = filters.toQuery(), pages = pageCount) }
             .onSuccess { page -> rows = page.items; totalCount = page.total }
             .onFailure { failure -> rows = emptyList(); totalCount = 0; listError = failure.message ?: "流水加载失败" }
         loading = false
+        refreshing = false
     }
 
     // 月度收支用完整账本报表，不再把最近 30 笔流水当成整月。
@@ -180,7 +205,34 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
 
     Box(Modifier.fillMaxWidth()) {
         Column {
-            PushScreen(title = "交易记录", onBack = onBack, action = "消费分析", onAction = onAnalysis) {
+            PushScreen(
+                title = "交易记录",
+                onBack = onBack,
+                action = "消费分析",
+                onAction = onAnalysis,
+                refreshing = refreshing,
+                onRefresh = {
+                    if (!refreshing) {
+                        refreshing = true
+                        BankApi.invalidateReads()
+                        reloadKey++
+                    }
+                },
+            ) {
+                val startExport: () -> Unit = {
+                    if (!exportBusy) {
+                        exportBusy = true; exportMessage = null
+                        val selected = partitions.filter { filters.currency == "all" || it.currency == filters.currency }
+                        val query = filters.toQuery()
+                        exportScope.launch {
+                            runCatching { LedgerApi.transactionsCsv(selected, query) }
+                                .onSuccess { exportData = it; saveCsv.launch("招财猫流水.csv") }
+                                .onFailure { exportMessage = it.message ?: "导出失败" }
+                            exportBusy = false
+                        }
+                    }
+                }
+                exportMessage?.let { BankToast(it) { exportMessage = null } }
                 Row(
                     Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -206,67 +258,46 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
                         modifier = Modifier.weight(1f),
                     )
                 }
-                val reportHint = buildList {
-                    when {
-                        reportError != null -> add("本月统计加载失败：$reportError")
-                        report != null -> add(
-                            if (report?.periodStatus == "partial") {
-                                "完整账本 · 截至 ${reportAsOfText(report!!)}"
-                            } else {
-                                "完整账本 · 全月"
-                            }
-                        )
-                    }
-                    if (filters.currency == "all") add("统计为人民币；其他币种请切换币种筛选")
-                }
-                if (reportHint.isNotEmpty()) {
+                if (reportError != null) {
                     Row(
                         Modifier.padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            reportHint.joinToString(" · "),
+                            "本月统计加载失败：$reportError",
                             fontSize = 10.5.sp,
-                            color = if (reportError != null) Tokens.Coral else Tokens.Muted,
+                            color = Tokens.Coral,
                             lineHeight = 15.sp,
                             modifier = Modifier.weight(1f),
                         )
-                        if (reportError != null) {
-                            Text(
-                                "重试",
-                                fontSize = 11.sp,
-                                color = Tokens.Ink2,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier
-                                    .clickable { reloadKey++ }
-                                    .padding(start = 8.dp),
-                            )
-                        }
+                        Text(
+                            "重试",
+                            fontSize = 11.sp,
+                            color = Tokens.Ink2,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .clickable { reloadKey++ }
+                                .padding(start = 8.dp),
+                        )
                     }
                 }
 
-                ChipRow(
-                    chipCategoryLabels,
-                    chipIndex,
-                    trailing = {
-                        Box(
-                            Modifier
-                                .size(width = 34.dp, height = 32.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(if (filtersActive.isNotEmpty()) Tokens.Primary else Tokens.Surface),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Filter,
-                                contentDescription = "筛选",
-                                tint = if (filtersActive.isNotEmpty()) androidx.compose.ui.graphics.Color.White else Tokens.Ink2,
-                                modifier = Modifier
-                                    .size(16.dp)
-                                    .clickable { filterOpen = true },
-                            )
-                        }
-                    },
-                ) { index -> filters = filters.copy(category = chipCategories[index]) }
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 16.dp, end = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        if (filtersActive.isEmpty()) "全部流水" else "筛选结果 · ${filtersActive.size} 项条件",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Tokens.Ink,
+                        modifier = Modifier.weight(1f),
+                    )
+                    ActionIcon(Icons.DownIn, "按当前筛选导出流水 CSV", enabled = !exportBusy && partitionsReady && accountError == null && partitions.isNotEmpty(), busy = exportBusy, onClick = startExport)
+                    ActionIcon(Icons.Filter, "筛选流水${if (filtersActive.isEmpty()) "" else "，已启用 ${filtersActive.size} 项条件"}", onClick = { filterOpen = true })
+                }
+                // 操作栏与横滑分类分行，导出和筛选不再覆盖末尾分类。
+                ChipRow(chipCategoryLabels, chipIndex) { index -> filters = filters.copy(category = chipCategories[index]) }
 
                 if (filtersActive.isNotEmpty()) {
                     Row(
@@ -291,7 +322,7 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
                 Column(Modifier.padding(horizontal = 14.dp)) {
                     when {
                         accountError != null -> LoadError("账户加载失败：$accountError") { reloadKey++ }
-                        loading -> LoadHint("加载中…")
+                        loading -> Column { repeat(4) { SkeletonRow() } }
                         listError != null -> LoadError("流水加载失败：$listError") { reloadKey++ }
                         rows.isEmpty() -> LoadHint(
                             when {
@@ -304,17 +335,13 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
                             }
                         )
                         else -> {
-                            Text(
-                                if (totalCount > rows.size) "共 $totalCount 笔 · 显示最近 ${rows.size} 笔" else "共 $totalCount 笔",
-                                fontSize = 10.5.sp,
-                                color = Tokens.Muted,
-                                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp, start = 2.dp),
-                            )
+                            Spacer(Modifier.height(6.dp))
                             val grouped = rows.groupBy { bankDayKey(it.createdAt) }
                             grouped.entries.sortedByDescending { it.key ?: "" }.forEach { (day, list) ->
                                 TxGroup(dayTitle(day), list.map { it.toRow() }, onOpenTx)
                                 Spacer(Modifier.height(10.dp))
                             }
+                            if (rows.size < totalCount) GhostButton("加载更多", onClick = { if (!loading) pageCount++ })
                         }
                     }
                 }
@@ -405,7 +432,7 @@ private fun LoadError(text: String, onRetry: () -> Unit) {
 private fun SummaryCard(label: String, value: String, negative: Boolean, modifier: Modifier) {
     HairlineCard(modifier) {
         Column(Modifier.padding(13.dp)) {
-            Text(label, fontSize = 11.sp, color = Tokens.Muted)
+            Text(label, style = Tokens.Text.hint)
             Spacer(Modifier.height(5.dp))
             Text(
                 value,
@@ -419,7 +446,7 @@ private fun SummaryCard(label: String, value: String, negative: Boolean, modifie
 
 @Composable
 private fun TxGroup(title: String, rows: List<Tx>, onOpenTx: (String?) -> Unit) {
-    Text(title, fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(start = 2.dp, bottom = 4.dp))
+    Text(title, style = Tokens.Text.hint, modifier = Modifier.padding(start = 2.dp, bottom = 4.dp))
     HairlineCard {
         Column(Modifier.padding(horizontal = 14.dp)) {
             rows.forEachIndexed { index, tx ->
@@ -428,22 +455,19 @@ private fun TxGroup(title: String, rows: List<Tx>, onOpenTx: (String?) -> Unit) 
                     Modifier
                         .fillMaxWidth()
                         .clickable { onOpenTx(tx.id) }
-                        .padding(vertical = 11.dp),
+                        .padding(vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(Tokens.SurfaceWarm),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(tx.icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
-                    }
-                    Spacer(Modifier.size(10.dp))
+                    Icon(
+                        Icons.bolder(tx.icon),
+                        contentDescription = null,
+                        tint = Tokens.Ink2,
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Spacer(Modifier.size(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(tx.name, fontSize = 13.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
-                        Text(tx.meta, fontSize = 10.5.sp, color = Tokens.Muted)
+                        Text(tx.name, style = Tokens.Text.body, fontWeight = FontWeight.Medium)
+                        Text(tx.meta, style = Tokens.Text.caption)
                     }
                     Text(
                         tx.amount,
@@ -464,11 +488,13 @@ private val serviceGroups = listOf(
     ServiceGroup(
         "账户与支付",
         listOf(
-            "账户资产" to Icons.Eye,
+            "账户资产" to Icons.Wallet,
             "转账与支付" to Icons.Transfer,
             "收款与转入" to Icons.DownIn,
             "多币种换汇" to Icons.Globe,
             "银行卡管理" to Icons.Card,
+            "模拟消费" to Icons.Shop,
+            "定时转账与 AA" to Icons.Clock,
             "存款" to Icons.Pig,
         ),
     ),
@@ -476,20 +502,22 @@ private val serviceGroups = listOf(
         "账单与资金",
         listOf(
             "账单与交易" to Icons.Receipt,
-            "消费分析" to Icons.Wealth,
-            "自动扣款" to Icons.UpOut,
+            "消费分析" to Icons.Chart,
+            "账单报告" to Icons.Hist,
+            "支出预算" to Icons.Budget,
+            "自动扣款" to Icons.Refresh,
             "工资与备用金" to Icons.DownIn,
-            "借款与分期" to Icons.Card,
+            "借款与分期" to Icons.Wallet,
         ),
     ),
     ServiceGroup(
         "理财与储蓄",
         listOf(
-            "理财总览" to Icons.Pig,
-            "产品市场" to Icons.Wealth,
-            "我的持仓" to Icons.Wealth,
+            "理财总览" to Icons.Wealth,
+            "产品市场" to Icons.Shop,
+            "我的持仓" to Icons.Portfolio,
             "储蓄与计划" to Icons.Pig,
-            "理财记录" to Icons.Receipt,
+            "理财记录" to Icons.Hist,
         ),
     ),
     ServiceGroup(
@@ -497,8 +525,8 @@ private val serviceGroups = listOf(
         listOf(
             "保险保障" to Icons.Shield,
             "安全设置" to Icons.Lock,
-            "邀请与奖励" to Icons.Person,
-            "会员中心" to Icons.Check,
+            "邀请与奖励" to Icons.Gift,
+            "会员中心" to Icons.Crown,
         ),
     ),
 )
@@ -508,33 +536,34 @@ fun MoreScreen(onBack: () -> Unit, onOpen: (String) -> Unit) {
     PushScreen(title = "更多服务", onBack = onBack) {
         serviceGroups.forEach { group ->
             SectionHeader(group.title)
-            Column(Modifier.padding(horizontal = 8.dp)) {
-                group.items.chunked(4).forEach { row ->
+            HairlineCard(Modifier.padding(horizontal = 14.dp)) {
+            Column(Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                group.items.chunked(3).forEach { row ->
                     Row(Modifier.fillMaxWidth()) {
                         row.forEach { (label, icon) ->
                             Column(
                                 Modifier
                                     .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
                                     .clickable { onOpen(label) }
-                                    .padding(vertical = 10.dp),
+                                    .padding(horizontal = 3.dp, vertical = 12.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                Box(
-                                    Modifier
-                                        .size(38.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(Tokens.SurfaceWarm),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(19.dp))
-                                }
-                                Spacer(Modifier.height(7.dp))
-                                Text(label, fontSize = 11.sp, color = Tokens.Ink2)
+                                // 与首页宫格一致：图标直接放在页面上，不加底色方块。
+                                Icon(
+                                    Icons.bolder(icon),
+                                    contentDescription = null,
+                                    tint = Tokens.Ink2,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                Spacer(Modifier.height(9.dp))
+                                Text(label, fontSize = 12.sp, lineHeight = 17.sp, color = Tokens.Ink2, textAlign = TextAlign.Center, maxLines = 2)
                             }
                         }
-                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
+            }
             }
         }
         Spacer(Modifier.height(16.dp))

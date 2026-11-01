@@ -12,6 +12,7 @@ import java.net.URL
  * 智能助手客户端：使用与客户网页相同的 `/agent-api` 入口。
  *
  * 协议与网页 `app/src/api/agent.ts` 一致：
+ *  - `GET  /services`       能力清单（唯一来源是服务端 framework/agent-services.json）
  *  - `POST /sessions` 建会话
  *  - `POST /sessions/:id/messages` 入队一条消息（返回即入队，不代表回答完成）
  *  - `GET  /sessions/:id/stream` SSE 事件流
@@ -26,11 +27,54 @@ object AgentApi {
         tokenProvider = provider
     }
 
+    /**
+     * 一条可选的智能服务。
+     *
+     * 能力清单由服务端下发（`GET /agent-api/services`），安卓不再维护标签与 id 的对照表；
+     * 客户端只按 `id` 映射图标，未知 id 用通用图标兜底。
+     */
+    data class AgentService(
+        val id: String,
+        val order: Int,
+        val label: String,
+        val description: String,
+    )
+
+    /**
+     * 读取能力清单。失败时抛 [BankApiException]，由界面决定隐藏入口并在稍后重试；
+     * 刻意不在客户端留本地兜底列表，否则又会出现第二份真相。
+     */
+    suspend fun listServices(): List<AgentService> = withContext(Dispatchers.IO) {
+        val payload = JSONObject(request("GET", "/services", null))
+        val rows = payload.optJSONArray("services") ?: JSONArray()
+        (0 until rows.length()).mapNotNull { index ->
+            val row = rows.optJSONObject(index) ?: return@mapNotNull null
+            val id = row.optString("id").trim()
+            val label = row.optString("label").trim()
+            if (id.isEmpty() || label.isEmpty()) return@mapNotNull null
+            AgentService(
+                id = id,
+                order = row.optInt("order", Int.MAX_VALUE),
+                label = label,
+                description = row.optString("description").trim(),
+            )
+        }.sortedWith(compareBy({ it.order }, { it.id }))
+    }
+
     suspend fun health(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val connection = open("/health", "GET")
-            connection.responseCode == 200
+            try {
+                connection.responseCode == 200 && JSONObject(connection.inputStream.bufferedReader().use { it.readText() }).let { it.optBoolean("ok") && it.optString("bankDataSource") == "http" }
+            } finally { connection.disconnect() }
         }.getOrDefault(false)
+    }
+
+    internal suspend fun imRequest(method: String, path: String, body: JSONObject? = null): Any = withContext(Dispatchers.IO) {
+        require(path == "/im/bindings" || path == "/im/weixin/qr" || path == "/im/reminders" || Regex("^/im/reminders/rem-[A-Za-z0-9_-]+$").matches(path) ||
+            Regex("^/im/weixin/qr/[A-Za-z0-9_-]+(/(verify|cancel|confirm))?$").matches(path) ||
+            Regex("^/im/bindings/im-[A-Za-z0-9_-]+$").matches(path))
+        org.json.JSONTokener(request(method, path, body)).nextValue()
     }
 
     suspend fun createSession(history: List<Pair<String, String>> = emptyList()): String =
@@ -125,18 +169,4 @@ object AgentApi {
             connection.disconnect()
         }
     }
-}
-
-/** 能力标签 → 服务端 serviceId（与 `app/src/components/layout/services.ts` 一致）。 */
-fun serviceIdOf(label: String): String = when (label) {
-    "智能转账" -> "transfer"
-    "理财顾问" -> "wealth"
-    "账单分析" -> "analysis"
-    "银行卡管家" -> "cards"
-    "换汇助手" -> "exchange"
-    "储蓄规划" -> "savings"
-    "借款测算" -> "credit"
-    "保险咨询" -> "insurance"
-    "安全助手" -> "security"
-    else -> "support"
 }

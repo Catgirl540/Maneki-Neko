@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -52,7 +54,7 @@ import androidx.compose.ui.unit.sp
 /* ─────────────────────────── 存款 ─────────────────────────── */
 
 @Composable
-fun DepositsScreen(onBack: () -> Unit, onTransferIn: () -> Unit, onTransferOut: () -> Unit) {
+fun DepositsScreen(onBack: () -> Unit, onTransferIn: () -> Unit, onTransferOut: () -> Unit, onTransactions: () -> Unit) {
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
@@ -65,21 +67,17 @@ fun DepositsScreen(onBack: () -> Unit, onTransferIn: () -> Unit, onTransferOut: 
     val balances = account?.currencyBalances.orEmpty()
     PushScreen(title = "存款", onBack = onBack) {
         SectionHeader("活期存款", account?.let { "储蓄账户 ··${it.accountNo.takeLast(4)}" } ?: "储蓄账户")
-        KvCard(
-            buildList {
-                balances.forEach { add(currencyName(it.currency) to formatCurrency(it.currency, it.balance)) }
-                balances.firstOrNull { it.currency == "CNY" }?.let { add("人民币活期年利率" to "1.55%") }
-                balances.firstOrNull { it.currency == "HKD" }?.let { add("港币活期年利率" to "1.25%") }
-                if (balances.isEmpty()) {
-                    add("账户余额" to when {
-                        loading -> "加载中…"
-                        error != null -> "加载失败"
-                        else -> "暂无账户"
-                    })
-                }
-            },
-            Modifier.padding(horizontal = 14.dp),
-        )
+        if (loading && balances.isEmpty()) {
+            HairlineCard(Modifier.padding(horizontal = 14.dp)) { SkeletonCardLines(2) }
+        } else {
+            KvCard(
+                buildList {
+                    balances.forEach { add(currencyName(it.currency) to formatCurrency(it.currency, it.balance)) }
+                    if (balances.isEmpty()) add("账户余额" to if (error != null) "加载失败" else "暂无账户")
+                },
+                Modifier.padding(horizontal = 14.dp),
+            )
+        }
         if (error != null) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -93,7 +91,7 @@ fun DepositsScreen(onBack: () -> Unit, onTransferIn: () -> Unit, onTransferOut: 
         Row(Modifier.padding(horizontal = 14.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SmallAction("转入", Icons.DownIn, Modifier.weight(1f), onTransferIn)
             SmallAction("转出", Icons.UpOut, Modifier.weight(1f), onTransferOut)
-            SmallAction("利息流水", Icons.Receipt, Modifier.weight(1f)) { }
+            SmallAction("交易流水", Icons.Receipt, Modifier.weight(1f), onTransactions)
         }
         SectionHeader("定期存款")
         EmptyNote("暂无可用的定期存款产品\n当前仅提供活期存款")
@@ -155,7 +153,7 @@ internal fun EmptyNote(text: String) {
             .padding(vertical = 20.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(text, fontSize = 12.sp, color = Tokens.Muted, lineHeight = 20.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(text, style = Tokens.Text.note, lineHeight = 20.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     }
 }
 
@@ -390,7 +388,7 @@ fun ExchangeScreen(onBack: () -> Unit) {
         SectionHeader("账户内换汇", account?.let { "储蓄账户 ··${it.accountNo.takeLast(4)}" })
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column(Modifier.padding(14.dp)) {
-                Text("卖出币种", fontSize = 11.sp, color = Tokens.Muted)
+                Text("卖出币种", style = Tokens.Text.hint)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     balances.forEach { balance ->
@@ -418,11 +416,11 @@ fun ExchangeScreen(onBack: () -> Unit) {
                     placeholder = "0.00",
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
                     trailing = {
-                        Text(fromBalance?.currency ?: "", fontSize = 12.sp, color = Tokens.Muted)
+                        Text(fromBalance?.currency ?: "", style = Tokens.Text.note)
                     },
                 )
                 Spacer(Modifier.height(14.dp))
-                Text("买入币种", fontSize = 11.sp, color = Tokens.Muted)
+                Text("买入币种", style = Tokens.Text.hint)
                 Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FX_CURRENCIES.filter { it != fromBalance?.currency }.forEach { currency ->
@@ -673,7 +671,7 @@ private fun ExchangeConfirmDialog(
                     )
                 }
                 error?.let {
-                    Text(it, fontSize = 12.sp, color = Tokens.Coral, lineHeight = 19.sp)
+                    Text(it, style = Tokens.Text.error, lineHeight = 19.sp)
                 }
             }
         },
@@ -721,7 +719,7 @@ private fun sanitizeAmountInput(raw: String): String {
 private fun amountToCents(text: String): Long? {
     if (text.isBlank() || text == ".") return null
     return runCatching {
-        BigDecimal(text).movePointRight(2).toBigIntegerExact().longValueExact()
+        BigDecimal(text).movePointRight(2).longValueExact()
     }.getOrNull()
 }
 
@@ -729,262 +727,7 @@ private fun formatFxRate(rate: Double): String = String.format(Locale.US, "%.4f"
 
 /* ─────────────────────────── 交易详情 ─────────────────────────── */
 
-@Composable
-fun TxDetailScreen(onBack: () -> Unit, transactionId: String?) {
-    var detail by remember { mutableStateOf<TransactionDetailDto?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(transactionId) {
-        val id = transactionId ?: return@LaunchedEffect
-        if (!BankApi.hasToken()) return@LaunchedEffect
-        runCatching { BankApi.transaction(id) }
-            .onSuccess { detail = it }
-            .onFailure { error = it.message }
-    }
-    PushScreen(title = "交易详情", onBack = onBack) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .padding(vertical = 22.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Box(
-                Modifier
-                    .size(52.dp)
-                    .clip(CircleShape)
-                    .background(Tokens.Primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Food, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-            }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                detail?.let { (if (it.direction == "in") "+" else "-") + formatCents(it.amount) } ?: "—",
-                fontSize = 24.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = Tokens.Ink,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                detail?.let { it.counterparty + " · " + (if (it.status == "success") "交易成功" else it.status) }
-                    ?: (error ?: "—"),
-                fontSize = 12.5.sp,
-                color = Tokens.Muted,
-            )
-        }
-        KvCard(
-            listOf(
-                "交易时间" to (detail?.createdAt?.replace('T', ' ')?.take(19) ?: "—"),
-                "交易类型" to (detail?.let { if (it.direction == "in") "收入" else "支出" } ?: "—"),
-                "分类" to (detail?.let { BankApi.categoryLabel(it.category) } ?: "—"),
-                "付款卡片" to (detail?.cardLast4?.let { "尾号 $it" } ?: "—"),
-                "资金账户" to (detail?.accountLabel?.ifEmpty { "—" } ?: "—"),
-                "交易号" to (detail?.referenceNo?.ifEmpty { detail?.id } ?: "—"),
-            ),
-            Modifier.padding(horizontal = 14.dp),
-        )
-        Spacer(Modifier.height(14.dp))
-        PrimaryButton("下载电子回单", {}, Modifier.padding(horizontal = 14.dp))
-    }
-}
-
 /* ─────────────────────────── 寄送信息 ─────────────────────────── */
-
-@Composable
-fun DeliveryScreen(onBack: () -> Unit) {
-    PushScreen(title = "寄送信息", onBack = onBack) {
-        Spacer(Modifier.height(4.dp))
-        KvCard(
-            listOf(
-                "银行卡" to "招财猫白金卡 · 尾号 4417",
-                "收件人" to SessionStore.name().ifEmpty { "—" },
-                "联系电话" to "138 **** 8000",
-                "寄送地址" to "上海市徐汇区漕溪北路 88 号",
-                "已收制卡费" to "¥50.00",
-                "物流状态" to "已寄出 · 待签收",
-            ),
-            Modifier.padding(horizontal = 14.dp),
-        )
-    }
-}
-
-/* ─────────────────────────── 会员等级 ─────────────────────────── */
-
-@Composable
-fun MembershipScreen(onBack: () -> Unit) {
-    var membership by remember { mutableStateOf<MembershipDto?>(null) }
-    LaunchedEffect(Unit) {
-        if (BankApi.hasToken()) runCatching { BankApi.membership() }.onSuccess { membership = it }
-    }
-    val tierIndex = when (membership?.tier) {
-        "gold" -> 1
-        "platinum" -> 2
-        "diamond" -> 3
-        else -> 0
-    }
-    PushScreen(title = "会员等级", onBack = onBack) {
-        SectionHeader("会员卡", (membership?.tierLabel ?: "普通会员") + " · 使用中")
-        LazyRow(
-            Modifier.fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            val cards = listOf(
-                R.drawable.member_standard to 0,
-                R.drawable.member_gold to 1,
-                R.drawable.member_platinum to 2,
-                R.drawable.member_diamond to 3,
-            )
-            cards.forEach { (res, index) ->
-                item { MemberCard(res, dimmed = index != tierIndex, current = index == tierIndex) }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text("当前等级", fontSize = 11.sp, color = Tokens.Muted)
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    membership?.tierLabel ?: "普通会员",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Tokens.Ink,
-                )
-                Spacer(Modifier.height(12.dp))
-                Hairline()
-                Spacer(Modifier.height(10.dp))
-                KvInline("上月日均资产", membership?.let { formatCents(it.aum) } ?: "—")
-                KvInline(
-                    "距下一档还差",
-                    membership?.let { formatCents((it.nextThreshold - it.aum).coerceAtLeast(0)) } ?: "—",
-                )
-            }
-        }
-        SectionHeader("权益")
-        KvCard(
-            (membership?.benefits?.take(4)?.map { it to "已开通" } ?: listOf(
-                "制卡费减免" to "每年 0 张",
-                "换汇点差" to "标准价",
-                "机场贵宾厅" to "—",
-                "专属顾问" to "—",
-            )),
-            Modifier.padding(horizontal = 14.dp),
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "等级按上月日均资产每月 1 号重算，实时达标当天升级；缺快照的日子按 0 计入日均。",
-            fontSize = 11.sp,
-            color = Tokens.Muted,
-            lineHeight = 18.sp,
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-    }
-}
-
-@Composable
-private fun MemberCard(drawable: Int, dimmed: Boolean, current: Boolean = false) {
-    Box(
-        Modifier
-            .width(296.dp)
-            .aspectRatio(1.585f)
-            .clip(RoundedCornerShape(10.dp))
-            .border(1.dp, Tokens.Border, RoundedCornerShape(10.dp))
-    ) {
-        Image(
-            painter = painterResource(drawable),
-            contentDescription = null,
-            modifier = Modifier.fillMaxWidth(),
-            contentScale = ContentScale.Crop,
-            alpha = if (dimmed) 0.55f else 1f,
-        )
-        if (current) {
-            // 卡面右下空白区的升级进度
-            Column(
-                Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 15.dp, bottom = 17.dp)
-                    .width(116.dp)
-            ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("距金卡", fontSize = 9.sp, color = Tokens.Ink.copy(alpha = 0.72f))
-                    Text("88%", fontSize = 9.sp, color = Tokens.Ink.copy(alpha = 0.72f))
-                }
-                Spacer(Modifier.height(5.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(2.5.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Tokens.Ink.copy(alpha = 0.18f))
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth(0.88f)
-                            .height(2.5.dp)
-                            .background(Tokens.Ink.copy(alpha = 0.6f))
-                    )
-                }
-            }
-        }
-    }
-}
-
-/* ─────────────────────────── 储蓄与计划 ─────────────────────────── */
-
-@Composable
-fun PlansScreen(onBack: () -> Unit) {
-    var tab by remember { mutableIntStateOf(0) }
-    var savings by remember { mutableStateOf<SavingsDto?>(null) }
-    LaunchedEffect(Unit) {
-        if (BankApi.hasToken()) runCatching { BankApi.savingsOverview() }.onSuccess { savings = it }
-    }
-    PushScreen(title = "储蓄与计划", onBack = onBack) {
-        Box(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
-            SegTabs(listOf("存钱目标", "定投计划"), tab) { tab = it }
-        }
-        if (tab == 0) {
-            Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                val goals = savings?.goals.orEmpty()
-                if (goals.isEmpty()) {
-                    Text("暂无存钱目标", fontSize = 12.sp, color = Tokens.Muted)
-                } else {
-                    goals.forEach { goal ->
-                        GoalCard(
-                            name = goal.name,
-                            deadline = if (goal.deadline.isNotEmpty()) "目标日 ${goal.deadline.take(10)}" else "无固定期限",
-                            saved = formatCents(goal.savedAmount),
-                            target = formatCents(goal.targetAmount),
-                            ratio = if (goal.targetAmount > 0) {
-                                (goal.savedAmount.toFloat() / goal.targetAmount).coerceIn(0f, 1f)
-                            } else 0f,
-                            sweep = if (goal.sweepText.isNotEmpty()) "归集设置 · ${goal.sweepText}" else "暂无归集设置",
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-                SwitchRow(
-                    "消费凑整",
-                    savings?.roundupEnabled ?: false,
-                    subtitle = savings?.let {
-                        "凑整到 ${formatCents(it.roundupTo)} · 单日上限 ${formatCents(it.roundupDailyCap)}"
-                    } ?: "—",
-                ) { }
-            }
-            Spacer(Modifier.height(14.dp))
-            PrimaryButton("新建存钱目标", {}, Modifier.padding(horizontal = 14.dp))
-        } else {
-            Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PlanCard("沪深 300 指数基金", "每月", "¥1,000", "11-01", "¥6,000", "运行中", "暂停")
-                PlanCard("稳利纯债基金 A", "每月", "¥500", "11-15", "¥1,500", "已暂停", "恢复")
-            }
-            Spacer(Modifier.height(12.dp))
-            EmptyNote("计划只保存规则\n自动扣款与执行尚未开放")
-            Spacer(Modifier.height(14.dp))
-            PrimaryButton("新建定投计划", {}, Modifier.padding(horizontal = 14.dp))
-        }
-    }
-}
 
 @Composable
 internal fun GoalCard(name: String, deadline: String, saved: String, target: String, ratio: Float, sweep: String) {
@@ -994,7 +737,7 @@ internal fun GoalCard(name: String, deadline: String, saved: String, target: Str
                 Column(Modifier.weight(1f)) {
                     Text(name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                     Spacer(Modifier.height(3.dp))
-                    Text(deadline, fontSize = 11.sp, color = Tokens.Muted)
+                    Text(deadline, style = Tokens.Text.hint)
                 }
                 Icon(Icons.Pig, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(16.dp))
             }
@@ -1020,8 +763,8 @@ internal fun GoalCard(name: String, deadline: String, saved: String, target: Str
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(sweep, fontSize = 11.sp, color = Tokens.Muted)
-                Text("${(ratio * 100).toInt()}%", fontSize = 11.sp, color = Tokens.Muted)
+                Text(sweep, style = Tokens.Text.hint)
+                Text("${(ratio * 100).toInt()}%", style = Tokens.Text.hint)
             }
         }
     }
@@ -1045,7 +788,7 @@ private fun PlanCard(name: String, freq: String, amount: String, next: String, t
             Hairline()
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("定投计划 · $status", fontSize = 11.sp, color = Tokens.Muted)
+                Text("定投计划 · $status", style = Tokens.Text.hint)
                 Text(action, fontSize = 11.5.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
             }
         }
@@ -1055,7 +798,7 @@ private fun PlanCard(name: String, freq: String, amount: String, next: String, t
 @Composable
 internal fun Metric(label: String, value: String) {
     Column {
-        Text(label, fontSize = 10.5.sp, color = Tokens.Muted)
+        Text(label, style = Tokens.Text.caption)
         Spacer(Modifier.height(2.dp))
         Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
     }
@@ -1136,8 +879,7 @@ fun SecurityScreen(onBack: () -> Unit) {
     PushScreen(
         title = "安全中心",
         onBack = onBack,
-        action = "刷新",
-        onAction = { refresh() },
+        actionContent = { ActionIcon(Icons.Refresh, "刷新安全信息", busy = loading, onClick = { BankApi.invalidateReads(); refresh() }) },
     ) {
         if (loading && overview == null) {
             Spacer(Modifier.height(8.dp))
@@ -1196,7 +938,7 @@ fun SecurityScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.Top,
                 ) {
                     Column {
-                        Text("安全评分", fontSize = 11.sp, color = Tokens.Muted)
+                        Text("安全评分", style = Tokens.Text.hint)
                         Spacer(Modifier.height(4.dp))
                         Row(verticalAlignment = Alignment.Bottom) {
                             Text(
@@ -1298,7 +1040,7 @@ fun SecurityScreen(onBack: () -> Unit) {
                 SmallAction("修改登录密码", Icons.Lock, Modifier.weight(1f)) {
                     loginPasswordOpen = true
                 }
-                SmallAction("修改支付密码", Icons.Check, Modifier.weight(1f)) {
+                SmallAction("修改支付密码", Icons.Lock, Modifier.weight(1f)) {
                     paymentPasswordOpen = true
                 }
             }
@@ -1432,10 +1174,10 @@ private fun RuleReadOnly(rule: SubScreensApi.SecurityRuleDto) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(rule.label.ifBlank { rule.id }, fontSize = 13.sp, color = Tokens.Ink)
+            Text(rule.label.ifBlank { rule.id }, style = Tokens.Text.body)
             if (rule.description.isNotBlank()) {
                 Spacer(Modifier.height(3.dp))
-                Text(rule.description, fontSize = 10.5.sp, color = Tokens.Muted)
+                Text(rule.description, style = Tokens.Text.caption)
             }
         }
         Spacer(Modifier.width(10.dp))
@@ -1452,19 +1194,16 @@ private fun DeviceRow(device: SubScreensApi.SecurityDeviceDto) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(Tokens.SurfaceWarm),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Phone, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(16.dp))
-        }
-        Spacer(Modifier.width(10.dp))
+        Icon(
+            Icons.bolder(Icons.Phone),
+            contentDescription = null,
+            tint = Tokens.Ink2,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -1512,7 +1251,7 @@ private fun LogRow(log: SubScreensApi.SecurityLogDto) {
             Text(log.action.ifBlank { "安全事件" }, fontSize = 12.5.sp, color = Tokens.Ink)
             if (log.detail.isNotBlank()) {
                 Spacer(Modifier.height(3.dp))
-                Text(log.detail, fontSize = 10.5.sp, color = Tokens.Muted, lineHeight = 16.sp)
+                Text(log.detail, style = Tokens.Text.caption, lineHeight = 16.sp)
             }
             Spacer(Modifier.height(3.dp))
             Text(formatDateTime(log.createdAt), fontSize = 10.sp, color = Tokens.Muted)
@@ -1533,16 +1272,16 @@ private fun PaymentPasswordDialog(
     var confirmation by remember { mutableStateOf("") }
     var faceTicket by remember { mutableStateOf<String?>(null) }
     var verifying by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
+    val submitter = rememberSubmitter()
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val newValid = Regex("^\\d{6}$").matches(newPassword)
-    val canSubmit = !frozen && !busy && !verifying && newValid &&
+    val canSubmit = !frozen && !submitter.busy && !verifying && newValid &&
         newPassword == confirmation &&
         (if (resetMode) faceTicket != null else Regex("^\\d{6}$").matches(oldPassword))
 
     fun verifyFace() {
-        if (verifying || busy || frozen) return
+        if (verifying || submitter.busy || frozen) return
         verifying = true
         error = null
         scope.launch {
@@ -1560,32 +1299,28 @@ private fun PaymentPasswordDialog(
 
     fun submit() {
         // `canSubmit` 是本次组合算出的值；重复点击时还要读取实时的 busy 状态。
-        if (busy || !canSubmit) return
-        busy = true
-        error = null
-        scope.launch {
-            try {
-                SubScreensApi.changePaymentPassword(
-                    oldPassword = if (resetMode) null else oldPassword,
-                    newPassword = newPassword,
-                    faceTicket = if (resetMode) faceTicket else null,
-                )
-                onDone()
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                error = failure.message ?: "修改失败，请稍后重试"
+        if (!canSubmit) return
+        submitter.submit(
+            fallback = "修改失败，请稍后重试",
+            onStart = { error = null },
+            onError = { error = it },
+            onSuccess = { onDone() },
+            onFailure = {
                 // 服务端会在提交时消费人脸票据；失败后票据可能已失效，必须重新核身。
                 if (resetMode) faceTicket = null
                 onOverviewChanged()
-            } finally {
-                busy = false
-            }
+            },
+        ) {
+            SubScreensApi.changePaymentPassword(
+                oldPassword = if (resetMode) null else oldPassword,
+                newPassword = newPassword,
+                faceTicket = if (resetMode) faceTicket else null,
+            )
         }
     }
 
     AlertDialog(
-        onDismissRequest = { if (!busy) onDismiss() },
+        onDismissRequest = { if (!submitter.busy) onDismiss() },
         containerColor = Tokens.Surface,
         title = {
             Text(
@@ -1608,7 +1343,7 @@ private fun PaymentPasswordDialog(
                         listOf("记得原密码", "忘记原密码"),
                         selected = if (resetMode) 1 else 0,
                     ) { index ->
-                        if (!busy && !verifying) {
+                        if (!submitter.busy && !verifying) {
                             resetMode = index == 1
                             oldPassword = ""
                             faceTicket = null
@@ -1661,7 +1396,7 @@ private fun PaymentPasswordDialog(
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                     )
                     if (newPassword.isNotEmpty() && !newValid) {
-                        Text("支付密码须为 6 位数字", fontSize = 12.sp, color = Tokens.Coral)
+                        Text("支付密码须为 6 位数字", style = Tokens.Text.error)
                     }
                     TextFieldRow(
                         label = "确认新支付密码",
@@ -1675,7 +1410,7 @@ private fun PaymentPasswordDialog(
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                     )
                     if (confirmation.isNotEmpty() && confirmation != newPassword) {
-                        Text("两次输入的新支付密码不一致", fontSize = 12.sp, color = Tokens.Coral)
+                        Text("两次输入的新支付密码不一致", style = Tokens.Text.error)
                     }
                     Text(
                         "连续输错 5 次原支付密码会冻结账号，重新登录或人脸核身均不能解除冻结。",
@@ -1685,17 +1420,17 @@ private fun PaymentPasswordDialog(
                     )
                 }
                 error?.let {
-                    Text(it, fontSize = 12.sp, color = Tokens.Coral, lineHeight = 19.sp)
+                    Text(it, style = Tokens.Text.error, lineHeight = 19.sp)
                 }
             }
         },
         confirmButton = {
             TextButton(enabled = canSubmit, onClick = { submit() }) {
-                Text(if (busy) "提交中…" else if (resetMode) "确认重置" else "确认修改")
+                Text(if (submitter.busy) "提交中…" else if (resetMode) "确认重置" else "确认修改")
             }
         },
         dismissButton = {
-            TextButton(enabled = !busy && !verifying, onClick = onDismiss) {
+            TextButton(enabled = !submitter.busy && !verifying, onClick = onDismiss) {
                 Text("取消", color = Tokens.Ink2)
             }
         },
@@ -1719,7 +1454,7 @@ private fun LoginPasswordDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
         title = { Text("修改登录密码", fontSize = 18.sp, color = Tokens.Ink) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("输入当前密码，再设置新的登录密码。", fontSize = 12.sp, color = Tokens.Muted)
+                Text("输入当前密码，再设置新的登录密码。", style = Tokens.Text.note)
                 TextFieldRow(
                     label = "原密码", value = oldPassword,
                     onValueChange = { if (!busy) { oldPassword = it; error = null } },
@@ -1744,9 +1479,9 @@ private fun LoginPasswordDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
                     keyboardType = androidx.compose.ui.text.input.KeyboardType.Password,
                 )
                 if (confirmation.isNotEmpty() && confirmation != newPassword) {
-                    Text("两次输入的新密码不一致", fontSize = 12.sp, color = Tokens.Coral)
+                    Text("两次输入的新密码不一致", style = Tokens.Text.error)
                 }
-                error?.let { Text(it, fontSize = 12.sp, color = Tokens.Coral) }
+                error?.let { Text(it, style = Tokens.Text.error) }
             }
         },
         confirmButton = {
@@ -1774,123 +1509,356 @@ private fun LoginPasswordDialog(onDismiss: () -> Unit, onDone: () -> Unit) {
 }
 
 @Composable
-fun ProfileScreen(onBack: () -> Unit) {
+fun ProfileScreen(onBack: () -> Unit, onChangePhone: () -> Unit) {
     var profile by remember { mutableStateOf<ProfileDto?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var avatarOpen by remember { mutableStateOf(false) }
+    var nicknameEditing by remember { mutableStateOf(false) }
+    var nicknameInput by remember { mutableStateOf("") }
+    var nicknameError by remember { mutableStateOf<String?>(null) }
+    val submitter = rememberSubmitter()
     LaunchedEffect(Unit) {
-        if (BankApi.hasToken()) runCatching { BankApi.profile() }.onSuccess { profile = it }
+        if (BankApi.hasToken()) runCatching { BankApi.profile() }.onSuccess { profile = it }.onFailure { loadError = it.message }
     }
+    val fallbackNickname = profile?.displayName?.ifEmpty { NameDisplay.of(profile?.name) }.orEmpty()
+    val nickname = NameDisplay.nicknameOf(profile?.customNickname, fallbackNickname)
     PushScreen(title = "个人资料", onBack = onBack) {
-        Spacer(Modifier.height(4.dp))
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Spacer(Modifier.height(8.dp))
+        // 头像居中、称呼在下：一眼看清「是谁」，手机号不在这里露出来。
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                Modifier
-                    .size(54.dp)
-                    .clip(CircleShape)
-                    .background(Tokens.SurfaceWarm)
-                    .border(1.dp, Tokens.Border, CircleShape),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(painterResource(R.drawable.brand_cat), null, Modifier.size(44.dp), contentScale = ContentScale.Fit)
+            // 换头像入口直接做在头像上：右下角一个铅笔角标，不再单独占一行文字。
+            Box(Modifier.padding(end = 6.dp, bottom = 6.dp)) {
+                Box(
+                    Modifier
+                        .clip(CircleShape)
+                        .clickable(enabled = !submitter.busy) { avatarOpen = true },
+                ) {
+                    UserAvatar(avatarId = profile?.avatarId, size = 84.dp)
+                }
+                // 铅笔只画图标本身：不加底色圆块，落在头像圆外的页面底色上。
+                Icon(
+                    Icons.Edit,
+                    contentDescription = if (submitter.busy) "正在更新头像" else "更换头像",
+                    tint = Tokens.Ink2,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 2.dp, y = 2.dp)
+                        .clip(CircleShape)
+                        .clickable(enabled = !submitter.busy) { avatarOpen = true }
+                        .padding(4.dp)
+                        .size(16.dp),
+                )
             }
-            Spacer(Modifier.size(14.dp))
-            Column {
-                Text(profile?.name?.ifEmpty { "—" } ?: "—", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-                Spacer(Modifier.height(3.dp))
-                Text(profile?.phone ?: "—", fontSize = 12.sp, color = Tokens.Muted)
+            Spacer(Modifier.height(10.dp))
+            // 昵称 + 小铅笔：昵称只用于展示，不是实名（实名在下面的「姓名」行，始终脱敏）。
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    nickname.ifEmpty { "—" },
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Tokens.Ink,
+                )
+                Icon(
+                    Icons.Edit,
+                    contentDescription = "修改昵称",
+                    tint = Tokens.Ink2,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(enabled = !submitter.busy) { nicknameInput = profile?.customNickname.orEmpty(); nicknameEditing = true }
+                        .padding(4.dp)
+                        .size(15.dp),
+                )
             }
         }
+        Spacer(Modifier.height(16.dp))
         KvCard(
-            listOf(
-                "姓名" to (profile?.name?.ifEmpty { "—" } ?: "—"),
-                "手机号" to (profile?.phone ?: "—"),
-                "身份证号" to (profile?.idNumberMasked?.ifEmpty { "—" } ?: "—"),
-                "开户日期" to (profile?.openedAt?.take(10)?.ifEmpty { "—" } ?: "—"),
-                "联系地址" to (profile?.address?.ifEmpty { "—" } ?: "—"),
-            ),
+            buildList {
+                add("姓名" to (profile?.maskedName?.ifEmpty { NameDisplay.masked(profile?.name) } ?: "—"))
+                profile?.idNumberMasked?.takeIf { it.isNotBlank() }?.let { add("身份证号" to it) }
+                profile?.openedAt?.takeIf { it.isNotBlank() }?.let { add("开户日期" to it.take(10)) }
+                profile?.address?.takeIf { it.isNotBlank() }?.let { add("联系地址" to it) }
+            },
             Modifier.padding(horizontal = 14.dp),
         )
-        Spacer(Modifier.height(14.dp))
-        PrimaryButton("修改手机号", {}, Modifier.padding(horizontal = 14.dp))
+        Spacer(Modifier.height(10.dp))
+        loadError?.let { Text(it, color = Tokens.Coral, fontSize = 12.sp, modifier = Modifier.padding(16.dp)) }
+        // 手机号并入这一行：标题就是「手机号」，右侧是脱敏号码，点进去才是改号流程。
+        Box(Modifier.padding(horizontal = 14.dp)) {
+            EntryRow(
+                icon = Icons.Phone,
+                title = "手机号",
+                value = maskPhoneDisplay(profile?.phone.orEmpty()).ifBlank { null },
+                onClick = onChangePhone,
+            )
+        }
+    }
+    if (nicknameEditing) {
+        AlertDialog(
+            onDismissRequest = { if (!submitter.busy) nicknameEditing = false },
+            title = { Text("修改昵称") },
+            text = {
+                Column {
+                    TextFieldRow("昵称", nicknameInput, { if (!submitter.busy) { nicknameInput = it.take(NameDisplay.NICKNAME_MAX); nicknameError = null } }, placeholder = fallbackNickname)
+                    nicknameError?.let { ErrorNote(it) }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !submitter.busy, onClick = {
+                    val problem = NameDisplay.validateNickname(nicknameInput)
+                    if (problem != null) { nicknameError = problem; return@TextButton }
+                    submitter.submit(
+                        fallback = "昵称保存失败，请稍后重试",
+                        onError = { nicknameError = it },
+                        onSuccess = { nicknameEditing = false },
+                    ) {
+                        profile = BankApi.updateNickname(nicknameInput)
+                        SessionStore.updateNickname(profile?.nickname.orEmpty())
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                if ((profile?.customNickname ?: "").isNotEmpty()) {
+                    TextButton(enabled = !submitter.busy, onClick = {
+                        submitter.submit(
+                            fallback = "昵称保存失败，请稍后重试",
+                            onError = { nicknameError = it },
+                            onSuccess = { nicknameEditing = false },
+                        ) {
+                            profile = BankApi.updateNickname("")
+                            SessionStore.updateNickname(profile?.nickname.orEmpty())
+                        }
+                    }) { Text("恢复默认") }
+                } else {
+                    TextButton(onClick = { nicknameEditing = false }) { Text("取消", color = Tokens.Ink2) }
+                }
+            },
+        )
+    }
+    if (avatarOpen) {
+        AvatarPickerSheet(
+            current = profile?.avatarId.orEmpty(),
+            saving = submitter.busy,
+            onDismiss = { if (!submitter.busy) avatarOpen = false },
+            onPick = { avatarId ->
+                submitter.submit(
+                    fallback = "头像更新失败，请稍后重试",
+                    onError = { loadError = it },
+                    onSuccess = { loadError = null; avatarOpen = false },
+                ) {
+                    val next = BankApi.updateAvatar(avatarId)
+                    profile = next
+                }
+            },
+        )
+    }
+}
+
+/** 头像选择面板：只列头像池里的 10 张，点一张即保存。 */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun AvatarPickerSheet(
+    current: String,
+    saving: Boolean,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+) {
+    androidx.compose.material3.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = androidx.compose.material3.rememberModalBottomSheetState(),
+        containerColor = Tokens.Page,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("选择头像", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Text("从默认头像里挑一个，选中后立即保存。", style = Tokens.Text.note)
+            // 每行 5 个、两端对齐铺满内容宽度：首尾与标题左对齐，不会在右侧留出一段空白。
+            AvatarPool.ids.chunked(5).forEach { row ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    row.forEach { id ->
+                        val active = id == current
+                        Box(
+                            Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .border(if (active) 2.dp else 1.dp, if (active) Tokens.AccentDeep else Tokens.Border, CircleShape)
+                                .padding(2.dp)
+                                .clip(CircleShape)
+                                .clickable(enabled = !saving) { onPick(id) },
+                        ) {
+                            Image(
+                                painterResource(AvatarPool.drawableOf(id)),
+                                contentDescription = "头像 ${id.takeLast(2)}",
+                                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                contentScale = ContentScale.Crop,
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-fun ImScreen(onBack: () -> Unit) {
-    PushScreen(title = "IM 连接", onBack = onBack) {
-        SectionHeader("输入绑定码")
-        HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-            Column(Modifier.padding(14.dp)) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                        .clip(CircleShape)
-                        .background(Tokens.Surface)
-                        .border(1.dp, Tokens.Border, CircleShape)
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    Text("例如 WX-8F2K", fontSize = 13.sp, color = Tokens.Muted)
-                }
-                Spacer(Modifier.height(12.dp))
-                PrimaryButton("确认绑定", {})
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        KvCard(
-            listOf("绑定状态" to "未绑定", "支持渠道" to "微信 / 企业微信"),
-            Modifier.padding(horizontal = 14.dp),
-        )
-        Spacer(Modifier.height(12.dp))
-        HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-            Column {
-                SwitchRow("账户变动提醒", true, subtitle = "入账、转出、扣款成功时推送") { }
-                Hairline()
-                SwitchRow("提醒尚未启用", false, subtitle = "桥接服务未开启时不推送") { }
-            }
+fun ImScreen(onBack: () -> Unit, onReminders: () -> Unit) {
+    var bindings by remember { mutableStateOf<List<org.json.JSONObject>>(emptyList()) }
+    var qr by remember { mutableStateOf<org.json.JSONObject?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var code by remember { mutableStateOf("") }
+    var remove by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    fun perform(work: suspend () -> Unit) {
+        if (busy) return
+        busy = true; error = null
+        scope.launch {
+            try { work() } catch (failure: Exception) { error = failure.message ?: "IM 连接服务不可用" }
+            finally { busy = false }
         }
     }
+    LaunchedEffect(refresh) {
+        runCatching { AgentApi.imRequest("GET", "/im/bindings") as org.json.JSONArray }
+            .onSuccess { data -> bindings = (0 until data.length()).map { data.getJSONObject(it) }; error = null }
+            .onFailure { error = it.message ?: "连接状态加载失败" }
+    }
+    val attemptId = qr?.optString("attemptId").orEmpty()
+    val status = qr?.optString("status").orEmpty()
+    LaunchedEffect(attemptId, status) {
+        while (attemptId.isNotBlank() && qr?.optString("status") in setOf("pending", "scanned", "waiting")) {
+            kotlinx.coroutines.delay(2000)
+            try { qr = AgentApi.imRequest("GET", "/im/weixin/qr/$attemptId") as org.json.JSONObject }
+            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { error = failure.message ?: "扫码状态加载失败"; if ((failure as? BankApiException)?.status == 410) qr = null; break }
+        }
+    }
+    PushScreen(title = "IM 连接", onBack = onBack,
+        actionContent = { ActionIcon(Icons.Refresh, "刷新连接状态", enabled = !busy, onClick = { refresh++ }) },
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (bindings.isEmpty() && qr == null) {
+                FormCard("微信连接") {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Icon(Icons.Phone, null, tint = Tokens.AccentDeep, modifier = Modifier.size(30.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(if (error == null) "尚未连接微信" else "连接状态暂不可用", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                            Text(if (error == null) "扫码后核对并确认绑定本人微信" else "请稍后刷新，再核对微信连接。", style = Tokens.Text.note)
+                        }
+                    }
+                }
+            }
+            bindings.forEach { binding ->
+                HairlineCard {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Text(binding.optString("label"))
+                        Text(if (binding.optBoolean("connected")) "已连接" else "连接已失效", color = Tokens.Muted, fontSize = 11.sp)
+                        androidx.compose.material3.TextButton(enabled = !busy, onClick = { remove = binding.optString("id") }) { Text("解除绑定") }
+                    }
+                }
+            }
+            if (error != null && (bindings.isNotEmpty() || qr != null)) Text(error!!, color = Tokens.Coral, fontSize = 12.sp)
+            if (qr == null) PrimaryButton(if (busy) "请求中…" else "生成微信连接二维码", onClick = {
+                perform { qr = AgentApi.imRequest("POST", "/im/weixin/qr", org.json.JSONObject()) as org.json.JSONObject }
+            })
+            qr?.let { current ->
+                FormCard("连接微信", subtitle = "使用本人微信扫码，完成后确认绑定") {
+                val image = current.optString("qrImage")
+                val bitmap = remember(image) { runCatching {
+                    require(image.startsWith("data:image/png;base64,") && image.length <= 500000)
+                    val bytes = android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT)
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                }.getOrNull() }
+                if (bitmap != null && status != "connected") Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    androidx.compose.foundation.Image(bitmap, "微信连接二维码", Modifier.size(200.dp))
+                }
+                val statusLabel = when(status) {
+                    "pending", "waiting" -> "等待扫码"
+                    "scanned" -> "已扫码，请在微信确认"
+                    "needs_verification" -> "需要验证码"
+                    "connected" -> if (current.optJSONObject("binding") == null) "已扫码，等待确认绑定" else "已连接"
+                    "expired" -> "二维码已过期"
+                    "cancelled" -> "已取消"
+                    "failed" -> "连接失败，请重试"
+                    else -> status
+                }
+                Text(statusLabel, style = Tokens.Text.bodyMuted)
+                if (status == "needs_verification") {
+                    TextFieldRow("微信验证码", code, { code = it.take(20) })
+                    GhostButton("提交验证码", onClick = { perform { qr = AgentApi.imRequest("POST", "/im/weixin/qr/$attemptId/verify", org.json.JSONObject().put("code", code)) as org.json.JSONObject; code = "" } })
+                }
+                if (status == "connected" && current.optJSONObject("binding") == null) PrimaryButton("确认绑定本人微信", onClick = {
+                    perform { AgentApi.imRequest("POST", "/im/weixin/qr/$attemptId/confirm", org.json.JSONObject().put("confirmed", true)); qr = null; refresh++ }
+                })
+                if (status in setOf("expired", "cancelled", "failed") || current.optJSONObject("binding") != null) {
+                    GhostButton("关闭二维码", onClick = { qr = null; code = "" })
+                } else GhostButton("取消扫码", onClick = { perform { AgentApi.imRequest("POST", "/im/weixin/qr/$attemptId/cancel", org.json.JSONObject()); qr = null; code = "" } })
+                }
+            }
+            EntryRow(Icons.Clock, "微信日程提醒", onClick = onReminders)
+        }
+    }
+    remove?.let { id -> androidx.compose.material3.AlertDialog(onDismissRequest = { remove = null }, title = { Text("解除微信绑定") }, text = { Text("确认解除当前微信连接？") }, confirmButton = {
+        androidx.compose.material3.TextButton(enabled = !busy, onClick = { perform { AgentApi.imRequest("DELETE", "/im/bindings/$id"); remove = null; refresh++ } }) { Text("确认解除") }
+    }, dismissButton = { androidx.compose.material3.TextButton(onClick = { remove = null }) { Text("取消") } }) }
 }
 
 @Composable
 fun NotifySettingsScreen(onBack: () -> Unit) {
     PushScreen(title = "通知设置", onBack = onBack) {
-        Spacer(Modifier.height(4.dp))
-        HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-            Column {
-                SwitchRow("交易通知", true, subtitle = "入账、转出、消费") { }
-                Hairline()
-                SwitchRow("安全提醒", true, subtitle = "新设备登录、密码变更") { }
-                Hairline()
-                SwitchRow("产品与活动", false, subtitle = "理财上新、会员权益") { }
+        FormCard("交易与待办", Modifier.padding(horizontal = 16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Bell, null, tint = Tokens.AccentDeep, modifier = Modifier.size(28.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("在通知页查看", color = Tokens.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text("交易动态、自动扣款预告与 AA 待付款", color = Tokens.Ink2, fontSize = 13.sp, lineHeight = 19.sp)
+                }
             }
+            Hairline()
+            Text("通知偏好设置暂未开放。", color = Tokens.Muted, fontSize = 12.sp)
         }
     }
 }
 
 @Composable
 fun LanguageScreen(onBack: () -> Unit) {
-    var tab by remember { mutableIntStateOf(0) }
     PushScreen(title = "语言与地区", onBack = onBack) {
-        SectionHeader("语言")
-        Box(Modifier.padding(horizontal = 14.dp)) {
-            SegTabs(listOf("简体中文", "English"), tab) { tab = it }
+        FormCard("显示语言", Modifier.padding(horizontal = 16.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("简体中文", color = Tokens.Ink, fontSize = 15.sp)
+                Icon(Icons.Check, "当前语言", tint = Tokens.Accent, modifier = Modifier.size(22.dp))
+            }
         }
-        Spacer(Modifier.height(4.dp))
+        SectionHeader("地区信息")
         KvCard(
-            listOf("地区" to "中国大陆", "时区" to "北京时间 UTC+8", "记账币种" to "人民币 CNY"),
+            listOf("地区" to "中国大陆", "时区" to "北京时间 UTC+8", "支持币种" to "CNY / USD / HKD"),
             Modifier.padding(horizontal = 14.dp),
         )
     }
 }
 
 @Composable
-fun HelpScreen(onBack: () -> Unit) {
+fun HelpScreen(onBack: () -> Unit, onAssistant: () -> Unit) {
+    var expanded by remember { mutableStateOf<String?>(null) }
+    val answers = mapOf(
+        "转账多久到账" to "以服务端回执为准。在途或待审核表示已受理，请在交易详情查询状态。外部银行未接入时不承诺实际到账。",
+        "如何提高单日限额" to "在银行卡详情查看和调整允许修改的限额；超出服务端允许范围时请联系人工客服。",
+        "忘记支付密码怎么办" to "前往安全中心重置支付密码并完成身份核验。支付冻结需人工客服核验，重置密码不会自动解冻。",
+        "理财赎回什么时候到账" to "以赎回回执的结算方式和到账说明为准。沙箱即时结算不代表真实市场产品的到账时间。",
+    )
     PushScreen(title = "帮助与客服", onBack = onBack) {
         SectionHeader("常见问题")
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
@@ -1909,20 +1877,21 @@ fun HelpScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(question, fontSize = 13.sp, color = Tokens.Ink)
-                        Icon(Icons.Chevron, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(13.dp))
+                        Text(question, style = Tokens.Text.body, modifier = Modifier.weight(1f).clickable { expanded = if (expanded == question) null else question })
+                        Icon(Icons.Chevron, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(20.dp).clickable { expanded = if (expanded == question) null else question })
                     }
+                    if (expanded == question) Text(answers.getValue(question), fontSize = 12.sp, color = Tokens.Ink2, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
                 }
             }
         }
         Spacer(Modifier.height(14.dp))
-        PrimaryButton("联系在线客服", {}, Modifier.padding(horizontal = 14.dp))
+        PrimaryButton("前往助手与客服", onAssistant, Modifier.padding(horizontal = 14.dp))
     }
 }
 
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
-    PushScreen(title = "关于", onBack = onBack) {
+    PushScreen(title = "关于招财猫银行", onBack = onBack) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -1937,11 +1906,7 @@ fun AboutScreen(onBack: () -> Unit) {
             Column {
                 UpdateRow()
                 Hairline()
-                IconRow(Icons.Receipt, "服务条款") { }
-                Hairline()
-                IconRow(Icons.Receipt, "隐私政策") { }
-                Hairline()
-                IconRow(Icons.Receipt, "开源许可") { }
+                Text("服务条款与隐私政策尚未提供正式文本。", style = Tokens.Text.note, modifier = Modifier.padding(14.dp))
             }
         }
     }

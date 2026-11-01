@@ -25,6 +25,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -56,6 +57,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,6 +91,50 @@ object AuthState {
     var loggedIn by mutableStateOf(false)
 }
 
+/** dev 包自动登录用的演示账户（与 README 里的演示账号一致）。 */
+private const val DEV_LOGIN_PHONE = "13800138000"
+private const val DEV_LOGIN_PASSWORD = "123456"
+
+/**
+ * dev 包启动时的自动登录：向演示环境要一条验证码再登录（演示环境会把码回传）。
+ * 失败不阻塞——直接退回正常登录页，人工登录即可。
+ */
+@Composable
+private fun DevAutoLogin(onLoggedIn: () -> Unit) {
+    var failure by remember { mutableStateOf<String?>(null) }
+    var attempt by remember { mutableIntStateOf(0) }
+    LaunchedEffect(attempt) {
+        failure = null
+        runCatching {
+            val code = BankApi.sendSmsCode(DEV_LOGIN_PHONE)
+                ?: throw IllegalStateException("演示环境没有返回验证码")
+            BankApi.login(DEV_LOGIN_PHONE, DEV_LOGIN_PASSWORD, code)
+        }.onSuccess { result ->
+            SessionStore.save(result)
+            onLoggedIn()
+        }.onFailure { failure = it.message ?: "自动登录失败" }
+    }
+    if (failure == null) {
+        Box(
+            Modifier.fillMaxSize().background(Tokens.Page),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Image(
+                    painter = painterResource(R.drawable.brand_cat),
+                    contentDescription = null,
+                    modifier = Modifier.size(72.dp),
+                    contentScale = ContentScale.Fit,
+                )
+                Spacer(Modifier.height(14.dp))
+                Text("正在登录演示账户…", style = Tokens.Text.note)
+            }
+        }
+    } else {
+        AuthGate(onLoggedIn = onLoggedIn)
+    }
+}
+
 /** 底栏五个位置：总览 / 理财 / 猫钮 / 通知 / 我的。 */
 private data class Tab(val label: String, val icon: ImageVector?)
 
@@ -105,11 +156,18 @@ private data class NavState(
 @Composable
 fun BankApp() {
     // 未登录一律先登录，避免用界面里的静态占位数据冒充账户数据。
+    // dev 包（包名 .dev）例外：直接登录演示账户，省掉每次联调的手动登录。
     if (!AuthState.loggedIn) {
-        AuthGate(onLoggedIn = { AuthState.loggedIn = true })
+        if (BuildConfig.AUTO_LOGIN_DEMO) {
+            DevAutoLogin(onLoggedIn = { AuthState.loggedIn = true })
+        } else {
+            AuthGate(onLoggedIn = { AuthState.loggedIn = true })
+        }
         return
     }
+    LaunchedEffect(Unit) { runCatching { BankApi.refreshFinancialRecovery() } }
     var tab by remember { mutableIntStateOf(0) }
+    var wealthInitialTab by remember { mutableIntStateOf(0) }
     val stack = remember { mutableStateListOf<String>() }
     val push: (String) -> Unit = { stack.add(it) }
     val pop: () -> Unit = { if (stack.isNotEmpty()) stack.removeAt(stack.lastIndex) }
@@ -118,17 +176,18 @@ fun BankApp() {
         if (stack.isNotEmpty()) pop() else tab = 0
     }
     val goHome: () -> Unit = { stack.clear(); tab = 0 }
+    FinancialRecoveryDialog(onResolved = goHome)
     var transferDraft by remember { mutableStateOf(TransferDraft()) }
     var transferResult by remember { mutableStateOf<TransferResultDto?>(null) }
     var selectedTxId by remember { mutableStateOf<String?>(null) }
     var selectedProductCode by remember { mutableStateOf<String?>(null) }
-    var redeemedInfo by remember { mutableStateOf<Pair<String, Long>?>(null) }
 
     val navState = NavState(tab = tab, route = stack.lastOrNull(), depth = stack.size)
     val showBottomBar = navState.route == null && navState.tab != 2
 
     Scaffold(
         containerColor = Tokens.Page,
+        bottomBar = { if (showBottomBar) BottomBar(current = tab, onSelect = { tab = it }) },
     ) { padding ->
         Box(
             Modifier
@@ -195,11 +254,9 @@ fun BankApp() {
                 label = "page-nav",
             ) { state ->
                 val route = state.route
-                val stateHasBar = route == null && state.tab != 2
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .padding(bottom = if (stateHasBar) 64.dp else 0.dp),
                 ) {
                 if (route == null) {
                     when (state.tab) {
@@ -207,13 +264,10 @@ fun BankApp() {
                         1 -> WealthTab(
                             onOpenProduct = { code -> selectedProductCode = code; push("产品详情") },
                             onOpenPlans = { push("储蓄与计划") },
-                            onRedeemed = { name, amount ->
-                                redeemedInfo = name to amount
-                                push("赎回受理")
-                            },
+                            initialTab = wealthInitialTab,
                         )
-                        2 -> AssistantScreen(onBack = { tab = 0 })
-                        3 -> NotifyTab(onOpenFilter = { push("筛选") })
+                        2 -> AssistantScreen(onBack = { tab = 0 }, onSupport = { push("人工客服工单") })
+                        3 -> NotifyTab(onOpenAa = { push("AA 付款") }, onOpenTx = { id -> selectedTxId = id; push("交易详情") })
                         else -> MeTab(onOpen = push, onLogout = {
                             SessionStore.clear()
                             AuthState.loggedIn = false
@@ -224,7 +278,6 @@ fun BankApp() {
                         "银行卡" -> CardsScreen(
                             onBack = pop,
                             onDelivery = { push("寄送信息") },
-                            onApply = { push("申请受理") },
                         )
                         "交易记录" -> TransactionsScreen(
                             onBack = pop,
@@ -236,7 +289,9 @@ fun BankApp() {
                         )
                         "更多服务" -> MoreScreen(onBack = pop) { target ->
                             when (target) {
-                                "账户资产", "理财总览", "产品市场", "我的持仓", "理财记录" -> {
+                                "账户资产" -> push("存款")
+                                "理财总览", "产品市场", "我的持仓", "理财记录" -> {
+                                    wealthInitialTab = when (target) { "产品市场" -> 1; "我的持仓" -> 2; "理财记录" -> 3; else -> 0 }
                                     stack.clear()
                                     tab = 1
                                 }
@@ -250,11 +305,15 @@ fun BankApp() {
                                 else -> push(target)
                             }
                         }
-                        "消费分析" -> AnalysisScreen(onBack = pop)
+                        "消费分析" -> AnalysisScreen(onBack = pop, onReport = { push("账单报告") })
+                        "账单报告" -> BillingReportScreen(onBack = pop, onBudgets = { push("支出预算") })
+                        "支出预算" -> BudgetScreen(onBack = pop)
+                        "模拟消费" -> SpendScreen(onBack = pop, onTransactions = { push("交易记录") })
                         "存款" -> DepositsScreen(
                             onBack = pop,
                             onTransferIn = { push("转入") },
                             onTransferOut = { push("转出") },
+                            onTransactions = { push("交易记录") },
                         )
                         "转入" -> TransferInSheet(onDismiss = pop)
                         "换汇" -> ExchangeScreen(onBack = pop)
@@ -263,53 +322,33 @@ fun BankApp() {
                         "会员等级" -> MembershipScreen(onBack = pop)
                         "储蓄与计划" -> PlansScreen(onBack = pop)
                         "安全中心" -> SecurityScreen(onBack = pop)
-                        "个人资料" -> ProfileScreen(onBack = pop)
-                        "IM 连接" -> ImScreen(onBack = pop)
+                        "个人资料" -> ProfileScreen(onBack = pop, onChangePhone = { push("修改手机号") })
+                        "修改手机号" -> ChangePhoneScreen(onBack = pop)
+                        "IM 连接" -> ImScreen(onBack = pop, onReminders = { push("微信日程提醒") })
+                        "微信日程提醒" -> ImRemindersScreen(onBack = pop)
                         "通知设置" -> NotifySettingsScreen(onBack = pop)
                         "语言与地区" -> LanguageScreen(onBack = pop)
-                        "帮助与客服" -> HelpScreen(onBack = pop)
+                        "帮助与客服" -> HelpScreen(onBack = pop, onAssistant = { stack.clear(); tab = 2 })
+                        "人工客服工单" -> SupportTicketsScreen(onBack = pop)
                         "关于" -> AboutScreen(onBack = pop)
                         "登录" -> LoginScreen(
                             onBack = pop,
                             onLogin = goHome,
                             onRegister = { push("开户·手机号") },
                         )
-                        "开户·手机号" -> OpenPhoneScreen(onBack = pop, onNext = { push("开户·实名") })
-                        "开户·实名" -> OpenRealNameScreen(onBack = pop, onNext = { push("开户·核验") })
-                        "开户·核验" -> OpenFaceScreen(onBack = pop, onNext = { push("开户·支付密码") })
-                        "开户·支付密码" -> OpenPasswordScreen(onBack = pop, onDone = { push("开户完成") })
+                        // 开户四步现在走「未登录根流程」，这几个遗留入口只展示提示页。
+                        "开户·手机号" -> OpenPhoneScreen(onBack = pop)
+                        "开户·实名" -> OpenRealNameScreen(onBack = pop)
+                        "开户·核验" -> OpenFaceScreen(onBack = pop)
+                        "开户·支付密码" -> OpenPasswordScreen(onBack = pop)
                         "开户完成" -> OpenDoneScreen(onBack = pop, onHome = goHome)
                         "自动扣款" -> AutoDebitScreen(onBack = pop)
+                        "定时转账与 AA" -> PaymentPlansScreen(onBack = pop)
+                        "AA 付款" -> PaymentPlansScreen(onBack = pop, initialTab = 2)
                         "工资与备用金" -> PayrollScreen(onBack = pop)
                         "借款与分期" -> CreditScreen(onBack = pop)
                         "保险保障" -> InsuranceScreen(onBack = pop)
                         "邀请与奖励" -> InviteScreen(onBack = pop)
-                        "申请受理" -> DoneScreen(
-                            title = "申请受理",
-                            headline = "申请已提交",
-                            note = "审核通过后制卡并寄出",
-                            rows = listOf(
-                                "卡种" to "招财猫白金卡",
-                                "制卡费" to "¥50.00",
-                                "预计寄送" to "3–5 个工作日",
-                            ),
-                            actionLabel = "回到银行卡",
-                            onBack = pop,
-                            onAction = { stack.clear(); push("银行卡") },
-                        )
-                        "赎回受理" -> DoneScreen(
-                            title = "赎回受理",
-                            headline = "赎回已受理",
-                            note = "回执标注预计 T+1 个工作日到账",
-                            rows = listOf(
-                                "产品" to (redeemedInfo?.first ?: "—"),
-                                "赎回金额" to (redeemedInfo?.let { formatCents(it.second) } ?: "—"),
-                                "赎回费" to "¥0.00",
-                            ),
-                            actionLabel = "回到理财",
-                            onBack = pop,
-                            onAction = goHome,
-                        )
                         "转出" -> TransferSelectScreen(
                             onBack = pop,
                             onPick = { push(it) },
@@ -320,6 +359,11 @@ fun BankApp() {
                         )
                         "手机号转账", "银行卡号转账", "跨境支付通" -> TransferFormScreen(
                             title = route,
+                            heading = when (route) {
+                                "银行卡号转账" -> "内地转账"
+                                "跨境支付通" -> "境外转账"
+                                else -> route
+                            },
                             onBack = pop,
                             draft = transferDraft,
                             onDraftChange = { transferDraft = it },
@@ -348,12 +392,6 @@ fun BankApp() {
             // 启动时检查一次更新（有新版本弹窗）
             UpdatePromptHost()
 
-            // 底栏固定叠在底部（不改 Scaffold 布局高度，避免页面切换时上下抖动或切掉上浮的猫耳朵）
-            if (showBottomBar) {
-                Box(Modifier.align(Alignment.BottomCenter)) {
-                    BottomBar(current = tab, onSelect = { tab = it })
-                }
-            }
         }
     }
 }
@@ -393,7 +431,12 @@ private fun BottomBar(current: Int, onSelect: (Int) -> Unit) {
                 Modifier
                     .weight(1f)
                     .fillMaxSize()
-                    .clickable(
+                    .semantics {
+                        contentDescription = tab.label
+                    }
+                    .selectable(
+                        selected = index == current,
+                        role = Role.Tab,
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
                     ) {
@@ -532,8 +575,8 @@ fun SectionHeader(title: String, trailing: String? = null) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, fontSize = 12.sp, color = Tokens.Muted)
-        if (trailing != null) Text(trailing, fontSize = 11.sp, color = Tokens.Muted)
+        Text(title, style = Tokens.Text.note)
+        if (trailing != null) Text(trailing, style = Tokens.Text.hint)
     }
 }
 

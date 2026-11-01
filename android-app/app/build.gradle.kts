@@ -14,6 +14,9 @@ val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) FileInputStream(keystorePropertiesFile).use { load(it) }
 }
 
+// 后端地址：默认线上演示环境；本地联调用 -PbankBaseUrl=http://10.0.2.2:8081 覆盖。
+val bankBaseUrl: String = (findProperty("bankBaseUrl") as String?) ?: "https://bank.waveflow.men"
+
 android {
     signingConfigs {
         if (keystorePropertiesFile.exists()) {
@@ -33,14 +36,29 @@ android {
         applicationId = "com.moneymeow.bank"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.6"
+        versionCode = 8
+        versionName = "1.0.7"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // 正式包不自动登录；dev 变体会覆盖成 true。
+        buildConfigField("boolean", "AUTO_LOGIN_DEMO", "false")
+        buildConfigField("String", "BANK_BASE_URL", "\"$bankBaseUrl\"")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
             if (keystorePropertiesFile.exists()) signingConfig = signingConfigs.getByName("release")
+        }
+        /**
+         * 联调用 dev 包：独立包名可与正式包装在同一台设备，
+         * 打开直接登录演示账户，不走登录页。
+         */
+        create("dev") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("boolean", "AUTO_LOGIN_DEMO", "true")
+            resValue("string", "app_name", "招财猫 Dev")
         }
     }
 
@@ -62,6 +80,8 @@ android {
 }
 
 dependencies {
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("junit:junit:4.13.2")
     implementation(platform("androidx.compose:compose-bom:2025.09.01"))
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("androidx.core:core-ktx:1.17.0")

@@ -163,7 +163,7 @@ fun UpdateDialog(info: UpdateApi.Info, onDismiss: () -> Unit) {
                         )
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text("正在下载 ${(progress * 100).toInt()}%", fontSize = 11.sp, color = Tokens.Muted)
+                    Text("正在下载 ${(progress * 100).toInt()}%", style = Tokens.Text.hint)
                 }
                 if (error != null) {
                     Spacer(Modifier.height(8.dp))

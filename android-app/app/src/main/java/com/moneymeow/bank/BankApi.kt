@@ -6,21 +6,37 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * 银行后端客户端：直连 `server/`（PostgreSQL）的 HTTP 接口。
  *
  * 默认使用与客户网页相同的 HTTPS 入口；本地联调可另行设置 baseUrl。
- * 只依赖 JDK 自带的 HttpURLConnection 与 org.json，不额外引入网络库。
+ * 底层 I/O 统一走 [BankHttp]（不引入网络库），本对象只负责读缓存、幂等键与资金恢复。
  */
 object BankApi {
     /** 客户 /api/ 由线上网关转发至演示银行。 */
-    var baseUrl: String = "https://bank.waveflow.men"
+    var baseUrl: String = BuildConfig.BANK_BASE_URL
 
     private var token: String? = null
+
+    /** 读接口短期缓存：切页先出上次结果；下拉刷新或任何写操作后失效。 */
+    private data class CachedRead(val body: String, val at: Long)
+    private val readCache = java.util.concurrent.ConcurrentHashMap<String, CachedRead>()
+    private const val READ_CACHE_TTL_MS = 60_000L
+
+    /** 下拉刷新入口：清掉读缓存，让页面重新拉取。 */
+    fun invalidateReads() {
+        readCache.clear()
+    }
+
+    private fun readCacheKey(authToken: String?, path: String): String =
+        (authToken?.hashCode() ?: 0).toString() + "|" + path
+
+    private fun readCacheable(method: String, path: String, authToken: String?): Boolean =
+        method == "GET" && authToken != null &&
+            !path.startsWith("/api/auth/") &&
+            !path.startsWith("/api/idempotency/") &&
+            !path.contains("/secrets")
 
     /** 令牌失效（401）时回调，由应用层清登录态并回登录页。 */
     var onUnauthorized: (() -> Unit)? = null
@@ -54,6 +70,9 @@ object BankApi {
                 token = newToken,
                 name = user?.optString("name").orEmpty(),
                 phone = user?.optString("phone").orEmpty(),
+                displayName = user?.optString("displayName").orEmpty(),
+                nickname = user?.optString("nickname").orEmpty(),
+                customNickname = user?.optString("customNickname").orEmpty(),
             )
         }
 
@@ -72,6 +91,12 @@ object BankApi {
         root.optString("ticket").ifEmpty {
             throw BankApiException(502, "身份核验未返回有效票据", "IDENTITY_TICKET_MISSING")
         }
+    }
+
+    suspend fun changePhone(newPhone: String, smsCode: String, faceTicket: String): Unit = withContext(Dispatchers.IO) {
+        val session = SessionStore.credentials().second ?: throw BankApiException(401, "请重新登录", "UNAUTHORIZED")
+        val root = JSONObject(requestRaw("PATCH", "/api/auth/phone", JSONObject().put("newPhone", newPhone).put("smsCode", smsCode).put("faceTicket", faceTicket), authToken = session))
+        if (SessionStore.credentials().second == session) SessionStore.save(LoginResult(session, SessionStore.name(), root.optString("phone", newPhone)))
     }
 
     /**
@@ -119,8 +144,7 @@ object BankApi {
         val text = requestRaw("GET", "/api/accounts", null)
         val array = org.json.JSONTokener(text).nextValue() as JSONArray
         buildList {
-            for (index in 0 until array.length()) {
-                val item = array.getJSONObject(index)
+            array.forEachObject { item ->
                 val balances = item.optJSONArray("currencyBalances")
                 add(
                     AccountDto(
@@ -158,8 +182,7 @@ object BankApi {
             val page = org.json.JSONTokener(text).nextValue() as JSONObject
             val items = page.optJSONArray("items") ?: JSONArray()
             buildList {
-                for (index in 0 until items.length()) {
-                    val row = items.getJSONObject(index)
+                items.forEachObject { row ->
                     add(
                         TransactionDto(
                             id = row.getString("id"),
@@ -179,8 +202,7 @@ object BankApi {
         val text = requestRaw("GET", "/api/cards", null)
         val array = org.json.JSONTokener(text).nextValue() as JSONArray
         buildList {
-            for (index in 0 until array.length()) {
-                val row = array.getJSONObject(index)
+            array.forEachObject { row ->
                 add(
                     CardDto(
                         id = row.getString("id"),
@@ -473,6 +495,15 @@ object BankApi {
         )
     }
 
+    suspend fun resolveFps(method: String, identifier: String): FpsRecipientDto = withContext(Dispatchers.IO) {
+        require(method in setOf("mobile", "email", "fpsid"))
+        val root = request("POST", "/api/fps/resolve", JSONObject().put("idType", method).put("fpsId", identifier))
+        if (!root.optBoolean("registered")) throw BankApiException(400, root.optString("reason", "该标识未登记转数快"), "FPS_NOT_REGISTERED")
+        FpsRecipientDto(root.getString("name"), root.getString("bankCode"), root.getString("bankRegion")).also {
+            require(it.name.isNotBlank() && it.bankCode.isNotBlank() && it.bankRegion == "HK") { "转数快登记资料不完整" }
+        }
+    }
+
     /** 转账报价：手续费、到账时间、单笔上限。 */
     suspend fun transferQuote(
         fromAccountId: String,
@@ -492,6 +523,13 @@ object BankApi {
             .put("bankRegion", bankRegion)
             .put("payeeCurrency", payeeCurrency)
         val root = request("POST", "/api/transfers/quote", body)
+        val fx = root.optJSONObject("fx")?.let {
+            TransferFxConfirmation(
+                fromCurrency = it.getString("fromCurrency"), toCurrency = it.getString("toCurrency"),
+                rate = it.getDouble("rate"), fromAmount = it.getLong("fromAmount"),
+                toAmount = it.getLong("toAmount"), spread = it.getDouble("spread"),
+            )
+        }
         TransferQuoteDto(
             fee = root.getLong("fee"),
             etaText = root.optString("etaText"),
@@ -500,6 +538,9 @@ object BankApi {
             requiresConfirm = root.optBoolean("requiresConfirm"),
             receiveAmount = root.optJSONObject("fx")?.optLong("toAmount"),
             rate = root.optJSONObject("fx")?.optDouble("rate"),
+            fx = fx,
+            fxTtlSeconds = root.optJSONObject("fx")?.optLong("quoteTtlSeconds"),
+            receivedAt = System.currentTimeMillis(),
         )
     }
 
@@ -523,6 +564,9 @@ object BankApi {
         paymentPassword: String,
         confirmedQuote: TransferConfirmation,
         idempotencyKey: String? = null,
+        fpsMethod: String? = null,
+        fpsId: String? = null,
+        confirmedRecipient: FpsRecipientDto? = null,
     ): TransferResultDto = withContext(Dispatchers.IO) {
         if (paymentPassword.length != 6 || !paymentPassword.all(Char::isDigit)) {
             throw BankApiException(400, "请输入 6 位数字支付密码", "INVALID_PAY_PASSWORD_FORMAT")
@@ -568,6 +612,14 @@ object BankApi {
             .put("payeeCurrency", payeeCurrency)
             .put("paymentPassword", paymentPassword)
             .put("confirmedQuote", confirmedQuote.toJson())
+        if (channel == "fps") {
+            require(fpsMethod in setOf("account", "mobile", "email", "fpsid")) { "请选择转数快标识类型" }
+            body.put("fpsMethod", fpsMethod)
+            if (fpsMethod != "account") {
+                require(support.confirmedRecipient && confirmedRecipient != null) { "转数快收款人尚未核对" }
+                body.put("fpsId", fpsId).put("confirmedRecipient", confirmedRecipient.toJson())
+            }
+        }
         val root = request("POST", "/api/transfers", body, idempotencyKey)
         TransferResultDto(
             transactionId = root.optString("transactionId"),
@@ -577,6 +629,7 @@ object BankApi {
             identifier = root.optString("identifier"),
             settlementStatus = root.optString("settlementStatus"),
             currency = confirmedQuote.fromCurrency,
+            fx = root.optJSONObject("fx")?.let { TransferFxConfirmation(it.getString("fromCurrency"), it.getString("toCurrency"), it.getDouble("rate"), it.getLong("fromAmount"), it.getLong("toAmount"), it.getDouble("spread")) },
         )
     }
 
@@ -591,28 +644,89 @@ object BankApi {
             idNumberMasked = root.optString("idNumberMasked"),
             address = root.optString("address"),
             openedAt = root.optString("openedAt"),
+            avatarId = root.optString("avatarId"),
+            displayName = root.optString("displayName"),
+            maskedName = root.optString("maskedName"),
+            nickname = root.optString("nickname"),
+            customNickname = root.optString("customNickname"),
+        )
+    }
+
+    /** 设置自定义昵称；传空串恢复默认称呼。昵称只影响展示，不改实名。 */
+    suspend fun updateNickname(nickname: String): ProfileDto = withContext(Dispatchers.IO) {
+        NameDisplay.validateNickname(nickname)?.let { throw BankApiException(400, it, "INVALID_NICKNAME") }
+        val root = request("PATCH", "/api/auth/profile/nickname", JSONObject().put("nickname", NameDisplay.normalizeNickname(nickname)))
+        ProfileDto(
+            name = root.optString("name"),
+            phone = root.optString("phone"),
+            idNumberMasked = root.optString("idNumberMasked"),
+            address = root.optString("address"),
+            openedAt = root.optString("openedAt"),
+            avatarId = root.optString("avatarId"),
+            displayName = root.optString("displayName"),
+            maskedName = root.optString("maskedName"),
+            nickname = root.optString("nickname"),
+            customNickname = root.optString("customNickname"),
+        )
+    }
+
+    /** 头像只接受头像池里的 id；服务端会再次校验，非法值返回 400。 */
+    suspend fun updateAvatar(avatarId: String): ProfileDto = withContext(Dispatchers.IO) {
+        if (avatarId !in AvatarPool.ids) throw BankApiException(400, "请选择头像池里的头像", "INVALID_AVATAR")
+        val root = request("PATCH", "/api/auth/profile/avatar", JSONObject().put("avatarId", avatarId))
+        ProfileDto(
+            name = root.optString("name"),
+            phone = root.optString("phone"),
+            idNumberMasked = root.optString("idNumberMasked"),
+            address = root.optString("address"),
+            openedAt = root.optString("openedAt"),
+            avatarId = root.optString("avatarId"),
+            displayName = root.optString("displayName"),
+            maskedName = root.optString("maskedName"),
+            nickname = root.optString("nickname"),
+            customNickname = root.optString("customNickname"),
         )
     }
 
     suspend fun transaction(id: String): TransactionDetailDto = withContext(Dispatchers.IO) {
+        require(id.matches(Regex("[A-Za-z0-9_-]+")))
         val root = request("GET", "/api/transactions/$id", null)
+        val detail = root.optJSONObject("detail") ?: JSONObject()
         TransactionDetailDto(
-            id = root.optString("id"),
-            counterparty = root.optString("counterparty"),
-            amount = root.optLong("amount"),
-            direction = root.optString("direction"),
-            category = root.optString("category"),
-            status = root.optString("status"),
-            createdAt = root.optString("createdAt"),
-            memo = root.optString("memo"),
-            referenceNo = root.optString("referenceNo"),
-            cardLast4 = root.optString("cardLast4"),
-            accountLabel = root.optString("accountLabel"),
+            id = root.getString("id"), counterparty = root.optString("counterparty"), amount = root.getLong("amount"),
+            direction = root.getString("direction"), category = root.optString("category"), status = root.getString("status"),
+            createdAt = root.getString("createdAt"), memo = root.optString("memo"), referenceNo = detail.optString("referenceNo"),
+            cardLast4 = detail.optString("paymentMethod"), accountLabel = detail.optString("accountLabel"),
+            currency = detail.getString("settleCurrency"), pendingReason = root.optString("pendingReason"), holdUntil = root.optString("holdUntil"),
+            accountNo = detail.optString("accountNo"), otherAccountNo = detail.optString("counterpartyAccountNo"), otherBank = detail.optString("counterpartyBank"),
+            fee = detail.optLong("fee"), originAmount = if (detail.has("originAmount")) detail.getLong("originAmount") else null,
+            originCurrency = detail.optString("originCurrency"), exchangeRate = if (detail.has("exchangeRate")) detail.getDouble("exchangeRate") else null,
         )
     }
 
-    suspend fun spending(month: String): SpendingDto = withContext(Dispatchers.IO) {
-        val root = request("GET", "/api/analysis/spending?month=$month", null)
+    internal suspend fun recallTransfer(id: String): JSONObject = withContext(Dispatchers.IO) {
+        require(id.matches(Regex("[A-Za-z0-9_-]+")))
+        request("POST", "/api/transfers/$id/recall", JSONObject())
+    }
+
+    internal suspend fun savedPayees(keyword: String): JSONArray = withContext(Dispatchers.IO) {
+        JSONArray(requestRaw("GET", "/api/payees?keyword=" + java.net.URLEncoder.encode(keyword, "UTF-8"), null))
+    }
+
+    internal suspend fun payeeRemark(id: String, remark: String): JSONObject = withContext(Dispatchers.IO) {
+        require(id.matches(Regex("[A-Za-z0-9_-]+")))
+        request("PATCH", "/api/payees/$id", JSONObject().put("remark", remark))
+    }
+
+    internal suspend fun membershipData(redeem: Boolean = false): JSONObject = withContext(Dispatchers.IO) {
+        request(if (redeem) "POST" else "GET", if (redeem) "/api/membership/lounge-pass" else "/api/membership", if (redeem) JSONObject() else null)
+    }
+
+    suspend fun spending(month: String, currency: String = "CNY"): SpendingDto = withContext(Dispatchers.IO) {
+        require(month.matches(Regex("[0-9]{4}-(0[1-9]|1[0-2])")) && currency in setOf("CNY", "USD", "HKD"))
+        val response = request("GET", "/api/analysis/spending?month=$month", null)
+        val root = response.optJSONObject("byCurrency")?.optJSONObject(currency) ?: if (currency == "CNY") response else throw BankApiException(502, "银行未返回所选币种统计", "INVALID_STATISTICS")
+        require(root.optString("month") == month) { "银行返回的统计月份不一致" }
         SpendingDto(
             month = root.optString("month"),
             total = root.optLong("total"),
@@ -638,8 +752,10 @@ object BankApi {
         )
     }
 
-    suspend fun cashFlow(days: Int): CashFlowDto = withContext(Dispatchers.IO) {
-        val root = request("GET", "/api/analysis/cashflow?days=$days", null)
+    suspend fun cashFlow(days: Int, currency: String = "CNY"): CashFlowDto = withContext(Dispatchers.IO) {
+        require(days in 1..366 && currency in setOf("CNY", "USD", "HKD"))
+        val response = request("GET", "/api/analysis/cashflow?days=$days", null)
+        val root = response.optJSONObject("byCurrency")?.optJSONObject(currency) ?: if (currency == "CNY") response else throw BankApiException(502, "银行未返回所选币种现金流", "INVALID_STATISTICS")
         CashFlowDto(
             totalIncome = root.optLong("totalIncome"),
             totalExpense = root.optLong("totalExpense"),
@@ -851,49 +967,172 @@ object BankApi {
         path: String,
         body: JSONObject?,
         idempotencyKey: String? = null,
-    ): JSONObject =
-        org.json.JSONTokener(requestRaw(method, path, body, idempotencyKey)).nextValue() as JSONObject
+    ): JSONObject {
+        val label = when {
+            method == "DELETE" && Regex("^/api/transfers/scheduled/[^/]+$").matches(path) -> "取消定时转账"
+            method == "DELETE" && Regex("^/api/transfers/splits/[^/]+$").matches(path) -> "取消 AA 收款"
+            method == "PATCH" && path.startsWith("/api/wealth/investments/plan/") -> "定投计划状态"
+            method != "POST" -> null
+            path == "/api/wealth/investments/plan" -> "保存定投计划"
+            path == "/api/linked/birthdays" -> "生日资金预留"
+            Regex("^/api/linked/birthdays/[^/]+/(cancel|order)$").matches(path) -> "生日计划操作"
+            path == "/api/transfers" -> "转账"
+            Regex("^/api/transfers/[^/]+/recall$").matches(path) -> "撤销在途转账"
+            path == "/api/transfers/scheduled" -> "定时转账"
+            path == "/api/transfers/splits" -> "AA 收款"
+            Regex("^/api/transfers/aa-payments/[^/]+/pay$").matches(path) -> "AA 付款"
+            Regex("^/api/transfers/splits/[^/]+/(payments|reminders)$").matches(path) -> "AA 收款操作"
+            path == "/api/exchange" -> "换汇"
+            path == "/api/wealth/subscribe" -> "理财申购"
+            path == "/api/wealth/redeem" -> "理财赎回"
+            path == "/api/cards/open" -> "开卡"
+            Regex("^/api/cards/[^/]+/replace$").matches(path) -> "换卡"
+            else -> null
+        }
+        val raw = if (label == null) requestRaw(method, path, body, idempotencyKey)
+            else protectedFinancialRequest(method, path, body, label, idempotencyKey)
+        return org.json.JSONTokener(raw).nextValue() as JSONObject
+    }
+
+    internal fun protectedFinancialRequest(method: String, path: String, body: JSONObject?, label: String, existingKey: String? = null): String {
+        val (phone, capturedToken) = SessionStore.credentials()
+        if (phone.isBlank() || capturedToken.isNullOrBlank()) throw BankApiException(401, "请重新登录", "UNAUTHORIZED")
+        val support = JSONObject(requestRaw("GET", "/api/idempotency/capabilities", null, authToken = capturedToken))
+        val owner = support.optString("ownerId")
+        if (support.optInt("version") != 1 || !support.optBoolean("atomicSeal") || owner.isBlank())
+            throw BankApiException(503, "银行暂不支持安全恢复，请稍后再试", "RECOVERY_UNAVAILABLE")
+        val key = FinancialRecovery.begin(label, existingKey, owner, capturedToken)
+        try {
+            val raw = requestRaw(method, path, body, key, capturedToken)
+            val receipt = org.json.JSONTokener(raw).nextValue() as? JSONObject
+            if (receipt == null || !financialReceiptValid(path, receipt)) throw BankApiException(502, "银行返回的结果无效，请核查操作状态", "INVALID_RECOVERY_RESULT")
+            FinancialRecovery.completed(owner, capturedToken, key)
+            return raw
+        }
+        finally { FinancialRecovery.finished(owner, capturedToken, key) }
+    }
+
+    internal fun financialReceiptValid(path: String, receipt: JSONObject): Boolean = when {
+        path == "/api/transfers" -> receipt.optString("transactionId").isNotBlank() && receipt.optString("settlementStatus") in setOf("success", "pending")
+        path.endsWith("/recall") -> receipt.optString("transactionId").isNotBlank() && receipt.has("status")
+        path == "/api/exchange" -> receipt.optString("transactionId").isNotBlank() && receipt.optJSONObject("fx") != null
+        path == "/api/wealth/subscribe" -> receipt.optJSONObject("holding")?.optString("id")?.isNotBlank() == true && receipt.has("shares")
+        path == "/api/wealth/redeem" -> receipt.optString("holdingId").isNotBlank() && receipt.has("settlementMode")
+        path.startsWith("/api/wealth/investments/plan") -> receipt.optString("id").isNotBlank() && receipt.has("revision") && receipt.has("status")
+        path.startsWith("/api/linked/birthdays") -> receipt.optString("id").isNotBlank() && receipt.has("reservation") && receipt.has("status")
+        path.endsWith("/spend") -> receipt.optJSONObject("transaction")?.optString("id")?.isNotBlank() == true && receipt.has("available") && receipt.has("currency")
+        path.startsWith("/api/cards/") -> receipt.optString("id").isNotBlank()
+        path.endsWith("/reminders") -> receipt.optJSONObject("collection")?.optString("id")?.isNotBlank() == true
+        path.startsWith("/api/transfers/") -> receipt.optString("id").isNotBlank() && receipt.has("version") && receipt.has("status")
+        else -> false
+    }
+
+    suspend fun refreshFinancialRecovery() {
+        val capturedToken = SessionStore.credentials().second ?: return
+        val owner = withContext(Dispatchers.IO) {
+            val support = JSONObject(requestRaw("GET", "/api/idempotency/capabilities", null, authToken = capturedToken))
+            if (support.optInt("version") != 1 || !support.optBoolean("atomicSeal")) "" else support.optString("ownerId")
+        }
+        if (SessionStore.credentials().second == capturedToken && owner.isNotBlank()) FinancialRecovery.refresh(owner, capturedToken)
+    }
+
+    internal suspend fun paymentPlanList(path: String): org.json.JSONArray = withContext(Dispatchers.IO) {
+        require(path in setOf("/api/transfers/scheduled", "/api/transfers/splits", "/api/transfers/aa-payments", "/api/banks"))
+        org.json.JSONArray(requestRaw("GET", path, null))
+    }
+
+    internal suspend fun paymentPlanWrite(method: String, path: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        require(method in setOf("POST", "DELETE"))
+        require(path == "/api/transfers/scheduled" || path == "/api/transfers/splits" ||
+            Regex("^/api/transfers/(scheduled|splits)/[A-Za-z0-9_-]+(/(payments|reminders))?$").matches(path) ||
+            Regex("^/api/transfers/aa-payments/[A-Za-z0-9_-]+/pay$").matches(path))
+        request(method, path, body)
+    }
+
+    internal suspend fun budgetRequest(method: String, path: String, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+        require(method in setOf("GET", "POST", "PATCH", "DELETE"))
+        require(path == "/api/budgets" || Regex("^/api/budgets/[A-Za-z0-9_-]+(/passes)?$").matches(path))
+        request(method, path, body)
+    }
+
+    internal suspend fun savingsRequest(method: String, path: String, body: JSONObject? = null): Any = withContext(Dispatchers.IO) {
+        require(method in setOf("GET", "POST", "PATCH", "DELETE"))
+        require(path in setOf("/api/savings/overview", "/api/savings/goals", "/api/savings/roundup", "/api/wealth/investments", "/api/wealth/investments/plan", "/api/wealth/cash-management", "/api/wealth/cash-management/sweep", "/api/linked/birthdays", "/api/linked/birthdays/preview") ||
+            Regex("^/api/(savings/goals|wealth/investments/plan)/[A-Za-z0-9_-]+$").matches(path) || Regex("^/api/linked/birthdays/[A-Za-z0-9_-]+/(cancel|order)$").matches(path))
+        if (path.startsWith("/api/wealth/investments/plan") || path.startsWith("/api/linked/birthdays") && !path.endsWith("/preview")) {
+            if (method != "GET") return@withContext request(method, path, body)
+        }
+        val raw = requestRaw(method, path, body)
+        if (raw.isBlank()) JSONObject() else org.json.JSONTokener(raw).nextValue()
+    }
+
+    internal suspend fun supportRequest(method: String, path: String, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+        require(method in setOf("GET", "POST"))
+        require(path == "/api/support/tickets" || Regex("^/api/support/tickets/T_[A-Za-z0-9_]+(/messages)?$").matches(path))
+        request(method, path, body)
+    }
+
+    suspend fun resolveFinancialOperation(key: String): String = withContext(Dispatchers.IO) {
+        require(key.matches(Regex("[A-Za-z0-9_.:-]{8,128}")))
+        val reply = request("POST", "/api/idempotency/$key/resolve", JSONObject())
+        when (reply.optString("status")) {
+            "sealed" -> "银行确认该操作未完成，并已终结原编号。确认后可重新办理。"
+            "completed" -> {
+                val data = reply.optJSONObject("result")
+                val reference = data?.optString("referenceNo").orEmpty().ifBlank { data?.optString("transactionId").orEmpty() }
+                val state = data?.optString("settlementStatus").orEmpty().ifBlank { data?.optString("status").orEmpty() }
+                val statusText = when (state) {
+                    "pending" -> "业务仍在处理中。"
+                    "failed", "rejected" -> "业务未成功。"
+                    else -> "请在相应业务页面查看最终状态。"
+                }
+                buildString {
+                    append("银行已处理原请求。$statusText")
+                    if (reference.isNotBlank()) append("\n参考编号：$reference")
+                    val fx = data?.optJSONObject("fx")
+                    if (fx != null && fx.has("fromAmount") && fx.has("toAmount")) {
+                        append("\n卖出：${formatCents(fx.optLong("fromAmount"), fx.optString("fromCurrency"))}")
+                        append("\n买入：${formatCents(fx.optLong("toAmount"), fx.optString("toCurrency"))}")
+                        if (fx.has("rate")) append("\n成交汇率：${fx.optDouble("rate")}")
+                    }
+                    if (data?.has("shares") == true) append("\n份额：${data.optDouble("shares")}")
+                    if (data?.has("fees") == true) append("\n费用：${formatCents(data.optLong("fees"))}")
+                    val eta = data?.optString("etaText").orEmpty()
+                    if (eta.isNotBlank()) append("\n$eta")
+                }
+            }
+            else -> throw BankApiException(502, "银行返回的核查结果无效，请稍后重试", "INVALID_RECOVERY_RESULT")
+        }
+    }
 
     private fun requestRaw(
         method: String,
         path: String,
         body: JSONObject?,
         idempotencyKey: String? = null,
+        authToken: String? = token,
     ): String {
-        val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 8000
-            readTimeout = 12000
-            setRequestProperty("Accept", "application/json")
-            token?.let { setRequestProperty("Authorization", "Bearer $it") }
-            idempotencyKey?.let { setRequestProperty("Idempotency-Key", it) }
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
+        val cacheable = readCacheable(method, path, authToken)
+        if (cacheable) {
+            readCache[readCacheKey(authToken, path)]?.let { cached ->
+                if (System.currentTimeMillis() - cached.at < READ_CACHE_TTL_MS) return cached.body
             }
         }
         try {
-            body?.let { payload ->
-                connection.outputStream.use { it.write(payload.toString().toByteArray()) }
-            }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            if (status !in 200..299) {
-                val error = runCatching { JSONObject(text) }.getOrNull()
-                val message = error?.optString("message").orEmpty()
-                val apiCode = error?.optString("code").orEmpty().ifEmpty { null }
-                // 支付密码错误也是 401，但它是业务校验失败，不能当成登录过期而清掉会话。
-                val isPaymentPasswordFailure = apiCode == "BAD_PAY_PASSWORD"
-                // 登录/验证码接口自己会报错，不触发全局登出，避免登录页被反复重置。
-                if (status == 401 && !path.startsWith("/api/auth/") && !isPaymentPasswordFailure) {
-                    onUnauthorized?.invoke()
-                }
-                throw BankApiException(status, message.ifEmpty { "请求失败（$status）" }, apiCode)
-            }
+            // I/O 由 BankHttp 统一实现；这里只保留读缓存、幂等键与「旧令牌不登出」的判断。
+            val text = BankHttp.raw(
+                method = method,
+                path = path,
+                body = body,
+                token = authToken,
+                extraHeaders = idempotencyKey?.let { mapOf("Idempotency-Key" to it) }.orEmpty(),
+                notifyUnauthorized = token == authToken,
+            )
+            if (cacheable) readCache[readCacheKey(authToken, path)] = CachedRead(text, System.currentTimeMillis())
             return text
         } finally {
-            connection.disconnect()
+            // 任何写操作都可能改变读结果，直接整体失效，避免脏数据。
+            if (method != "GET") readCache.clear()
         }
     }
 }
@@ -904,7 +1143,14 @@ class BankApiException(
     val code: String? = null,
 ) : Exception(message)
 
-data class LoginResult(val token: String, val name: String, val phone: String)
+data class LoginResult(
+    val token: String,
+    val name: String,
+    val phone: String,
+    val displayName: String = "",
+    val nickname: String = "",
+    val customNickname: String = "",
+)
 
 data class AccountDto(
     val id: String,
@@ -932,9 +1178,15 @@ data class TransferDraft(
     val bankCode: String = "CMB",
     val bankRegion: String = "CN",
     val amountCents: Long = 500_00,
-    /** bankCard / phone / fps；目前只有 bankCard 具备完整的确认与提交条件。 */
+    /** bankCard / fps；FPS 标识必须经过服务端登记解析。 */
     val method: String = "bankCard",
+    val fpsMethod: String = "mobile",
+    val fpsId: String = "",
 )
+
+data class FpsRecipientDto(val name: String, val bankCode: String, val bankRegion: String) {
+    fun toJson(): JSONObject = JSONObject().put("name", name).put("bankCode", bankCode).put("bankRegion", bankRegion)
+}
 
 data class TransferRequirementsDto(
     val transferPaymentPassword: Boolean,
@@ -957,6 +1209,9 @@ data class TransferQuoteDto(
     val requiresConfirm: Boolean,
     val receiveAmount: Long?,
     val rate: Double?,
+    val fx: TransferFxConfirmation? = null,
+    val fxTtlSeconds: Long? = null,
+    val receivedAt: Long = 0,
 )
 
 /** 客户在确认页看到的报价条件；提交时原样回传，服务端逐项复核。 */
@@ -1000,6 +1255,7 @@ data class TransferResultDto(
     val identifier: String,
     val settlementStatus: String,
     val currency: String = "CNY",
+    val fx: TransferFxConfirmation? = null,
 )
 
 data class CardDto(
@@ -1150,12 +1406,26 @@ data class TransactionDto(
 )
 
 
-data class ProfileDto(val name: String, val phone: String, val idNumberMasked: String, val address: String, val openedAt: String)
+data class ProfileDto(
+    val name: String,
+    val phone: String,
+    val idNumberMasked: String,
+    val address: String,
+    val openedAt: String,
+    val avatarId: String = "",
+    val displayName: String = "",
+    val maskedName: String = "",
+    val nickname: String = "",
+    val customNickname: String = "",
+)
 
 data class TransactionDetailDto(
     val id: String, val counterparty: String, val amount: Long, val direction: String,
     val category: String, val status: String, val createdAt: String, val memo: String,
     val referenceNo: String, val cardLast4: String, val accountLabel: String,
+    val currency: String, val pendingReason: String, val holdUntil: String,
+    val accountNo: String, val otherAccountNo: String, val otherBank: String, val fee: Long,
+    val originAmount: Long?, val originCurrency: String, val exchangeRate: Double?,
 )
 
 data class SpendingCategoryDto(val key: String, val label: String, val amount: Long, val ratio: Double)
@@ -1229,19 +1499,24 @@ object SessionStore {
     private const val KEY_TOKEN = "token"
     private const val KEY_NAME = "name"
     private const val KEY_PHONE = "phone"
+    private const val KEY_DISPLAY = "displayName"
+    private const val KEY_NICKNAME = "nickname"
 
     private lateinit var prefs: android.content.SharedPreferences
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        FinancialRecovery.init(context)
         BankApi.setToken(prefs.getString(KEY_TOKEN, null))
     }
 
-    fun save(result: LoginResult) {
+    @Synchronized fun save(result: LoginResult) {
         prefs.edit()
             .putString(KEY_TOKEN, result.token)
             .putString(KEY_NAME, result.name)
             .putString(KEY_PHONE, result.phone)
+            .putString(KEY_DISPLAY, result.displayName.ifEmpty { NameDisplay.of(result.name) })
+            .putString(KEY_NICKNAME, result.nickname.ifEmpty { NameDisplay.nicknameOf(result.customNickname, result.displayName.ifEmpty { NameDisplay.of(result.name) }) })
             .apply()
         BankApi.setToken(result.token)
     }
@@ -1249,7 +1524,22 @@ object SessionStore {
     fun name(): String = prefs.getString(KEY_NAME, "").orEmpty()
     fun phone(): String = prefs.getString(KEY_PHONE, "").orEmpty()
 
-    fun clear() {
+    /** 列表里用「姓氏 + 称呼」，不直接露全名；没有缓存时按全名现算。 */
+    fun displayName(): String =
+        prefs.getString(KEY_DISPLAY, "").orEmpty().ifEmpty { NameDisplay.of(name()) }
+
+    /** 展示用昵称：自定义优先，否则回退到称呼。 */
+    fun nickname(): String =
+        prefs.getString(KEY_NICKNAME, "").orEmpty().ifEmpty { displayName() }
+
+    /** 改完昵称后就地更新缓存，首页与「我的」不用重新登录即可看到新值。 */
+    @Synchronized fun updateNickname(value: String) {
+        prefs.edit().putString(KEY_NICKNAME, value).apply()
+    }
+
+    @Synchronized fun credentials(): Pair<String, String?> = phone() to prefs.getString(KEY_TOKEN, null)
+
+    @Synchronized fun clear() {
         prefs.edit().clear().apply()
         BankApi.setToken(null)
     }

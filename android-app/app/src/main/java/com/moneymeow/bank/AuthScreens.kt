@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 private fun AuthScaffold(
     title: String,
     onBack: (() -> Unit)? = null,
+    footerInContent: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
     footer: @Composable ColumnScope.() -> Unit,
 ) {
@@ -63,15 +64,18 @@ private fun AuthScaffold(
             Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
-            content = content,
-        )
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Tokens.Page)
-                .padding(horizontal = 20.dp, vertical = 14.dp),
-            content = footer,
-        )
+        ) {
+            content()
+            if (footerInContent) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 20.dp), content = footer)
+            }
+        }
+        if (!footerInContent) {
+            Column(
+                Modifier.fillMaxWidth().background(Tokens.Page).padding(horizontal = 20.dp, vertical = 14.dp),
+                content = footer,
+            )
+        }
     }
 }
 
@@ -84,18 +88,21 @@ fun LoginScreen(
     onRegister: () -> Unit,
     root: Boolean = false,
 ) {
-    var phone by remember { mutableStateOf("13800138000") }
-    var password by remember { mutableStateOf("123456") }
+    // 仅调试包预填演示账号，正式包不携带默认凭据。
+    var phone by remember { mutableStateOf(if (BuildConfig.DEBUG) "13800138000" else "") }
+    var password by remember { mutableStateOf(if (BuildConfig.DEBUG) "123456" else "") }
     var smsCode by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var hint by remember { mutableStateOf<String?>(null) }
+    var passwordHelp by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     AuthScaffold(
         title = "登录",
         onBack = if (root) null else onBack,
+        footerInContent = true,
         content = {
             Column(
                 Modifier
@@ -208,7 +215,8 @@ fun LoginScreen(
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.clickableNoRipple { onRegister() },
                 )
-                Text("忘记密码？", fontSize = 12.sp, color = Tokens.Muted)
+                Text("忘记密码？", style = Tokens.Text.note, modifier = Modifier.clickableNoRipple { passwordHelp = !passwordHelp })
+                if (passwordHelp) Text("当前演示版本暂不支持自助找回密码。", style = Tokens.Text.hint)
             }
         },
     )
@@ -220,7 +228,7 @@ fun LoginScreen(
 private fun StepHeader(step: Int, title: String, lead: String) {
     Column(Modifier.padding(horizontal = 20.dp)) {
         Row(Modifier.padding(vertical = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("第 $step 步 / 共 4 步", fontSize = 11.sp, color = Tokens.Muted)
+            Text("第 $step 步 / 共 4 步", style = Tokens.Text.hint)
             Spacer(Modifier.size(10.dp))
             Box(
                 Modifier
@@ -512,14 +520,12 @@ private fun PasswordStep(
     onDone: (RegistrationResultDto) -> Unit,
     onRestart: () -> Unit,
 ) {
-    var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var failed by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+    val submitter = rememberSubmitter()
 
     fun submit() {
-        if (submitting) return
         error = when {
             !Regex("^\\d{6}$").matches(draft.paymentPassword) -> "请设置 6 位数字支付密码"
             draft.paymentPassword != draft.confirmPaymentPassword -> "两次输入的支付密码不一致"
@@ -527,35 +533,32 @@ private fun PasswordStep(
             else -> null
         }
         if (error != null) return
-        submitting = true
-        failed = false
-        scope.launch {
-            runCatching {
-                BankApi.register(
-                    phone = draft.phone,
-                    password = draft.loginPassword,
-                    paymentPassword = draft.paymentPassword,
-                    holderName = draft.holderName.trim(),
-                    idNumber = draft.idNumber,
-                    smsCode = draft.smsCode,
-                    faceTicket = draft.faceTicket,
-                    pledge = ACCOUNT_OPENING_PLEDGE,
-                )
-            }
-                .onSuccess { result ->
-                    SessionStore.save(LoginResult(result.token, result.name, result.phone))
-                    submitting = false
-                    onDone(result)
+        var created: RegistrationResultDto? = null
+        submitter.submit(
+            fallback = "开户失败，请稍后重试",
+            onStart = { failed = false },
+            onError = { error = it; failed = true },
+            onFailure = { throwable ->
+                if ((throwable as? BankApiException)?.code == "BAD_PAY_PASSWORD") {
+                    draft.paymentPassword = ""
+                    draft.confirmPaymentPassword = ""
                 }
-                .onFailure { throwable ->
-                    error = throwable.message ?: "开户失败，请稍后重试"
-                    failed = true
-                    if ((throwable as? BankApiException)?.code == "BAD_PAY_PASSWORD") {
-                        draft.paymentPassword = ""
-                        draft.confirmPaymentPassword = ""
-                    }
-                    submitting = false
-                }
+            },
+            // 注册成功后再跳转，避免请求失败时离开当前步骤。
+            onSuccess = { created?.let { onDone(it) } },
+        ) {
+            val result = BankApi.register(
+                phone = draft.phone,
+                password = draft.loginPassword,
+                paymentPassword = draft.paymentPassword,
+                holderName = draft.holderName.trim(),
+                idNumber = draft.idNumber,
+                smsCode = draft.smsCode,
+                faceTicket = draft.faceTicket,
+                pledge = ACCOUNT_OPENING_PLEDGE,
+            )
+            SessionStore.save(LoginResult(result.token, result.name, result.phone))
+            created = result
         }
     }
 
@@ -642,12 +645,12 @@ private fun PasswordStep(
                 }
                 if (hint != null) {
                     Spacer(Modifier.height(8.dp))
-                    Text(hint!!, fontSize = 11.sp, color = Tokens.Muted)
+                    Text(hint!!, style = Tokens.Text.hint)
                 }
             }
         },
         footer = {
-            PrimaryButton(if (submitting) "开户中…" else "完成开户", onClick = { submit() })
+            PrimaryButton(if (submitter.busy) "开户中…" else "完成开户", onClick = { submit() })
         },
     )
 }
@@ -772,27 +775,23 @@ private fun LegacyOpenAccountNotice(onBack: () -> Unit) {
     }
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-fun OpenPhoneScreen(onBack: () -> Unit, onNext: () -> Unit) {
+fun OpenPhoneScreen(onBack: () -> Unit) {
     LegacyOpenAccountNotice(onBack)
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-fun OpenRealNameScreen(onBack: () -> Unit, onNext: () -> Unit) {
+fun OpenRealNameScreen(onBack: () -> Unit) {
     LegacyOpenAccountNotice(onBack)
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-fun OpenFaceScreen(onBack: () -> Unit, onNext: () -> Unit) {
+fun OpenFaceScreen(onBack: () -> Unit) {
     LegacyOpenAccountNotice(onBack)
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
-fun OpenPasswordScreen(onBack: () -> Unit, onDone: () -> Unit) {
+fun OpenPasswordScreen(onBack: () -> Unit) {
     LegacyOpenAccountNotice(onBack)
 }
 

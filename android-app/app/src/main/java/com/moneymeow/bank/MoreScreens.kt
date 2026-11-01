@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -59,7 +60,7 @@ fun TransferInSheet(onDismiss: () -> Unit) {
             .onFailure { error = it.message ?: "收款信息加载失败" }
     }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(), containerColor = Tokens.Surface) {
-        Column(Modifier.padding(horizontal = 16.dp)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 16.dp)) {
             Text("我的收款账户", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
             Spacer(Modifier.height(12.dp))
             when {
@@ -67,10 +68,14 @@ fun TransferInSheet(onDismiss: () -> Unit) {
                 account == null -> Text("正在加载收款信息…", color = Tokens.Muted)
                 else -> HairlineCard {
                     Column(Modifier.padding(horizontal = 14.dp)) {
-                        ReceiptRow("账户号码", account!!.accountNo)
+                        if (SessionStore.name().isNotBlank()) {
+                            ReceiptRow("户名", SessionStore.name())
+                            Hairline()
+                        }
+                        ReceiptRow("账户号码", account!!.accountNo, copy = account!!.accountNo.isNotBlank())
                         Hairline()
                         ReceiptRow("开户银行", "招财猫银行")
-                        Text("请核对账户号码后提供给付款方。", fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(bottom = 12.dp))
+                        Text("请核对账户号码后提供给付款方。", style = Tokens.Text.hint, modifier = Modifier.padding(bottom = 12.dp))
                     }
                 }
             }
@@ -81,19 +86,22 @@ fun TransferInSheet(onDismiss: () -> Unit) {
 
 @Composable
 private fun ReceiptRow(label: String, value: String, copy: Boolean = false) {
-    Row(
+    val context = LocalContext.current
+    Column(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, fontSize = 12.5.sp, color = Tokens.Muted)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(value, fontSize = 12.5.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (copy) value.filterNot(Char::isWhitespace).chunked(4).joinToString(" ") else value, fontSize = 15.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
             if (copy) {
-                Spacer(Modifier.size(8.dp))
-                Icon(Icons.Copy, contentDescription = "复制", tint = Tokens.Muted, modifier = Modifier.size(15.dp))
+                ActionIcon(Icons.Copy, "复制$label") {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    // 展示分组不改变付款方粘贴的原始账户号码。
+                    clipboard.setPrimaryClip(ClipData.newPlainText(label, value))
+                    Toast.makeText(context, "已复制$label", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -152,7 +160,7 @@ fun AutoDebitScreen(onBack: () -> Unit) {
 
     PushScreen(title = "自动扣款", onBack = onBack) {
         if (loading) {
-            Text("正在加载自动扣款…", fontSize = 12.sp, color = Tokens.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
+            Text("正在加载自动扣款…", style = Tokens.Text.note, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
         } else if (loadError != null) {
             LoadFailure(loadError!!) { reloadKey++ }
         } else {
@@ -168,7 +176,7 @@ fun AutoDebitScreen(onBack: () -> Unit) {
             if (rows.isEmpty()) {
                 EmptyNote("没有签约的自动扣款")
             } else {
-                Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PageColumn {
                     rows.forEach { row ->
                         DebitCard(
                             row = row,
@@ -312,7 +320,7 @@ fun PayrollScreen(onBack: () -> Unit) {
                     if (current == null) {
                         Text("工资计划暂不可用", fontSize = 13.sp, color = Tokens.Muted)
                     } else if (current.configured) {
-                        Text("预计发薪", fontSize = 11.sp, color = Tokens.Muted)
+                        Text("预计发薪", style = Tokens.Text.hint)
                         Spacer(Modifier.height(5.dp))
                         Text(formatCents(current.amount), fontSize = 27.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                         Spacer(Modifier.height(6.dp))
@@ -395,9 +403,9 @@ fun PayrollScreen(onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("${record.month} 工资", fontSize = 13.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                                    Text("${record.month} 工资", style = Tokens.Text.body, fontWeight = FontWeight.Medium)
                                     Spacer(Modifier.height(2.dp))
-                                    Text("${formatDate(record.paidAt)} 到账", fontSize = 10.5.sp, color = Tokens.Muted)
+                                    Text("${formatDate(record.paidAt)} 到账", style = Tokens.Text.caption)
                                 }
                                 Text(
                                     "+${formatCents(record.amount)}",
@@ -440,11 +448,10 @@ private fun SalaryEditSheet(
     var amount by remember(plan.amount) { mutableStateOf(centsToInput(plan.amount)) }
     var employer by remember(plan.employer) { mutableStateOf(plan.employer) }
     var error by remember { mutableStateOf<String?>(null) }
-    var saving by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val submitter = rememberSubmitter()
 
     fun submit() {
-        if (saving) return
+        if (submitter.busy) return
         val salaryDay = day.trim().toIntOrNull()
         if (salaryDay == null || salaryDay !in 1..28) {
             error = "发薪日需在 1–28 之间"
@@ -455,24 +462,17 @@ private fun SalaryEditSheet(
             error = "请输入有效月薪，最多两位小数"
             return
         }
-        saving = true
-        error = null
-        scope.launch {
-            try {
-                val next = MoreScreensApi.updateSalary(salaryDay, cents, employer.trim())
-                onSaved(next)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                error = failure.message ?: "保存失败，请稍后重试"
-            } finally {
-                saving = false
-            }
+        submitter.submit(
+            fallback = "保存失败，请稍后重试",
+            onStart = { error = null },
+            onError = { error = it },
+        ) {
+            onSaved(MoreScreensApi.updateSalary(salaryDay, cents, employer.trim()))
         }
     }
 
     ModalBottomSheet(
-        onDismissRequest = { if (!saving) onDismiss() },
+        onDismissRequest = { if (!submitter.busy) onDismiss() },
         sheetState = rememberModalBottomSheetState(),
         containerColor = Tokens.Surface,
     ) {
@@ -498,10 +498,10 @@ private fun SalaryEditSheet(
             TextFieldRow("发薪单位（选填）", employer, { if (it.length <= 40) employer = it }, placeholder = "公司名称")
             if (error != null) {
                 Spacer(Modifier.height(10.dp))
-                Text(error!!, fontSize = 12.sp, color = Tokens.Coral, lineHeight = 18.sp)
+                Text(error!!, style = Tokens.Text.error, lineHeight = 18.sp)
             }
             Spacer(Modifier.height(18.dp))
-            PrimaryButton(if (saving) "保存中…" else "保存", ::submit)
+            PrimaryButton(if (submitter.busy) "保存中…" else "保存", ::submit)
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -555,7 +555,7 @@ fun CreditScreen(onBack: () -> Unit) {
             if (loadError != null) {
                 LoadFailure(loadError!!) { reloadKey++ }
             } else {
-                Text("正在加载借款信息…", fontSize = 12.sp, color = Tokens.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
+                Text("正在加载借款信息…", style = Tokens.Text.note, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
             }
         } else {
             if (accountError != null || payoutAccountId == null) {
@@ -569,7 +569,7 @@ fun CreditScreen(onBack: () -> Unit) {
 
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("可用额度", fontSize = 11.sp, color = Tokens.Muted)
+                    Text("可用额度", style = Tokens.Text.hint)
                     Spacer(Modifier.height(5.dp))
                     Text(formatCents(credit.availableCredit), fontSize = 27.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                     Spacer(Modifier.height(10.dp))
@@ -589,7 +589,7 @@ fun CreditScreen(onBack: () -> Unit) {
             if (credit.products.isEmpty()) {
                 EmptyNote("暂无可借产品")
             } else {
-                Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PageColumn {
                     credit.products.forEach { product ->
                         LoanProductCard(
                             product = product,
@@ -604,7 +604,7 @@ fun CreditScreen(onBack: () -> Unit) {
             if (credit.loans.isEmpty()) {
                 EmptyNote("当前没有进行中的借款")
             } else {
-                Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PageColumn {
                     credit.loans.forEach { LoanCard(it) }
                 }
             }
@@ -613,7 +613,7 @@ fun CreditScreen(onBack: () -> Unit) {
             if (credit.installments.isEmpty()) {
                 EmptyNote("暂无分期计划")
             } else {
-                Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PageColumn {
                     credit.installments.forEach { InstallmentCard(it) }
                 }
             }
@@ -653,7 +653,7 @@ fun CreditScreen(onBack: () -> Unit) {
                 Column {
                     Text(formatCents(applied.principal), fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                     Spacer(Modifier.height(4.dp))
-                    Text("已放款至人民币储蓄账户", fontSize = 12.sp, color = Tokens.Muted)
+                    Text("已放款至人民币储蓄账户", style = Tokens.Text.note)
                     Spacer(Modifier.height(12.dp))
                     Hairline()
                     KvRow("分 ${applied.totalPeriods} 期", "月供 ${formatCents(applied.monthlyPayment)}")
@@ -686,7 +686,7 @@ private fun LoanProductCard(
             Text(product.description, fontSize = 11.5.sp, color = Tokens.Ink2, lineHeight = 18.sp)
             if (product.tags.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                Text(product.tags.joinToString(" · "), fontSize = 11.sp, color = Tokens.Muted)
+                Text(product.tags.joinToString(" · "), style = Tokens.Text.hint)
             }
             Spacer(Modifier.height(10.dp))
             Hairline()
@@ -764,11 +764,11 @@ private fun CreditBuilderCard(builder: MoreScreensApi.CreditBuilderDto) {
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("信用评分", fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.weight(1f))
+                Text("信用评分", style = Tokens.Text.hint, modifier = Modifier.weight(1f))
                 RiskBadge("${builder.level} · ${builder.score} 分")
             }
             Spacer(Modifier.height(8.dp))
-            Text("连续按时还款 ${builder.streakMonths} 个月", fontSize = 13.sp, color = Tokens.Ink)
+            Text("连续按时还款 ${builder.streakMonths} 个月", style = Tokens.Text.body)
             if (builder.nextMilestone.isNotBlank()) {
                 Spacer(Modifier.height(5.dp))
                 Text(builder.nextMilestone, fontSize = 11.5.sp, color = Tokens.Ink2, lineHeight = 18.sp)
@@ -776,7 +776,7 @@ private fun CreditBuilderCard(builder: MoreScreensApi.CreditBuilderDto) {
             if (builder.tips.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 builder.tips.forEach { tip ->
-                    Text("· $tip", fontSize = 11.sp, color = Tokens.Muted, lineHeight = 17.sp)
+                    Text("· $tip", style = Tokens.Text.hint, lineHeight = 17.sp)
                 }
             }
         }
@@ -798,15 +798,14 @@ private fun LoanApplySheet(
     var purpose by remember { mutableStateOf("日常消费") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val submitter = rememberSubmitter()
     val termOptions = remember(product.minTermMonths, product.maxTermMonths) {
         (product.minTermMonths..product.maxTermMonths step 3).toList()
             .ifEmpty { listOf(product.minTermMonths) }
     }
 
     fun submit() {
-        if (submitting) return
+        if (submitter.busy) return
         val amount = parseAmountInput(amountText)
         if (amount == null) {
             error = "请输入有效金额，最多两位小数"
@@ -828,32 +827,27 @@ private fun LoanApplySheet(
             error = "请输入 6 位数字支付密码"
             return
         }
-        submitting = true
-        error = null
-        scope.launch {
-            try {
-                val loan = MoreScreensApi.applyLoan(
+        submitter.submit(
+            fallback = "申请失败，请稍后重试",
+            onStart = { error = null },
+            onError = { error = it },
+            onFailure = { failure -> if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) password = "" },
+        ) {
+            onApplied(
+                MoreScreensApi.applyLoan(
                     productId = product.id,
                     amount = amount,
                     termMonths = term,
                     purpose = purpose.trim(),
                     accountId = payoutAccountId,
                     paymentPassword = password,
-                )
-                onApplied(loan)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                error = failure.message ?: "申请失败，请稍后重试"
-                if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) password = ""
-            } finally {
-                submitting = false
-            }
+                ),
+            )
         }
     }
 
     ModalBottomSheet(
-        onDismissRequest = { if (!submitting) onDismiss() },
+        onDismissRequest = { if (!submitter.busy) onDismiss() },
         sheetState = rememberModalBottomSheetState(),
         containerColor = Tokens.Surface,
     ) {
@@ -869,7 +863,7 @@ private fun LoanApplySheet(
             Spacer(Modifier.height(14.dp))
             TextFieldRow("借款金额", amountText, { amountText = it }, placeholder = "0.00", keyboardType = KeyboardType.Decimal)
             Spacer(Modifier.height(12.dp))
-            Text("借款期限", fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
+            Text("借款期限", style = Tokens.Text.hint, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
             ChipRow(
                 items = termOptions.map { "$it 期" },
                 selected = termOptions.indexOf(term).coerceAtLeast(0),
@@ -898,10 +892,10 @@ private fun LoanApplySheet(
             }
             if (error != null) {
                 Spacer(Modifier.height(10.dp))
-                Text(error!!, fontSize = 12.sp, color = Tokens.Coral, lineHeight = 18.sp)
+                Text(error!!, style = Tokens.Text.error, lineHeight = 18.sp)
             }
             Spacer(Modifier.height(18.dp))
-            PrimaryButton(if (submitting) "提交中…" else "确认借款", ::submit)
+            PrimaryButton(if (submitter.busy) "提交中…" else "确认借款", ::submit)
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -936,16 +930,33 @@ fun InsuranceScreen(onBack: () -> Unit) {
             if (loadError != null) {
                 LoadFailure(loadError!!) { reloadKey++ }
             } else {
-                Text("正在加载保险信息…", fontSize = 12.sp, color = Tokens.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
+                Text("正在加载保险信息…", style = Tokens.Text.note, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
             }
         } else {
+            val active = data.policies.filter { it.status == "active" }
+            val activePolicies = active.size
+            val activeCoverage = active.sumOf { it.coverage }
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("总保额", fontSize = 11.sp, color = Tokens.Muted)
-                    Spacer(Modifier.height(5.dp))
-                    Text(formatCents(data.totalCoverage), fontSize = 27.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-                    Spacer(Modifier.height(5.dp))
-                    Text("共 ${data.policies.size} 份保单", fontSize = 11.sp, color = Tokens.Muted)
+                Column(Modifier.padding(horizontal = 18.dp, vertical = 18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("生效保单总保额", style = Tokens.Text.note, modifier = Modifier.weight(1f))
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(999.dp))
+                                .background(Tokens.SurfaceWarm)
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text("${data.policies.size} 份保单", fontSize = 10.5.sp, color = Tokens.Ink2)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text(formatCents(activeCoverage), fontSize = 30.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        if (activePolicies > 0) "$activePolicies 份生效中 · 按下方保单保额合计" else "暂无生效保单",
+                        fontSize = 11.5.sp,
+                        color = Tokens.Muted,
+                    )
                 }
             }
 
@@ -953,7 +964,7 @@ fun InsuranceScreen(onBack: () -> Unit) {
             if (data.policies.isEmpty()) {
                 EmptyNote("还没有保单，可从下方产品中选择投保。")
             } else {
-                Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PageColumn {
                     data.policies.forEach { PolicyCard(it) }
                 }
             }
@@ -962,7 +973,7 @@ fun InsuranceScreen(onBack: () -> Unit) {
             if (data.products.isEmpty()) {
                 EmptyNote("暂无可投保产品")
             } else {
-                Column(Modifier.padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                PageColumn {
                     data.products.forEach { product ->
                         InsuranceProductCard(product) { target = product }
                     }
@@ -997,11 +1008,11 @@ fun InsuranceScreen(onBack: () -> Unit) {
                 Column {
                     Text(policy.productName, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                     Spacer(Modifier.height(6.dp))
-                    Text("保额 ${formatCents(policy.coverage)}", fontSize = 13.sp, color = Tokens.Ink2)
+                    Text("保额 ${formatCents(policy.coverage)}", style = Tokens.Text.bodyMuted)
                     Spacer(Modifier.height(4.dp))
-                    Text("被保人 ${policy.insuredName.ifBlank { "—" }}", fontSize = 12.sp, color = Tokens.Muted)
+                    Text("被保人 ${policy.insuredName.ifBlank { "—" }}", style = Tokens.Text.note)
                     Spacer(Modifier.height(4.dp))
-                    Text("保障期至 ${formatDate(policy.expireAt)}", fontSize = 12.sp, color = Tokens.Muted)
+                    Text("保障期至 ${formatDate(policy.expireAt)}", style = Tokens.Text.note)
                 }
             },
             confirmButton = {
@@ -1016,19 +1027,19 @@ private fun PolicyCard(policy: MoreScreensApi.InsurancePolicyDto) {
     HairlineCard {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(policy.productName, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink, modifier = Modifier.weight(1f))
-                RiskBadge(policyStatusLabel(policy.status))
+                Text(policy.productName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink, modifier = Modifier.weight(1f))
+                PolicyStatusPill(policyStatusLabel(policy.status), policy.status == "active")
             }
-            Spacer(Modifier.height(4.dp))
-            Text("${policy.insurer} · 被保人 ${policy.insuredName.ifBlank { "—" }}", fontSize = 11.sp, color = Tokens.Muted)
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
-                Metric("保额", formatCents(policy.coverage))
-                Metric("年缴保费", formatCents(policy.premium))
+            Spacer(Modifier.height(6.dp))
+            Text("${policy.insurer} · 被保人 ${policy.insuredName.ifBlank { "—" }}", fontSize = 11.5.sp, color = Tokens.Muted)
+            Spacer(Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                InsuranceFigure("保额", formatCents(policy.coverage))
+                InsuranceFigure("年缴保费", formatCents(policy.premium))
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(12.dp))
             Hairline()
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
             Text(
                 "保障期 ${formatDate(policy.effectiveAt)} 至 ${formatDate(policy.expireAt)}",
                 fontSize = 11.sp,
@@ -1046,23 +1057,72 @@ private fun InsuranceProductCard(
     HairlineCard {
         Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(product.name, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink, modifier = Modifier.weight(1f))
-                RiskBadge(product.category)
+                Text(product.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink, modifier = Modifier.weight(1f))
+                InsuranceTag(product.category)
             }
-            Spacer(Modifier.height(6.dp))
-            Text(product.highlight, fontSize = 11.5.sp, color = Tokens.Ink2, lineHeight = 18.sp)
+            Spacer(Modifier.height(8.dp))
+            Text(product.highlight, fontSize = 12.sp, color = Tokens.Ink2, lineHeight = 19.sp)
             if (product.tags.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                Text(product.tags.joinToString(" · "), fontSize = 11.sp, color = Tokens.Muted)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    product.tags.take(3).forEach { InsuranceTag(it, subtle = true) }
+                }
             }
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(14.dp))
             Hairline()
+            Spacer(Modifier.height(4.dp))
             KvInline("保额", formatCents(product.coverage))
             KvInline("年缴保费", formatCents(product.premiumPerYear))
             KvInline("承保方", product.insurer)
-            Spacer(Modifier.height(10.dp))
-            GhostButton("立即投保", onEnroll, Modifier.fillMaxWidth())
+            Spacer(Modifier.height(14.dp))
+            PrimaryButton("立即投保", onEnroll, Modifier.fillMaxWidth())
         }
+    }
+}
+
+/** 保单状态徽标：生效中用强调底，其余用浅底。 */
+@Composable
+private fun PolicyStatusPill(text: String, active: Boolean) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (active) Tokens.AccentWash else Tokens.SurfaceWarm)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text,
+            fontSize = 10.5.sp,
+            color = if (active) Tokens.Accent else Tokens.Muted,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+/** 保单数字块：小标签在上、金额在下，弱化标签、突出数值。 */
+@Composable
+private fun InsuranceFigure(label: String, value: String) {
+    Column {
+        Text(label, style = Tokens.Text.caption)
+        Spacer(Modifier.height(3.dp))
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+    }
+}
+
+/** 产品类型/标签胶囊。 */
+@Composable
+private fun InsuranceTag(text: String, subtle: Boolean = false) {
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (subtle) Tokens.SurfaceWarm else Tokens.AccentWash)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text,
+            fontSize = 10.5.sp,
+            color = if (subtle) Tokens.Ink2 else Tokens.Accent,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 
@@ -1076,11 +1136,10 @@ private fun InsuranceEnrollSheet(
     var insuredName by remember(product.id) { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val submitter = rememberSubmitter()
 
     fun submit() {
-        if (submitting) return
+        if (submitter.busy) return
         if (insuredName.isBlank()) {
             error = "请填写被保人姓名"
             return
@@ -1089,29 +1148,24 @@ private fun InsuranceEnrollSheet(
             error = "请输入 6 位数字支付密码"
             return
         }
-        submitting = true
-        error = null
-        scope.launch {
-            try {
-                val policy = MoreScreensApi.enrollInsurance(
+        submitter.submit(
+            fallback = "投保失败，请稍后重试",
+            onStart = { error = null },
+            onError = { error = it },
+            onFailure = { failure -> if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) password = "" },
+        ) {
+            onEnrolled(
+                MoreScreensApi.enrollInsurance(
                     productId = product.id,
                     insuredName = insuredName.trim(),
                     paymentPassword = password,
-                )
-                onEnrolled(policy)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: Exception) {
-                error = failure.message ?: "投保失败，请稍后重试"
-                if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) password = ""
-            } finally {
-                submitting = false
-            }
+                ),
+            )
         }
     }
 
     ModalBottomSheet(
-        onDismissRequest = { if (!submitting) onDismiss() },
+        onDismissRequest = { if (!submitter.busy) onDismiss() },
         sheetState = rememberModalBottomSheetState(),
         containerColor = Tokens.Surface,
     ) {
@@ -1152,10 +1206,10 @@ private fun InsuranceEnrollSheet(
             )
             if (error != null) {
                 Spacer(Modifier.height(10.dp))
-                Text(error!!, fontSize = 12.sp, color = Tokens.Coral, lineHeight = 18.sp)
+                Text(error!!, style = Tokens.Text.error, lineHeight = 18.sp)
             }
             Spacer(Modifier.height(18.dp))
-            PrimaryButton(if (submitting) "提交中…" else "确认投保", ::submit)
+            PrimaryButton(if (submitter.busy) "提交中…" else "确认投保", ::submit)
             Spacer(Modifier.height(16.dp))
         }
     }
@@ -1210,32 +1264,36 @@ fun InviteScreen(onBack: () -> Unit) {
             if (loadError != null) {
                 LoadFailure(loadError!!) { reloadKey++ }
             } else {
-                Text("正在加载邀请信息…", fontSize = 12.sp, color = Tokens.Muted, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
+                Text("正在加载邀请信息…", style = Tokens.Text.note, modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp))
             }
         } else {
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("我的邀请码", fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.weight(1f))
+                        Text("我的邀请码", style = Tokens.Text.hint, modifier = Modifier.weight(1f))
                         RiskBadge("累计已得 ${formatCents(data.totalEarned)}")
                     }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        data.invite.code.ifBlank { "—" },
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Tokens.Ink,
-                        letterSpacing = 2.sp,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    if (data.invite.code.isNotBlank()) {
-                        GhostButton("复制邀请码", { copy("邀请码", data.invite.code) })
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            data.invite.code.ifBlank { "—" },
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Tokens.Ink,
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (data.invite.code.isNotBlank()) ActionIcon(Icons.Copy, "复制邀请码", onClick = { copy("邀请码", data.invite.code) })
                     }
                     if (data.invite.link.isNotBlank()) {
                         Spacer(Modifier.height(10.dp))
-                        Text(data.invite.link, fontSize = 11.5.sp, color = Tokens.Ink2, lineHeight = 18.sp)
-                        Spacer(Modifier.height(8.dp))
-                        GhostButton("复制邀请链接", { copy("邀请链接", data.invite.link) })
+                        Hairline()
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("邀请链接", style = Tokens.Text.note)
+                                Text(data.invite.link, fontSize = 12.sp, color = Tokens.Ink2, lineHeight = 18.sp, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            }
+                            ActionIcon(Icons.Copy, "复制邀请链接", onClick = { copy("邀请链接", data.invite.link) })
+                        }
                     }
                     Spacer(Modifier.height(10.dp))
                     PrimaryButton("分享邀请链接", { shareInvite(data.invite) })
@@ -1259,7 +1317,7 @@ fun InviteScreen(onBack: () -> Unit) {
                             if (index > 0) Hairline()
                             Row(
                                 Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                verticalAlignment = Alignment.Top,
                             ) {
                                 Column(Modifier.weight(1f)) {
                                     Text(
@@ -1269,7 +1327,7 @@ fun InviteScreen(onBack: () -> Unit) {
                                         fontWeight = FontWeight.Medium,
                                     )
                                     Spacer(Modifier.height(2.dp))
-                                    Text("${formatDate(friend.joinedAt)} 加入", fontSize = 10.5.sp, color = Tokens.Muted)
+                                    Text("${formatDate(friend.joinedAt)} 加入", style = Tokens.Text.caption)
                                 }
                                 Column(horizontalAlignment = Alignment.End) {
                                     Text(friendStageLabel(friend.stage), fontSize = 11.sp, color = Tokens.Ink2)
@@ -1302,13 +1360,13 @@ fun InviteScreen(onBack: () -> Unit) {
                                 verticalAlignment = Alignment.Top,
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(reward.title, fontSize = 13.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                                    Text(reward.title, style = Tokens.Text.body, fontWeight = FontWeight.Medium)
                                     if (reward.description.isNotBlank()) {
                                         Spacer(Modifier.height(2.dp))
-                                        Text(reward.description, fontSize = 11.sp, color = Tokens.Muted, lineHeight = 17.sp)
+                                        Text(reward.description, style = Tokens.Text.hint, lineHeight = 17.sp)
                                     }
                                     Spacer(Modifier.height(2.dp))
-                                    Text(rewardStatusLabel(reward.status), fontSize = 10.5.sp, color = Tokens.Muted)
+                                    Text(rewardStatusLabel(reward.status), style = Tokens.Text.caption)
                                 }
                                 Text(
                                     formatCents(reward.amount),
@@ -1331,7 +1389,7 @@ fun InviteScreen(onBack: () -> Unit) {
 @Composable
 private fun LoadFailure(message: String, onRetry: () -> Unit) {
     Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
-        Text("加载失败：$message", fontSize = 12.sp, color = Tokens.Coral, lineHeight = 18.sp)
+        Text("加载失败：$message", style = Tokens.Text.error, lineHeight = 18.sp)
         Spacer(Modifier.height(8.dp))
         GhostButton("重试", onRetry)
     }

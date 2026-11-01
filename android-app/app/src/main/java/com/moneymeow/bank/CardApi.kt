@@ -4,9 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * 银行卡接口客户端。
@@ -24,17 +21,14 @@ object CardApi {
     suspend fun cards(): List<BankCard> = withContext(Dispatchers.IO) {
         val array = JSONArray(requestRaw("GET", "/api/cards", null))
         buildList {
-            for (index in 0 until array.length()) {
-                add(array.getJSONObject(index).toBankCard())
-            }
+            array.forEachObject { row -> add(row.toBankCard()) }
         }
     }
 
     suspend fun products(): List<CardProduct> = withContext(Dispatchers.IO) {
         val array = JSONArray(requestRaw("GET", "/api/cards/products", null))
         buildList {
-            for (index in 0 until array.length()) {
-                val row = array.getJSONObject(index)
+            array.forEachObject { row ->
                 add(
                     CardProduct(
                         code = row.optString("code"),
@@ -137,6 +131,11 @@ object CardApi {
             )
         }
 
+    internal suspend fun spend(cardId: String, body: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        require(cardId.matches(Regex("[A-Za-z0-9_-]+")))
+        JSONObject(BankApi.protectedFinancialRequest("POST", "/api/cards/$cardId/spend", body, "模拟消费"))
+    }
+
     /** 与服务端 `server/lib/address.mjs` 保持同一套字段与顺序。 */
     fun validateAddress(address: MailingAddress): String? {
         if (address.recipient.isBlank()) return "请填写收件人姓名"
@@ -157,39 +156,11 @@ object CardApi {
         listOf(address.region, address.city, address.detail).filter { it.isNotBlank() }.joinToString(" ")
 
     private fun requestRaw(method: String, path: String, body: JSONObject?): String {
-        val connection = (URL(baseUrl() + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 8000
-            readTimeout = 12000
-            setRequestProperty("Accept", "application/json")
-            BankApi.currentToken()?.let { setRequestProperty("Authorization", "Bearer $it") }
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-            }
+        if (method == "POST" && (path == "/api/cards/open" || Regex("^/api/cards/[^/]+/replace$").matches(path))) {
+            return BankApi.protectedFinancialRequest(method, path, body, if (path.endsWith("/replace")) "换卡" else "开卡")
         }
-        try {
-            body?.let { payload ->
-                connection.outputStream.use { it.write(payload.toString().toByteArray()) }
-            }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            if (status !in 200..299) {
-                val error = runCatching { JSONObject(text) }.getOrNull()
-                val message = error?.optString("message").orEmpty()
-                val apiCode = error?.optString("code").orEmpty().ifEmpty { null }
-                // 支付密码错误同样是 401，但属于业务校验失败，不能触发全局登出。
-                val isPaymentPasswordFailure = apiCode == "BAD_PAY_PASSWORD"
-                if (status == 401 && !path.startsWith("/api/auth/") && !isPaymentPasswordFailure) {
-                    BankApi.onUnauthorized?.invoke()
-                }
-                throw BankApiException(status, message.ifEmpty { "请求失败（$status）" }, apiCode)
-            }
-            return text
-        } finally {
-            connection.disconnect()
-        }
+        // I/O 由 BankHttp 统一实现（超时、错误体、401 语义与主接口一致）。
+        return BankHttp.raw(method = method, path = path, body = body)
     }
 }
 

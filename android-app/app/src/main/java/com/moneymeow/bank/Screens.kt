@@ -19,16 +19,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -42,37 +50,29 @@ fun TopBar(
     onBack: (() -> Unit)? = null,
     action: String? = null,
     onAction: (() -> Unit)? = null,
+    actionContent: (@Composable () -> Unit)? = null,
 ) {
     Column(Modifier.background(Tokens.Surface)) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .height(52.dp)
-                .padding(horizontal = 12.dp),
+                .height(60.dp)
+                .padding(horizontal = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (onBack != null) {
-                // Icons.Chevron 是右箭头；返回键与设计稿一致旋转 180° 变左箭头
-                Icon(
-                    Icons.Chevron,
-                    contentDescription = "返回",
-                    tint = Tokens.Ink2,
-                    modifier = Modifier
-                        .size(20.dp)
-                        .rotate(180f)
-                        .clickable { onBack() },
-                )
-                Spacer(Modifier.size(8.dp))
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Chevron, "返回", tint = Tokens.Ink2, modifier = Modifier.size(22.dp).rotate(180f))
+                }
             }
-            Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-            if (action != null && onAction != null) {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    action,
-                    fontSize = 12.5.sp,
-                    color = Tokens.Ink2,
-                    modifier = Modifier.clickable { onAction() },
-                )
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink,
+                modifier = Modifier.weight(1f).padding(start = if (onBack == null) 8.dp else 2.dp),
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (actionContent != null) {
+                actionContent()
+            } else if (action != null && onAction != null) {
+                if (action == "刷新") ActionIcon(Icons.Refresh, action, onClick = onAction)
+                else TextButton(onClick = onAction) { Text(action, style = Tokens.Text.bodyMuted) }
             }
         }
         Hairline()
@@ -81,7 +81,7 @@ fun TopBar(
 
 /** 一级 tab 页的标题栏（无返回）。 */
 @Composable
-fun TabBar(title: String) {
+fun TabBar(title: String, onRefresh: (() -> Unit)? = null, refreshing: Boolean = false) {
     Column(Modifier.background(Tokens.Surface)) {
         Row(
             Modifier
@@ -90,7 +90,8 @@ fun TabBar(title: String) {
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
+            Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink, modifier = Modifier.weight(1f))
+            if (onRefresh != null) ActionIcon(Icons.Refresh, "刷新$title", busy = refreshing, onClick = onRefresh)
         }
         Hairline()
     }
@@ -115,7 +116,7 @@ fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
 fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Box(
         modifier
-            .height(40.dp)
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(Tokens.FieldRadius.dp))
             .background(Tokens.Surface)
             .border(1.dp, Tokens.Border, RoundedCornerShape(Tokens.FieldRadius.dp))
@@ -127,26 +128,43 @@ fun GhostButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier
     }
 }
 
+/** 与主按钮等宽等高的次按钮：用于并排的两个操作。 */
+@Composable
+fun SecondaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(Tokens.CardRadius.dp))
+            .background(Tokens.Surface)
+            .border(1.dp, Tokens.Border, RoundedCornerShape(Tokens.CardRadius.dp))
+            .clickable { onClick() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = Tokens.Ink2)
+    }
+}
+
 /** 分段控件：等宽，选中项白底加粗。 */
 @Composable
 fun SegTabs(items: List<String>, selected: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit) {
     Row(
         modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(Tokens.FieldRadius.dp))
-            .background(Tokens.Surface)
-            .border(1.dp, Tokens.Border, RoundedCornerShape(Tokens.FieldRadius.dp))
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+            .clip(RoundedCornerShape(16.dp))
+            .background(Tokens.Border.copy(alpha = 0.5f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         items.forEachIndexed { index, label ->
             Box(
                 Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(if (index == selected) Tokens.SurfaceWarm else Color.Transparent)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(if (index == selected) Tokens.Surface else Color.Transparent)
                     .clickable { onSelect(index) }
-                    .padding(vertical = 8.dp),
+                    .heightIn(min = 44.dp)
+                    .padding(horizontal = 4.dp, vertical = 10.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -218,8 +236,10 @@ fun KvRow(label: String, value: String, valueColor: Color = Tokens.Ink) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, fontSize = 12.5.sp, color = Tokens.Muted)
-        Text(value, fontSize = 12.5.sp, color = valueColor, fontWeight = FontWeight.Medium)
+        Text(label, fontSize = 12.5.sp, color = Tokens.Muted, modifier = Modifier.weight(0.38f))
+        Spacer(Modifier.size(12.dp))
+        Text(value, fontSize = 12.5.sp, color = valueColor, fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(0.62f), textAlign = androidx.compose.ui.text.style.TextAlign.End)
     }
 }
 
@@ -252,10 +272,10 @@ fun SwitchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 13.sp, color = Tokens.Ink)
+            Text(label, style = Tokens.Text.body)
             if (subtitle != null) {
                 Spacer(Modifier.height(3.dp))
-                Text(subtitle, fontSize = 10.5.sp, color = Tokens.Muted)
+                Text(subtitle, style = Tokens.Text.caption)
             }
         }
         val trackColor by androidx.compose.animation.animateColorAsState(
@@ -298,28 +318,48 @@ fun IconRow(
         Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 15.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Tokens.SurfaceWarm),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(16.dp))
-        }
-        Spacer(Modifier.size(12.dp))
+        Icon(
+            Icons.bolder(icon),
+            contentDescription = null,
+            tint = Tokens.Ink2,
+            modifier = Modifier.size(22.dp),
+        )
+        Spacer(Modifier.size(14.dp))
         Text(
             label,
             fontSize = 13.5.sp,
             color = if (danger) Tokens.Coral else Tokens.Ink,
             modifier = Modifier.weight(1f),
         )
-        if (value != null) Text(value, fontSize = 12.sp, color = Tokens.Muted)
+        if (value != null) Text(value, style = Tokens.Text.note)
         Spacer(Modifier.size(6.dp))
         Icon(Icons.Chevron, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(13.dp))
+    }
+}
+
+/** 成功提示：像通知一样出现，2.4 秒后自动消失，不占页面版面。 */
+@Composable
+fun BankToast(text: String, onDismiss: () -> Unit) {
+    LaunchedEffect(text) {
+        kotlinx.coroutines.delay(2400)
+        onDismiss()
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Tokens.Primary)
+            .clickable(onClick = onDismiss)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Check, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+        Spacer(Modifier.size(8.dp))
+        Text(text, fontSize = 12.5.sp, color = Color.White)
     }
 }
 
@@ -330,17 +370,34 @@ fun PushScreen(
     onBack: () -> Unit,
     action: String? = null,
     onAction: (() -> Unit)? = null,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
+    actionContent: (@Composable () -> Unit)? = null,
+    bottomContent: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Column(Modifier.fillMaxSize().background(Tokens.Page)) {
-        TopBar(title, onBack, action, onAction)
-        Column(
-            Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(bottom = 16.dp),
-            content = content,
-        )
+    Column(Modifier.fillMaxSize().background(Tokens.Page).imePadding()) {
+        val toolbarActions: (@Composable () -> Unit)? = actionContent ?: if (onRefresh != null && action == null) {
+            { ActionIcon(Icons.Refresh, "刷新$title", busy = refreshing, onClick = onRefresh) }
+        } else null
+        TopBar(title, onBack, action, onAction, toolbarActions)
+        val body: @Composable () -> Unit = {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(top = 12.dp, bottom = 32.dp),
+                content = content,
+            )
+        }
+        // 传入 onRefresh 才有下拉刷新；不传时保持原来的行为。
+        if (onRefresh == null) Box(Modifier.weight(1f)) { body() }
+        else BankPullRefresh(
+            isRefreshing = refreshing,
+            onRefresh = onRefresh,
+            modifier = Modifier.weight(1f),
+        ) { body() }
+        if (bottomContent != null) Column(Modifier.fillMaxWidth().background(Tokens.Surface).padding(horizontal = 16.dp, vertical = 12.dp)) { bottomContent() }
     }
 }
 
@@ -363,7 +420,8 @@ fun FormScaffold(
             Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .imePadding()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
         ) {
             content()
             Spacer(Modifier.height(22.dp))
@@ -385,15 +443,15 @@ fun TextFieldRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Column {
-        Text(label, fontSize = 11.sp, color = Tokens.Muted, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
+        Text(label, fontSize = 12.sp, color = Tokens.Ink2, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
                     .weight(1f)
-                    .height(46.dp)
-                    .clip(CircleShape)
-                    .background(Tokens.Surface)
-                    .border(1.dp, Tokens.Border, CircleShape)
+                    .heightIn(min = 52.dp)
+                    .clip(RoundedCornerShape(Tokens.FieldRadius.dp))
+                    .background(Tokens.SurfaceWarm)
+                    .border(1.dp, Tokens.Border, RoundedCornerShape(Tokens.FieldRadius.dp))
                     .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.CenterStart,
             ) {
@@ -415,7 +473,7 @@ fun TextFieldRow(
                     } else {
                         androidx.compose.ui.text.input.VisualTransformation.None
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp).semantics { contentDescription = label },
                     decorationBox = { inner ->
                         if (value.isEmpty() && placeholder.isNotEmpty()) {
                             Text(placeholder, fontSize = 14.sp, color = Tokens.Muted)

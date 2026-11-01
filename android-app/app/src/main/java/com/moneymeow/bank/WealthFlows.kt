@@ -242,7 +242,7 @@ fun RiskAssessmentScreen(
                 }
                 error != null -> {
                     Spacer(Modifier.height(20.dp))
-                    Text(error!!, fontSize = 12.sp, color = Tokens.Coral, modifier = Modifier.padding(horizontal = 20.dp))
+                    Text(error!!, style = Tokens.Text.error, modifier = Modifier.padding(horizontal = 20.dp))
                     Spacer(Modifier.height(12.dp))
                     GhostButton("重新加载", { loadKey++ }, Modifier.padding(horizontal = 20.dp))
                 }
@@ -315,7 +315,7 @@ fun RiskAssessmentScreen(
                                     }
                                 }
                                 Spacer(Modifier.size(10.dp))
-                                Text(option.label, fontSize = 13.sp, color = Tokens.Ink, lineHeight = 20.sp)
+                                Text(option.label, style = Tokens.Text.body, lineHeight = 20.sp)
                             }
                         }
                         if (error != null) {
@@ -384,7 +384,7 @@ private fun RiskResult(risk: RiskAssessmentDto) {
         Spacer(Modifier.height(10.dp))
         HairlineCard {
             Column(Modifier.padding(18.dp)) {
-                Text("你的风险承受能力", fontSize = 12.sp, color = Tokens.Muted)
+                Text("你的风险承受能力", style = Tokens.Text.note)
                 Spacer(Modifier.height(6.dp))
                 Text(
                     toleranceText(risk.level),
@@ -522,7 +522,7 @@ fun WealthAccountOpeningScreen(
                 }
                 loadError != null -> {
                     Spacer(Modifier.height(24.dp))
-                    Text(loadError!!, fontSize = 12.sp, color = Tokens.Coral, modifier = Modifier.padding(horizontal = 20.dp))
+                    Text(loadError!!, style = Tokens.Text.error, modifier = Modifier.padding(horizontal = 20.dp))
                     Spacer(Modifier.height(12.dp))
                     GhostButton("重新加载", { loadKey++ }, Modifier.padding(horizontal = 20.dp))
                 }
@@ -538,7 +538,7 @@ fun WealthAccountOpeningScreen(
                         Spacer(Modifier.height(14.dp))
                         HairlineCard {
                             Column(Modifier.padding(16.dp)) {
-                                Text("当前测评", fontSize = 11.sp, color = Tokens.Muted)
+                                Text("当前测评", style = Tokens.Text.hint)
                                 Spacer(Modifier.height(5.dp))
                                 Text(
                                     if (riskValid) toleranceText(riskLevel) else "未完成 / 已过期",
@@ -635,7 +635,7 @@ fun WealthAccountOpeningScreen(
                                 }
                                 Spacer(Modifier.size(10.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text("人脸核验", fontSize = 13.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
+                                    Text("人脸核验", style = Tokens.Text.body, fontWeight = FontWeight.Medium)
                                     Text(
                                         if (faceTicket.isNotEmpty()) "已通过，票据 5 分钟内有效" else "演示环境通过银行核身接口签发票据",
                                         fontSize = 11.sp,
@@ -674,7 +674,7 @@ fun WealthAccountOpeningScreen(
                             lineHeight = 19.sp,
                         )
                         Spacer(Modifier.height(14.dp))
-                        Text("结算资金账户", fontSize = 11.sp, color = Tokens.Muted)
+                        Text("结算资金账户", style = Tokens.Text.hint)
                         Spacer(Modifier.height(6.dp))
                         accounts.filter { it.currency == "CNY" }.forEach { account ->
                             val selected = selectedAccountId == account.id
@@ -713,7 +713,7 @@ fun WealthAccountOpeningScreen(
                                         color = Tokens.Ink,
                                         fontWeight = FontWeight.Medium,
                                     )
-                                    Text(maskAccountNo(account.accountNo), fontSize = 11.sp, color = Tokens.Muted)
+                                    Text(maskAccountNo(account.accountNo), style = Tokens.Text.hint)
                                 }
                                 Text(
                                     "可用 " + formatCents(account.available, account.currency),
@@ -781,7 +781,7 @@ fun WealthAccountOpeningScreen(
                         Spacer(Modifier.height(12.dp))
                         Text("理财账户已开立", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
                         Spacer(Modifier.height(5.dp))
-                        Text("仅代表已具备投资资格，不代表资金已存入理财账户。", fontSize = 12.sp, color = Tokens.Muted)
+                        Text("仅代表已具备投资资格，不代表资金已存入理财账户。", style = Tokens.Text.note)
                         Spacer(Modifier.height(14.dp))
                         HairlineCard {
                             Column(Modifier.padding(14.dp)) {
@@ -879,7 +879,7 @@ fun WealthAccountOpeningScreen(
 
 @Composable
 private fun StepCaption(step: Int, title: String) {
-    Text("第 $step 步 / 共 3 步", fontSize = 11.sp, color = Tokens.Muted)
+    Text("第 $step 步 / 共 3 步", style = Tokens.Text.hint)
     Spacer(Modifier.height(4.dp))
     Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
     Spacer(Modifier.height(10.dp))

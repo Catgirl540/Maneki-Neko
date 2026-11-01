@@ -92,7 +92,7 @@ fun FilterDrawer(
                             .verticalScroll(rememberScrollState()),
                     ) {
                         groups.forEach { group ->
-                            Text(group.title, fontSize = 11.sp, color = Tokens.Muted)
+                            Text(group.title, style = Tokens.Text.hint)
                             Spacer(Modifier.height(8.dp))
                             group.options.chunked(4).forEach { row ->
                                 Row(

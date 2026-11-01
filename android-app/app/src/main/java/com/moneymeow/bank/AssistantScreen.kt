@@ -67,24 +67,24 @@ import kotlinx.coroutines.launch
 
 /* ─────────────────────────── 数据 ─────────────────────────── */
 
-private data class Capability(
-    val label: String,
-    val desc: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
-)
-
-private val capabilities = listOf(
-    Capability("智能转账", "说一句就填好收款人与金额", Icons.Transfer),
-    Capability("理财顾问", "产品对比、持仓与申赎", Icons.Wealth),
-    Capability("账单分析", "分类、趋势与消费异常", Icons.Receipt),
-    Capability("银行卡管家", "锁卡、限额、换卡与寄送", Icons.Card),
-    Capability("换汇助手", "汇率查询与换汇下单", Icons.Globe),
-    Capability("储蓄规划", "存钱目标与定投计划", Icons.Pig),
-    Capability("借款测算", "额度与分期测算", Icons.UpOut),
-    Capability("保险咨询", "保单与保障范围", Icons.Shield),
-    Capability("安全助手", "密码、设备与风险提示", Icons.Lock),
-    Capability("智能客服", "常见问题与人工转接", Icons.Bell),
-)
+/**
+ * 能力入口的**表现层**映射：只把服务端 id 映射成图标。
+ *
+ * 清单本身（有哪些入口、叫什么、什么顺序）由 `GET /agent-api/services` 下发，
+ * 唯一来源是 `framework/agent-services.json`；客户端不再维护条目和文案。
+ * 服务端新增未登记的 id 时用通用图标兜底，入口仍然可选。
+ */
+private fun serviceIcon(id: String): androidx.compose.ui.graphics.vector.ImageVector = when (id) {
+    "transfer" -> Icons.Transfer
+    "wealth" -> Icons.Wealth
+    "analysis" -> Icons.Receipt
+    "cards" -> Icons.Card
+    "exchange" -> Icons.Globe
+    "credit" -> Icons.UpOut
+    "insurance" -> Icons.Shield
+    "security" -> Icons.Lock
+    else -> Icons.Dots
+}
 
 /** 一次助手回合：文本 + 可选的处理步骤。 */
 private data class Turn(
@@ -99,11 +99,15 @@ private val welcomeSuggestions = listOf("查余额", "转账", "换汇报价", "
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AssistantScreen(onBack: () -> Unit) {
+fun AssistantScreen(onBack: () -> Unit, onSupport: () -> Unit) {
     var capsOpen by remember { mutableStateOf(false) }
     var historyOpen by remember { mutableStateOf(false) }
-    // 已选智能服务：选中后在输入框里显示为标签（与网页行为一致）
+    // 已选智能服务：存服务端 id，标签从清单里查（与网页行为一致）
     val picked = remember { mutableStateListOf<String>() }
+    // 能力清单来自服务端；取不到就隐藏入口，不在客户端留第二份副本
+    var services by remember { mutableStateOf<List<AgentApi.AgentService>>(emptyList()) }
+    var servicesLoaded by remember { mutableStateOf(false) }
+    var servicesRetry by remember { mutableStateOf(0) }
     val sheetState = rememberModalBottomSheetState()
 
     val turns = remember { mutableStateListOf<Turn>() }
@@ -128,6 +132,26 @@ fun AssistantScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         agentOnline = AgentApi.health()
+    }
+
+    // 能力清单：失败按 3s / 8s / 20s 重试，仍失败就按空清单处理（入口隐藏）
+    LaunchedEffect(servicesRetry) {
+        val waits = listOf(3_000L, 8_000L, 20_000L)
+        var wait = 0L
+        for (attempt in 0..waits.size) {
+            if (wait > 0L) delay(wait)
+            val loaded = runCatching { AgentApi.listServices() }.getOrNull()
+            if (loaded != null) {
+                services = loaded
+                // 服务端已下线的入口不能在下次发送时带上
+                val live = loaded.map { it.id }.toSet()
+                picked.removeAll { it !in live }
+                servicesLoaded = true
+                return@LaunchedEffect
+            }
+            wait = waits.getOrElse(attempt) { 0L }
+        }
+        servicesLoaded = true
     }
 
     // 订阅会话事件：assistant-update 累加、assistant 定稿、tool 事件进步骤
@@ -210,10 +234,11 @@ fun AssistantScreen(onBack: () -> Unit) {
 
     fun send(text: String) {
         if (text.isBlank() || thinking) return
-        val prefix = if (picked.isEmpty()) "" else picked.joinToString(" ") { "【$it】" } + " "
+        val labels = picked.map { id -> services.firstOrNull { it.id == id }?.label ?: id }
+        val prefix = if (labels.isEmpty()) "" else labels.joinToString(" ") { "【$it】" } + " "
         turns.add(Turn(fromUser = true, text = prefix + text.trim()))
         val question = text.trim()
-        val serviceIds = picked.map { serviceIdOf(it) }
+        val serviceIds = picked.toList()
         input = ""
         picked.clear()
         thinking = true
@@ -251,9 +276,10 @@ fun AssistantScreen(onBack: () -> Unit) {
     ) {
         AssistantHeader(
             onBack = onBack,
-            onNewChat = { turns.clear() },
+            onNewChat = { turns.clear(); picked.clear() },
             onHistory = { historyOpen = true },
         )
+        GhostButton("人工客服工单", onClick = onSupport, modifier = Modifier.padding(horizontal = 14.dp))
 
         if (agentOnline == false || agentError != null) {
             Row(
@@ -264,8 +290,8 @@ fun AssistantScreen(onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    agentError?.let { "助手连接异常：$it（已切换本地回复）" }
-                        ?: "助手桥接未启动，当前为本地演示回复",
+                    agentError?.let { "助手暂不可用：$it。以下为固定帮助，也可提交人工工单。" }
+                        ?: "智能助手暂不可用；可查看固定帮助或提交人工工单。",
                     fontSize = 11.sp,
                     color = Tokens.Muted,
                 )
@@ -319,58 +345,79 @@ fun AssistantScreen(onBack: () -> Unit) {
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             )
                             Spacer(Modifier.height(22.dp))
-                            // 快捷能力：一行一个，不带说明
-                            // 与「选择智能服务」同一份能力列表：前三项 + 更多（打开完整面板）
-                            val quickActions = capabilities.take(3).map { it.label to it.icon } +
-                                ("更多" to Icons.Dots)
-                            HairlineCard(Modifier.fillMaxWidth()) {
-                                Column {
-                                    quickActions.forEachIndexed { index, (label, icon) ->
-                                        if (index > 0) Hairline()
-                                        Row(
-                                            Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    if (label == "更多") {
-                                                        capsOpen = true
-                                                    } else if (picked.contains(label)) {
-                                                        picked.remove(label)
-                                                    } else {
-                                                        picked.add(label)
-                                                    }
-                                                }
-                                                .padding(horizontal = 16.dp, vertical = 15.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        ) {
-                                            Box(
+                            // 快捷能力：一行一个，不带说明；前三项 + 更多（打开完整面板）。
+                            // 清单来自服务端，取不到时整块不渲染。
+                            val quick = services.take(3)
+                            if (quick.isNotEmpty()) {
+                                HairlineCard(Modifier.fillMaxWidth()) {
+                                    Column {
+                                        quick.forEachIndexed { index, service ->
+                                            if (index > 0) Hairline()
+                                            Row(
                                                 Modifier
-                                                    .size(28.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(Tokens.SurfaceWarm),
-                                                contentAlignment = Alignment.Center,
+                                                    .fillMaxWidth()
+                                                    .clickable {
+                                                        if (picked.contains(service.id)) {
+                                                            picked.remove(service.id)
+                                                        } else {
+                                                            picked.add(service.id)
+                                                        }
+                                                    }
+                                                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
                                             ) {
                                                 Icon(
-                                                    icon,
+                                                    Icons.bolder(serviceIcon(service.id)),
                                                     contentDescription = null,
                                                     tint = Tokens.Ink2,
-                                                    modifier = Modifier.size(15.dp),
+                                                    modifier = Modifier.size(22.dp),
                                                 )
+                                                Spacer(Modifier.size(12.dp))
+                                                Text(
+                                                    service.label,
+                                                    fontSize = 13.5.sp,
+                                                    color = Tokens.Ink,
+                                                    modifier = Modifier.weight(1f),
+                                                )
+                                                if (picked.contains(service.id)) {
+                                                    Icon(
+                                                        Icons.Check,
+                                                        contentDescription = "已选中",
+                                                        tint = Tokens.Accent,
+                                                        modifier = Modifier.size(15.dp),
+                                                    )
+                                                } else {
+                                                    Icon(
+                                                        Icons.Chevron,
+                                                        contentDescription = null,
+                                                        tint = Tokens.Muted,
+                                                        modifier = Modifier.size(13.dp),
+                                                    )
+                                                }
                                             }
-                                            Spacer(Modifier.size(12.dp))
-                                            Text(
-                                                label,
-                                                fontSize = 13.5.sp,
-                                                color = Tokens.Ink,
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                            if (label != "更多" && picked.contains(label)) {
+                                        }
+                                        if (services.size > 3) {
+                                            Hairline()
+                                            Row(
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { capsOpen = true }
+                                                    .padding(horizontal = 16.dp, vertical = 15.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
                                                 Icon(
-                                                    Icons.Check,
-                                                    contentDescription = "已选中",
-                                                    tint = Tokens.Accent,
-                                                    modifier = Modifier.size(15.dp),
+                                                    Icons.bolder(Icons.Dots),
+                                                    contentDescription = null,
+                                                    tint = Tokens.Ink2,
+                                                    modifier = Modifier.size(22.dp),
                                                 )
-                                            } else {
+                                                Spacer(Modifier.size(12.dp))
+                                                Text(
+                                                    "更多",
+                                                    fontSize = 13.5.sp,
+                                                    color = Tokens.Ink,
+                                                    modifier = Modifier.weight(1f),
+                                                )
                                                 Icon(
                                                     Icons.Chevron,
                                                     contentDescription = null,
@@ -462,14 +509,26 @@ fun AssistantScreen(onBack: () -> Unit) {
             onValueChange = { input = it },
             onSend = { send(input) },
             onPlus = { capsOpen = true },
-            tags = picked.toList(),
-            onRemoveTag = { picked.remove(it) },
+            tags = picked.map { id -> services.firstOrNull { it.id == id }?.label ?: id },
+            onRemoveTag = { label ->
+                val id = services.firstOrNull { it.label == label }?.id ?: label
+                picked.remove(id)
+            },
         )
     }
 
     if (capsOpen) {
         ModalBottomSheet(onDismissRequest = { capsOpen = false }, sheetState = sheetState, containerColor = Tokens.Surface) {
-            CapabilitySheet(picked) { capsOpen = false }
+            CapabilitySheet(
+                picked = picked,
+                services = services,
+                loaded = servicesLoaded,
+                onRetry = {
+                    servicesLoaded = false
+                    servicesRetry += 1
+                },
+                onDone = { capsOpen = false },
+            )
         }
     }
 
@@ -766,75 +825,6 @@ private fun TypingIndicator() {
     }
 }
 
-/** 敏感操作确认卡：网页 ConsentCard 的移动端对应物。 */
-@Composable
-private fun ConsentCard(onApprove: (String) -> Unit, onReject: () -> Unit) {
-    var password by remember { mutableStateOf("") }
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(10.dp))
-            .background(Tokens.Surface)
-            .border(1.dp, Tokens.Border, RoundedCornerShape(10.dp))
-            .padding(14.dp),
-    ) {
-        Text("确认转账", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
-        Spacer(Modifier.height(10.dp))
-        KvRow("收款人", "陈嘉禾 ··8821")
-        KvRow("转账金额", "¥500.00")
-        KvRow("手续费", "¥0.00")
-        Spacer(Modifier.height(10.dp))
-        BasicTextField(
-            value = password,
-            onValueChange = { password = it.filter(Char::isDigit).take(6) },
-            singleLine = true,
-            textStyle = TextStyle(fontSize = 14.sp, color = Tokens.Ink),
-            cursorBrush = SolidColor(Tokens.Accent),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            visualTransformation = PasswordVisualTransformation(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(46.dp)
-                .clip(CircleShape)
-                .background(Tokens.Surface)
-                .border(1.dp, Tokens.Border, CircleShape)
-                .padding(horizontal = 16.dp),
-            decorationBox = { inner ->
-                Box(contentAlignment = Alignment.CenterStart) {
-                    if (password.isEmpty()) Text("6 位支付密码", fontSize = 13.sp, color = Tokens.Muted)
-                    inner()
-                }
-            },
-        )
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Tokens.Surface)
-                    .border(1.dp, Tokens.Border, RoundedCornerShape(8.dp))
-                    .clickable { onReject() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("取消", fontSize = 14.sp, color = Tokens.Ink2)
-            }
-            Box(
-                Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Tokens.Primary)
-                    .clickable { if (password.length == 6) onApprove(password) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("确认支付", fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Medium)
-            }
-        }
-    }
-}
-
 @Composable
 private fun SuggestionChip(text: String, onClick: () -> Unit) {
     Box(
@@ -953,7 +943,13 @@ private fun Composer(
 /* ─────────────────────────── 能力弹层 ─────────────────────────── */
 
 @Composable
-private fun CapabilitySheet(picked: MutableList<String>, onDone: () -> Unit) {
+private fun CapabilitySheet(
+    picked: MutableList<String>,
+    services: List<AgentApi.AgentService>,
+    loaded: Boolean,
+    onRetry: () -> Unit,
+    onDone: () -> Unit,
+) {
     Column(Modifier.padding(horizontal = 18.dp)) {
         Row(
             Modifier
@@ -966,43 +962,60 @@ private fun CapabilitySheet(picked: MutableList<String>, onDone: () -> Unit) {
         ) {
             Icon(Icons.ImageIcon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(10.dp))
-            Text("上传图片", fontSize = 13.sp, color = Tokens.Ink, modifier = Modifier.weight(1f))
-            Text("截图 / 账单 / 回单", fontSize = 10.5.sp, color = Tokens.Muted)
+            Text("上传图片", style = Tokens.Text.body, modifier = Modifier.weight(1f))
+            Text("截图 / 账单 / 回单", style = Tokens.Text.caption)
         }
         Spacer(Modifier.height(14.dp))
         Text("选择智能服务", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
         Spacer(Modifier.height(6.dp))
         Box(Modifier.height(360.dp)) {
+            if (services.isEmpty()) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(top = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        if (loaded) "能力列表暂时取不到" else "正在读取能力列表…",
+                        fontSize = 12.5.sp,
+                        color = Tokens.Muted,
+                    )
+                    if (loaded) {
+                        Spacer(Modifier.height(12.dp))
+                        GhostButton("重试", onClick = onRetry)
+                    }
+                }
+            }
             Column(
                 Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
             ) {
-                capabilities.forEach { cap ->
-                    val on = picked.contains(cap.label)
+                services.forEach { service ->
+                    val on = picked.contains(service.id)
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .clickable {
-                                if (on) picked.remove(cap.label) else picked.add(cap.label)
+                                if (on) picked.remove(service.id) else picked.add(service.id)
                             }
                             .padding(vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Tokens.SurfaceWarm),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(cap.icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(17.dp))
-                        }
+                        Icon(
+                            Icons.bolder(serviceIcon(service.id)),
+                            contentDescription = null,
+                            tint = Tokens.Ink2,
+                            modifier = Modifier.size(22.dp),
+                        )
                         Spacer(Modifier.size(12.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(cap.label, fontSize = 13.5.sp, color = Tokens.Ink)
-                            Spacer(Modifier.height(2.dp))
-                            Text(cap.desc, fontSize = 10.5.sp, color = Tokens.Muted)
+                            Text(service.label, fontSize = 13.5.sp, color = Tokens.Ink)
+                            if (service.description.isNotEmpty()) {
+                                Spacer(Modifier.height(2.dp))
+                                Text(service.description, style = Tokens.Text.caption)
+                            }
                         }
                         Box(
                             Modifier

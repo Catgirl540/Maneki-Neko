@@ -53,6 +53,8 @@ private data class Notice(
     val date: LocalDate?,
     val icon: ImageVector,
     val kind: NoticeKind,
+    /** 交易类通知对应的流水号；为 null 时不可点进详情。 */
+    val txId: String? = null,
 )
 
 private data class NoticeFilters(
@@ -86,7 +88,7 @@ private fun buildNotices(
         val incoming = dto.direction == "in"
         val date = parseBankTime(dto.createdAt)?.toLocalDate()
         Notice(
-            title = if (incoming) "转入到账" else BankApi.categoryLabel(dto.category) + "消费",
+            title = when (dto.status) { "pending" -> "交易处理中"; "failed" -> "交易未成功"; "success" -> if (incoming) "转入到账" else BankApi.categoryLabel(dto.category) + "支出"; else -> "交易状态待核查" },
             body = dto.counterparty.ifEmpty { dto.memo.ifEmpty { "交易" } } +
                 " " + (if (incoming) "+" else "-") + formatCents(dto.amount, dto.currency),
             time = bankTimeText(dto.createdAt) ?: "时间未知",
@@ -94,6 +96,7 @@ private fun buildNotices(
             date = date,
             icon = if (incoming) Icons.DownIn else Icons.UpOut,
             kind = NoticeKind.TRANSACTION,
+            txId = dto.id,
         )
     }
     val fromDebits = debits.filter { it.enabled }.mapNotNull { dto ->
@@ -102,8 +105,8 @@ private fun buildNotices(
         val date = next.toLocalDate()
         if (date.isBefore(today)) return@mapNotNull null
         Notice(
-            title = "自动扣款预告",
-            body = "「${dto.merchant}」将于 ${date.monthValue}月${date.dayOfMonth}日 扣款 ${formatCents(dto.amount)}。",
+            title = "自动扣款计划",
+            body = "「${dto.merchant}」规则日期 ${date.monthValue}月${date.dayOfMonth}日 · ${formatCents(dto.amount)}。当前自动执行尚未开放。",
             time = "${date.monthValue}月${date.dayOfMonth}日",
             day = "待扣款提醒",
             date = date,
@@ -115,8 +118,9 @@ private fun buildNotices(
     return fromDebits + fromTx
 }
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun NotifyTab(onOpenFilter: () -> Unit) {
+fun NotifyTab(onOpenAa: () -> Unit, onOpenTx: (String) -> Unit) {
     var filters by remember { mutableStateOf(NoticeFilters()) }
     var filterOpen by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableIntStateOf(0) }
@@ -126,11 +130,15 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
     // 两类来源分别记录失败原因：任一失败都不能伪装成“没有提醒”。
     var txError by remember { mutableStateOf<String?>(null) }
     var debitError by remember { mutableStateOf<String?>(null) }
+    var aaCount by remember { mutableIntStateOf(0) }
+    var aaError by remember { mutableStateOf<String?>(null) }
+    var refreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(reloadKey) {
         loading = true
         txError = null
         debitError = null
+        aaError = null
         if (!BankApi.hasToken()) {
             txError = "登录已失效，请重新登录"
             notices = emptyList()
@@ -150,8 +158,13 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
             .onSuccess { debits = it }
             .onFailure { debitError = it.message ?: "扣款提醒加载失败" }
 
+        runCatching { BankApi.paymentPlanList("/api/transfers/aa-payments") }
+            .onSuccess { data -> aaCount = (0 until data.length()).count { data.getJSONObject(it).optString("status") in setOf("unpaid", "processing") } }
+            .onFailure { aaCount = 0; aaError = it.message ?: "AA 付款通知加载失败" }
+
         notices = buildNotices(transactions, debits, LocalDate.now(bankZone))
         loading = false
+        refreshing = false
     }
 
     val chipsSelected = noticeChips.indexOf(filters.type)
@@ -187,27 +200,12 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TabBar("通知")
+            TabBar("通知", onRefresh = { if (!refreshing) { refreshing = true; BankApi.invalidateReads(); reloadKey++ } }, refreshing = refreshing)
             ChipRow(
                 noticeChips.map { it.label },
                 chipsSelected,
                 trailing = {
-                    Box(
-                        Modifier
-                            .size(width = 34.dp, height = 32.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (filters.activeLabels.isNotEmpty()) Tokens.Primary else Tokens.Surface),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filter,
-                            contentDescription = "筛选",
-                            tint = if (filters.activeLabels.isNotEmpty()) androidx.compose.ui.graphics.Color.White else Tokens.Ink2,
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clickable { filterOpen = true },
-                        )
-                    }
+                    ActionIcon(Icons.Filter, if (filters.activeLabels.isNotEmpty()) "修改通知筛选" else "筛选通知", onClick = { filterOpen = true })
                 },
                 onSelect = { index -> filters = filters.copy(type = noticeChips[index]) },
             )
@@ -230,14 +228,29 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
                     )
                 }
             }
+            BankPullRefresh(
+                isRefreshing = refreshing,
+                onRefresh = {
+                    if (!refreshing) { refreshing = true; BankApi.invalidateReads(); reloadKey++ }
+                },
+                modifier = Modifier.weight(1f),
+            ) {
             Column(
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 16.dp),
             ) {
+                if (filters.type == NoticeType.ALL || filters.type == NoticeType.REMINDER) {
+                    HairlineCard(Modifier.padding(horizontal = 14.dp, vertical = 6.dp)) {
+                        Column(Modifier.fillMaxWidth().clickable { onOpenAa() }.padding(14.dp)) {
+                            Text("AA 待付款", fontWeight = FontWeight.Medium, color = Tokens.Ink)
+                            Text(aaError?.let { "加载失败：$it，点击查看并重试" } ?: "待处理 $aaCount 笔，点击查看", fontSize = 11.sp, color = if (aaError != null) Tokens.Coral else Tokens.Muted)
+                        }
+                    }
+                }
                 when {
-                    loading -> LoadText("加载中…", Tokens.Muted)
+                    loading -> Column { repeat(3) { SkeletonCardLines() } }
                     noRealSource -> LoadText(
                         when (filters.type) {
                             NoticeType.CARD -> "银行卡通知暂无真实数据来源；如需卡片状态请到银行卡页查看"
@@ -275,17 +288,15 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
                                 Row(
                                     Modifier
                                         .fillMaxWidth()
+                                        .clickable(enabled = notice.txId != null) { notice.txId?.let(onOpenTx) }
                                         .padding(12.dp),
                                 ) {
-                                    Box(
-                                        Modifier
-                                            .size(36.dp)
-                                            .clip(CircleShape)
-                                            .background(Tokens.SurfaceWarm),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(notice.icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(17.dp))
-                                    }
+                                    Icon(
+                                        Icons.bolder(notice.icon),
+                                        contentDescription = null,
+                                        tint = Tokens.Ink2,
+                                        modifier = Modifier.size(20.dp),
+                                    )
                                     Spacer(Modifier.size(12.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(
@@ -295,15 +306,25 @@ fun NotifyTab(onOpenFilter: () -> Unit) {
                                             color = Tokens.Ink,
                                         )
                                         Spacer(Modifier.height(3.dp))
-                                        Text(notice.body, fontSize = 12.sp, color = Tokens.Muted, lineHeight = 18.sp)
+                                        Text(notice.body, style = Tokens.Text.note, lineHeight = 18.sp)
                                     }
                                     Spacer(Modifier.size(10.dp))
-                                    Text(notice.time, fontSize = 11.sp, color = Tokens.Muted)
+                                    Text(notice.time, style = Tokens.Text.hint)
+                                    if (notice.txId != null) {
+                                        Spacer(Modifier.size(4.dp))
+                                        Icon(
+                                            Icons.Chevron,
+                                            contentDescription = "查看交易详情",
+                                            tint = Tokens.Muted,
+                                            modifier = Modifier.size(12.dp),
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
             }
         }
 
@@ -354,10 +375,10 @@ private fun SourceErrors(
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         if (txError != null && txRelevant) {
-            Text("交易通知加载失败：$txError", fontSize = 12.sp, color = Tokens.Coral, lineHeight = 18.sp)
+            Text("交易通知加载失败：$txError", style = Tokens.Text.error, lineHeight = 18.sp)
         }
         if (debitError != null && debitRelevant) {
-            Text("扣款提醒加载失败：$debitError", fontSize = 12.sp, color = Tokens.Coral, lineHeight = 18.sp)
+            Text("扣款提醒加载失败：$debitError", style = Tokens.Text.error, lineHeight = 18.sp)
         }
         Text(
             "重试",

@@ -17,8 +17,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -58,13 +60,14 @@ private data class UnlockedSecrets(val secrets: CardSecrets, val expiresAt: Long
 @Suppress("UNUSED_PARAMETER")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit) {
+fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit) {
     var cards by remember { mutableStateOf<List<BankCard>>(emptyList()) }
     var products by remember { mutableStateOf<List<CardProduct>>(emptyList()) }
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var selectedId by remember { mutableStateOf<String?>(null) }
 
     var loading by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
     var loadError by remember { mutableStateOf<String?>(null) }
     var productsError by remember { mutableStateOf<String?>(null) }
     var accountError by remember { mutableStateOf<String?>(null) }
@@ -135,6 +138,7 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
             loadError = "登录后才能查看银行卡"
             return@LaunchedEffect
         }
+        BankApi.invalidateReads()
         reloadCards(false)
         runCatching { CardApi.products() }
             .onSuccess { products = it; productsError = null }
@@ -174,17 +178,32 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
         }
     }
 
-    PushScreen(title = "银行卡", onBack = onBack) {
+    PushScreen(
+        title = "银行卡",
+        onBack = onBack,
+        refreshing = refreshing,
+        onRefresh = {
+            if (!refreshing) {
+                refreshing = true
+                scope.launch {
+                    BankApi.invalidateReads()
+                    reloadCards(true)
+                    reloadProducts()
+                    runCatching { BankApi.accounts().firstOrNull() }
+                        .onSuccess { account = it; accountError = null }
+                        .onFailure { accountError = it.message ?: "资金账户刷新失败" }
+                    refreshing = false
+                }
+            }
+        },
+    ) {
         SectionHeader("我的卡片", if (cards.isEmpty()) "—" else "${cards.size} 张")
 
-        if (loading) {
-            Text(
-                "正在加载…",
-                fontSize = 12.5.sp,
-                color = Tokens.Muted,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            )
-        }
+        val pagerState = rememberPagerState(pageCount = { cards.size + 1 })
+
+        if (loading && cards.isEmpty()) {
+            Box(Modifier.padding(vertical = 10.dp)) { SkeletonCardFace() }
+        } else {
 
         if (loadError != null && cards.isEmpty()) {
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
@@ -204,51 +223,74 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
         if (error != null) {
             NoticeBanner(error!!, Tokens.Coral, Color(0xFFFFF1F5)) { error = null }
         }
-        if (notice != null) {
-            NoticeBanner(notice!!, Tokens.Ink2, Tokens.SurfaceWarm) { notice = null }
-        }
+        notice?.let { BankToast(it) { notice = null } }
 
-        LazyRow(
-            Modifier.fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(cards, key = { it.id }) { card ->
-                CardFace(
-                    card = card,
-                    selected = card.id == selected?.id,
-                    revealed = unlocked[card.id]?.takeIf { it.expiresAt > now }?.secrets,
-                    onSelect = { selectedId = card.id },
-                    onReveal = { requestSecrets(card) },
-                    onHide = { unlocked = unlocked - card.id },
-                )
-            }
-            item {
-                ApplyCardTile {
-                    when {
-                        !BankApi.hasToken() -> error = "登录后才能申请银行卡"
-                        products.isNotEmpty() -> applyOpen = true
-                        productsError != null -> error = "卡产品暂不可用：$productsError"
-                        else -> error = "暂无可申请的卡产品"
+        // 卡面横向滑动切换：每页吸附一张卡，两侧露出相邻卡片；末页是申请新卡。
+        LaunchedEffect(cards.map { it.id }, pagerState.settledPage) {
+            val settled = cards.getOrNull(pagerState.settledPage)
+            if (settled != null && settled.id != selectedId) selectedId = settled.id
+        }
+        LaunchedEffect(selectedId, cards.size) {
+            val index = cards.indexOfFirst { it.id == selectedId }
+            if (index >= 0 && pagerState.currentPage != index) pagerState.animateScrollToPage(index)
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp),
+            pageSpacing = 12.dp,
+            pageSize = PageSize.Fixed(296.dp),
+        ) { page ->
+            // 越接近当前页越实、越大；相邻卡缩小并降低透明度，聚焦卡不加描边。
+            val pageOffset = kotlin.math.abs((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction)
+            val focus = 1f - pageOffset.coerceIn(0f, 1f)
+            Box(
+                Modifier
+                    .graphicsLayer {
+                        val scale = 0.90f + 0.10f * focus
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = 0.48f + 0.52f * focus
+                    }
+            ) {
+                val card = cards.getOrNull(page)
+                if (card != null) {
+                    CardFace(
+                        card = card,
+                        revealed = unlocked[card.id]?.takeIf { it.expiresAt > now }?.secrets,
+                        onSelect = { selectedId = card.id },
+                        onReveal = { requestSecrets(card) },
+                        onHide = { unlocked = unlocked - card.id },
+                    )
+                } else {
+                    ApplyCardTile {
+                        when {
+                            !BankApi.hasToken() -> error = "登录后才能申请银行卡"
+                            products.isNotEmpty() -> applyOpen = true
+                            productsError != null -> error = "卡产品暂不可用：$productsError"
+                            else -> error = "暂无可申请的卡产品"
+                        }
                     }
                 }
             }
+        }
+
         }
 
         if (cards.isNotEmpty()) {
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 6.dp),
+                    .padding(top = 14.dp, bottom = 12.dp),
                 horizontalArrangement = Arrangement.Center,
             ) {
-                cards.forEachIndexed { index, card ->
+                cards.forEachIndexed { index, _ ->
                     Box(
                         Modifier
                             .padding(horizontal = 3.dp)
                             .size(5.dp)
                             .clip(CircleShape)
-                            .background(if (card.id == selected?.id) Tokens.Ink2 else Tokens.Border)
+                            .background(if (index == pagerState.currentPage) Tokens.Ink2 else Tokens.Border)
                     )
                 }
             }
@@ -314,15 +356,17 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
                 ) {
                     deliveryFor = selected
                 }
-            }
-
-            if (selected.status == "active" || selected.status == "locked") {
-                GhostButton(
-                    "正式挂失（需支付密码）",
-                    onClick = { if (!busy) lossFor = selected to false },
-                    modifier = Modifier.padding(horizontal = 14.dp),
-                )
-                Spacer(Modifier.height(4.dp))
+                if (selected.status == "active" || selected.status == "locked") {
+                    CardActionTile(
+                        label = "正式挂失",
+                        icon = Icons.Shield,
+                        enabled = !busy,
+                        modifier = Modifier.weight(1f),
+                        danger = true,
+                    ) {
+                        lossFor = selected to false
+                    }
+                }
             }
         }
 
@@ -333,7 +377,7 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column(Modifier.padding(horizontal = 14.dp)) {
                 if (account == null) {
-                    Text(
+                    if (loading) SkeletonCardLines(1) else Text(
                         accountError ?: "资金账户信息暂不可用",
                         fontSize = 12.5.sp,
                         color = Tokens.Muted,
@@ -395,7 +439,7 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
         HairlineCard(Modifier.padding(horizontal = 14.dp)) {
             Column {
                 if (selected == null) {
-                    Text(
+                    if (loading) SkeletonCardLines(1) else Text(
                         "选择一张卡片后可调整线上支付、境外交易与单日限额。",
                         fontSize = 12.5.sp,
                         color = Tokens.Muted,
@@ -608,7 +652,6 @@ fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit, onApply: () -> Unit)
 @Composable
 private fun CardFace(
     card: BankCard,
-    selected: Boolean,
     revealed: CardSecrets?,
     onSelect: () -> Unit,
     onReveal: () -> Unit,
@@ -621,11 +664,7 @@ private fun CardFace(
             .aspectRatio(1.62f)
             .clip(RoundedCornerShape(10.dp))
             .background(cardColor(card).copy(alpha = if (dimmed) 0.62f else 1f))
-            .border(
-                if (selected) 2.dp else 1.dp,
-                if (selected) Tokens.Accent else Color.White.copy(alpha = 0.25f),
-                RoundedCornerShape(10.dp),
-            )
+            .border(1.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .clickable(onClick = onSelect)
             .padding(16.dp),
     ) {
@@ -743,6 +782,7 @@ private fun CardActionTile(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean,
     modifier: Modifier,
+    danger: Boolean = false,
     onClick: () -> Unit,
 ) {
     HairlineCard(modifier) {
@@ -754,9 +794,9 @@ private fun CardActionTile(
                 .padding(vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(18.dp))
+            Icon(icon, contentDescription = null, tint = if (danger) Tokens.Coral else Tokens.Ink2, modifier = Modifier.size(18.dp))
             Spacer(Modifier.height(7.dp))
-            Text(label, fontSize = 11.5.sp, color = Tokens.Ink2)
+            Text(label, fontSize = 11.5.sp, color = if (danger) Tokens.Coral else Tokens.Ink2)
         }
     }
 }
@@ -779,9 +819,9 @@ private fun CardSwitchRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(label, fontSize = 13.sp, color = Tokens.Ink)
+            Text(label, style = Tokens.Text.body)
             Spacer(Modifier.height(3.dp))
-            Text(subtitle, fontSize = 10.5.sp, color = Tokens.Muted)
+            Text(subtitle, style = Tokens.Text.caption)
         }
         Box(
             Modifier
@@ -843,8 +883,7 @@ private fun CardApplicationSheet(
     var address by remember { mutableStateOf(MailingAddress()) }
     var pin by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    var submitting by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    val submitter = rememberSubmitter()
 
     val product = products.firstOrNull { it.code == productCode }
     val quote = products.firstOrNull { it.network == card?.network }?.feeQuote
@@ -855,7 +894,7 @@ private fun CardApplicationSheet(
     val blocked = mode == ApplicationMode.OPEN && product?.held == true
 
     fun submit() {
-        if (submitting) return
+        if (submitter.busy) return
         if (mode == ApplicationMode.OPEN && product == null) {
             error = "请选择卡种"
             return
@@ -873,33 +912,31 @@ private fun CardApplicationSheet(
             error = "请输入 6 位数字支付密码"
             return
         }
-        submitting = true
-        error = null
-        scope.launch {
-            runCatching {
-                when (mode) {
-                    ApplicationMode.OPEN -> CardApi.openCard(
-                        productCode = product!!.code,
-                        address = address,
-                        paymentPassword = pin,
-                    )
-                    ApplicationMode.REPLACE -> CardApi.replaceCard(
-                        cardId = card!!.id,
-                        address = address,
-                        paymentPassword = pin,
-                    )
-                }
-            }.onSuccess { created -> onDone(created) }
-                .onFailure { failure ->
-                    error = failure.message ?: "提交失败，请稍后重试"
-                    if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) pin = ""
-                }
-            submitting = false
+        submitter.submit(
+            fallback = "提交失败，请稍后重试",
+            onStart = { error = null },
+            onError = { error = it },
+            // 支付密码错误时清空输入，其它失败保留已填内容。
+            onFailure = { failure -> if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) pin = "" },
+        ) {
+            val created = when (mode) {
+                ApplicationMode.OPEN -> CardApi.openCard(
+                    productCode = product!!.code,
+                    address = address,
+                    paymentPassword = pin,
+                )
+                ApplicationMode.REPLACE -> CardApi.replaceCard(
+                    cardId = card!!.id,
+                    address = address,
+                    paymentPassword = pin,
+                )
+            }
+            onDone(created)
         }
     }
 
     ModalBottomSheet(
-        onDismissRequest = { if (!submitting) onDismiss() },
+        onDismissRequest = { if (!submitter.busy) onDismiss() },
         sheetState = rememberModalBottomSheetState(),
         containerColor = Tokens.Surface,
     ) {
@@ -929,7 +966,7 @@ private fun CardApplicationSheet(
             Spacer(Modifier.height(14.dp))
 
             if (mode == ApplicationMode.OPEN) {
-                Text("选择卡种", fontSize = 12.sp, color = Tokens.Muted)
+                Text("选择卡种", style = Tokens.Text.note)
                 Spacer(Modifier.height(8.dp))
                 if (products.isEmpty()) {
                     Text("卡产品暂不可用，无法提交申请。", fontSize = 12.5.sp, color = Tokens.Coral)
@@ -1004,7 +1041,7 @@ private fun CardApplicationSheet(
             }
 
             Spacer(Modifier.height(6.dp))
-            Text("邮寄地址", fontSize = 12.sp, color = Tokens.Muted)
+            Text("邮寄地址", style = Tokens.Text.note)
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextFieldRow("收件人", address.recipient, { address = address.copy(recipient = it) }, placeholder = "请输入收件人姓名")
@@ -1031,7 +1068,7 @@ private fun CardApplicationSheet(
             TextFieldRow(
                 label = "支付密码",
                 value = pin,
-                onValueChange = { if (!submitting) { pin = it.filter(Char::isDigit).take(6); error = null } },
+                onValueChange = { if (!submitter.busy) { pin = it.filter(Char::isDigit).take(6); error = null } },
                 placeholder = "6 位数字支付密码",
                 password = true,
                 keyboardType = KeyboardType.Number,
@@ -1052,7 +1089,7 @@ private fun CardApplicationSheet(
             Spacer(Modifier.height(14.dp))
             PrimaryButton(
                 text = when {
-                    submitting -> "提交中…"
+                    submitter.busy -> "提交中…"
                     blocked -> "该卡组织已有在用卡"
                     else -> when {
                         fee != null && mode == ApplicationMode.OPEN -> "支付 ${formatCents(fee)} 并申请"
@@ -1062,7 +1099,7 @@ private fun CardApplicationSheet(
                     }
                 },
                 onClick = { if (!blocked) submit() },
-                modifier = Modifier.alpha(if (submitting || blocked) 0.55f else 1f),
+                modifier = Modifier.alpha(if (submitter.busy || blocked) 0.55f else 1f),
             )
             Spacer(Modifier.height(8.dp))
         }
@@ -1083,37 +1120,30 @@ private fun CardPinActionSheet(
     onSecrets: (CardSecrets) -> Unit = {},
 ) {
     var pin by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+    val submitter = rememberSubmitter()
 
     fun submit() {
-        if (busy) return
         if (!Regex("^\\d{6}$").matches(pin)) {
             error = "请输入 6 位数字支付密码"
             return
         }
-        busy = true
-        error = null
-        scope.launch {
-            runCatching { action(pin) }
-                .onSuccess { result ->
-                    when (result) {
-                        is BankCard -> onDone(result)
-                        is CardSecrets -> onSecrets(result)
-                        else -> error = "服务端返回了无法识别的结果"
-                    }
-                }
-                .onFailure { failure ->
-                    error = failure.message ?: "操作失败，请稍后重试"
-                    if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) pin = ""
-                }
-            busy = false
+        submitter.submit(
+            fallback = "操作失败，请稍后重试",
+            onStart = { error = null },
+            onError = { error = it },
+            onFailure = { failure -> if ((failure as? BankApiException)?.code?.contains("PAY_PASSWORD") == true) pin = "" },
+        ) {
+            when (val result = action(pin)) {
+                is BankCard -> onDone(result)
+                is CardSecrets -> onSecrets(result)
+                else -> error = "服务端返回了无法识别的结果"
+            }
         }
     }
 
     ModalBottomSheet(
-        onDismissRequest = { if (!busy) onDismiss() },
+        onDismissRequest = { if (!submitter.busy) onDismiss() },
         sheetState = rememberModalBottomSheetState(),
         containerColor = Tokens.Surface,
     ) {
@@ -1125,7 +1155,7 @@ private fun CardPinActionSheet(
             TextFieldRow(
                 label = "支付密码",
                 value = pin,
-                onValueChange = { if (!busy) { pin = it.filter(Char::isDigit).take(6); error = null } },
+                onValueChange = { if (!submitter.busy) { pin = it.filter(Char::isDigit).take(6); error = null } },
                 placeholder = "6 位数字支付密码",
                 password = true,
                 keyboardType = KeyboardType.Number,
@@ -1143,9 +1173,9 @@ private fun CardPinActionSheet(
             }
             Spacer(Modifier.height(14.dp))
             PrimaryButton(
-                text = if (busy) "处理中…" else confirmLabel,
+                text = if (submitter.busy) "处理中…" else confirmLabel,
                 onClick = { submit() },
-                modifier = Modifier.alpha(if (busy) 0.55f else 1f),
+                modifier = Modifier.alpha(if (submitter.busy) 0.55f else 1f),
             )
             Spacer(Modifier.height(8.dp))
         }

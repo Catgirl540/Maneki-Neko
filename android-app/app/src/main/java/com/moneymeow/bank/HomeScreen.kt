@@ -57,10 +57,12 @@ private data class Txn(
     val icon: ImageVector,
 )
 
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onOpenTx: (String) -> Unit) {
     var balanceVisible by remember { mutableStateOf(true) }
     var transferInOpen by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
     // 真实数据：登录后从 server/ 拉账户与最近流水；没有数据就显示空态，不用占位数字。
     var account by remember { mutableStateOf<AccountDto?>(null) }
     var recentRows by remember { mutableStateOf<List<TransactionDto>>(emptyList()) }
@@ -81,21 +83,36 @@ fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onOpenTx: (
             }
             .onFailure { loadError = it.message }
         loading = false
+        refreshing = false
     }
 
+    BankPullRefresh(
+        isRefreshing = refreshing,
+        onRefresh = {
+            if (!refreshing) {
+                refreshing = true
+                BankApi.invalidateReads()
+                attempt++
+            }
+        },
+        modifier = Modifier.fillMaxSize(),
+    ) {
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(bottom = 12.dp),
     ) {
-        Greeting(SessionStore.name(), onNotify = { onSwitchTab(3) })
+        Greeting(SessionStore.nickname().ifEmpty { "我的账户" }, onNotify = { onSwitchTab(3) }, refreshing = loading, onRefresh = {
+            if (!loading) { refreshing = true; BankApi.invalidateReads(); attempt++ }
+        })
         Spacer(Modifier.height(12.dp))
         AssetCard(balanceVisible, account, loading, loadError, onRetry = { attempt++ }) { balanceVisible = !balanceVisible }
         Spacer(Modifier.height(12.dp))
         EntryGrid(onOpen, onSwitchTab) { transferInOpen = true }
         Spacer(Modifier.height(4.dp))
         RecentTransactions(onOpen, recentRows, loading, loadError, onOpenTx)
+    }
     }
 
     if (transferInOpen) {
@@ -104,7 +121,7 @@ fun HomeScreen(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onOpenTx: (
 }
 
 @Composable
-private fun Greeting(name: String, onNotify: () -> Unit) {
+private fun Greeting(name: String, onNotify: () -> Unit, refreshing: Boolean, onRefresh: () -> Unit) {
     val hour = java.time.LocalTime.now().hour
     val period = when (hour) {
         in 5..8 -> "早上好"
@@ -120,12 +137,14 @@ private fun Greeting(name: String, onNotify: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column {
-            Text(period, fontSize = 12.sp, color = Tokens.Muted)
+            Text(period, style = Tokens.Text.note)
             Text(name.ifEmpty { "我的账户" }, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
         }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+        ActionIcon(Icons.Refresh, "刷新账户与交易", busy = refreshing, onClick = onRefresh)
         Box(
             Modifier
-                .size(34.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(Tokens.Surface)
                 .border(1.dp, Tokens.Border, CircleShape)
@@ -142,6 +161,7 @@ private fun Greeting(name: String, onNotify: () -> Unit) {
                     .background(Tokens.Coral)
             )
         }
+        }
     }
 }
 
@@ -157,7 +177,7 @@ private fun AssetCard(
     HairlineCard(Modifier.padding(horizontal = 14.dp)) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("人民币储蓄余额", fontSize = 12.sp, color = Tokens.Muted)
+                Text("人民币储蓄余额", style = Tokens.Text.note)
                 HSpacer(6)
                 Icon(
                     Icons.Eye,
@@ -173,7 +193,7 @@ private fun AssetCard(
                 ?: account?.takeIf { it.currency == "CNY" }?.balance
             when {
                 cny != null -> AmountText(if (visible) formatCents(cny) else "¥••••••")
-                loading -> AmountText("加载中…", 27)
+                loading -> SkeletonBalance()
                 loadError != null -> AmountText("加载失败", 27)
                 else -> AmountText("暂无账户", 27)
             }
@@ -197,7 +217,7 @@ private fun AssetCard(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(account?.label?.ifEmpty { "储蓄账户" } ?: "储蓄账户", fontSize = 12.sp, color = Tokens.Muted)
+                Text(account?.label?.ifEmpty { "储蓄账户" } ?: "储蓄账户", style = Tokens.Text.note)
                 Text(
                     when {
                         !visible -> "••••••"
@@ -231,19 +251,16 @@ private fun EntryGrid(onOpen: (String) -> Unit, onSwitchTab: (Int) -> Unit, onTr
                                         else -> onOpen(entry.label)
                                     }
                                 }
-                                .padding(vertical = 10.dp),
+                                .padding(vertical = 16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Box(
-                                Modifier
-                                    .size(40.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Tokens.SurfaceWarm),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(entry.icon, contentDescription = entry.label, tint = Tokens.Ink2, modifier = Modifier.size(20.dp))
-                            }
-                            VSpacer(7)
+                            Icon(
+                                Icons.bolder(entry.icon),
+                                contentDescription = entry.label,
+                                tint = Tokens.Ink2,
+                                modifier = Modifier.size(24.dp),
+                            )
+                            VSpacer(9)
                             Text(entry.label, fontSize = 11.sp, color = Tokens.Ink2)
                         }
                     }
@@ -272,7 +289,7 @@ private fun RecentTransactions(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clickable { onOpen("交易记录") },
             ) {
-                Text("查看全部", fontSize = 11.sp, color = Tokens.Muted)
+                Text("查看全部", style = Tokens.Text.hint)
                 Icon(Icons.Chevron, contentDescription = null, tint = Tokens.Muted, modifier = Modifier.size(12.dp))
             }
         }
@@ -297,16 +314,16 @@ private fun RecentTransactions(
                     )
                 }
                 if (shown.isEmpty()) {
-                    Text(
-                        when {
-                            loading -> "加载中…"
-                            loadError != null -> "加载失败"
-                            else -> "暂无交易记录"
-                        },
-                        fontSize = 12.sp,
-                        color = Tokens.Muted,
-                        modifier = Modifier.padding(vertical = 16.dp),
-                    )
+                    if (loading) {
+                        Column { repeat(3) { SkeletonRow() } }
+                    } else {
+                        Text(
+                            if (loadError != null) "加载失败" else "暂无交易记录",
+                            fontSize = 12.sp,
+                            color = Tokens.Muted,
+                            modifier = Modifier.padding(vertical = 16.dp),
+                        )
+                    }
                 }
                 shown.forEachIndexed { index, txn ->
                     if (index > 0) Hairline()
@@ -314,22 +331,19 @@ private fun RecentTransactions(
                         Modifier
                             .fillMaxWidth()
                             .clickable { onOpenTx(rows[index].id) }
-                            .padding(vertical = 11.dp),
+                            .padding(vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(Tokens.SurfaceWarm),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(txn.icon, contentDescription = null, tint = Tokens.Ink2, modifier = Modifier.size(15.dp))
-                        }
-                        HSpacer(10)
+                        Icon(
+                            Icons.bolder(txn.icon),
+                            contentDescription = null,
+                            tint = Tokens.Ink2,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        HSpacer(12)
                         Column(Modifier.weight(1f)) {
-                            Text(txn.name, fontSize = 13.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
-                            Text(txn.meta, fontSize = 10.5.sp, color = Tokens.Muted)
+                            Text(txn.name, style = Tokens.Text.body, fontWeight = FontWeight.Medium)
+                            Text(txn.meta, style = Tokens.Text.caption)
                         }
                         Text(
                             txn.amount,

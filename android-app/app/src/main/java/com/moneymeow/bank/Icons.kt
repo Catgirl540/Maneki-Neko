@@ -13,7 +13,10 @@ import androidx.compose.ui.unit.dp
  * 24 viewBox、1.6 描边、圆角端点，靠 `Icon(tint = …)` 上色。
  */
 object Icons {
-    private fun icon(name: String, vararg paths: String): ImageVector =
+    private val pathsByName = HashMap<String, Array<out String>>()
+    private val boldCache = java.util.concurrent.ConcurrentHashMap<ImageVector, ImageVector>()
+
+    private fun build(name: String, stroke: Float, paths: Array<out String>): ImageVector =
         ImageVector.Builder(
             name = name,
             defaultWidth = 24.dp,
@@ -25,12 +28,27 @@ object Icons {
                 addPath(
                     pathData = addPathNodes(d),
                     stroke = SolidColor(Color.Black),
-                    strokeLineWidth = 1.6f,
+                    strokeLineWidth = stroke,
                     strokeLineCap = StrokeCap.Round,
                     strokeLineJoin = StrokeJoin.Round,
                 )
             }
         }.build()
+
+    private fun icon(name: String, vararg paths: String): ImageVector {
+        pathsByName[name] = paths
+        return build(name, 1.6f, paths)
+    }
+
+    /**
+     * 同一路径加粗重建：列表行不再放背景填充，改用更粗的描边保持识别度。
+     * 结果按图标缓存，避免每次重组都重建矢量。
+     */
+    fun bolder(icon: ImageVector, stroke: Float = 2.1f): ImageVector =
+        boldCache.getOrPut(icon) {
+            val paths = pathsByName[icon.name] ?: return@getOrPut icon
+            build(icon.name + "-bold", stroke, paths)
+        }
 
     val Home = icon("home", "M4 10.5 12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19z", "M9.5 20.5v-6h5v6")
     val Wealth = icon("wealth", "M4 19.5V10", "M9.5 19.5V5.5", "M15 19.5v-8", "M20 19.5V8", "m4 8 5-3.5L14 8l6-4")
@@ -72,4 +90,12 @@ object Icons {
     val Food = icon("food", "M6.5 4v7", "M10 4v7", "M6.5 11H10v9", "M6.5 20v-9", "M15.5 4c-1.8 2-2.5 4.5-2.5 7v9", "M15.5 4v16")
     val Shop = icon("shop", "M4.5 8L6 4.5h12L19.5 8v11c0 .8-.7 1.5-1.5 1.5H6c-.8 0-1.5-.7-1.5-1.5z", "M4.5 8h15", "M9.5 12h5")
     val Dots = icon("dots", "M6 12h.01M12 12h.01M18 12h.01")
+    val Trash = icon("trash", "M4.5 6.5h15", "M9.5 6.5V4.8h5v1.7", "M6.8 6.5l.8 13h8.8l.8-13", "M10.2 10.5v6M13.8 10.5v6")
+    val Wallet = icon("wallet", "M4 7V5.5A2 2 0 0 1 6 3.5h12V7", "M4 7h15a1.5 1.5 0 0 1 1.5 1.5v10A1.5 1.5 0 0 1 19 20H5a2 2 0 0 1-2-2V8a1 1 0 0 1 1-1z", "M20 11h-5v5h5", "M17 13.5h.01")
+    val Clock = icon("clock", "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z", "M12 7v5l3.5 2")
+    val Chart = icon("chart", "M4 4v16h16", "M8 15v-4M12 15V7M16 15V9")
+    val Budget = icon("budget", "M5 4h14v16H5z", "M8 8h8M8 12h3M8 16h3M15 12v4M13 14h4")
+    val Portfolio = icon("portfolio", "M8 7V4h8v3", "M4 7h16v13H4z", "M4 12a22 22 0 0 0 16 0", "M10 12v3h4v-3")
+    val Crown = icon("crown", "M4 7l4 4 4-6 4 6 4-4-2 11H6z", "M7 21h10")
+    val Gift = icon("gift", "M3 8h18v4H3z", "M5 12v9h14v-9M12 8v13", "M12 8C5 8 5 2 8.5 3 11 3.5 12 8 12 8z", "M12 8s1-4.5 3.5-5C19 2 19 8 12 8z")
 }

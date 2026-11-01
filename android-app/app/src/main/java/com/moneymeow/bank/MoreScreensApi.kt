@@ -3,9 +3,6 @@ package com.moneymeow.bank
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * 更多服务二级页的补充接口。
@@ -521,100 +518,9 @@ internal object MoreScreensApi {
         return parsed as? JSONObject ?: invalid()
     }
 
-    private fun requestRaw(method: String, path: String, body: JSONObject?): String {
-        val connection = (URL(BankApi.baseUrl + path).openConnection() as HttpURLConnection).apply {
-            requestMethod = method
-            connectTimeout = 8000
-            readTimeout = 15000
-            setRequestProperty("Accept", "application/json")
-            BankApi.currentToken()?.let { setRequestProperty("Authorization", "Bearer $it") }
-            if (body != null) {
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json")
-            }
-        }
-        try {
-            body?.let { payload ->
-                connection.outputStream.use { it.write(payload.toString().toByteArray()) }
-            }
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
-            if (status !in 200..299) {
-                val error = runCatching { JSONObject(text) }.getOrNull()
-                val message = error?.optString("message").orEmpty()
-                val apiCode = error?.optString("code").orEmpty().ifEmpty { null }
-                // 支付密码错误也是 401，但它只是业务校验失败，不能当成登录过期。
-                val isPaymentPasswordFailure = apiCode == "BAD_PAY_PASSWORD"
-                if (status == 401 && !isPaymentPasswordFailure) BankApi.onUnauthorized?.invoke()
-                throw BankApiException(status, message.ifEmpty { "请求失败（$status）" }, apiCode)
-            }
-            return text
-        } finally {
-            connection.disconnect()
-        }
-    }
+    private fun requestRaw(method: String, path: String, body: JSONObject?): String =
+        // I/O 由 BankHttp 统一实现；本文件的 JSON 校验（invalid）保持原样。
+        BankHttp.raw(method = method, path = path, body = body, readTimeoutMs = 15_000)
 
 }
 
-/* ───────────────────────────── JSON 校验 ───────────────────────────── */
-
-private fun invalid(message: String = "服务返回的数据格式异常，请稍后重试"): Nothing =
-    throw BankApiException(502, message, "INVALID_RESPONSE")
-
-private fun JSONObject.requiredString(key: String): String {
-    val value = opt(key)
-    return if (value is String) value else invalid()
-}
-
-private fun JSONObject.optionalString(key: String): String? =
-    if (!has(key) || isNull(key)) null else requiredString(key)
-
-private fun JSONObject.requiredInt(key: String): Int {
-    val value = opt(key)
-    if (value !is Number) invalid()
-    val long = value.toLong()
-    if (value is Double && value != long.toDouble()) invalid()
-    if (long < Int.MIN_VALUE.toLong() || long > Int.MAX_VALUE.toLong()) invalid()
-    return long.toInt()
-}
-
-private fun JSONObject.requiredLong(key: String): Long {
-    val value = opt(key)
-    if (value !is Number) invalid()
-    if (value is Double && value != value.toLong().toDouble()) invalid()
-    return value.toLong()
-}
-
-private fun JSONObject.requiredDouble(key: String): Double {
-    val value = opt(key)
-    if (value !is Number) invalid()
-    val double = value.toDouble()
-    if (!double.isFinite()) invalid()
-    return double
-}
-
-private fun JSONObject.requiredBoolean(key: String): Boolean {
-    val value = opt(key)
-    return if (value is Boolean) value else invalid()
-}
-
-private fun JSONObject.requiredObjects(key: String): List<JSONObject> {
-    val array = optJSONArray(key) ?: invalid()
-    return buildList {
-        for (index in 0 until array.length()) {
-            add(array.optJSONObject(index) ?: invalid())
-        }
-    }
-}
-
-private fun JSONObject.requiredStrings(key: String): List<String> {
-    val array = optJSONArray(key) ?: invalid()
-    return buildList {
-        for (index in 0 until array.length()) {
-            val value = array.opt(index)
-            if (value !is String) invalid()
-            add(value)
-        }
-    }
-}
