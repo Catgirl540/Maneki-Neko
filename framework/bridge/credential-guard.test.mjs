@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { hasExplicitCredential } from '../../shared/credential-guard.mjs'
-import { createCredentialGuard, decisionEndpoints } from './credential-guard.mjs'
+import { createCredentialGuard, decisionEndpoints, openRouterEndpoints } from './credential-guard.mjs'
 
 const endpoint = { url: 'http://127.0.0.1:8123/v1/systemone', model: 'span-02' }
 const answer = (choice, probabilities) => ({ ok: true, json: async () => ({ answers: { credentials: { type: 'choice', choice, probabilities } } }) })
@@ -44,4 +44,17 @@ test('推理端点只允许本机地址，不接受远程或 URL 凭据', () => 
   for (const url of ['https://example.com/v1/systemone', 'http://127.0.0.1.evil.test/', 'http://user:pass@localhost/']) {
     assert.throws(() => decisionEndpoints(JSON.stringify([{ url, model: 'x' }])))
   }
+})
+
+test('OpenRouter 主模型失败时备用模型使用固定 HTTPS 端点和授权', async () => {
+  const endpoints = openRouterEndpoints()
+  const calls = []
+  const guard = createCredentialGuard({ endpoints, apiKey: 'test-key', fetcher: async (url, request) => {
+    calls.push({ url, auth: request.headers.authorization, model: JSON.parse(request.body).model })
+    return calls.length === 1 ? { ok: false } : safe()
+  } })
+  await guard('我想查询余额')
+  assert.deepEqual(calls.map(call => call.model), ['respan/span-02', 'perplexity/pplx-decider-v1.2'])
+  assert(calls.every(call => call.url === 'https://openrouter.ai/api/alpha/decisions' && call.auth === 'Bearer test-key'))
+  await assert.rejects(createCredentialGuard({ endpoints, apiKey: '', fetcher: async () => { throw Error('must not call') } })('查询余额'), { code: 'CREDENTIAL_CHECK_UNAVAILABLE' })
 })
