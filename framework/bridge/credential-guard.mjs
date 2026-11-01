@@ -35,8 +35,7 @@ export function createCredentialGuard({ endpoints, apiKey = process.env.OPENROUT
   endpoints ??= process.env.LUCKYCAT_CREDENTIAL_GUARD_PROVIDER === 'openrouter'
     ? openRouterEndpoints(process.env.LUCKYCAT_CREDENTIAL_GUARD_MODELS)
     : decisionEndpoints()
-  return async function check(text, { image = false } = {}) {
-    if (image) throw new CredentialGuardError('CREDENTIAL_CHECK_UNAVAILABLE')
+  return async function check(text) {
     if (typeof text !== 'string' || !text.trim()) return
     if (hasExplicitCredential(text)) throw new CredentialGuardError('CREDENTIAL_BLOCKED')
     for (const endpoint of endpoints) {

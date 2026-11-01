@@ -302,10 +302,6 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
       setSupportError('请勿在对话中发送密码或银行卡安全码，请使用安全验证窗口。')
       return false
     }
-    if (audience === 'customer' && usingAgent && image !== undefined) {
-      setSupportError('图片安全检查暂不可用，请先通过文字描述需求。')
-      return false
-    }
     setSupportError(null)
     const value = draft
     const serviceIds = audience === 'customer' && workbench ? workbench.tasks.map(task => task.id) : undefined

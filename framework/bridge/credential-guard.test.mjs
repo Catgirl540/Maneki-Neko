@@ -36,7 +36,7 @@ test('不确定、风险判断、无效响应和全部服务不可用均不放�
   }
   await assert.rejects(createCredentialGuard({ endpoints: [endpoint], fetcher: async () => ({ ok: true, json: async () => ({}) }) })('普通消息'), { code: 'CREDENTIAL_CHECK_UNAVAILABLE' })
   await assert.rejects(createCredentialGuard({ endpoints: [] })('普通消息'), { code: 'CREDENTIAL_CHECK_UNAVAILABLE' })
-  await assert.rejects(createCredentialGuard({ endpoints: [endpoint], fetcher: async () => safe() })('', { image: true }), { code: 'CREDENTIAL_CHECK_UNAVAILABLE' })
+  await createCredentialGuard({ endpoints: [], fetcher: async () => { throw Error('must not call') } })('')
 })
 
 test('推理端点只允许本机地址，不接受远程或 URL 凭据', () => {

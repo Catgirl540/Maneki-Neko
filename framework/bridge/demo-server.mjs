@@ -825,7 +825,7 @@ async function handle(req, res) {
       // 语音能力一并报出去：页面据此决定要不要显示「语音模式」，
       // 而不是等用户按下去才发现服务端没配。只报"有没有"，不报"用的哪个模型"。
       voice: VOICE_ENABLED && Boolean(process.env.OPENROUTER_API_KEY)
-        ? { asr: STAFF_MODE, tts: true, stream: Boolean(VOLC_API_KEY || (VOLC_APP_ID && VOLC_ACCESS_TOKEN)), maxSeconds: VOICE_MAX_SECONDS }
+        ? { asr: true, tts: true, stream: Boolean(VOLC_API_KEY || (VOLC_APP_ID && VOLC_ACCESS_TOKEN)), maxSeconds: VOICE_MAX_SECONDS }
         : { asr: false, tts: false },
     })
     return
@@ -884,7 +884,7 @@ async function handle(req, res) {
       await sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
-    if (!STAFF_MODE) await checkCredentials(text, { image: image !== undefined })
+    if (!STAFF_MODE) await checkCredentials(text)
     if (STAFF_MODE && body.serviceIds !== undefined) throw bankError('工作人员助手不接受客户智能服务选择', 400)
     const skillPrefix = serviceSkillContext?.(body.serviceIds) ?? ''
     let blocks
@@ -1232,10 +1232,6 @@ async function handle(req, res) {
   // 音频**不落盘、不留存**：只在内存里过一道就交给上游。银行场景里录音是敏感数据，
   // 而演示服务没有任何理由留着它。
   if (req.method === 'POST' && parts.join('/') === 'agent-api/asr') {
-    if (!STAFF_MODE) {
-      await sendJson(res, 503, { error: '语音输入安全检查暂不可用，请使用文字输入。', code: 'CREDENTIAL_CHECK_UNAVAILABLE' })
-      return
-    }
     if (!VOICE_ENABLED) {
       await sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
       return
