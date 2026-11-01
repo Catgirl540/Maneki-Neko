@@ -1135,6 +1135,8 @@ function seed() {
             phone: '13800138000',
             memberTier: 'platinum',
             avatarInitial: '林',
+            avatarId: 'avatar-02',
+            honorific: 'ms',
         },
         passwordDigest: '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92',
         payPassword: hashPassword(DEFAULT_PAY_PASSWORD),
@@ -1614,7 +1616,7 @@ function ensureDemoRecipient() {
     if (all['13600136000'])
         return;
     const demo = seed();
-    demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberTier: 'standard', avatarInitial: '陈' };
+    demo.user = { id: 'u_demo_chen', name: '陈嘉禾', phone: '13600136000', memberTier: 'standard', avatarInitial: '陈', avatarId: 'avatar-07', honorific: 'ms' };
     demo.accounts = [{
             id: 'acc_demo_chen', kind: 'savings', label: '储蓄账户',
             accountNo: '8820000000124471', currency: 'CNY',
@@ -1649,7 +1651,7 @@ function ensureDemoWhale() {
     const all = profiles();
     if (all['13900000000']) return;
     const demo = seed();
-    demo.user = { id: 'u_demo_musk', name: '马斯克', phone: '13900000000', memberTier: 'diamond', avatarInitial: '马' };
+    demo.user = { id: 'u_demo_musk', name: '马斯克', phone: '13900000000', memberTier: 'diamond', avatarInitial: '马', avatarId: 'avatar-01', honorific: 'mr' };
     const accountId = 'acc_demo_musk';
     // 余额拉满：CNY 999.99 亿、USD 100 亿、HKD 500 亿（分）
     demo.accounts = [{

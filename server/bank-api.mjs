@@ -32,6 +32,8 @@ const ROUTES = [
   ['POST', 'register', 'register', (id, b) => [b]],
   ['POST', 'logout', 'logout', () => []],
   ['GET', 'profile', 'profile', () => []],
+  ['PATCH', 'profileAvatar', 'updateAvatar', (id, b) => [b.avatarId]],
+  ['PATCH', 'profileNickname', 'updateNickname', (id, b) => [b.nickname]],
 
   // —— 账户与流水 ——
   ['GET', 'accounts', 'listAccounts', () => []],
@@ -593,7 +595,7 @@ export async function createBankApi({
 
     try {
       // Legacy portfolios are historical demo records, never commercial bank balances.
-      const liveSafe = new Set(['login','register','logout','profile','sendSmsCode','verifyIdentity','changePhone','changePassword','changePaymentPassword','getSecurityOverview','listSupportMessages','sendSupportMessage','requestHumanSupport','listSupportTickets','getSupportTicket','replySupportTicket'])
+      const liveSafe = new Set(['login','register','logout','profile','updateAvatar','updateNickname','sendSmsCode','verifyIdentity','changePhone','changePassword','changePaymentPassword','getSecurityOverview','listSupportMessages','sendSupportMessage','requestHumanSupport','listSupportTickets','getSupportTicket','replySupportTicket'])
       if (security.mode === 'live' && !liveSafe.has(entry.bankMethod)) throw Object.assign(new Error('合作银行尚未接入或尚未授权此项能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
       const body = ['POST', 'PATCH', 'DELETE'].includes(req.method) ? await readBody(req) : {}
       if (entry.bankMethod === 'login') await security.run(req, () => security.loginAttempt(body.phone))

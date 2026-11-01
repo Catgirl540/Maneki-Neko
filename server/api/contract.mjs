@@ -10,6 +10,10 @@ export const routes = {
     register: () => '/api/auth/register',
     logout: () => '/api/auth/logout',
     profile: () => '/api/auth/profile',
+    /** 换头像：只接受头像池里的 id */
+    profileAvatar: () => '/api/auth/profile/avatar',
+    /** 改昵称：空串表示恢复默认称呼 */
+    profileNickname: () => '/api/auth/profile/nickname',
     accounts: () => '/api/accounts',
     account: (id) => `/api/accounts/${id}`,
     transactions: (id) => `/api/accounts/${id}/transactions`,

@@ -34,6 +34,9 @@ import { BUDGET_MAX_COUNT, BUDGET_PASS_EXTRA_CENTS, BUDGET_PASS_MAX_FUTURE_DAYS,
 import { hashPassword, verifyPassword, needsRehash } from '../passwords.mjs';
 import { recordPaymentPasswordEvent } from '../payment-password-events.mjs';
 import { randomInt } from 'node:crypto';
+import { avatarIdFor, isAvatarId, randomAvatarId } from '../../shared/avatars.mjs';
+import { DEFAULT_HONORIFIC, displayNameOf, honorificFromIdNumber, maskedNameOf } from '../../shared/name-display.mjs';
+import { normalizeNickname, validateNickname } from '../../shared/nickname.mjs';
 // Server business rules with normalized SQL persistence; sandbox integrations are explicitly gated.
 import { ApiError } from '../api/contract.mjs';
 import { CATEGORY_LABEL } from '../lib/categories.mjs';
@@ -51,6 +54,29 @@ import { maskPhone } from '../lib/format.mjs';
 import { CARD_PAYMENT_METHOD, DEFAULT_PAY_PASSWORD, CARD_PRODUCTS, emptyCustomerDomains, lookupFpsRegistration, cardPan, RISK_QUESTIONS, WEALTH_PRODUCTS, toleranceFromScore, FX_QUOTE_TTL, FX_SPREAD, FX_MID_RATES, findBank, applyRealtimeUpgrade, cardFeeQuote, effectiveSpread, entitlements, evaluateMembership, fxRateFor, membershipOverview, recordCardFeeWaiver, redeemLoungePass, transferFee, transferFeeWaived, wealthPriorityGate, OCCUPYING_CARD_STATUSES, loadDb, findProfileByPhone, findProfileByUserId, findRecipientByNumber, persistRelatedProfiles, forgetProfilePhone, activateDb, makeReferenceNo, nextId, persist, toTransactionListItem, withBalances, } from './state.mjs';
 import { lookupCardBin } from './card-bin.mjs';
 const delay = async () => {};
+/**
+ * 对外返回用户资料时统一补上头像。
+ *
+ * 历史数据（含早期 demo 档）没有 `avatarId`，按用户 id 派生一张固定的头像，
+ * 保证同一用户每次登录看到的是同一张，而不是随机跳动。
+ */
+function withAvatar(user) {
+    const avatarId = isAvatarId(user.avatarId) ? user.avatarId : avatarIdFor(user.id || user.phone);
+    // 对外只给「姓氏 + 称呼」和打码姓名，全名留在服务端（转账凭证等内部场景仍用原名）。
+    const honorific = user.honorific === 'mr' || user.honorific === 'ms' ? user.honorific : DEFAULT_HONORIFIC;
+    const displayName = displayNameOf(user.name, honorific);
+    const customNickname = normalizeNickname(user.nickname);
+    return {
+        ...user,
+        avatarId,
+        honorific,
+        displayName,
+        maskedName: maskedNameOf(user.name),
+        // 昵称与姓名是两回事：昵称只做展示，姓名始终走 maskedName。
+        nickname: customNickname || displayName,
+        customNickname,
+    };
+}
 async function passwordDigest(value) { return hashPassword(value); }
 const pad = (n) => String(n).padStart(2, '0');
 const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -582,7 +608,7 @@ export function createBankBusinessApi(options) {
             if (needsRehash(live.passwordDigest)) live.passwordDigest = hashPassword(password);
             // 登录不重置支付密码错误次数或解除账号冻结。
             persist();
-            return { token: `mock.${btoa(phone)}.${Date.now()}`, user: live.user };
+            return { token: `mock.${btoa(phone)}.${Date.now()}`, user: withAvatar(live.user) };
         },
         async register(req) {
             await delay(760);
@@ -631,6 +657,10 @@ export function createBankBusinessApi(options) {
                 phone,
                 memberTier: 'standard',
                 avatarInitial: req.holderName.trim().slice(0, 1),
+                // 新用户默认从头像池随机取一张，之后可在个人资料里改。
+                avatarId: randomAvatarId(),
+                // 称呼按身份证号第 17 位判定；判定不了用默认称呼。
+                honorific: honorificFromIdNumber(req.idNumber) ?? DEFAULT_HONORIFIC,
             };
             next.passwordDigest = await passwordDigest(req.password);
             next.accounts = [account]; next.currencyBalances = []; next.retiredBalances = []; next.accountAliases = {}; next.accountNumberAliases = {};
@@ -649,7 +679,7 @@ export function createBankBusinessApi(options) {
             next.riskAssessment = { done: false, level: 'C1', score: 0, assessedAt: '', expiresAt: '', expired: true };
             next.security = { ...next.security, score: 72, level: '基础防护', devices: [], logs: [], identityVerified: true };
             activateDb(next);
-            return { token: `mock.${btoa(phone)}.${Date.now()}`, user: next.user, account, openedAt: now };
+            return { token: `mock.${btoa(phone)}.${Date.now()}`, user: withAvatar(next.user), account, openedAt: now };
         },
         async logout() {
             await delay(120);
@@ -659,7 +689,31 @@ export function createBankBusinessApi(options) {
             await delay(140);
             const db = loadDb();
             if (evaluateMembership(db)) persist();
-            return db.user;
+            return withAvatar(db.user);
+        },
+        /** 头像只允许从共享头像池里选，不接受上传。 */
+        async updateAvatar(avatarId) {
+            await delay(120);
+            if (!isAvatarId(avatarId)) {
+                throw new ApiError('请选择头像池里的头像', 400, 'INVALID_AVATAR');
+            }
+            const db = loadDb();
+            if (db.user.avatarId === avatarId) {
+                return withAvatar(db.user);
+            }
+            db.user.avatarId = avatarId;
+            persist();
+            return withAvatar(db.user);
+        },
+        /** 自定义昵称；传空串表示恢复默认称呼。昵称只影响展示，不改实名。 */
+        async updateNickname(nickname) {
+            await delay(120);
+            const problem = validateNickname(nickname);
+            if (problem !== null) throw new ApiError(problem, 400, 'INVALID_NICKNAME');
+            const db = loadDb();
+            db.user.nickname = normalizeNickname(nickname);
+            persist();
+            return withAvatar(db.user);
         },
         async listAccounts() {
         await delay(160);
@@ -2132,7 +2186,7 @@ async getSecurityOverview() {
                 level: 'warn',
             });
             persist();
-            return db.user;
+            return withAvatar(db.user);
         },
         async changePassword(oldPassword, newPassword) {
             await delay(420);
