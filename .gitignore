@@ -68,6 +68,9 @@ android-app/local.properties
 android-app/**/build/
 android-app/.gradle/
 android-app/.kotlin/
+/android-app/keystore.properties
+/android-app/*.jks
+/android-app/*.keystore
 
 # 答辩材料生成过程的临时目录、Python 缓存与 Office 锁文件
 /deliverables/.ppt-work/
