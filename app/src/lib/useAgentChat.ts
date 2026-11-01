@@ -219,7 +219,7 @@ export interface AgentChat {
    * @param text - 用户输入；只发图片时可以是空串。
    * @param image - 一起发的图片（已经 `prepareImage` 压过的那份）。
    */
-  send: (text: string, image?: PreparedImage, serviceIds?: readonly string[]) => void
+  send: (text: string, image?: PreparedImage, serviceIds?: readonly string[], onRejected?: () => void) => void
   /**
    * 倒回某条用户消息并重发：编辑重发（传 `text`）和重新生成（不传）共用。
    *
@@ -636,7 +636,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
    * @param value - 已经 trim 过、并且已经写进列表的那句话。
    * @param image - 一起发出去的图片（已压缩的那份）。
    */
-  const dispatch = useCallback((convId: string, value: string, image?: PreparedImage, serviceIds?: readonly string[]) => {
+  const dispatch = useCallback((convId: string, value: string, image?: PreparedImage, serviceIds?: readonly string[], onAccepted?: () => void, onRejected?: () => void) => {
     setBusy(convId, true)
     const task = (async () => {
       try {
@@ -656,8 +656,10 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
           accountIdRef.current,
           serviceIds,
         )
+        if (mountedRef.current) onAccepted?.()
       } catch (error) {
         if (!mountedRef.current) return
+        onRejected?.()
         setBusy(convId, false)
         pushItem(convId, {
           kind: 'notice',
@@ -692,7 +694,7 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
     })()
   }, [pushItem, stopAgentTurn])
 
-  const send = useCallback((text: string, image?: PreparedImage, serviceIds?: readonly string[]) => {
+  const send = useCallback((text: string, image?: PreparedImage, serviceIds?: readonly string[], onRejected?: () => void) => {
     const value = text.trim()
     const convId = activeIdRef.current
     // 只发图不打字是允许的；两个都空才是真的没内容。
@@ -708,15 +710,20 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
     const wasUntitled = conversation.titleEdited !== true && conversation.title === '新对话'
     const promptId = nextId()
     if (image) retryImage.current = { convId, promptId, image }
-    pushItem(convId, {
-      kind: 'user',
-      id: promptId,
-      text: value,
-      ...serviceIds === undefined ? {} : { serviceIds: [...serviceIds] },
-      ...image === undefined ? {} : { thumb: image.thumb, imageName: image.name },
+    pushItem(convId, { kind: 'user', id: promptId, text: '正在进行安全检查…' })
+    dispatch(convId, value, image, serviceIds === undefined ? undefined : [...serviceIds], () => {
+      patch(convId, c => ({ ...c,
+        items: c.items.map(item => item.id === promptId ? {
+          kind: 'user', id: promptId, text: value,
+          ...serviceIds === undefined ? {} : { serviceIds: [...serviceIds] },
+          ...image === undefined ? {} : { thumb: image.thumb, imageName: image.name },
+        } : item),
+        ...(wasUntitled ? { title: titleFrom(value === '' ? image?.name ?? '' : value) } : {}),
+      }))
+    }, () => {
+      patch(convId, c => ({ ...c, items: c.items.filter(item => item.id !== promptId) }))
+      onRejected?.()
     })
-    if (wasUntitled) patch(convId, c => ({ ...c, title: titleFrom(value === '' ? image?.name ?? '' : value) }))
-    dispatch(convId, value, image, serviceIds === undefined ? undefined : [...serviceIds])
   }, [asks, dispatch, patch, pendings, pushItem, status])
 
   const retry = useCallback((promptId: string) => {
@@ -767,18 +774,21 @@ export function useAgentChat(options: AgentChatOptions = {}): AgentChat {
 
     // 丢掉的那些工具行不会再收到结果了，把 callId 的映射一并清掉：
     // 留着它只会让后面某条 tool-result 去找一条已经不在列表里的行。
-    toolRows.current.delete(convId)
     // 名字是跟着第一句话起的；没手动改过就跟着新说法走。
     const firstUser = next.find(item => item.kind === 'user')
-    patch(convId, c => ({
-      ...c,
-      items: next,
-      updatedAt: Date.now(),
-      ...conversation.titleEdited === true || firstUser === undefined
-        ? {}
-        : { title: titleFrom(firstUser.text) },
-    }))
-    dispatch(convId, last.text.trim(), undefined, last.serviceIds)
+    const pending = next.map(item => item.id === last.id ? { ...last, text: '正在进行安全检查…' } : item)
+    toolRows.current.delete(convId)
+    patch(convId, c => ({ ...c, items: pending, updatedAt: Date.now() }))
+    dispatch(convId, last.text.trim(), undefined, last.serviceIds, () => {
+      patch(convId, c => ({
+        ...c,
+        items: c.items.map(item => item.id === last.id ? last : item),
+        updatedAt: Date.now(),
+        ...conversation.titleEdited === true || firstUser === undefined
+          ? {}
+          : { title: titleFrom(firstUser.text) },
+      }))
+    }, () => patch(convId, c => ({ ...c, items: conversation.items })))
   }, [asks, dispatch, patch, pendings, status])
 
   const answer = useCallback((decision: 'approve' | 'reject', paymentPassword?: string, riskAcknowledgement?: string, customerVerification?: CustomerVerification) => {

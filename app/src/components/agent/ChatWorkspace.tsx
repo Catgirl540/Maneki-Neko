@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { hasExplicitCredential } from '../../../../shared/credential-guard.mjs'
 import './assistant-turn.css'
 import type { SupportMessage } from '../../api/types'
 import type { CustomerVerification } from '../../api/agent'
@@ -297,11 +298,20 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
     // 只发图不打字是允许的；两个都空才是真的没内容。
     if (draft === '' && image === undefined) return false
     if (activeBusy || thinking || probing) return false
+    if (audience === 'customer' && hasExplicitCredential(draft)) {
+      setSupportError('请勿在对话中发送密码或银行卡安全码，请使用安全验证窗口。')
+      return false
+    }
+    if (audience === 'customer' && usingAgent && image !== undefined) {
+      setSupportError('图片安全检查暂不可用，请先通过文字描述需求。')
+      return false
+    }
+    setSupportError(null)
     const value = draft
     const serviceIds = audience === 'customer' && workbench ? workbench.tasks.map(task => task.id) : undefined
     workbench?.onActivate()
     if (usingAgent) {
-      agent.send(value, image, serviceIds)
+      agent.send(value, image, serviceIds, () => setInput(current => current || value))
       setInput('')
       return true
     }
@@ -466,7 +476,7 @@ export function ChatWorkspace(props: ChatWorkspaceProps) {
           </div>
 
           {!usingAgent && !probing && !fallback && !workbench && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-sm text-coral">{audience === 'staff' ? '工作人员助手' : '智能助手'}暂时不可用，请检查服务后刷新重试。</p>}
-          {supportError && !usingAgent && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
+          {supportError && <p role="alert" className="mx-4 mt-3 rounded-field bg-coral-wash p-3 text-[13px] text-coral">{supportError}</p>}
           <div hidden={docked} className={showWorkbenchPresence
             ? cn('workbench-conversation', emptyWorkbench && 'is-empty')
             : 'contents'}>

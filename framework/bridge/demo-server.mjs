@@ -52,6 +52,7 @@
  */
 
 import { createServer } from 'node:http'
+import { createCredentialGuard } from './credential-guard.mjs'
 import { compactReplay, isReplayCheckpoint, retainReplayEvent } from './session-memory.mjs'
 import { projectModelRetry, modelFailureMessage } from './model-retry.mjs'
 import { createHash } from 'node:crypto'
@@ -85,6 +86,7 @@ import { loadAgentServices } from './agent-services.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const STAFF_MODE = process.env.LUCKYCAT_AUDIENCE === 'staff'
+const checkCredentials = createCredentialGuard()
 const OPS_MODE = STAFF_MODE && process.env.LUCKYCAT_STAFF_MODE === 'ops'
 const PROFILE = OPS_MODE ? 'staff-ops' : STAFF_MODE ? 'staff' : 'luckycat'
 const serviceSkillContext = STAFF_MODE ? undefined : (await import('./service-skills.mjs')).serviceSkillContext
@@ -823,7 +825,7 @@ async function handle(req, res) {
       // 语音能力一并报出去：页面据此决定要不要显示「语音模式」，
       // 而不是等用户按下去才发现服务端没配。只报"有没有"，不报"用的哪个模型"。
       voice: VOICE_ENABLED && Boolean(process.env.OPENROUTER_API_KEY)
-        ? { asr: true, tts: true, stream: Boolean(VOLC_API_KEY || (VOLC_APP_ID && VOLC_ACCESS_TOKEN)), maxSeconds: VOICE_MAX_SECONDS }
+        ? { asr: STAFF_MODE, tts: true, stream: Boolean(VOLC_API_KEY || (VOLC_APP_ID && VOLC_ACCESS_TOKEN)), maxSeconds: VOICE_MAX_SECONDS }
         : { asr: false, tts: false },
     })
     return
@@ -839,6 +841,7 @@ async function handle(req, res) {
   // 建会话
   if (req.method === 'POST' && parts.join('/') === 'agent-api/sessions') {
     const context = legacyContext((await readJson(req)).history)
+    if (!STAFF_MODE && context) await checkCredentials(context)
     const sessionId = await createWebSession(identity, context)
     await sendJson(res, 200, { sessionId })
     return
@@ -881,6 +884,7 @@ async function handle(req, res) {
       await sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
+    if (!STAFF_MODE) await checkCredentials(text, { image: image !== undefined })
     if (STAFF_MODE && body.serviceIds !== undefined) throw bankError('工作人员助手不接受客户智能服务选择', 400)
     const skillPrefix = serviceSkillContext?.(body.serviceIds) ?? ''
     let blocks
@@ -1189,6 +1193,7 @@ async function handle(req, res) {
         await sendJson(res, 400, { error: `答复「${id}」的 selected 不是字符串数组` })
         return
       }
+      if (!STAFF_MODE) for (const value of selected) await checkCredentials(value)
       if ((asked.multiSelect ?? false) === false && selected.length > 1) {
         await sendJson(res, 400, { error: `「${id}」是单选，却收到了 ${selected.length} 个选项` })
         return
@@ -1203,6 +1208,7 @@ async function handle(req, res) {
        * 正常答复会拿到 404（问题已经被空白答复消费了）。
        */
       const custom = typeof item.custom === 'string' ? item.custom : ''
+      if (!STAFF_MODE && custom.trim()) await checkCredentials(custom)
       if (selected.length === 0 && custom.trim() === '') {
         await sendJson(res, 400, { error: `「${id}」这道题既没选也没填` })
         return
@@ -1226,6 +1232,10 @@ async function handle(req, res) {
   // 音频**不落盘、不留存**：只在内存里过一道就交给上游。银行场景里录音是敏感数据，
   // 而演示服务没有任何理由留着它。
   if (req.method === 'POST' && parts.join('/') === 'agent-api/asr') {
+    if (!STAFF_MODE) {
+      await sendJson(res, 503, { error: '语音输入安全检查暂不可用，请使用文字输入。', code: 'CREDENTIAL_CHECK_UNAVAILABLE' })
+      return
+    }
     if (!VOICE_ENABLED) {
       await sendJson(res, 503, { error: '这个演示服务没有开语音能力' })
       return
@@ -1529,9 +1539,11 @@ if ((!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') || (STAFF_MODE && !
       for (const old of Object.values(store.snapshot().routes)) if (old.id!==route.id&&old.ownerId===identity.user.id) await imBank.revoke(old.id,identity.user.id)
     },
     onRevoke:async route=>{if(STAFF_MODE) await staffService('revoke',{bindingId:route.id,revision:route.bindingRevision})},
-    run: (id, text) => {
+    run: async (id, text) => {
       const entry = sessions.get(id)
       if (!entry || entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
+      if (!STAFF_MODE) await checkCredentials(text)
+      if (entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
       const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感信息仍须在银行页面授权。】\n' + (STAFF_MODE ? '' : serviceSkillContext(undefined)) + text)
       activeTurns.add(turn)
       void turn.finally(() => activeTurns.delete(turn)).catch(() => {})
