@@ -2,6 +2,8 @@
 
 2026-10-29 已上线：官网、工作人员、运维和三类 Agent 统一使用现有 `maneki_bank_demo`，工作人员登录不再选择办理环境。本次沿用官网 sandbox 的客户及业务数据，没有重新初始化数据库。
 
+2026-11-01 增量发布 `20261101-agent-tools`（提交 `0a2fd31`）：能力入口改由后端 `GET /agent-api/services` 下发，换卡改为同一张卡原地换号，客户助手工具增至 95 个，并新增一次性导出链接 `POST /api/exports`。本次无库结构迁移、无数据重置，四项服务重启后 active；旧发布目录 `20261101-idempotency` 保留可回滚。详见[本次发布记录](deployments/bank-agent-tools-deployment-20261101.json)。
+
 ## 部署状态
 
 线上切换及公网/API 验证已完成，详见 [2026-10-29 统一环境部署验收](deployments/bank-unified-environment-deployment-20261029.json)。

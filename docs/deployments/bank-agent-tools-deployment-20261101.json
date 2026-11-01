@@ -1,0 +1,42 @@
+{
+  "release": "20261101-agent-tools",
+  "commit": "0a2fd31fe366379ddaca3cf9786e32bbf6750840",
+  "phase": "deployed-and-verified",
+  "schemaMigration": false,
+  "database": "maneki_bank_demo",
+  "previousRelease": "/srv/maneki-bank/releases/20261101-idempotency",
+  "newSource": "/srv/maneki-bank/releases/20261101-agent-tools",
+  "sourceSymlink": "/srv/maneki-bank/current",
+  "webRoot": "/srv/maneki-bank/current/app/dist",
+  "publicUrl": "https://bank.waveflow.men",
+  "databaseChanges": "none: no schema version bump, no owner bootstrap, no customer data migration",
+  "changes": [
+    "capability manifest moved to framework/agent-services.json and served by GET /agent-api/services",
+    "card replacement updates the same card in place (new PAN/CVV, status pending) instead of creating a second card",
+    "auto-debit contracts bound to a replaced card are paused with needsRebind and require manual rebinding",
+    "95 bank tools registered for the customer agent",
+    "one-time export links: POST /api/exports and GET /api/exports/:token (5 minutes, single use, text/csv)",
+    "shared/csv.mjs unifies CSV escaping for web and server",
+    "knowledge corpus rebuilt: 8 documents, 75 questions, version 4d6f9d7e1df1e8a3"
+  ],
+  "services": {
+    "luckycat-bank-demo": "active",
+    "luckycat-agent-demo": "active",
+    "luckycat-staff-agent": "active",
+    "luckycat-ops-agent": "active"
+  },
+  "verification": {
+    "health": { "ok": true, "database": "postgresql", "integrationMode": "sandbox", "commercialReady": false, "bankConnection": "unconfigured" },
+    "web": { "login": 200, "staffLogin": 200 },
+    "agentCapabilities": { "status": 200, "ids": ["transfer", "wealth", "insurance", "analysis", "cards", "exchange", "credit", "security"] },
+    "exportLink": { "create": 200, "download": 200, "contentType": "text/csv; charset=utf-8", "singleUse": true },
+    "toolPolicy": "95 tools allowed in both luckycat and doctor profiles",
+    "skills": "10 skills, version ee45b80a0e1eea4b"
+  },
+  "rollback": "ln -sfn /srv/maneki-bank/releases/20261101-idempotency /srv/maneki-bank/current then restart the four luckycat services; no database rollback is required",
+  "limits": [
+    "export links live in process memory: they are lost on restart and do not work across multiple instances",
+    "chart figures remain demo data; commercialReady stays false and no real bank adapter is enabled",
+    "channel/IM delivery and real clearing were not part of this verification"
+  ]
+}
