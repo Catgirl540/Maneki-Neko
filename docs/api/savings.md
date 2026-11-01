@@ -53,3 +53,16 @@
 → `SavingsRoundupRule`。
 
 错误：`INVALID_AMOUNT`（金额 ≤ 0）、`NOT_FOUND`（目标不存在）。
+
+## Agent 工具
+
+| 工具 | 方法 | 路径 | 说明 |
+|---|---|---|---|
+| `bank_get_savings` | `GET` | `/api/savings/overview` | 只读，常规查询直接放行 |
+| `bank_create_savings_goal` | `POST` | `/api/savings/goals` | 确认卡展示名称、目标金额与日期 |
+| `bank_update_savings_goal` | `PATCH` | `/api/savings/goals/:id` | 只改传入字段 |
+| `bank_delete_savings_goal` | `DELETE` | `/api/savings/goals/:id` | 只删计划，已留存资金与流水不变 |
+| `bank_update_savings_roundup` | `PATCH` | `/api/savings/roundup` | 保存凑整规则，不立即划款 |
+
+- 写工具走确认卡，不需要支付密码；存钱目标和凑整都只是规则，不执行自动转入。
+- 生日预留仍由 `bank_create_birthday_plan` / `bank_cancel_birthday_plan` 办理，需要支付密码，与本页目标不同。

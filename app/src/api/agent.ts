@@ -128,6 +128,28 @@ export interface AgentHealth {
   voice?: VoiceCapability
 }
 
+/**
+ * 后端下发的一条助手能力。
+ *
+ * 清单的唯一来源是 `framework/agent-services.json`，网页不再自己维护条目、
+ * 文案或顺序；这里只消费 `GET /agent-api/services` 的结果。
+ */
+export interface AgentService {
+  /** 稳定 id，发送消息时作为 `serviceIds` 提交。 */
+  id: string
+  /** 展示顺序，后端已按它排好；客户端不要重排。 */
+  order: number
+  label: string
+  description: string
+}
+
+/** `GET /agent-api/services` 的响应。 */
+export interface AgentServiceList {
+  version: number
+  updatedAt: string
+  services: AgentService[]
+}
+
 /** agent 服务支持哪些语音能力。**只描述"有没有"，不描述"用的哪个模型"。** */
 export interface VoiceCapability {
   asr: boolean
@@ -273,6 +295,15 @@ export function createAgentClient(options: AgentClientOptions) {
     } catch {
       return null
     }
+  }
+
+  /**
+   * 读助手能力清单。失败就抛错，由调用方决定隐藏入口或重试；
+   * 刻意不在客户端留一份本地清单兜底，否则又会出现第二份真相。
+   */
+  async function listServices(): Promise<AgentServiceList> {
+    if (!agentEnabled) throw new AgentError('未配置 Agent 服务', 0, 'DISABLED')
+    return requestJson<AgentServiceList>('/services', { cache: 'no-store' }, 8_000)
   }
 
   /**
@@ -740,7 +771,7 @@ export function createAgentClient(options: AgentClientOptions) {
     }
   }
 
-  return { agentEnabled, probeAgent, createAgentSession, stopAgentTurn, probeAgentSession, sendAgentMessage, openAgentStream, answerConsent, answerQuestion, transcribeAudio, synthesizeSpeech, synthesizeSpeechStream, probeVoiceAvailable }
+  return { agentEnabled, probeAgent, listServices, createAgentSession, stopAgentTurn, probeAgentSession, sendAgentMessage, openAgentStream, answerConsent, answerQuestion, transcribeAudio, synthesizeSpeech, synthesizeSpeechStream, probeVoiceAvailable }
 }
 
 export type AgentClient = ReturnType<typeof createAgentClient>
@@ -748,4 +779,4 @@ export const defaultAgentClient = createAgentClient({
   baseUrl: AGENT_BASE, enabled: agentEnabled, mockMode: isMockMode, getToken: getAuthToken,
   onUnauthorized: () => { forgetSession(); window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT)) },
 })
-export const { probeAgent, createAgentSession, stopAgentTurn, probeAgentSession, sendAgentMessage, openAgentStream, answerConsent, answerQuestion, transcribeAudio, synthesizeSpeech, synthesizeSpeechStream, probeVoiceAvailable } = defaultAgentClient
+export const { probeAgent, listServices, createAgentSession, stopAgentTurn, probeAgentSession, sendAgentMessage, openAgentStream, answerConsent, answerQuestion, transcribeAudio, synthesizeSpeech, synthesizeSpeechStream, probeVoiceAvailable } = defaultAgentClient

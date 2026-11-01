@@ -70,6 +70,7 @@ export const routes = {
     cashFlow: () => '/api/analysis/cashflow',
     autoDebits: () => '/api/autodebits',
     autoDebit: (id) => `/api/autodebits/${id}`,
+    autoDebitBind: (id) => `/api/autodebits/${id}/bind`,
     birthdayPlans: () => '/api/linked/birthdays',
     birthdayPlanPreview: () => '/api/linked/birthdays/preview',
     birthdayPlanCancel: (id) => `/api/linked/birthdays/${id}/cancel`,

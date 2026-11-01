@@ -1,21 +1,33 @@
-import { CardIcon, ChatIcon, GlobalIcon, LockIcon, PiggyBankIcon, ReceiptIcon, ShieldIcon, TransferIcon, TrendUpIcon, WalletIcon } from '@/components/ui/icons'
+import { CardIcon, ChatIcon, GlobalIcon, LockIcon, ReceiptIcon, ShieldIcon, TransferIcon, TrendUpIcon, WalletIcon } from '@/components/ui/icons'
 
-export const smartServices = [
-  { id: 'transfer', label: '智能转账', Icon: TransferIcon, paths: ['/transfer', '/receiving'] },
-  { id: 'wealth', label: '理财顾问', Icon: TrendUpIcon, paths: ['/wealth', '/wealth/products', '/wealth/holdings', '/wealth/records', '/wealth/cash-management', '/wealth/investments'] },
-  { id: 'analysis', label: '账单分析', Icon: ReceiptIcon, paths: ['/analysis', '/analysis/statistics', '/analysis/autodebits', '/transactions'] },
-  { id: 'cards', label: '银行卡管家', Icon: CardIcon, paths: ['/cards'] },
-  { id: 'exchange', label: '换汇助手', Icon: GlobalIcon, paths: ['/exchange'] },
-  { id: 'savings', label: '储蓄规划', Icon: PiggyBankIcon, paths: ['/dashboard/savings', '/wealth/plans'] },
-  { id: 'credit', label: '借款测算', Icon: WalletIcon, paths: ['/credit', '/cashflow'] },
-  { id: 'insurance', label: '保险咨询', Icon: ShieldIcon, paths: ['/wealth/insurance'] },
-  { id: 'security', label: '安全助手', Icon: LockIcon, paths: ['/security'] },
-  { id: 'support', label: '智能客服', Icon: ChatIcon, paths: [] },
-] as const
+/**
+ * 助手能力的**表现层**映射：图标，以及这个能力对应哪些业务页。
+ *
+ * 清单本身（有哪些入口、叫什么、什么顺序）由后端 `GET /agent-api/services`
+ * 下发，唯一来源是 `framework/agent-services.json`；前端不再维护条目和文案。
+ *
+ * 后端新增一个这里没登记的 id 时，用通用图标、不挂 docked 上下文，
+ * 仍然可以正常选择——只是少了页面归属，不会因为前端没跟上就消失。
+ */
+const PRESENTATION: Record<string, { Icon: typeof ChatIcon; paths: readonly string[] }> = {
+  transfer: { Icon: TransferIcon, paths: ['/transfer', '/receiving'] },
+  wealth: { Icon: TrendUpIcon, paths: ['/wealth', '/wealth/products', '/wealth/holdings', '/wealth/records', '/wealth/cash-management', '/wealth/investments', '/wealth/plans'] },
+  analysis: { Icon: ReceiptIcon, paths: ['/analysis', '/analysis/statistics', '/analysis/autodebits', '/transactions'] },
+  cards: { Icon: CardIcon, paths: ['/cards'] },
+  exchange: { Icon: GlobalIcon, paths: ['/exchange'] },
+  insurance: { Icon: ShieldIcon, paths: ['/wealth/insurance'] },
+  credit: { Icon: WalletIcon, paths: ['/credit', '/cashflow'] },
+  security: { Icon: LockIcon, paths: ['/security'] },
+}
 
-export type SmartServiceId = typeof smartServices[number]['id']
-export function serviceForPath(pathname: string, search = '') {
-  if (pathname === '/wealth/plans' && new URLSearchParams(search).get('tab') === 'invest') return smartServices.find(service => service.id === 'wealth')
-  return smartServices.find(service => service.paths.some(path => pathname === path))
-    ?? (pathname.startsWith('/transactions/') ? smartServices.find(service => service.id === 'analysis') : undefined)
+export function serviceIcon(id: string) {
+  return PRESENTATION[id]?.Icon ?? ChatIcon
+}
+
+/** 当前页面属于哪个能力；没登记过的页面返回 undefined（助手退回自动匹配）。 */
+export function serviceForPath(pathname: string): string | undefined {
+  for (const [id, item] of Object.entries(PRESENTATION)) {
+    if (item.paths.some(path => pathname === path)) return id
+  }
+  return pathname.startsWith('/transactions/') ? 'analysis' : undefined
 }

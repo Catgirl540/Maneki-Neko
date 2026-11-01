@@ -289,6 +289,43 @@
       - bank_get_transaction_detail
       - bank_transfer
       - bank_wealth_quote
+      - bank_exchange_quote
+      - bank_exchange
+      - bank_activate_card
+      - bank_pay_split_request
+      - bank_get_membership
+      - bank_list_invitations
+      - bank_get_security
+      - bank_get_savings
+      - bank_get_cash_management
+      - bank_get_salary_plan
+      - bank_get_credit
+      - bank_get_receiving_info
+      - bank_list_split_payments
+      - bank_list_support_messages
+      - bank_get_risk_questions
+      - bank_create_budget
+      - bank_update_budget
+      - bank_delete_budget
+      - bank_redeem_budget_pass
+      - bank_create_savings_goal
+      - bank_update_savings_goal
+      - bank_delete_savings_goal
+      - bank_update_savings_roundup
+      - bank_update_cash_sweep
+      - bank_update_salary_plan
+      - bank_submit_risk_assessment
+      - bank_activate_overdraft
+      - bank_apply_loan
+      - bank_convert_installment
+      - bank_update_security_rule
+      - bank_redeem_lounge_pass
+      - bank_delete_payee
+      - bank_export_statement
+      - bank_export_billing_report
+      - bank_get_receipt
+      - bank_get_insurance
+      - bank_enroll_insurance
       - bank_wealth_compare
       - bank_list_investments
       - bank_list_im_reminders

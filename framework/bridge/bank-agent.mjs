@@ -9,7 +9,7 @@ import { summarizeRiskAssessment } from './wealth-risk.mjs'
 import { compareWealthProducts } from './wealth-compare.mjs'
 import { analyzeAutoDebits, validateReminderDays } from './autodebit-analysis.mjs'
 import { validateInvestPlan } from '../../shared/invest-plan.mjs'
-import { findFreeMerchant, findSpendPlatform, SPEND_MAX_CENTS } from '../../shared/spend-platforms.mjs'
+import { findFreeMerchant, findSpendPlatform, SPEND_MAX_CENTS, SPEND_PLATFORMS } from '../../shared/spend-platforms.mjs'
 import { reviewTransactions, validateReviewLimit } from './transaction-review.mjs'
 import { prepareExtendedBankOperation, extendedPasswordTools, extendedWriteTools, extendedQueryTools } from './extended-bank-tools.mjs'
 import { recommendWealthProducts } from '../../shared/wealth-recommendation.mjs'
@@ -28,19 +28,22 @@ const money = (cents, currency = 'CNY') => `${currency} ${(cents / 100).toFixed(
 const stable = value => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v)
 const digest = value => createHash('sha256').update(stable(value)).digest('hex')
 const field = (label, value, emphasis = false) => ({ label, value: String(value), ...(emphasis ? { emphasis: true } : {}) })
-const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card', 'bank_create_invest_plan'])
+const passwordTools = new Set(['bank_transfer', 'bank_fps_transfer', 'bank_exchange', 'bank_wealth_subscribe', 'bank_wealth_redeem', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card', 'bank_activate_card', 'bank_create_invest_plan', 'bank_enroll_insurance', 'bank_pay_split_request', 'bank_apply_loan'])
 const writable = new Set([...passwordTools, 'bank_set_card_lock', 'bank_update_card_settings', 'bank_set_autodebit', 'bank_recall_transfer', 'bank_request_human_support', 'bank_reply_support_ticket', 'bank_update_invest_plan'])
 const routineQueries = new Set(['bank_get_balance', 'bank_list_transactions', 'bank_get_transaction_detail', 'bank_list_banks', 'bank_list_payees', 'bank_list_cards', 'bank_card_products', 'bank_list_autodebits', 'bank_analyze_autodebits', 'bank_get_spending', 'bank_get_cashflow', 'bank_list_support_tickets', 'bank_get_support_ticket', 'bank_wealth_quote', 'bank_wealth_compare'])
 routineQueries.add('bank_list_investments')
 routineQueries.add('bank_review_transactions')
 routineQueries.add('bank_list_im_reminders')
 routineQueries.add('bank_list_budgets')
+routineQueries.add('bank_get_insurance')
+for (const name of ['bank_get_membership', 'bank_list_invitations', 'bank_get_security', 'bank_get_savings', 'bank_get_cash_management', 'bank_get_salary_plan', 'bank_get_credit', 'bank_get_receiving_info', 'bank_list_split_payments', 'bank_list_support_messages', 'bank_get_risk_questions']) routineQueries.add(name)
 writable.add('bank_create_im_reminder')
 writable.add('bank_cancel_im_reminder')
 writable.add('bank_spend')
 for (const tool of extendedPasswordTools) passwordTools.add(tool)
 for (const tool of extendedWriteTools) writable.add(tool)
 for (const tool of extendedQueryTools) routineQueries.add(tool)
+for (const name of ['bank_create_budget', 'bank_update_budget', 'bank_delete_budget', 'bank_redeem_budget_pass', 'bank_create_savings_goal', 'bank_update_savings_goal', 'bank_delete_savings_goal', 'bank_update_savings_roundup', 'bank_update_cash_sweep', 'bank_update_salary_plan', 'bank_submit_risk_assessment', 'bank_activate_overdraft', 'bank_convert_installment', 'bank_update_security_rule', 'bank_redeem_lounge_pass', 'bank_delete_payee', 'bank_export_statement', 'bank_export_billing_report']) writable.add(name)
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -55,6 +58,21 @@ const addressOf = a => {
   return address
 }
 const addressFields = address => [field('收件人', address.recipient), field('联系电话', address.phone), field('寄送地址', `${address.region} ${address.city} ${address.detail}`), field('邮政编码', address.postalCode || '未填写')]
+const budgetPlatforms = value => {
+  const raw = text(value, '预算商户')
+  let items
+  try { items = JSON.parse(raw) } catch { items = raw.split(/[,，、]/) }
+  if (!Array.isArray(items) || items.length === 0 || items.length > 12) throw bankError('请提供 1–12 个预算商户')
+  const ids = []
+  for (const item of items) {
+    const needle = String(item).trim()
+    const platform = findSpendPlatform(needle) ?? SPEND_PLATFORMS.find(p => p.name === needle || p.name.includes(needle) || needle.includes(p.name))
+    if (!platform) throw bankError(`无法识别预算商户：${needle}；请使用商户名称或 ID`)
+    if (!ids.includes(platform.id)) ids.push(platform.id)
+  }
+  return ids
+}
+const platformNames = ids => ids.map(id => findSpendPlatform(id)?.name ?? id).join('、')
 
 
 export function createBankAgent({ baseUrl, sessions, publish, reminders = () => undefined }) {
@@ -219,6 +237,390 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         fields = [field('操作', '撤回在途转账', true), field('交易编号', tx.id), field('转账本金', money(tx.amount, account.currency)), field('本笔冻结合计', money(frozen, account.currency), true),
           field('费用冻结', tx.heldFrozenAmount === undefined ? '历史指令只记录本金冻结，未记录额外费用冻结' : money(frozen - tx.amount, account.currency)),
           field('收款人', tx.counterparty || tx.title || '请核对交易详情'), field('在途截止', tx.holdUntil), field('影响', '仅解除本笔在对应币种的冻结，其他在途指令不变；未执行扣款，不是退款。以银行撤回结果为准')]
+        break
+      }
+      case 'bank_activate_card': {
+        const card = (await get('/api/cards')).find(c => c.id === text(a.cardId, '银行卡编号'))
+        if (!card) throw bankError('银行卡不存在或不属于当前账户', 404)
+        if (card.status !== 'pending') throw bankError('只有寄送中的待激活卡可以激活', 409)
+        path = `/api/cards/${enc(card.id)}/activate`
+        body = {}
+        preview = { cardState: digest(safeCard(card)) }
+        fields = [field('卡片', cardLabel(card)), field('当前状态', '寄送中'), field('操作', '激活并启用卡片', true), field('说明', '激活后线上/境外支付仍保持关闭，需要客户另行开启')]
+        break
+      }
+      case 'bank_pay_split_request': {
+        const rows = await get('/api/transfers/aa-payments')
+        const item = rows.find(r => r.id === text(a.requestId, 'AA 付款请求编号'))
+        if (!item) throw bankError('AA 付款请求不存在或不属于当前客户', 404)
+        if (item.status !== 'unpaid') throw bankError('该 AA 请求当前不是待付款状态', 409)
+        path = `/api/transfers/aa-payments/${enc(item.id)}/pay`
+        body = { version: item.version, confirmed: true }
+        preview = { aaRequest: digest(item) }
+        fields = [field('事由', item.title), field('收款人', item.collectorName), field('金额', money(item.amount, item.currency), true), field('备注', item.memo || '无'), field('说明', '只支付这一笔 AA 请求，不是整个收款单的扣款')]
+        break
+      }
+      case 'bank_get_membership':
+        path = '/api/membership'
+        fields = [field('查询内容', '会员等级、门槛、权益、年度使用与最近记录'), field('说明', '等级按上月日均储蓄资产评定，不是固定进度')]
+        break
+      case 'bank_list_invitations':
+        path = '/api/invitations'
+        fields = [field('查询内容', '本人邀请记录、奖励状态与受邀进度')]
+        break
+      case 'bank_get_security':
+        path = '/api/security/overview'
+        fields = [field('查询内容', '登录手机号（掩码）、密码状态、设备、冻结状态与风险规则')]
+        break
+      case 'bank_get_savings':
+        path = '/api/savings/overview'
+        fields = [field('查询内容', '存钱目标、凑整设置与进度')]
+        break
+      case 'bank_get_cash_management':
+        path = '/api/wealth/cash-management'
+        fields = [field('查询内容', '现金管理余额、收益、保留金额与规则开关')]
+        break
+      case 'bank_get_salary_plan':
+        path = '/api/cashflow/salary'
+        fields = [field('查询内容', '工资计划、发薪日与状态')]
+        break
+      case 'bank_get_credit':
+        path = '/api/credit/overview'
+        fields = [field('查询内容', '授信额度、已用、分期与备用金状态')]
+        break
+      case 'bank_get_receiving_info':
+        path = '/api/receiving'
+        fields = [field('查询内容', '本人资金账户号、币种余额与 FPS/收款登记')]
+        break
+      case 'bank_list_split_payments':
+        path = '/api/transfers/aa-payments'
+        fields = [field('查询内容', '本人待支付的 AA 请求、发起人、金额与备注')]
+        break
+      case 'bank_list_support_messages':
+        path = '/api/support/messages'
+        fields = [field('查询内容', '本人与人工客服的留言记录')]
+        break
+      case 'bank_get_risk_questions':
+        path = '/api/wealth/risk/questions'
+        fields = [field('查询内容', '当前理财风险测评题目与选项')]
+        break
+      case 'bank_create_budget': {
+        const platforms = budgetPlatforms(a.platforms)
+        const dailyLimit = Number(a.dailyLimitCents)
+        if (!Number.isSafeInteger(dailyLimit) || dailyLimit < 100 || dailyLimit > 5_000_000) throw bankError('每日额度须在 100–5000000 分之间')
+        body = { name: text(a.name, '预算名称'), platforms, dailyLimit }
+        if (a.pointThresholdCents !== undefined) {
+          const threshold = Number(a.pointThresholdCents)
+          if (!Number.isSafeInteger(threshold) || threshold < 0 || threshold > 5_000_000) throw bankError('积分门槛须在 0–5000000 分之间')
+          body.pointThreshold = threshold
+        }
+        if (a.enabled !== undefined) body.enabled = boolean(a.enabled, '启用状态')
+        path = '/api/budgets'
+        fields = [field('预算', body.name, true), field('商户', platformNames(platforms)), field('每日额度', money(dailyLimit), true), field('说明', '只保存每日额度，不扣款、不冻结资金')]
+        break
+      }
+      case 'bank_update_budget': {
+        const overview = await get('/api/budgets')
+        const budget = overview.budgets.find(row => row.id === text(a.budgetId, '预算编号'))
+        if (!budget) throw bankError('支出预算不存在', 404)
+        const patch = {}
+        if (a.name !== undefined) patch.name = text(a.name, '预算名称')
+        if (a.platforms !== undefined) patch.platforms = budgetPlatforms(a.platforms)
+        if (a.dailyLimitCents !== undefined) {
+          const dailyLimit = Number(a.dailyLimitCents)
+          if (!Number.isSafeInteger(dailyLimit) || dailyLimit < 100 || dailyLimit > 5_000_000) throw bankError('每日额度须在 100–5000000 分之间')
+          patch.dailyLimit = dailyLimit
+        }
+        if (a.pointThresholdCents !== undefined) {
+          const threshold = Number(a.pointThresholdCents)
+          if (!Number.isSafeInteger(threshold) || threshold < 0 || threshold > 5_000_000) throw bankError('积分门槛须在 0–5000000 分之间')
+          patch.pointThreshold = threshold
+        }
+        if (a.enabled !== undefined) patch.enabled = boolean(a.enabled, '启用状态')
+        if (!Object.keys(patch).length) throw bankError('请至少提供一个要修改的字段')
+        path = `/api/budgets/${enc(budget.id)}`
+        method = 'PATCH'
+        body = patch
+        fields = [field('预算', budget.name, true), field('修改项', Object.keys(patch).join('、')), ...(patch.dailyLimit !== undefined ? [field('新每日额度', money(patch.dailyLimit))] : [])]
+        break
+      }
+      case 'bank_delete_budget': {
+        const overview = await get('/api/budgets')
+        const budget = overview.budgets.find(row => row.id === text(a.budgetId, '预算编号'))
+        if (!budget) throw bankError('支出预算不存在', 404)
+        path = `/api/budgets/${enc(budget.id)}`
+        method = 'DELETE'
+        fields = [field('删除预算', budget.name, true), field('影响', '该预算的打卡积分和额度券一并删除；不退款、不取消已有消费')]
+        break
+      }
+      case 'bank_redeem_budget_pass': {
+        const overview = await get('/api/budgets')
+        const budget = overview.budgets.find(row => row.id === text(a.budgetId, '预算编号'))
+        if (!budget) throw bankError('支出预算不存在', 404)
+        body = {}
+        if (a.day !== undefined) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a.day))) throw bankError('日期格式应为 YYYY-MM-DD')
+          body.day = String(a.day)
+        }
+        path = `/api/budgets/${enc(budget.id)}/passes`
+        fields = [field('预算', budget.name, true), field('使用日期', body.day ?? '今天（北京时间）'), field('说明', '消耗打卡积分兑换一天额外额度')]
+        break
+      }
+      case 'bank_create_savings_goal': {
+        const target = amount(a.targetAmountCents)
+        body = { name: text(a.name, '目标名称'), targetAmount: target }
+        if (a.deadline !== undefined) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a.deadline))) throw bankError('目标日期格式应为 YYYY-MM-DD')
+          body.deadline = String(a.deadline)
+        }
+        if (a.icon !== undefined) body.icon = text(a.icon, '图标')
+        path = '/api/savings/goals'
+        fields = [field('目标', body.name, true), field('目标金额', money(target), true), field('目标日期', body.deadline ?? '无期限'), field('说明', '只是存钱计划，不是存款产品或自动转账')]
+        break
+      }
+      case 'bank_update_savings_goal': {
+        const overview = await get('/api/savings/overview')
+        const goal = overview.goals.find(row => row.id === text(a.goalId, '目标编号'))
+        if (!goal) throw bankError('存钱目标不存在', 404)
+        const patch = {}
+        if (a.name !== undefined) patch.name = text(a.name, '目标名称')
+        if (a.targetAmountCents !== undefined) patch.targetAmount = amount(a.targetAmountCents)
+        if (a.deadline !== undefined) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a.deadline))) throw bankError('目标日期格式应为 YYYY-MM-DD')
+          patch.deadline = String(a.deadline)
+        }
+        if (a.icon !== undefined) patch.icon = text(a.icon, '图标')
+        if (!Object.keys(patch).length) throw bankError('请至少提供一个要修改的字段')
+        path = `/api/savings/goals/${enc(goal.id)}`
+        method = 'PATCH'
+        body = patch
+        fields = [field('目标', goal.name, true), field('修改项', Object.keys(patch).join('、'))]
+        break
+      }
+      case 'bank_delete_savings_goal': {
+        const overview = await get('/api/savings/overview')
+        const goal = overview.goals.find(row => row.id === text(a.goalId, '目标编号'))
+        if (!goal) throw bankError('存钱目标不存在', 404)
+        path = `/api/savings/goals/${enc(goal.id)}`
+        method = 'DELETE'
+        fields = [field('删除目标', goal.name, true), field('影响', '删除目标本身；已留存资金和流水不变，不退款、不转账')]
+        break
+      }
+      case 'bank_update_savings_roundup': {
+        const overview = await get('/api/savings/overview')
+        const patch = {}
+        if (a.enabled !== undefined) patch.enabled = boolean(a.enabled, '凑整开关')
+        if (a.roundupToCents !== undefined) patch.roundupTo = amount(a.roundupToCents)
+        if (a.dailyCapCents !== undefined) patch.dailyCap = amount(a.dailyCapCents)
+        if (a.accountId !== undefined) patch.accountId = text(a.accountId, '扣款账户编号')
+        if (a.goalId !== undefined) patch.goalId = String(a.goalId).trim() === '' ? null : text(a.goalId, '目标编号')
+        if (!Object.keys(patch).length) throw bankError('请至少提供一个要修改的字段')
+        path = '/api/savings/roundup'
+        method = 'PATCH'
+        body = patch
+        fields = [field('当前规则', overview.roundup.enabled ? '已开启' : '已关闭'), field('修改项', Object.keys(patch).join('、'), true), field('说明', '只保存规则；不会立即转账，按后续符合条件的消费执行')]
+        break
+      }
+      case 'bank_update_cash_sweep': {
+        const patch = {}
+        if (a.enabled !== undefined) patch.enabled = boolean(a.enabled, '自动转入开关')
+        if (a.thresholdCents !== undefined) {
+          const threshold = Number(a.thresholdCents)
+          if (!Number.isSafeInteger(threshold) || threshold < 0) throw bankError('保留金额必须是不小于 0 的整数分')
+          patch.threshold = threshold
+        }
+        if (a.accountId !== undefined) patch.accountId = text(a.accountId, '账户编号')
+        if (!Object.keys(patch).length) throw bankError('请至少提供一个要修改的字段')
+        path = '/api/wealth/cash-management/sweep'
+        method = 'PATCH'
+        body = patch
+        fields = [field('修改项', Object.keys(patch).join('、'), true), field('说明', '只保存现金管理规则，未开放自动转入执行')]
+        break
+      }
+      case 'bank_update_salary_plan': {
+        const patch = {}
+        if (a.salaryDay !== undefined) {
+          const day = Number(a.salaryDay)
+          if (!Number.isSafeInteger(day) || day < 1 || day > 28) throw bankError('发薪日须为 1–28')
+          patch.salaryDay = day
+        }
+        if (a.amountCents !== undefined) patch.amount = amount(a.amountCents)
+        if (a.employer !== undefined) patch.employer = text(a.employer, '雇主名称')
+        if (a.accountId !== undefined) patch.accountId = text(a.accountId, '账户编号')
+        if (!Object.keys(patch).length) throw bankError('请至少提供一个要修改的字段')
+        path = '/api/cashflow/salary'
+        method = 'PATCH'
+        body = patch
+        fields = [field('修改项', Object.keys(patch).join('、'), true), field('说明', '保存工资计划，不代表已发薪或已自动划转')]
+        break
+      }
+      case 'bank_submit_risk_assessment': {
+        const questions = await get('/api/wealth/risk/questions')
+        let answers
+        try { answers = JSON.parse(text(a.answers, '测评答案')) } catch { throw bankError('测评答案须为 JSON 数组') }
+        if (!Array.isArray(answers) || answers.length !== questions.length) throw bankError(`需要按顺序回答全部 ${questions.length} 道题`)
+        const picked = questions.map((q, i) => {
+          const index = answers[i]
+          if (!Number.isSafeInteger(index) || index < 0 || index >= q.options.length) throw bankError(`第 ${i + 1} 题选项无效`)
+          return q.options[index]
+        })
+        path = '/api/wealth/risk/assess'
+        body = { answers }
+        preview = { riskQuestions: digest(questions) }
+        fields = [field('测评题数', `${questions.length} 题`), field('已选答案', picked.map((o, i) => `第${i + 1}题 ${o.label}`).join('；')), field('说明', '必须由客户本人选择，不得代答或推断；结果有效期一年')]
+        break
+      }
+      case 'bank_activate_overdraft': {
+        const overdraft = await get('/api/cashflow/overdraft')
+        const active = boolean(a.active, '启用状态')
+        if (!active && overdraft.used > 0) throw bankError('存在未还清的备用金，暂时无法关闭', 409)
+        path = '/api/cashflow/overdraft/activate'
+        body = { active }
+        preview = { overdraftState: digest(overdraft) }
+        fields = [field('操作', active ? '启用备用金' : '关闭备用金', true), field('额度', money(overdraft.creditLimit)), field('已用', money(overdraft.used)), field('年化利率', `${(overdraft.apr * 100).toFixed(2)}%`), field('说明', '备用金是授信额度，不是存款；启用不转账、不产生借款')]
+        break
+      }
+      case 'bank_apply_loan': {
+        const credit = await get('/api/credit/overview')
+        const product = credit.products.find(p => p.id === text(a.productId, '借款产品编号'))
+        if (!product) throw bankError('借款产品不存在', 404)
+        const principal = amount(a.amountCents)
+        if (principal < product.minAmount || principal > product.maxAmount) throw bankError(`借款金额需在 ${money(product.minAmount)}–${money(product.maxAmount)} 之间`)
+        const term = Number(a.termMonths)
+        if (!Number.isSafeInteger(term) || term < product.minTermMonths || term > product.maxTermMonths) throw bankError('借款期限超出可选范围')
+        if (principal > credit.availableCredit) throw bankError('超过可用授信额度')
+        const account = await get(`/api/accounts/${enc(text(a.accountId, '放款账户编号'))}`)
+        const purpose = text(a.purpose, '借款用途')
+        const totalInterest = Math.round((principal * product.apr * term) / 12)
+        path = '/api/credit/loans/apply'
+        body = { productId: product.id, amount: principal, termMonths: term, purpose, accountId: account.id }
+        preview = { loanProduct: product.id, loanQuote: { principal, term, totalInterest } }
+        fields = [field('借款产品', product.name), field('本金', money(principal), true), field('期限', `${term} 个月`), field('年化利率', `${(product.apr * 100).toFixed(2)}%`), field('预计总利息', money(totalInterest), true), field('月供', money(Math.round((principal + totalInterest) / term))), field('放款账户', `${account.label} · ${account.currency}`), field('用途', purpose), field('说明', '确认并验证支付密码后提交借款申请，放款计入该账户并形成负债；利率以银行回执为准')]
+        break
+      }
+      case 'bank_convert_installment': {
+        const tx = await get(`/api/transactions/${enc(text(a.transactionId, '交易编号'))}`)
+        if (tx.status !== 'success' || tx.direction !== 'out' || !['shopping', 'dining', 'transport', 'housing', 'subscription'].includes(tx.category) || !['card', 'quickpay'].includes(tx.detail?.channel)) throw bankError('只有符合条件的支出交易可以办理分期', 400)
+        const periods = Number(a.periods)
+        if (!Number.isSafeInteger(periods) || periods < 3 || periods > 24) throw bankError('分期期数需在 3–24 期之间')
+        path = `/api/credit/installments/${enc(tx.id)}/plan`
+        body = { periods }
+        preview = { installmentTx: digest(tx) }
+        fields = [field('交易', tx.memo || tx.counterparty), field('金额', money(tx.amount), true), field('期数', `${periods} 期`), field('费率', '2.40%（一次性）'), field('说明', '原交易保留，新增分期计划与手续费；不退款、不撤销原消费')]
+        break
+      }
+      case 'bank_update_security_rule': {
+        const overview = await get('/api/security/overview')
+        const rule = overview.riskRules.find(r => r.id === text(a.ruleId, '风控规则编号'))
+        if (!rule) throw bankError('风控规则不存在', 404)
+        const enabled = boolean(a.enabled, '规则开关')
+        path = `/api/security/rules/${enc(rule.id)}`
+        method = 'PATCH'
+        body = { enabled }
+        preview = { securityRule: digest(rule) }
+        fields = [field('规则', rule.label, true), field('当前状态', rule.enabled ? '已开启' : '已关闭'), field('操作', enabled ? '开启该规则' : '关闭该规则', true), field('影响', enabled ? rule.description : `关闭后不再执行：${rule.description}；账户保护会减弱`)]
+        break
+      }
+      case 'bank_redeem_lounge_pass': {
+        const membership = await get('/api/membership')
+        const remaining = membership.lounge?.remaining ?? 0
+        if (remaining <= 0) throw bankError(`本年度贵宾厅额度已用完（${membership.tierLabel}每年 ${membership.lounge?.perYear ?? 0} 次）`, 409)
+        path = '/api/membership/lounge-pass'
+        method = 'POST'
+        body = {}
+        preview = { loungeQuota: digest(membership.lounge) }
+        fields = [field('会员等级', membership.tierLabel), field('年度额度', `${membership.lounge.perYear} 次`), field('剩余', `${remaining} 次`), field('操作', '核销 1 次贵宾厅', true), field('说明', '核销后不可退回；具体机场/车站与可用时间以现场为准，不保证座位或时段')]
+        break
+      }
+      case 'bank_delete_payee': {
+        const payees = await get('/api/payees')
+        const payee = payees.find(p => p.id === text(a.payeeId, '收款人编号'))
+        if (!payee) throw bankError('收款人不存在或不属于本人', 404)
+        path = `/api/payees/${enc(payee.id)}`
+        method = 'DELETE'
+        preview = { payeeState: digest(payee) }
+        fields = [field('收款人', payee.name, true), field('银行', payee.bankName ?? payee.bankCode ?? '—'), field('影响', '只删除保存的收款人；不影响已有转账和流水，下次转账需重新提供完整账号')]
+        break
+      }
+      case 'bank_export_statement': {
+        const account = await get(`/api/accounts/${enc(text(a.accountId, '账户编号'))}`)
+        body = { kind: 'statement', accountId: account.id }
+        for (const key of ['from', 'to']) if (a[key] !== undefined) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(a[key]))) throw bankError('日期格式应为 YYYY-MM-DD')
+          body[key] = String(a[key])
+        }
+        if (a.category !== undefined) body.category = text(a.category, '交易类型')
+        if (a.keyword !== undefined) body.keyword = String(a.keyword).slice(0, 60)
+        if (a.direction !== undefined) {
+          const direction = text(a.direction, '收支方向')
+          if (!['in', 'out', 'all'].includes(direction)) throw bankError('收支方向只能是 in、out 或 all')
+          body.direction = direction
+        }
+        path = '/api/exports'
+        method = 'POST'
+        fields = [field('账户', `${account.label} · ${account.currency}`), field('范围', `${body.from ?? '不限'} 至 ${body.to ?? '不限'}`), field('筛选', [body.category, body.direction, body.keyword].filter(Boolean).join('、') || '全部流水'), field('说明', '生成一次性 CSV 下载链接，约 5 分钟内有效；只返回链接与行数，不把流水内容发到对话里')]
+        break
+      }
+      case 'bank_export_billing_report': {
+        const period = text(a.period, '报告周期')
+        if (!['month', 'year'].includes(period)) throw bankError('周期只能是 month 或 year')
+        const value = text(a.value, '报告期')
+        if (period === 'month' ? !/^\d{4}-(0[1-9]|1[0-2])$/.test(value) : !/^\d{4}$/.test(value)) throw bankError(period === 'month' ? '月份格式应为 YYYY-MM' : '年份格式应为 YYYY')
+        const currency = text(a.currency, '币种')
+        if (!['CNY', 'USD', 'HKD'].includes(currency)) throw bankError('币种无效')
+        path = '/api/exports'
+        method = 'POST'
+        body = { kind: 'billing', period, value, currency }
+        fields = [field('报告', period === 'month' ? `${value} 月度账单` : `${value} 年度账单`, true), field('币种', currency), field('说明', '生成一次性 CSV 下载链接，约 5 分钟内有效；只返回链接与行数')]
+        break
+      }
+      case 'bank_get_receipt': {
+        const tx = await get(`/api/transactions/${enc(text(a.transactionId, '交易编号'))}`)
+        path = `/api/transactions/${enc(tx.id)}/receipt`
+        fields = [field('交易', tx.memo || tx.counterparty), field('金额', money(tx.amount, tx.currency ?? 'CNY')), field('查询内容', '电子回单文件名与下载地址（如有）')]
+        break
+      }
+      case 'bank_exchange_quote': {
+        const from = await get(`/api/accounts/${enc(text(a.fromAccountId, '扣账币种余额编号'))}`)
+        const toCurrency = text(a.toCurrency, '目标币种')
+        if (!['CNY', 'USD', 'HKD'].includes(toCurrency)) throw bankError('目标币种无效')
+        if (toCurrency === from.currency) throw bankError('目标币种不能与扣账币种相同')
+        const debit = amount(a.amountCents)
+        const quote = await post('/api/exchange/quote', { fromAccountId: from.id, toCurrency, amount: debit })
+        path = '/api/exchange/quote'
+        body = { fromAccountId: from.id, toCurrency, amount: debit }
+        fields = [field('扣账账户', `${from.label} · ${from.currency}`), field('换入币种', toCurrency), field('扣账金额', money(debit, from.currency), true), field('参考汇率', `1 ${from.currency} = ${toCurrency} ${quote.fx.rate.toFixed(8)}`), field('预计到账', money(quote.fx.toAmount, toCurrency)), field('说明', '报价仅作参考；实际成交以提交时的有效报价为准')]
+        break
+      }
+      case 'bank_exchange': {
+        const from = await get(`/api/accounts/${enc(text(a.fromAccountId, '扣账币种余额编号'))}`)
+        const toCurrency = text(a.toCurrency, '目标币种')
+        if (!['CNY', 'USD', 'HKD'].includes(toCurrency)) throw bankError('目标币种无效')
+        if (toCurrency === from.currency) throw bankError('目标币种不能与扣账币种相同')
+        const debit = amount(a.amountCents)
+        if (debit > from.available) throw bankError('可用余额不足')
+        const quote = await post('/api/exchange/quote', { fromAccountId: from.id, toCurrency, amount: debit })
+        path = '/api/exchange'
+        body = { fromAccountId: from.id, toCurrency, amount: debit }
+        preview = { fx: { rate: quote.fx.rate, toAmount: quote.fx.toAmount } }
+        fields = [field('扣账账户', `${from.label} · ${from.currency}`), field('扣账金额', money(debit, from.currency), true), field('换入金额', money(quote.fx.toAmount, toCurrency), true), field('汇率', `1 ${from.currency} = ${toCurrency} ${quote.fx.rate.toFixed(8)}`), field('点差', `${(quote.fx.spread * 100).toFixed(2)}%`), field('说明', '同一资金账户内多币种余额互转，不新开户；确认后验支付密码')]
+        break
+      }
+      case 'bank_get_insurance': {
+        path = '/api/wealth/insurance'
+        fields = [field('查询内容', '本人保单、总保额与当前可投保产品'), field('说明', '产品与保费以银行返回为准；不承诺承保或理赔')]
+        break
+      }
+      case 'bank_enroll_insurance': {
+        const overview = await get('/api/wealth/insurance')
+        const product = overview.products.find(p => p.id === text(a.productId, '保险产品编号'))
+        if (!product) throw bankError('保险产品不存在', 404)
+        const insuredName = text(a.insuredName, '被保人姓名')
+        if (insuredName.length > 40) throw bankError('被保人姓名过长')
+        path = '/api/wealth/insurance/enroll'
+        body = { productId: product.id, insuredName }
+        preview = { insuranceProduct: product }
+        fields = [field('保险产品', product.name), field('承保机构', product.insurer), field('年缴保费', money(product.premiumPerYear), true), field('保额', money(product.coverage)), field('被保人', insuredName), field('说明', '确认并验证支付密码后从人民币储蓄账户扣当年保费；不代办理赔或退保')]
         break
       }
       case 'bank_wealth_quote':
@@ -394,7 +796,7 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         body = { address, ...(!replacing ? { productCode: product.code } : {}) }
         path = replacing ? `/api/cards/${enc(card.id)}/replace` : '/api/cards/open'
         preview = { fee, accountId: account.id, ...(card ? { cardState: digest(safeCard(card)) } : {}) }
-        fields = [field('操作', replacing ? '换卡' : '申请新卡'), field('卡片', replacing ? cardLabel(card) : product.name), field('费用合计', money(fee), true), field('扣费账户', `${account.label} · 尾号 ${account.accountNo.slice(-4)}`), ...addressFields(address), field('影响', replacing ? '旧卡将失效，新卡为寄送中' : '新卡为寄送中，支付开关初始关闭')]
+        fields = [field('操作', replacing ? '换卡' : '申请新卡'), field('卡片', replacing ? cardLabel(card) : product.name), field('费用合计', money(fee), true), field('扣费账户', `${account.label} · 尾号 ${account.accountNo.slice(-4)}`), ...addressFields(address), field('影响', replacing ? '卡片原地换号（不新增卡片），旧卡号立即失效、新卡号寄送中；绑定的自动扣款将暂停，需由客户重新绑定' : '新卡为寄送中，支付开关初始关闭')]
         break
       }
       case 'bank_list_autodebits':
@@ -411,10 +813,11 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         const item = (await get('/api/autodebits')).find(d => d.id === text(a.autoDebitId, '自动扣款编号'))
         if (!item) throw bankError('扣款计划不存在或不属于当前账户', 404)
         body = { enabled: boolean(a.enabled, '启用状态') }
+        if (body.enabled && item.needsRebind) throw bankError('原绑定卡已换卡，需先在自动扣款页重新绑定一张使用中的卡', 409, 'AUTODEBIT_REBIND_REQUIRED')
         path = `/api/autodebits/${enc(item.id)}`
         method = 'PATCH'
         preview = { autoDebitState: digest(item) }
-        fields = [field('签约服务', item.merchant), field('每期金额', money(item.amount)), field('扣款周期', item.cycle), field('操作', body.enabled ? '启用自动扣款' : '关闭自动扣款', true), field('说明', '仅管理已有签约；不会取消已产生账单或退款')]
+        fields = [field('签约服务', item.merchant), field('每期金额', money(item.amount)), field('扣款周期', item.cycle), field('操作', body.enabled ? '启用自动扣款' : '关闭自动扣款', true), ...(item.needsRebind ? [field('状态', '原绑定卡已换卡，需重新绑定')] : []), field('说明', '仅管理已有签约；不会取消已产生账单或退款')]
         break
       }
       case 'bank_get_spending': {
@@ -559,6 +962,32 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         const accounts = await call(entry.bankToken, '/api/accounts')
         if (fee !== g.preview.fee || accounts[0]?.id !== g.preview.accountId) throw bankError('卡片费用或扣费账户已变化，请重新确认', 409)
       }
+      if (g.preview?.riskQuestions) {
+        const questions = await call(entry.bankToken, '/api/wealth/risk/questions')
+        if (digest(questions) !== g.preview.riskQuestions) throw bankError('测评题目已变化，请重新作答', 409)
+      }
+      if (g.preview?.installmentTx) {
+        const tx = await call(entry.bankToken, `/api/transactions/${enc(input.arguments.transactionId)}`)
+        if (digest(tx) !== g.preview.installmentTx) throw bankError('交易已变化，请重新确认', 409)
+      }
+      if (g.preview?.overdraftState) {
+        const overdraft = await call(entry.bankToken, '/api/cashflow/overdraft')
+        if (digest(overdraft) !== g.preview.overdraftState) throw bankError('备用金状态已变化，请重新确认', 409)
+      }
+      if (g.preview?.securityRule) {
+        const overview = await call(entry.bankToken, '/api/security/overview')
+        const rule = overview.riskRules.find(r => r.id === input.arguments.ruleId)
+        if (!rule || digest(rule) !== g.preview.securityRule) throw bankError('风控规则已变化，请重新确认', 409)
+      }
+      if (g.preview?.loungeQuota) {
+        const membership = await call(entry.bankToken, '/api/membership')
+        if (digest(membership.lounge) !== g.preview.loungeQuota) throw bankError('贵宾厅额度已变化，请重新确认', 409)
+      }
+      if (g.preview?.payeeState) {
+        const payees = await call(entry.bankToken, '/api/payees')
+        const payee = payees.find(p => p.id === input.arguments.payeeId)
+        if (!payee || digest(payee) !== g.preview.payeeState) throw bankError('收款人已变化，请重新确认', 409)
+      }
       if (g.preview?.autoDebitState) {
         const item = (await call(entry.bankToken, '/api/autodebits')).find(d => d.id === input.arguments.autoDebitId)
         if (!item || digest(item) !== g.preview.autoDebitState) throw bankError('签约项目已变化，请重新确认', 409)
@@ -573,7 +1002,13 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
       }
       // 停止可能与重新核价并发，真正提交前再核对一次。
       if (entry.stopping || g.activity?.cancelled || g.activity !== entry.activity) throw bankError('本轮已停止，未提交银行操作', 409)
-      if (['bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
+      if (input.toolName === 'bank_exchange') {
+        // 确认卡上展示的是报价时的汇率；提交前重新询价并核对，避免按过期或变化的价格成交。
+        const quote = await call(entry.bankToken, '/api/exchange/quote', body)
+        if (quote.fx.rate !== g.preview.fx.rate || quote.fx.toAmount !== g.preview.fx.toAmount) throw bankError('汇率已变化，请重新确认', 409, 'QUOTE_CHANGED')
+        body = { ...body, quoteId: quote.quoteId }
+      }
+      if (['bank_transfer', 'bank_fps_transfer', 'bank_exchange', 'bank_wealth_subscribe', 'bank_reveal_card_secret', 'bank_apply_card', 'bank_replace_card', 'bank_activate_card', 'bank_enroll_insurance', 'bank_pay_split_request', 'bank_apply_loan'].includes(input.toolName)) body = { ...body, paymentPassword: g.password }
       const investmentWrite = ['bank_create_invest_plan', 'bank_update_invest_plan'].includes(input.toolName)
       if (investmentWrite && g.challenge.verification) body = { ...body, paymentPassword: g.password }
       if (extendedPasswordTools.includes(input.toolName)) body = { ...body, paymentPassword: g.password }

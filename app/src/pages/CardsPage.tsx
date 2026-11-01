@@ -294,7 +294,7 @@ export function CardsPage() {
                   {card.status !== 'replaced' && <Button size="sm" disabled={busy}
                     onClick={() => { setLossPin(''); setLossError(null); setLossAction({ card, recover: card.status === 'lost' }) }}>
                     {card.status === 'lost' ? '找回解挂' : '正式挂失'}</Button>}
-                  <Button size="sm" icon={<RefreshIcon size={16} />} disabled={busy || card.status === 'replaced'}
+                  <Button size="sm" icon={<RefreshIcon size={16} />} disabled={busy || card.status === 'replaced' || card.status === 'pending'}
                     onClick={() => setApplication({ mode: 'replace', card })}>{card.status === 'lost' ? '挂失补卡' : '换卡'}</Button>
                   {(card.shippingAddress || card.issuingFee) && <Button size="sm" variant="ghost" onClick={() => setDeliveryFor(card)}>寄送信息</Button>}
                 </div>
@@ -408,8 +408,8 @@ export function CardsPage() {
             cards.reload()
             toast.show(
               created.issuingFee && created.shippingAddress
-                ? `已支付 ¥${formatAmount(created.issuingFee)}，新卡将寄往 ${formatAddress(created.shippingAddress)}`
-                : '新卡已提交申请',
+                ? `已支付 ¥${formatAmount(created.issuingFee)}，新卡号尾号 ${created.last4} 将寄往 ${formatAddress(created.shippingAddress)}`
+                : '换卡已提交，新卡寄出后需重新激活',
               'success',
             )
           }}

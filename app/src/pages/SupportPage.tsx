@@ -6,14 +6,17 @@ import { HumanSupportRequest, SupportTickets } from '@/components/support/HumanS
 import type { ChatItem } from '@/lib/agentSessions'
 import type { WorkbenchOptions } from '@/components/agent/ChatWorkspace'
 import { useAsync } from '@/lib/useAsync'
-import { smartServices, type SmartServiceId } from '@/components/layout/services'
+import { serviceIcon } from '@/components/layout/services'
+import type { AgentService } from '@/api/agent'
 const fallback = { list: api.listSupportMessages, send: api.sendSupportMessage }
 const listStaffNotices = () => api.listSupportMessages().then(history => history.filter(message => message.role === 'staff'))
 
-export function SupportPage({ workbench, selectedServices = [], onSelectService, onClearServices, hidden = false }: {
+export function SupportPage({ workbench, services = [], selectedServices = [], onSelectService, onClearServices, hidden = false }: {
   workbench?: WorkbenchOptions
-  selectedServices?: SmartServiceId[]
-  onSelectService?: (id: SmartServiceId) => void
+  /** 后端下发的可用能力；没取到就是空数组，选择器随之隐藏。 */
+  services?: AgentService[]
+  selectedServices?: string[]
+  onSelectService?: (id: string) => void
   onClearServices?: () => void
   /** 助手页切到 IM 视图时保留组件挂载（会话与草稿不丢），仅视觉隐藏。 */
   hidden?: boolean
@@ -32,17 +35,20 @@ export function SupportPage({ workbench, selectedServices = [], onSelectService,
   ]
   // 功能预选器放在输入框上方，不放左侧竖条：竖条紧挨主导航，读起来像第二套导航。
   // 不选也行——后端会按当前问题自动匹配并加载技能（service-skills.mjs）。
-  const picker = workbench && !workbench.docked ? (
+  const picker = workbench && !workbench.docked && services.length > 0 ? (
     <div className="service-picker" role="group" aria-label="要办的事">
       <div className="service-picker-hint">
         <span>要办的事（可选，不选则自动匹配）</span>
         <button type="button" className="service-picker-clear" disabled={selectedServices.length === 0} onClick={onClearServices}>清空</button>
       </div>
       <div className="service-picker-row">
-        {smartServices.map(({ id, label, Icon }) => <button key={id} type="button" className="service-picker-chip"
-          aria-pressed={selectedServices.includes(id)} onClick={() => onSelectService?.(id)}>
-          <Icon size={15} strokeWidth={2} />{label}
-        </button>)}
+        {services.map(({ id, label, description }) => {
+          const Icon = serviceIcon(id)
+          return <button key={id} type="button" className="service-picker-chip" title={description}
+            aria-pressed={selectedServices.includes(id)} onClick={() => onSelectService?.(id)}>
+            <Icon size={15} strokeWidth={2} />{label}
+          </button>
+        })}
       </div>
     </div>
   ) : undefined

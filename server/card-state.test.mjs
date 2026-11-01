@@ -36,8 +36,11 @@ test('HTTP applied pending card cannot bypass activation; formal loss recovery p
   const receipt = ok(await post(routes.cardSpend(opened.id), { platform: 'meituan', amount: 100 }))
   assert.equal(receipt.available, baseline.available - 100)
   ok(await post(routes.cardLost(opened.id), { paymentPassword: '888888' }))
+  // 换卡是原地换号：同一条卡片记录，卡数不变，旧卡号失效、新卡重新寄送并需要激活。
   const fresh = ok(await post(routes.cardReplace(opened.id), { address, paymentPassword: '888888' }))
-  assert.equal((await state()).status, 'replaced'); assert.equal(fresh.status, 'pending'); assert.equal(fresh.lostFromStatus, null)
+  assert.equal(fresh.id, opened.id); assert.equal(fresh.status, 'pending'); assert.equal(fresh.lostFromStatus, null)
+  assert.equal((await state()).status, 'pending')
+  assert.equal(ok(await app.call(routes.cards(), { token: owner.token })).length, 1)
   assert.equal((await post(routes.cardRecover(opened.id), { paymentPassword: '888888' })).body.code, 'CARD_NOT_LOST')
   assert.equal((await post(routes.cardLock(fresh.id), { locked: false })).body.code, 'CARD_NOT_DELIVERED')
   assert.equal(ok(await app.call(routes.accounts(), { token: owner.token })).length, 1)

@@ -12,6 +12,7 @@
     "workbench:start": "node scripts/start-workbench.mjs",
     "test:workbench": "node scripts/check-workbench.mjs",
     "test:reminders": "node --test bridge/bank-reminders.test.mjs bridge/bank-reminder-agent.test.mjs",
+    "test:services": "node --test bridge/agent-services.test.mjs",
     "bootstrap:customer": "node scripts/bootstrap-customer.mjs",
     "start:im": "node scripts/start-im.mjs",
     "start:im:local": "node scripts/start-im-local.mjs",

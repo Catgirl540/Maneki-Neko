@@ -180,6 +180,7 @@ export const routes = {
   cashFlow: () => '/api/analysis/cashflow',
   autoDebits: () => '/api/autodebits',
   autoDebit: (id: string) => `/api/autodebits/${id}`,
+  autoDebitBind: (id: string) => `/api/autodebits/${id}/bind`,
   birthdayPlans: () => '/api/linked/birthdays',
   birthdayPlanPreview: () => '/api/linked/birthdays/preview',
   birthdayPlanCancel: (id: string) => `/api/linked/birthdays/${id}/cancel`,
@@ -373,6 +374,7 @@ export interface BankApi {
   getCashFlow(days?: number): Promise<CashFlow>
   listAutoDebits(): Promise<AutoDebit[]>
   setAutoDebitEnabled(id: string, enabled: boolean): Promise<AutoDebit>
+  bindAutoDebit(id: string, cardId: string): Promise<AutoDebit>
   listBirthdayPlans(): Promise<BirthdayPlan[]>
   previewBirthdayPlan(req: BirthdayPlanDraft): Promise<BirthdayPlanPreview>
   createBirthdayPlan(req: BirthdayPlanRequest): Promise<BirthdayPlan>

@@ -99,16 +99,20 @@ interface BudgetRecord {
 - 只拦系统内的模拟消费；真实银行卡消费、转账、换汇、理财不在拦截范围。
 - 自定义收单与 Stripe 的自由商户号是动态生成的，无法预先纳入预算。
 - 预算的额度不参与账户可用余额计算，也不产生冻结或预授权记录。
-- 助手只有只读工具 `bank_list_budgets`：能读今日额度、已用、剩余与积分，不能创建、修改预算，也不能代用户兑换额度券。
+- 助手可读可写：`bank_list_budgets` 查询，`bank_create_budget` / `bank_update_budget` / `bank_delete_budget` 管理预算，`bank_redeem_budget_pass` 兑换额度券；写操作走确认卡，不需要支付密码。
 
-## Agent 工具：`bank_list_budgets`
+## Agent 工具
 
 | 工具 | 方法 | 路径 | 参数 | 说明 |
 |---|---|---|---|---|
 | `bank_list_budgets` | `GET` | `/api/budgets` | 无 | 返回与页面相同的 `BudgetsOverview`：每个预算的今日额度、已用、剩余、积分与额度券 |
+| `bank_create_budget` | `POST` | `/api/budgets` | `name`、`platforms`、`dailyLimitCents`，可选 `pointThresholdCents`、`enabled` | 新建每日额度预算；商户可传 ID 或中文名 |
+| `bank_update_budget` | `PATCH` | `/api/budgets/:id` | 至少一个可改字段 | 只改传入的字段 |
+| `bank_delete_budget` | `DELETE` | `/api/budgets/:id` | 无 | 连同该预算的打卡积分与额度券一并删除，不退款 |
+| `bank_redeem_budget_pass` | `POST` | `/api/budgets/:id/passes` | 可选 `day`（北京时间 YYYY-MM-DD） | 消耗积分兑换一日额外额度 |
 
-- 属于常规只读查询，走 `approveRoutineQuery` 直接放行，不弹确认卡、不需要支付密码。
-- 只读：没有创建、修改、删除或兑换的助手工具；这些操作要在网页 `/analysis/budgets` 完成。
+- `bank_list_budgets` 属于常规只读查询，走 `approveRoutineQuery` 直接放行，不弹确认卡、不需要支付密码。
+- 四个写工具走确认卡展示对象与影响，不需要支付密码；失败不改预算、不动资金。
 - 回答时必须使用返回的 `today.used`、`today.remaining` 与 `points.available`，不能自行推算或编造预算。
 
 ## 测试

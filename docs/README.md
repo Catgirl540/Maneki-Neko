@@ -16,6 +16,7 @@
 | --- | --- |
 | [api/](api/README.md) | HTTP 接口契约：端点、错误码、请求响应类型（**接口的单一事实源**） |
 | [product/](product/) | 产品规则：账户模型、会员、理财产品、卡与权益、财富工作区 |
+| [product/agent-coverage.md](product/agent-coverage.md) | Agent 全操作覆盖规划：缺口、分批与确认/验密规范 |
 | [bank-database-design.md](bank-database-design.md) | 数据表与索引设计 |
 | [bank-postgresql-operations.md](bank-postgresql-operations.md) | PostgreSQL 运维手册（当前生产口径） |
 | [bank-ai-session-postgresql.md](bank-ai-session-postgresql.md) | AI 会话库的独立角色与迁移 |

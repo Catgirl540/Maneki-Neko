@@ -1,4 +1,6 @@
 export interface SpendPlatform {
+  /** 可开通连续包月；金额仅为演示建议值（分） */
+  subscriptionAmount?: number
   id: string
   /** 商户名（回单对方户名） */
   name: string

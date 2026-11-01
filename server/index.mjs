@@ -133,6 +133,19 @@ async function handleRequest(req, res) {
     if (await connectedHttp.handle(req, res, url)) return
     if (await customerSupport.handle(req, res, url)) return
     if (await staffApi.handle(req, res, url)) return
+    if (url.pathname === '/api/idempotency/capabilities' && req.method === 'GET') {
+      const ownerId = await bank.verifyOperationRecovery(req)
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify({ version: 1, atomicSeal: true, ownerId }))
+      return
+    }
+    const operationResolution = /^\/api\/idempotency\/([\w.:-]{8,128})\/resolve$/.exec(url.pathname)
+    if (operationResolution && req.method === 'POST') {
+      const value = await bank.resolveIdempotency(req, operationResolution[1])
+      res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+      res.end(JSON.stringify(value))
+      return
+    }
     if (url.pathname === '/api/agent/transfer/requirements' && req.method === 'GET') {
       const value = await bank.transferRequirements(req)
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })

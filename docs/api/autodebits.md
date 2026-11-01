@@ -2,9 +2,11 @@
 
 ## 已有银行接口
 
-`GET /api/autodebits` 需要客户登录，返回当前客户档案的已有合约数组，不接收其他客户编号。字段为 `id`、`merchant`、`amount`（整数分）、`cycle`、`nextRunAt`、`enabled`、`category`。当前 `AutoDebit` 合约为人民币，网页按 CNY 展示；不是多币种余额合计，也不创建独立资金账户。
+`GET /api/autodebits` 需要客户登录，返回当前客户档案的已有合约数组，不接收其他客户编号。字段为 `id`、`merchant`、`amount`（整数分）、`cycle`、`nextRunAt`、`enabled`、`category`，以及可选的 `cardId`（签约时扣款卡）和 `needsRebind`（换卡后为 `true`，需重新绑定）。当前 `AutoDebit` 合约为人民币，网页按 CNY 展示；不是多币种余额合计，也不创建独立资金账户。
 
-`PATCH /api/autodebits/:id` 接收 `{ enabled: boolean }`，只启停本人已有合约；不存在或他人合约不可操作。不新建合约，不撤销已发生账单，不退款，也不等同于取消商户订阅。Agent 使用 `bank_set_autodebit`，提交前核对合约快照并逐次确认。
+`PATCH /api/autodebits/:id` 接收 `{ enabled: boolean }`，只启停本人已有合约；不存在或他人合约不可操作。`needsRebind=true` 时开启会被拒绝（`409 AUTODEBIT_REBIND_REQUIRED`），必须先重新绑定。不新建合约，不撤销已发生账单，不退款，也不等同于取消商户订阅。Agent 使用 `bank_set_autodebit`，提交前核对合约快照并逐次确认。
+
+`POST /api/autodebits/:id/bind` 接收 `{ cardId }`，把本人的合约重新绑定到一张**使用中**的银行卡：成功后退回更新后的 `AutoDebit`，清除 `needsRebind` 并恢复 `enabled=true`；卡不存在、非本人或不是 `active` 状态时拒绝（`CARD_NOT_FOUND` / `CARD_NOT_ACTIVE`）。换卡会更新同一张卡的卡号，旧卡号失效，绑定过该卡的合约全部置为待重新绑定，必须由客户手动选择卡片，系统不会自动改绑。
 
 ## Agent 读取工具
 
@@ -37,3 +39,7 @@
 同页自动读取唯一资金账户各币种第一页最多 200 条流水，分别给出订阅候选与覆盖条数。同商户同金额在至少三个不同北京时间日期出现，最后两次间隔均接近每周（6–8 天）、每月（26–33 天）或每年（363–367 天），才列为候选。只纳入成功支出，排除工资、转账、无效/未来日期和待结算记录；客户、币种、编号及安全整数金额不一致直接拒绝。依据附实际交易编号；同日重试不当作订阅周期。预测日期不是签约扣款日，不能据候选自动停扣或建立提醒，也不能识别全部第三方订阅。
 
 停用开关有独立确认，明确只停用本行合约；商户订阅、已出账单与退款仍需到商户办理。`shared/subscriptions.mjs` 为双端可复用纯规则，`server/subscriptions.test.mjs` 覆盖周期证据、隔离与日期边界；当前网页与生日计划由 `tools/check-linked-plans-ui.mjs` 使用隔离夹具验证。
+
+## 模拟订阅商户
+
+非 live 模式下，`POST /api/cards/:id/spend` 可对爱奇艺、网易云音乐、腾讯视频、百度网盘传入 `subscription: true`。客户明确选择后，首次消费从所选卡原人民币余额分区扣款，与新合约在同一业务事务保存；金额由本次消费确定（目录价格只是演示建议）。省略或 false 为普通单次消费。非布尔参数、非订阅商户、外币卡、已有同名合约均在扣款前拒绝；停用合约须在自动扣款页恢复，不重复签约。回执 `autoDebit` 返回新增合约。次月同一北京时间日期首次续费，短月夹至月末；当前无到期自动扣款执行器，只演示合约查询、启停与提醒，不接真实商户订阅。

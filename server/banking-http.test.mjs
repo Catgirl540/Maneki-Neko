@@ -184,7 +184,10 @@ test('bank HTTP transactions and security preserve customer budgets and balanced
     assert.equal(receipt.transaction.amount, 2500)
     assert.equal(receipt.transaction.direction, 'out')
     assert.equal(receipt.transaction.status, 'success')
-    assert.equal(receipt.category, 'dining')
+    // Model-backed classification runs after posting; the receipt initially
+    // reports the pending fallback rather than a guessed final category.
+    if (receipt.classificationState === 'pending') assert.equal(receipt.category, 'other')
+    else assert.equal(receipt.category, 'dining')
     assert(['pending', 'done', 'failed'].includes(receipt.classificationState))
     assert.equal(receipt.currency, before.currency)
     assert.equal(receipt.available, before.available - 2500)
@@ -610,6 +613,16 @@ test('single funding HTTP migration, currency transfers and fees remain atomic a
     assert.deepEqual(ok(await app.call(routes.transfers(), { method: 'POST', token: sender.token, body, key })), result)
     assert.equal((await account(app, sender)).balance, before.balance - 100)
     assert.equal((await account(app, recipient, hkd.id)).balance, hkd.balance + result.fx.toAmount)
+    const debit = ok(await app.call(routes.transaction(result.transactionId), { token: sender.token }))
+    assert.equal(debit.detail.originAmount, result.fx.toAmount)
+    assert.equal(debit.detail.originCurrency, 'HKD')
+    assert.equal(debit.detail.exchangeRate, 1 / result.fx.rate)
+    const incoming = ok(await app.call(routes.transactions(hkd.id), { token: recipient.token })).items.find(row => row.memo === body.memo && row.direction === 'in')
+    const credit = ok(await app.call(routes.transaction(incoming.id), { token: recipient.token }))
+    assert.equal(credit.detail.originAmount, body.amount)
+    assert.equal(credit.detail.originCurrency, 'CNY')
+    assert.equal(credit.detail.exchangeRate, result.fx.rate)
+
     const staff = await app.supervisorLogin()
     const profile = ok(await app.call(`/staff-api/customers/${recipient.user.id}/profile?reason=currency-regression`, { token: staff }))
     assert.equal(profile.accounts.length, 1)
@@ -702,7 +715,7 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
   const before = await financialState(app)
   await t.test('every legacy financial contract route refuses live demo reads and writes', async () => {
     const safe = new Set(['login','register','logout','profile','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
-    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardSpend','cardActivate','cardLock','cardReplace','cardSecrets','budgets','budgetPass','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
+    const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardSpend','cardActivate','cardLock','cardReplace','cardSecrets','autoDebitBind','budgets','budgetPass','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
     const patches = new Set(['cardSettings','autoDebit','budget','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     const deletes = new Set(['payee'])
     for (const name of ['splitPay','scheduledTransfers','splitCollections','splitPayment','splitReminder','cardLost','cardRecover','birthdayPlanPreview','birthdayPlans','birthdayPlanCancel','birthdayPlanOrder']) posts.add(name)

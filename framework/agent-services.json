@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "updatedAt": "2026-11-01",
+  "services": [
+    {
+      "id": "transfer",
+      "order": 10,
+      "label": "智能转账",
+      "description": "转账、FPS、跨境、定时与 AA 收付款、在途撤回"
+    },
+    {
+      "id": "wealth",
+      "order": 20,
+      "label": "理财顾问",
+      "description": "产品、测评、持仓、申赎，以及储蓄目标与现金管理"
+    },
+    {
+      "id": "insurance",
+      "order": 25,
+      "label": "保险咨询",
+      "description": "保障需求、保单与条款比较、保费测算"
+    },
+    {
+      "id": "analysis",
+      "order": 30,
+      "label": "账单分析",
+      "description": "流水、账单、预算、自动扣款与续费提醒"
+    },
+    {
+      "id": "cards",
+      "order": 40,
+      "label": "银行卡管家",
+      "description": "申请、换卡、激活、锁卡、挂失、限额、消费与卡安全"
+    },
+    {
+      "id": "exchange",
+      "order": 45,
+      "label": "换汇助手",
+      "description": "账户内币种兑换、汇率与费用"
+    },
+    {
+      "id": "credit",
+      "order": 50,
+      "label": "借款测算",
+      "description": "额度、月供、利息、分期，以及工资与备用金"
+    },
+    {
+      "id": "security",
+      "order": 60,
+      "label": "安全助手",
+      "description": "登录/支付密码、设备、冻结与账户风险"
+    }
+  ]
+}

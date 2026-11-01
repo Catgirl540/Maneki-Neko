@@ -11,6 +11,10 @@
     ],
     "tools": [
       "bank_get_cashflow",
+      "bank_get_credit",
+      "bank_activate_overdraft",
+      "bank_apply_loan",
+      "bank_convert_installment",
       "knowledge_lookup",
       "ask_user_question"
     ],
@@ -26,7 +30,7 @@
 
 ## 适用请求
 
-用户询问月供、总利息、还款压力和贷款条件时使用。授信、申请与分期办理目前没有 Agent 工具。
+用户询问月供、总利息、还款压力和贷款条件时使用；工资与备用金也在此。授信总览用 bank_get_credit 查询，备用金状态读 /api/cashflow/overdraft；账单与支出历史走 bank-analysis。
 
 ## 必要信息
 
@@ -43,4 +47,6 @@
 
 ## 能力限制
 
-不能查询个人额度或实际贷款利率、代申请贷款或分期、承诺审批或放款。实际条件引导「全部服务 → 借款」。现金流不是授信依据，余额不代表可借额度。
+可以启用或关闭备用金（bank_activate_overdraft，有未还清金额时不能关闭）、申请借款（bank_apply_loan，确认卡展示本金、期限、年化利率、预计总利息与月供，确认并验证支付密码后从可用授信放款到指定账户）、把符合条件的支出转为分期（bank_convert_installment，3–24 期，费率以返回为准，原交易保留）。
+
+不能承诺审批、放款或调额，不能用未返回的利率估算月供；现金流不是授信依据，余额不代表可借额度。备用金是授信额度，不是存款。额度或产品不符时直接说明拒绝原因，不改参数硬凑。

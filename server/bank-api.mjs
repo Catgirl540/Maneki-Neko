@@ -5,6 +5,8 @@ import { maskPhone } from './lib/format.mjs'
 import { advanceBirthdayPlans } from '../shared/linked-plans.mjs'
 import { assertAccountActive, assertAccountMethodAllowed, paymentSecurityStatus, recordPaymentPasswordFailure, resetPaymentPasswordFailures, paymentPasswordFailureError, unfreezeAccount } from '../shared/account-security.mjs'
 import { withPaymentPasswordEvents } from './payment-password-events.mjs'
+import { createExportStore, EXPORT_TTL_SECONDS } from './export-store.mjs'
+import { toCsv } from '../shared/csv.mjs'
 
 /** Deterministic sandbox status tags; no inferred risk score or credit decision. */
 function riskTagsFor(profile) {
@@ -97,6 +99,7 @@ const ROUTES = [
   ['GET', 'cashFlow', 'getCashFlow', (id, b, q) => [q.get('days') === null ? undefined : Number(q.get('days'))]],
   ['GET', 'autoDebits', 'listAutoDebits', () => []],
   ['PATCH', 'autoDebit', 'setAutoDebitEnabled', (id, b) => [id, b.enabled]],
+  ['POST', 'autoDebitBind', 'bindAutoDebit', (id, b) => [id, b.cardId]],
   ['GET', 'birthdayPlans', 'listBirthdayPlans', () => []],
   ['POST', 'birthdayPlanPreview', 'previewBirthdayPlan', (id, b) => [b]],
   ['POST', 'birthdayPlans', 'createBirthdayPlan', (id, b) => [b]],
@@ -332,6 +335,8 @@ export async function createBankApi({
   classify: classifyFn,
 } = {}) {
   if (!storage || !database || !auth || !security) throw new Error('Bank API requires database, authentication and security gateway')
+  // 导出链接：内容在已登录请求里生成，链接一次性、短时有效（见 export-store.mjs 的已知限制）。
+  const exportFiles = createExportStore()
   installBrowserShim(undefined, storage)
   const [mockModule, contractModule, dbModule] = await Promise.all([
     import('./domain/index.mjs'), import('./api/contract.mjs'), import('./domain/state.mjs'),
@@ -520,6 +525,60 @@ export async function createBankApi({
       return true
     }
 
+    // 一次性导出文件下载：链接本身即凭据，不要求再带登录态，
+    // 因为助手会把链接直接给客户在浏览器打开。token 只能被取走一次，过期即失效。
+    const download = /^\/api\/exports\/([A-Za-z0-9_-]{24,64})$/.exec(url.pathname)
+    if (download !== null && req.method === 'GET') {
+      const file = exportFiles.take(download[1])
+      if (file === null) {
+        sendJson(res, 404, { message: '下载链接已失效，请在银行页面重新生成', code: 'EXPORT_LINK_EXPIRED' })
+        return true
+      }
+      const payload = Buffer.from(file.csv, 'utf8')
+      res.writeHead(200, {
+        'content-type': 'text/csv; charset=utf-8',
+        'content-length': payload.length,
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(file.fileName)}`,
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      })
+      res.end(payload)
+      return true
+    }
+
+    // 生成导出链接：内容必须在这个**已登录**请求里生成，不能等下载时再按 token 取数，
+    // 否则无登录的下载端点就得替任意客户跑业务逻辑。
+    if (url.pathname === '/api/exports' && req.method === 'POST') {
+      if (security.mode === 'live') {
+        sendJson(res, 503, { message: '合作银行尚未接入或尚未授权此项能力', code: 'BANK_NOT_CONNECTED' })
+        return true
+      }
+      try {
+        const body = await readBody(req)
+        const result = await security.run(req, () => exclusive(async () => {
+          const kind = body?.kind
+          if (kind === 'statement') await activateRequestProfile(req, 'transactionsExport')
+          else if (kind === 'billing') await activateRequestProfile(req, 'billingReportExport')
+          else throw Object.assign(new Error('导出类型无效'), { status: 400, code: 'INVALID_EXPORT_KIND' })
+          const dataset = kind === 'statement'
+            ? await api.exportTransactions(typeof body.accountId === 'string' ? body.accountId : '', body)
+            : await api.exportBillingReport(body)
+          const csv = toCsv(dataset.columns, dataset.rows)
+          const { token, expiresAt } = exportFiles.put({ ownerId: dbModule.loadDb().user.id, fileName: dataset.fileName, csv })
+          return {
+            url: `/api/exports/${token}`, fileName: dataset.fileName, batchNo: dataset.batchNo,
+            total: dataset.total, range: dataset.range, generatedAt: dataset.generatedAt,
+            expiresAt: new Date(expiresAt).toISOString(), ttlSeconds: EXPORT_TTL_SECONDS, contentType: 'text/csv',
+            columns: dataset.columns.length,
+          }
+        }))
+        sendJson(res, 200, result)
+      } catch (error) {
+        sendJson(res, error?.status ?? 500, { message: error instanceof Error ? error.message : String(error), code: error?.code })
+      }
+      return true
+    }
+
     const match = matchPath(patterns, url.pathname)
     if (match === null) {
       sendJson(res, 404, { message: `未知接口：${req.method} ${url.pathname}`, code: 'NOT_FOUND' })
@@ -618,6 +677,14 @@ export async function createBankApi({
   return {
     runStaffUnitOfWork: (work,requestId) => exclusive(work,{requestId}),
     handle,
+    verifyOperationRecovery: (req) => exclusive(async () => {
+      await activateRequestProfile(req, 'profile')
+      return (await auth.identity(req)).id
+    }),
+    resolveIdempotency: (req, key) => exclusive(async () => {
+      await activateRequestProfile(req, 'profile')
+      return security.resolveIdempotency(req, key)
+    }),
     transferRequirements: (req) => exclusive(async () => {
       if (security.mode !== 'sandbox') throw Object.assign(new Error('合作银行尚未接入转账能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
       await activateRequestProfile(req, 'profile')

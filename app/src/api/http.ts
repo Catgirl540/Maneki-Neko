@@ -169,6 +169,7 @@ export function createHttpApi(): BankApi {
       request(routes.cashFlow() + (days ? `?days=${days}` : '')),
     listAutoDebits: () => request<AutoDebit[]>(routes.autoDebits()),
     setAutoDebitEnabled: (id, enabled) => patch(routes.autoDebit(id), { enabled }),
+    bindAutoDebit: (id, cardId) => post(routes.autoDebitBind(id), { cardId }),
     listBirthdayPlans: () => request(routes.birthdayPlans()),
     previewBirthdayPlan: req => post(routes.birthdayPlanPreview(), req),
     createBirthdayPlan: req => post(routes.birthdayPlans(), req),

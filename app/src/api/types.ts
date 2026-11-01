@@ -768,6 +768,8 @@ export interface SpendingTrendPoint {
 
 /** 模拟消费请求：平台与金额，扣哪张卡由路径里的卡 id 决定 */
 export interface SpendRequest {
+  /** 首次消费成功后开通同金额人民币连续包月演示合约 */
+  subscription?: boolean
   /** 预设平台 id（见 shared/spend-platforms.mjs） */
   platform: string
   amount: Cents
@@ -784,6 +786,7 @@ export interface SpendRequest {
  * 分类器不可用时是 other，与既有自动分类的降级口径一致。
  */
 export interface SpendReceipt {
+  autoDebit?: AutoDebit
   transaction: Transaction
   category: TransactionCategory
   /** 后台分类状态：pending 时页面显示「正在分类」并轮询交易详情 */
@@ -893,6 +896,10 @@ export interface AutoDebit {
   nextRunAt: string
   enabled: boolean
   category: TransactionCategory
+  /** 绑定的银行卡；换卡后原卡号失效，需要重新绑定。 */
+  cardId?: string
+  /** 换卡后为 true：必须先重新绑定一张使用中的银行卡才能恢复扣款。 */
+  needsRebind?: boolean
 }
 
 export interface SecurityDevice {

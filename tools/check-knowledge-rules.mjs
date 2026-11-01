@@ -70,10 +70,14 @@ const newCard = await api.openCard({ productCode: product.code, address, payment
 assert.equal(newCard.status, 'pending'); assert.equal(newCard.dailyLimit, 200000)
 assert.equal(newCard.issuingFee, product.issuingFee + product.deliveryFee)
 await assert.rejects(api.revealCardSecrets(newCard.id, '888888'), e => e.code === 'CARD_NOT_DELIVERED')
+// 换卡是原地换号：同一条卡片记录，卡数不变，旧卡号立即失效并回到寄送中。
+const cardsBeforeReplace = loadDb().cards.length
+const oldPan = db.cardSecrets[card.id].pan
 const replacement = await api.replaceCard(card.id, { address, paymentPassword: '888888' })
-assert.equal(card.status, 'replaced'); assert.equal(replacement.status, 'pending')
-assert.notEqual(db.cardSecrets[replacement.id].pan, db.cardSecrets[card.id].pan)
-await assert.rejects(api.revealCardSecrets(card.id, '888888'), e => e.code === 'CARD_REPLACED')
+assert.equal(replacement.id, card.id); assert.equal(card.status, 'pending')
+assert.equal(loadDb().cards.length, cardsBeforeReplace)
+assert.notEqual(db.cardSecrets[card.id].pan, oldPan)
+await assert.rejects(api.revealCardSecrets(card.id, '888888'), e => e.code === 'CARD_NOT_DELIVERED')
 assert.match(text('kb-cards#lost'), /不等于冻结整个资金账户/)
 console.log('PASS 锁卡不冻结资金账户、开关与换卡状态、新卡日限额、寄送中/旧卡敏感信息限制')
 resetDb()

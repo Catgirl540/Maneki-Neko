@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
-import type { AutoDebit } from '@/api/types'
+import type { AutoDebit, BankCard } from '@/api/types'
 import { DataLoading, DataUnavailable } from '@/components/ui/DataUnavailable'
 import { Card, CardHeader } from '@/components/ui/Card'
 import { CategoryIcon } from '@/components/ui/CategoryIcon'
-import { EmptyState, Skeleton } from '@/components/ui/Segmented'
+import { EmptyState, Skeleton, Tag } from '@/components/ui/Segmented'
 import { Row, Toggle } from '@/components/ui/Toggle'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
@@ -18,9 +18,14 @@ import { useToast } from '@/components/ui/toast-context'
 export function AutoDebitsPage() {
   const toast = useToast()
   const autoDebits = useAsync<AutoDebit[]>(() => api.listAutoDebits(), [])
+  const cards = useAsync<BankCard[]>(() => api.listCards(), [])
   const [renewal, setRenewal] = useState<ReturnType<typeof renewalReminderDraft> | null>(null)
   const [stop, setStop] = useState<AutoDebit | null>(null)
+  const [binding, setBinding] = useState<AutoDebit | null>(null)
+  const [bindingId, setBindingId] = useState<string | null>(null)
   const [changing, setChanging] = useState(false)
+  const activeCards = cards.data?.filter(card => card.status === 'active') ?? []
+  const cardOf = (id?: string) => (id ? cards.data?.find(card => card.id === id) : undefined)
   const candidates = useAsync<SubscriptionAnalysis[]>(async () => {
     const accounts = await api.listAccounts()
     const partitions = [...new Map(accounts.flatMap(account => [account, ...(account.currencyBalances ?? [])]).map(account => [account.id, account])).values()]
@@ -45,6 +50,19 @@ export function AutoDebitsPage() {
     try { setRenewal(renewalReminderDraft(item)) }
     catch (error) { toast.show(error instanceof Error ? error.message : '请先核对续费日期', 'error') }
   }
+  async function bindTo(cardId: string) {
+    if (!binding || bindingId) return
+    setBindingId(cardId)
+    try {
+      const updated = await api.bindAutoDebit(binding.id, cardId)
+      autoDebits.setData((autoDebits.data ?? []).map(item => item.id === updated.id ? updated : item))
+      const card = cardOf(cardId)
+      toast.show(`已将「${updated.merchant}」绑定到${card ? `尾号 ${card.last4} 的卡` : '新卡'}`, 'success')
+      setBinding(null)
+    } catch (err) {
+      toast.show(err instanceof ApiError ? err.message : '绑定失败，请稍后重试', 'error')
+    } finally { setBindingId(null) }
+  }
 
   if (autoDebits.error && !autoDebits.data) return <DataUnavailable message={autoDebits.error} onRetry={autoDebits.reload} />
   if (autoDebits.loading && !autoDebits.data) return <DataLoading />
@@ -64,27 +82,41 @@ export function AutoDebitsPage() {
                 <Skeleton className="h-10 w-full" />
               </div>
             ))}
-          {autoDebits.data?.map((item) => (
-            <Row
-              key={item.id}
-              icon={<CategoryIcon category={item.category} />}
-              title={item.merchant}
-              description={`${item.cycle} · 下次扣款 ${formatDate(item.nextRunAt)}`}
-              right={
-                <span className="flex items-center gap-5">
-                  <span className="num text-[15px] font-semibold text-ink">
-                    ¥{formatAmount(item.amount)}
+          {autoDebits.data?.map((item) => {
+            const bound = cardOf(item.cardId)
+            return (
+              <Row
+                key={item.id}
+                icon={<CategoryIcon category={item.category} />}
+                title={<span className="flex flex-wrap items-center gap-2">{item.merchant}{item.needsRebind && <Tag tone="coral">需重新绑定</Tag>}</span>}
+                description={<span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span>{item.cycle} · 下次扣款 {formatDate(item.nextRunAt)}</span>
+                  {(item.needsRebind || bound) && (
+                    <span className="text-ink-mute">
+                      {item.needsRebind ? '原绑定卡已换卡，扣款已暂停' : `绑定卡 · 尾号 ${bound!.last4}`}
+                    </span>
+                  )}
+                </span>}
+                right={
+                  <span className="flex items-center gap-5">
+                    <span className="num text-[15px] font-semibold text-ink">
+                      ¥{formatAmount(item.amount)}
+                    </span>
+                    {item.needsRebind && (
+                      <Button size="sm" variant="primary" disabled={bindingId !== null} onClick={() => setBinding(item)}>重新绑定</Button>
+                    )}
+                    <Button size="sm" variant="ghost" disabled={!item.enabled || changing} onClick={() => reviewRenewal(item)} aria-label={`设置「${item.merchant}」续费提醒`}>续费提醒</Button>
+                    <Toggle
+                      label={`${item.merchant} 自动扣款`}
+                      checked={item.enabled}
+                      disabled={item.needsRebind}
+                      onChange={(next) => { if (!changing && !item.needsRebind) { if (next) void toggleAutoDebit(item, true); else setStop(item) } }}
+                    />
                   </span>
-                  <Button size="sm" variant="ghost" disabled={!item.enabled || changing} onClick={() => reviewRenewal(item)} aria-label={`设置「${item.merchant}」续费提醒`}>续费提醒</Button>
-                  <Toggle
-                    label={`${item.merchant} 自动扣款`}
-                    checked={item.enabled}
-                    onChange={(next) => { if (!changing) { if (next) void toggleAutoDebit(item, true); else setStop(item) } }}
-                  />
-                </span>
-              }
-            />
-          ))}
+                }
+              />
+            )
+          })}
           {!autoDebits.loading && autoDebits.data?.length === 0 && (
             <EmptyState title="没有签约的自动扣款" />
           )}
@@ -112,6 +144,19 @@ export function AutoDebitsPage() {
       <Link to="/wealth/plans?tab=birthday" className="self-start text-[13px] text-ink-soft underline">管理生日预留与订购待办</Link>
       <Modal open={stop !== null} title="停用本行代扣" closeDisabled={changing} onClose={() => { if (!changing) setStop(null) }} footer={<><Button variant="ghost" disabled={changing} onClick={() => setStop(null)}>保留代扣</Button><Button variant="danger" disabled={changing} onClick={() => { if (stop) void toggleAutoDebit(stop, false) }}>确认停用</Button></>}>
         <p className="text-[14px]">确认停用「{stop?.merchant}」的本行自动扣款？商户订阅、已产生账单和退款仍需向商户另行办理。</p>
+      </Modal>
+      <Modal open={binding !== null} title="重新绑定自动扣款" closeDisabled={bindingId !== null} onClose={() => { if (bindingId === null) setBinding(null) }}
+        footer={<Button variant="ghost" disabled={bindingId !== null} onClick={() => setBinding(null)}>取消</Button>}>
+        <p className="text-[14px] text-ink-soft">换卡后原卡号立即失效，绑在这张卡上的自动扣款全部暂停。请选择一张使用中的银行卡继续扣款。</p>
+        <div className="mt-4 flex flex-col gap-2">
+          {activeCards.map(card => <button key={card.id} type="button" disabled={bindingId !== null}
+            onClick={() => void bindTo(card.id)}
+            className="flex items-center justify-between rounded-field border border-line px-4 py-3 text-left hover:border-gold disabled:opacity-60">
+            <span className="text-[14px] font-medium">{card.productName}</span>
+            <span className="text-[13px] text-ink-mute">尾号 {card.last4}</span>
+          </button>)}
+          {activeCards.length === 0 && <p className="rounded-field bg-sunk px-4 py-3 text-[13px] text-ink-mute">当前没有使用中的银行卡，请先激活一张卡再绑定。</p>}
+        </div>
       </Modal>
       <Modal open={renewal !== null} title="续费提醒" width="max-w-[720px]" onClose={() => setRenewal(null)}>
         {renewal && <><p className="mb-4 text-[13px] text-ink-mute">按合约 {renewal.contractId} 的下一次扣款日 {renewal.nextRunDate}，建议提前 {renewal.leadDays} 天提醒。请核对后确认创建一次性提醒；后续周期需另行设置。</p><ReminderManager key={renewal.contractId} compact initialTitle={renewal.title} initialTime={renewal.time} /></>}

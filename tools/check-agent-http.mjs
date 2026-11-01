@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { summarizeRiskAssessment } from '../framework/bridge/wealth-risk.mjs'
+import { loadAgentServices } from '../framework/bridge/agent-services.mjs'
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const tmp = await mkdtemp(join(tmpdir(), 'agent-runtime-'))
 const free = async () => { const s=net();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p }
@@ -66,6 +67,9 @@ try{
  const patch=join(tmp,'provider.yml');await writeFile(patch,`- id: llm-pi-ai\n  config:\n    providers:\n      test:\n        apiKeyEnv: LUCKYCAT_TEST_KEY\n        api: openai-completions\n        baseURL: http://127.0.0.1:${providerPort}/v1\n        retryPolicy:\n          mode: normal\n          maxRetries: 3\n          retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]\n          backoff:\n            initialDelayMs: 250\n            maxDelayMs: 500\n            jitterRatio: 0\n        models:\n          - id: luckycat-test\n            name: Test\n            input: [text, image]\n            contextWindow: 128000\n- id: luckycat-rag\n  disabled: true\n- id: luckycat-embedding\n  disabled: true\n`)
  start('framework/bridge/demo-server.mjs',{LUCKYCAT_DEMO_PORT:String(agentPort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_SESSION_DATABASE_URL:sessionUrl,LUCKYCAT_SESSION_DATA_KEY:sessionKey,LUCKYCAT_PROVIDER:'test',LUCKYCAT_MODEL:'luckycat-test',LUCKYCAT_TEST_KEY:'test-only',LUCKYCAT_PATCHES:patch,LUCKYCAT_DISABLE_VOICE:'1',LUCKYCAT_SESSION_DIR:join(tmp,'context')})
  await ready(agent,'/agent-api/health',a.token);assert.equal((await api(agent,'/agent-api/health')).status,401);assert.equal((await api(agent,'/consent/challenge',null,{})).status,403)
+ // 能力清单是网页与安卓的唯一来源；未登录不返回，登录后必须与仓库清单完全一致。
+ const services=await api(agent,'/agent-api/services',a.token);assert.equal(services.status,200);assert.deepEqual(services.data,loadAgentServices());assert.equal((await api(agent,'/agent-api/services')).status,401)
+ console.log('PASS 能力清单接口与仓库清单一致，未登录不可读')
  if (!process.argv.includes('--browser-only')) {
  const session=(await api(agent,'/agent-api/sessions',a.token,{})).data.sessionId
  assert.equal((await api(agent,`/agent-api/sessions/${session}`,b.token)).status,404)

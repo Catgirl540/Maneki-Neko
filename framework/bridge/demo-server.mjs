@@ -81,12 +81,15 @@ import { createImHttp } from './im-http.mjs'
 import { imDisabled } from './im-availability.mjs'
 import { createBankReminders } from './bank-reminders.mjs'
 import { createStaffImService, createStaffImWorker } from './staff-im-worker.mjs'
+import { loadAgentServices } from './agent-services.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const STAFF_MODE = process.env.LUCKYCAT_AUDIENCE === 'staff'
 const OPS_MODE = STAFF_MODE && process.env.LUCKYCAT_STAFF_MODE === 'ops'
 const PROFILE = OPS_MODE ? 'staff-ops' : STAFF_MODE ? 'staff' : 'luckycat'
 const serviceSkillContext = STAFF_MODE ? undefined : (await import('./service-skills.mjs')).serviceSkillContext
+// 客户助手能力清单的唯一来源；网页与安卓通过 GET /agent-api/services 读取。
+const agentServices = loadAgentServices()
 const OPS_WORKSPACE = resolve(process.env.LUCKYCAT_OPS_WORKSPACE ?? join(ROOT, '..'))
 
 // 硬闸：DSH_HOME 只能是仓库内的 .dsh-home（与 bridge/run.mjs 同一口径）。
@@ -823,6 +826,13 @@ async function handle(req, res) {
         ? { asr: true, tts: true, stream: Boolean(VOLC_API_KEY || (VOLC_APP_ID && VOLC_ACCESS_TOKEN)), maxSeconds: VOICE_MAX_SECONDS }
         : { asr: false, tts: false },
     })
+    return
+  }
+
+  // 客户助手能力清单：网页、安卓和智能体共用 `framework/agent-services.json`。
+  // 只回展示所需的 id/标签/说明/顺序，不含模型、价格或任何客户数据。
+  if (req.method === 'GET' && parts.join('/') === 'agent-api/services') {
+    await sendJson(res, 200, agentServices)
     return
   }
 

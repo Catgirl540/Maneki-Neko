@@ -1,9 +1,10 @@
-/** 验证业务技能与网页入口、真实工具和依据文件一致；不生成或修改源码。 */
+/** 验证业务技能与能力清单、真实工具和依据文件一致；不生成或修改源码。 */
 import { readFileSync, readdirSync, realpathSync, existsSync } from 'node:fs'
 import { resolve, relative, isAbsolute } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import yaml from 'js-yaml'
+import { loadAgentServices } from '../bridge/agent-services.mjs'
 
 export const frameworkRoot = fileURLToPath(new URL('../', import.meta.url))
 export const MAX_SKILL_BODY_BYTES = 6000
@@ -20,16 +21,21 @@ export function validateSkills({ skillsRoot = resolve(frameworkRoot, 'skills'), 
   const bankSources = ['http-tools.ts', 'extended-http-tools.ts'].map(name => source('framework/packages/bank-demo/src/' + name)).join('\n')
   const bankTools = [...bankSources.matchAll(/\{ name: '(bank_[a-z_]+)'/g)].map(m => m[1])
   const tools = new Set([...bankTools, 'knowledge_lookup', 'ask_user_question'])
-  const ui = [...source('app/src/components/layout/services.ts').matchAll(/\{ id: '([^']+)', label: '([^']+)'/g)].map(m => ({ id: m[1], label: m[2] }))
+  // 能力清单是后端唯一来源（GET /agent-api/services），
+  // 这里只核对它和技能目录、技能头部标签是否对得上。
+  const { services: ui } = loadAgentServices()
   const routes = new Set([...source('app/src/App.tsx').matchAll(/<Route path="([^"]+)"/g)].map(m => m[1]))
   const catalogText = readFileSync(resolve(skillsRoot, 'catalog.json'), 'utf8')
   const catalog = JSON.parse(catalogText)
-  if (catalog.version !== 1 || !Array.isArray(catalog.services) || catalog.services.length !== ui.length || ui.length !== 10) throw Error('技能清单必须对应当前 10 个智能服务')
+  if (catalog.version !== 1 || !Array.isArray(catalog.services) || !catalog.services.length) throw Error('技能清单格式无效')
+  // 能力入口是技能清单的子集：清单里的技能都能被自动匹配加载，
+  // 但只有经常用的几个需要平铺成一个按钮。两边仍靠 id/label 对齐，不能各写各的。
+  const exposed = new Map(ui.map(item => [item.id, item]))
   const ids = new Set(), names = new Set(), loaded = []
   const hash = createHash('sha256').update(catalogText)
   for (const entry of catalog.services) {
     const { serviceId, skillName } = entry
-    if (!ui.some(item => item.id === serviceId) || ids.has(serviceId)) throw Error(`服务映射无效或重复: ${serviceId}`)
+    if (ids.has(serviceId)) throw Error(`服务映射重复: ${serviceId}`)
     if (typeof skillName !== 'string' || !/^bank-[a-z]+$/.test(skillName) || names.has(skillName)) throw Error(`技能名称无效或重复: ${skillName}`)
     ids.add(serviceId); names.add(skillName)
     const path = resolve(skillsRoot, skillName, 'SKILL.md')
@@ -39,7 +45,7 @@ export function validateSkills({ skillsRoot = resolve(frameworkRoot, 'skills'), 
     if (!match) throw Error(`${skillName}: 缺少 YAML 头部`)
     const header = yaml.load(match[1]), content = match[2].trim(), meta = header?.metadata
     if (header?.name !== skillName || !nonempty(header.description) || header.description.length > 180) throw Error(`${skillName}: name/description 缺失、不一致或过长`)
-    if (!meta || meta.serviceId !== serviceId || meta.label !== ui.find(item => item.id === serviceId).label) throw Error(`${skillName}: metadata 与网页入口不一致`)
+    if (!meta || meta.serviceId !== serviceId || (exposed.has(serviceId) && meta.label !== exposed.get(serviceId).label)) throw Error(`${skillName}: metadata 与能力清单不一致`)
     for (const key of ['routes', 'tools', 'sources']) array(meta[key], `${skillName}.${key}`)
     if (!meta.routes.length || !meta.sources.length || meta.routes.some(route => !routes.has(route))) throw Error(`${skillName}: 路由或依据缺失/无效`)
     for (const path of meta.sources) {
@@ -55,6 +61,7 @@ export function validateSkills({ skillsRoot = resolve(frameworkRoot, 'skills'), 
     hash.update(skillName).update(raw)
     loaded.push({ ...entry, header, content })
   }
+  for (const id of exposed.keys()) if (!ids.has(id)) throw Error(`能力清单入口未映射技能: ${id}`)
   const entries = readdirSync(skillsRoot, { withFileTypes: true })
   if (entries.some(e => e.name.endsWith('.md') || e.isSymbolicLink())) throw Error('技能根目录只允许清单和已映射目录，维护说明不能作为平铺技能扫描')
   const directories = entries.filter(e => e.isDirectory()).map(e => e.name)

@@ -1,3 +1,4 @@
+import { prepareSpendSubscription } from '../../../../shared/spend-subscription.mjs'
 import { isValidLoginPassword, LOGIN_PASSWORD_REQUIREMENTS } from '../../../../shared/password-policy.mjs'
 import { assertAccountActive as assertSharedAccountActive, paymentSecurityStatus, recordPaymentPasswordFailure, resetPaymentPasswordFailures, paymentPasswordFailureError, protectAccountApi } from '../../../../shared/account-security.mjs'
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../../../shared/account-model.mjs'
@@ -1297,6 +1298,11 @@ export function createMockApi(options?: {
             counterpartyAccountNo: identifier,
             location: '招财猫银行 App',
             remark: req.memo.trim() || undefined,
+            ...(quotedFx ? {
+              originAmount: quotedFx.toAmount, originCurrency: quotedFx.toCurrency,
+              exchangeRate: 1 / quotedFx.rate,
+              exchangeRateNote: `已包括 ${(quotedFx.spread * 100).toFixed(2)}% 换汇点差`,
+            } : {}),
           },
           false,
         )
@@ -1343,6 +1349,11 @@ export function createMockApi(options?: {
           counterpartyAccountNo: maskBankAccount(req.payeeAccountNo ?? ''),
           counterpartyBank: '招财猫银行', location: '招财猫银行 App',
           remark: req.memo.trim() || undefined,
+          ...(quotedFx ? {
+            originAmount: quotedFx.toAmount, originCurrency: quotedFx.toCurrency,
+            exchangeRate: 1 / quotedFx.rate,
+            exchangeRateNote: `已包括 ${(quotedFx.spread * 100).toFixed(2)}% 换汇点差`,
+          } : {}),
         }, false, options?.settlementIdentity)
         const incomingId = nextId('txn')
         recipient.profile.transactions.unshift({
@@ -1359,8 +1370,14 @@ export function createMockApi(options?: {
             counterpartyAccountNo: maskBankAccount(db.accounts[0].accountNo),
             counterpartyBank: '招财猫银行', location: '招财猫银行 App',
             remark: req.memo.trim() || undefined,
+            ...(quotedFx ? {
+              originAmount: quotedFx.fromAmount, originCurrency: quotedFx.fromCurrency,
+              exchangeRate: quotedFx.rate,
+              exchangeRateNote: `已包括 ${(quotedFx.spread * 100).toFixed(2)}% 换汇点差`,
+            } : {}),
           },
         })
+
         const priorPayees = structuredClone(db.payees)
         try {
           if (!isFps) rememberInternalPayee(db, req, nextId)
@@ -1680,6 +1697,9 @@ export function createMockApi(options?: {
       if (card.status === 'replaced') {
         throw new ApiError('该卡已换卡，无法重复操作', 400, 'CARD_REPLACED')
       }
+      if (card.status === 'pending') {
+        throw new ApiError('卡片还在寄送中，收到并激活后才能办理换卡', 409, 'CARD_NOT_DELIVERED')
+      }
 
       verifyPayPassword(req.paymentPassword)
       const addressError = validateAddress(req.address)
@@ -1692,27 +1712,24 @@ export function createMockApi(options?: {
       chargeCardFee(fee, `${card.productName} 换卡工本费`)
       if (quote.waived > 0) recordCardFeeWaiver(db, quote.waived)
 
-      // 换卡是一笔原子操作：旧卡停用和新卡接替在同一次落库里完成
-      card.status = 'replaced'
-
-      const fresh: BankCard = {
-        ...card,
-        id: nextId('card'),
-        last4: String(Math.floor(1000 + Math.random() * 8999)),
-        status: 'pending',
-        onlinePayment: false,
-        overseasPayment: false,
-        shippingAddress: req.address,
-        issuingFee: fee,
-        replacedFromId: card.id,
-        lostFromStatus: null,
-        reportedLostAt: null,
+      // 换卡是换号，不是新办一张卡：同一条卡片记录更新卡号与安全码，列表不新增条目。
+      card.last4 = String(Math.floor(1000 + Math.random() * 8999))
+      card.status = 'pending'
+      card.onlinePayment = false
+      card.overseasPayment = false
+      card.shippingAddress = req.address
+      card.issuingFee = fee
+      card.lostFromStatus = null
+      card.reportedLostAt = null
+      db.cardSecrets[card.id] = { cvv: newCardCvv(), pan: cardPan(card.network, card.last4) }
+      // 卡号变更后，绑在这张卡上的自动扣款合约全部失效，必须手动重新绑定。
+      for (const plan of db.autoDebits ?? []) {
+        if (plan.cardId !== card.id) continue
+        plan.needsRebind = true
+        plan.enabled = false
       }
-      db.cards.push(fresh)
-      // 换发的新卡是另一张卡，安全码必须重新生成，不能沿用旧卡的
-      db.cardSecrets[fresh.id] = { cvv: newCardCvv(), pan: cardPan(fresh.network, fresh.last4) }
       persist()
-      return fresh
+      return card
     },
 
     /**
@@ -1829,6 +1846,8 @@ export function createMockApi(options?: {
       }
       const balance = findBalance(db, card.accountId)
       if (!balance) throw new ApiError('账户不存在', 404, 'ACCOUNT_NOT_FOUND')
+      const subscription = prepareSpendSubscription(input, balance.currency, db.autoDebits)
+      if (subscription.error) throw new ApiError(subscription.error, 400, 'INVALID_SUBSCRIPTION')
       const onlineLimit = card.channelLimits?.online
       if (Number.isSafeInteger(onlineLimit) && amount > (onlineLimit as number))
         throw new ApiError(`超过本卡线上消费单笔限额 ¥${formatAmount(onlineLimit as number)}`, 409, 'CHANNEL_LIMIT_EXCEEDED')
@@ -1873,6 +1892,8 @@ export function createMockApi(options?: {
         merchantNote: note || undefined,
         remark: `模拟消费 · ${platform.name}${note ? ` · ${note}` : ''}`,
       }, false)
+      const autoDebit = subscription.contract ? { ...subscription.contract, id: nextId('ad'), cardId: card.id } : undefined
+      if (autoDebit) db.autoDebits.push(autoDebit)
       persist()
       if (classificationState === 'pending' && classify) {
         // 后台分类：不阻塞响应，完成后回写分类与状态；模型失败时回落本地商户规则
@@ -1892,7 +1913,7 @@ export function createMockApi(options?: {
           })
           .catch(() => applyClassification(transaction.id, ruleCategory ?? 'other', !ruleCategory))
       }
-      return { transaction, category: transaction.category, classificationState, available: balance.available, currency: balance.currency }
+      return { transaction, autoDebit, category: transaction.category, classificationState, available: balance.available, currency: balance.currency }
     },
 
     /* ------------------------------------------------------------ 开户 */
@@ -2311,7 +2332,22 @@ async setAutoDebitEnabled(id, enabled) {
       await delay(220)
       const item = loadDb().autoDebits.find((a) => a.id === id)
       if (!item) throw new ApiError('扣款计划不存在', 404, 'AUTODEBIT_NOT_FOUND')
+      if (enabled && item.needsRebind) throw new ApiError('原绑定卡已换卡，请先重新绑定一张使用中的银行卡', 409, 'AUTODEBIT_REBIND_REQUIRED')
       item.enabled = enabled
+      persist()
+      return item
+    },
+    async bindAutoDebit(id, cardId) {
+      await delay(220)
+      const db = loadDb()
+      const item = db.autoDebits.find((a) => a.id === id)
+      if (!item) throw new ApiError('扣款计划不存在', 404, 'AUTODEBIT_NOT_FOUND')
+      const card = db.cards.find((c) => c.id === cardId)
+      if (!card) throw new ApiError('银行卡不存在', 404, 'CARD_NOT_FOUND')
+      if (card.status !== 'active') throw new ApiError('只能用使用中的银行卡绑定自动扣款', 409, 'CARD_NOT_ACTIVE')
+      item.cardId = card.id
+      item.needsRebind = false
+      item.enabled = true
       persist()
       return item
     },

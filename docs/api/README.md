@@ -71,6 +71,8 @@
 | GET | `/api/accounts/:id` | 单个账户 | 已实现 |
 | GET | `/api/accounts/:id/transactions` | 账户流水（分页；支持 `category` / `keyword` / `currency` / `direction` / `from` / `to`；支出分类由服务端自动归类，见 [accounts.md](accounts.md)） | 已实现 |
 | GET | `/api/accounts/:id/transactions/export` | 流水导出数据集（与列表同口径的 `category` / `keyword` / `currency` / `direction` / `from` / `to`） | 已实现 |
+| POST | `/api/exports` | 生成一次性导出链接：`{ kind: 'statement', accountId, from?, to?, category?, keyword?, direction? }` 或 `{ kind: 'billing', period, value, currency }` → `{ url, fileName, batchNo, total, range, expiresAt }` | 已实现 |
+| GET | `/api/exports/:token` | 下载上面生成的 CSV；链接只能用一次，约 5 分钟过期，无需登录态 | 已实现 |
 | GET | `/api/transactions/:id` | 单笔交易详情（凭证） | 已实现 |
 | GET | `/api/transactions/:id/receipt` | 电子回单文件 | 已实现 |
 | POST | `/api/accounts/:id/deposit` | 转入 | 已实现 |

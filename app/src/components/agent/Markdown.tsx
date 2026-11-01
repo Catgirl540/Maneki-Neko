@@ -62,6 +62,24 @@ const COMPONENTS: Components = {
     // 不安全或空地址都退化成纯文本：react-markdown 已经把 `javascript:` 之类
     // 抹成空串了，这里再兜一道，免得渲染出一个点了会刷新页面的空链接。
     if (!safe) return <span {...rest}>{children}</span>
+    // 站内路径渲染成“跳转卡片”：助手不直接改密码或手机号，只把客户送到安全中心。
+    // 用自定义事件而不是直接改 history，避免 Markdown 组件依赖 Router（Node 侧检查也会渲染它）。
+    if (typeof href === 'string' && href.startsWith('/') && !href.startsWith('//')) {
+      return (
+        <a
+          {...rest}
+          href={href}
+          onClick={(event) => {
+            event.preventDefault()
+            window.dispatchEvent(new CustomEvent('dsh:navigate', { detail: href }))
+          }}
+          className="my-2 flex items-center justify-between gap-3 rounded-field border border-line bg-white px-4 py-3 no-underline transition-colors hover:border-gold"
+        >
+          <span className="text-[13px] font-medium text-ink">{children}</span>
+          <span className="shrink-0 text-[12px] text-gold-deep">前往 →</span>
+        </a>
+      )
+    }
     return (
       <a {...rest} href={href} target="_blank" rel="noopener noreferrer" className="text-blue underline underline-offset-2">
         {children}

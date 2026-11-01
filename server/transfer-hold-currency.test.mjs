@@ -18,7 +18,7 @@ test('foreign currency transfer holds release the exact partition, preserve othe
   const cnyHold = ok(await app.call(routes.transfers(), { method: 'POST', token: owner.token, body: transfer(owner, other, 2000, 'unrelated CNY hold') }))
   const cnyFrozen = await account(app, owner)
   const request = { fromAccountId: usd.id, channel: 'bank', scope: 'overseas', payeeBankCode: '004', payeeBankRegion: 'HK',
-    payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY USD recipient', payeeCurrency: 'USD', amount: 2000, memo: 'USD hold regression' }
+    payeeAccountNo: '6217000000000000123', payeeName: 'TEST ONLY USD recipient', payeeCurrency: 'USD', amount: 2000, memo: 'USD hold regression', paymentPassword: '888888' }
   const hold = async () => {
     const value = ok(await app.call(routes.transfers(), { method: 'POST', token: owner.token, body: request }))
     assert.equal(value.pendingReason, 'inflight'); assert.equal(value.fee, 5000)

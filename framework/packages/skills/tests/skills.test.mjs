@@ -10,7 +10,7 @@ const source = resolve(frameworkRoot, 'skills')
 const cases = JSON.parse(readFileSync(new URL('./cases.json', import.meta.url)))
 const valid = validateSkills()
 
-test('10 个入口唯一映射；正文有界、结果确定、技能不扩张银行工具', () => {
+test('10 个技能唯一映射；正文有界、结果确定、技能不扩张银行工具', () => {
   assert.equal(valid.skills.length, 10)
   assert.deepEqual(validateSkills(), valid)
   assert(valid.skills.every(s => Buffer.byteLength(s.content) <= MAX_SKILL_BODY_BYTES))
@@ -39,10 +39,10 @@ test('60 条固定用例覆盖每个技能、口语、缺信息、多技能与�
 
 test('无办理工具的技能明确限制，不将网页或假设数据当作已办理', () => {
   const limits = {
-    'bank-exchange': ['没有查询独立换汇实时汇率或提交兑换的工具', '不调用转账给自己'],
-    'bank-savings': ['不能代建、修改储蓄目标或开启自动存入'],
-    'bank-credit': ['不能查询个人额度或实际贷款利率', '没有可验证计算结果'],
-    'bank-insurance': ['没有保险查询、投保或理赔工具', '不得补编银行产品条款'],
+    'bank-exchange': ['不能锁汇或承诺汇率', '报价过期或汇率变化必须重新确认'],
+    'bank-savings': ['不能执行自动存入或立即划款', '不能承诺存款利率'],
+    'bank-credit': ['不能承诺审批、放款或调额', '不能用未返回的利率估算月供'],
+    'bank-insurance': ['不能承诺承保、理赔或收益', '不代办退保、理赔或变更'],
     'bank-security': ['不能代改密码手机号', '不保证追回资金'],
     'bank-support': ['不代表人工在线或立即接通', '不能把网页已有功能说成 Agent 已有工具'],
   }

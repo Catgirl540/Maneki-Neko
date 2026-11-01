@@ -114,7 +114,7 @@ test('员工工具在独立 PostgreSQL HTTP 后端验证权限、确认与真实
       const makeHeld = async memo => {
         const prepared = await prepareTransfer({ fromAccountId: from.id, payeeAccountNo: to.accountNo, payeeName: recipient.user.name, payeeBankCode: 'LCB', payeeBankRegion: 'CN', amountCents: 500, memo }, false, path => api(path, customerLogin.token), (path, body) => api(path, customerLogin.token, body))
         await api('/api/auth/payment-password/verify', customerLogin.token, { paymentPassword: '888888' })
-        const transfer = await api('/api/transfers', customerLogin.token, prepared.body)
+        const transfer = await api('/api/transfers', customerLogin.token, { ...prepared.body, paymentPassword: '888888' })
         assert.equal(transfer.settlementStatus, 'pending'); assert.equal(transfer.pendingReason, 'inflight')
         const approval = (await api('/staff-api/approvals?status=pending', supervisor.token)).find(v => v.bizType === 'transfer' && v.payload.transactionId === transfer.transactionId)
         assert(approval); return approval

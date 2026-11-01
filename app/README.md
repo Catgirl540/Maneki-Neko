@@ -54,7 +54,7 @@ VITE_USE_MOCK=false npm --prefix app run dev
 | 维护内容 | 主要位置 |
 | --- | --- |
 | 页面与路由 | `src/pages/`、`src/App.tsx` |
-| 桌面侧栏、首页服务入口与业务返回入口 | `src/components/layout/`，主导航在 `navigation.ts`，智能服务在 `services.ts` |
+| 桌面侧栏、首页服务入口与业务返回入口 | `src/components/layout/`，主导航在 `navigation.ts`；助手能力清单由 `GET /agent-api/services` 下发，`services.ts` 只保留图标与页面归属映射 |
 | 按钮、表单、弹窗等通用控件 | `src/components/ui/` |
 | 图表、品牌图形 | `src/components/charts/`、`src/components/brand/` |
 | 颜色、字体、圆角与工作台布局 | `src/styles/tokens.css`、`src/styles/workbench.css`；基础样式在 `global.css` |
@@ -88,7 +88,7 @@ VITE_USE_MOCK=false npm --prefix app run dev
 
 本轮以 `docs/design/exports/2026-10-15/zhaocai-cat-bank.html` 为视觉依据，**仅验收桌面网页**。登录后落地 `/dashboard` 总览页，智能助手独立为 `/assistant`，拆分依据 `docs/design/drafts/2026-10-20-overview-and-assistant.html`；没有传统/智能模式开关。
 
-侧栏以「总览」「智能助手」「IM 连接」三个顶部入口和「账户与支付、账单与资金、理财与储蓄、个人与安全」四个分组组织业务，分组子项与 `/services` 共用 `navigation.ts` 中的目录；「IM 连接」是唯一不进分组的业务入口，避免同一目录出现两遍。总览 `/dashboard` 为登录后落地页，展示总资产（含人民币活期）、快捷操作、近 30 天现金流、待办、最近交易与本月消费分类，不内嵌助手聊天框；智能助手 `/assistant` 承载助手工作台与十个智能服务；资金信息在「账户与支付 → 账户资产」`/accounts`，个人资料从左下角进入。客服从助手页「智能客服」进入，转人工与工单保留在聊天顶部，不再放进「个人与安全」或全部服务目录重复展示；`/support` 兼容跳转到 `/assistant`。
+侧栏以「总览」「智能助手」「IM 连接」三个顶部入口和「账户与支付、账单与资金、理财与储蓄、个人与安全」四个分组组织业务，分组子项与 `/services` 共用 `navigation.ts` 中的目录；「IM 连接」是唯一不进分组的业务入口，避免同一目录出现两遍。总览 `/dashboard` 为登录后落地页，展示总资产（含人民币活期）、快捷操作、近 30 天现金流、待办、最近交易与本月消费分类，不内嵌助手聊天框；智能助手 `/assistant` 承载助手工作台；能力预选器按后端清单渲染（当前八项：转账、理财、保险、账单、银行卡、换汇、借款、安全），清单唯一来源是 `framework/agent-services.json`，经 `GET /agent-api/services` 下发，取不到时隐藏预选器而不是回退本地副本；储蓄与客服不单独占入口，由后端技能目录按问题自动匹配；换汇和保险各自保留入口；资金信息在「账户与支付 → 账户资产」`/accounts`，个人资料从左下角进入。助手本身就是客服入口，转人工与工单保留在聊天顶部，不再放进「个人与安全」或全部服务目录重复展示；`/support` 兼容跳转到 `/assistant`。
 
 `AppShell.tsx` 始终挂载同一个 `SupportPage`，业务页只替换 `Outlet`，不得把助手放回各路由分别挂载，否则切页会丢失输入草稿、待发图片和正在接收的事件。`ChatWorkspace` 的可选 `workbench` 配置控制助手页/底部输入栏展示；员工端使用独立 client 和身份，不传客户功能选择。选择智能服务不会自动发送消息；真正发送时用 `serviceIds` 提交本轮选择并回到助手页，原始消息不加标题前缀。能力选择按会话隔离：新建对话会清空已选智能服务，需重新选择。服务端按唯一映射加载完整技能，多选组合、清除后自动匹配；历史重发沿用原消息的选择快照。工具与支付确认沿用已有实现，维护见 [业务技能说明](../framework/design/SMART-SERVICE-SKILLS.md)。
 
@@ -235,3 +235,5 @@ npm --prefix app run build:server
 理财改版维护与验收：见 [理财中心说明](../docs/product/wealth-workspace.md)。规则回归运行 `node --import ./tools/ts-resolve-hook.mjs ./tools/check-wealth-workspace.mjs`（仓库根目录）。
 
 理财演示产品见 [虚构目录与实现边界](../docs/product/wealth-products.md)，普通申赎见 [理财接口](../docs/api/wealth.md)。修改目录后运行 `node --import ./tools/ts-resolve-hook.mjs ./tools/check-wealth-products.mjs` 校验双端与文档一致；不可将目录中的固定净值、费率、伪随机曲线或旧活钱配置描述成真实发行与行情。
+
+模拟消费的爱奇艺、网易云音乐、腾讯视频、百度网盘支持可选的连续包月演示：先明确勾选，再首次消费成功创建自动扣款合约，可从回执进入合约管理。金额仅为演示建议，可修改；当前后续不定时扣款。接口与限制见 [自动扣款说明](../docs/api/autodebits.md#模拟订阅商户)。

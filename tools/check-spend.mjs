@@ -20,7 +20,7 @@ class MemoryStorage {
 globalThis.window = { localStorage: new MemoryStorage(), sessionStorage: new MemoryStorage() }
 
 const { createMockApi } = await import('../app/src/api/mock/index.ts')
-const { loadDb, resetDb, persist, findBalance } = await import('../app/src/api/mock/db.ts')
+const { loadDb, resetDb, persist, findBalance, CARD_PRODUCTS } = await import('../app/src/api/mock/db.ts')
 
 resetDb()
 
@@ -140,5 +140,55 @@ const activated = await api.activateCard(pendingRow.id, '888888')
 assert.equal(activated.status, 'active')
 ok('激活：错误密码拒绝，正确密码改为使用中')
 await rejects(() => api.activateCard(activated.id, '888888'), 'CARD_ALREADY_ACTIVE', '已激活的卡重复激活被拒')
+
+// 订阅只在显式开通且刷卡成功后签约；已有合约拒绝重放，普通消费不签约。
+const { prepareSpendSubscription } = await import('../shared/spend-subscription.mjs')
+const january = prepareSpendSubscription({ platform: 'iqiyi', amount: 2500, subscription: true }, 'CNY', [], Date.parse('2028-01-31T12:00:00+08:00'))
+assert.equal(january.contract.nextRunAt, '2028-02-28T16:00:00.000Z')
+assert.equal(prepareSpendSubscription({ platform: 'iqiyi', subscription: true }, 'USD', []).contract, null)
+assert.ok(prepareSpendSubscription({ platform: 'iqiyi', subscription: 'true' }, 'CNY', []).error)
+const contractsBefore = loadDb().autoDebits.length
+const beforeSubscription = findBalance(loadDb(), card.accountId).available
+const subscribed = await api.spendOnCard(card.id, { platform: 'baidu-drive', amount: 3000, subscription: true })
+assert.equal(subscribed.autoDebit.amount, 3000)
+assert.equal(subscribed.autoDebit.merchant, '百度网盘')
+assert.equal(subscribed.autoDebit.cardId, card.id, '签约应记录扣款卡')
+assert.equal(loadDb().autoDebits.length, contractsBefore + 1)
+assert.equal((await api.listAutoDebits()).find(item => item.id === subscribed.autoDebit.id).enabled, true)
+assert.equal(findBalance(loadDb(), card.accountId).available, beforeSubscription - 3000)
+await rejects(() => api.spendOnCard(card.id, { platform: 'baidu-drive', amount: 3000, subscription: true }), 'INVALID_SUBSCRIPTION', '重复签约不扣款')
+assert.equal(findBalance(loadDb(), card.accountId).available, beforeSubscription - 3000)
+await api.setAutoDebitEnabled(subscribed.autoDebit.id, false)
+assert.equal((await api.listAutoDebits()).find(item => item.id === subscribed.autoDebit.id).enabled, false)
+await rejects(() => api.spendOnCard(card.id, { platform: 'meituan', amount: 100, subscription: true }), 'INVALID_SUBSCRIPTION', '普通商户不能签订订阅')
+const ordinary = await api.spendOnCard(card.id, { platform: 'tencent-video', amount: 100 })
+assert.equal(ordinary.autoDebit, undefined)
+assert.equal(loadDb().autoDebits.length, contractsBefore + 1)
+row.status = 'locked'; persist()
+await rejects(() => api.spendOnCard(row.id, { platform: 'tencent-video', amount: 3000, subscription: true }), 'CARD_LOCKED', '消费失败不会留下合约')
+assert.equal(loadDb().autoDebits.length, contractsBefore + 1)
+row.status = 'active'; persist()
+ok('订阅月末日期、首笔扣款签约、查阅停用、重复与失败保护通过')
+
+// 换卡：同一张卡换号，绑定的订阅暂停并要求手动重新绑定
+const cardsBeforeSwap = loadDb().cards.length
+const unionpay = CARD_PRODUCTS.find(p => p.network === 'unionpay')
+const address = { recipient: '林小满', phone: '13800138000', region: '上海市', city: '上海市', detail: '浦东新区世纪大道 100 号', postalCode: '200120' }
+const backup = await api.openCard({ productCode: unionpay.code, address, paymentPassword: '888888' })
+await api.activateCard(backup.id, '888888')
+const swapped = await api.replaceCard(card.id, { address, paymentPassword: '888888' })
+assert.equal(swapped.id, card.id, '换卡应更新同一张卡')
+assert.equal(swapped.status, 'pending')
+assert.equal(loadDb().cards.length, cardsBeforeSwap + 1, '换卡本身不新增卡片（只有新开的备用卡 +1）')
+const paused = (await api.listAutoDebits()).find(item => item.id === subscribed.autoDebit.id)
+assert.equal(paused.needsRebind, true, '换卡后订阅应待重新绑定')
+assert.equal(paused.enabled, false)
+await rejects(() => api.setAutoDebitEnabled(paused.id, true), 'AUTODEBIT_REBIND_REQUIRED', '换卡后不能直接恢复扣款')
+await rejects(() => api.bindAutoDebit(paused.id, swapped.id), 'CARD_NOT_ACTIVE', '待激活卡不能作为绑定卡')
+const rebound = await api.bindAutoDebit(paused.id, backup.id)
+assert.equal(rebound.cardId, backup.id)
+assert.equal(rebound.needsRebind, false)
+assert.equal(rebound.enabled, true)
+ok('换卡原地换号：绑定订阅暂停，手动绑定使用中的卡后恢复')
 
 console.log(`\ncheck-spend: ${passed} 项全部通过`)

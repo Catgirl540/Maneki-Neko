@@ -13,6 +13,11 @@
       "bank_get_balance",
       "bank_get_spending",
       "bank_get_cashflow",
+      "bank_get_savings",
+      "bank_create_savings_goal",
+      "bank_update_savings_goal",
+      "bank_delete_savings_goal",
+      "bank_update_savings_roundup",
       "bank_list_birthday_plans",
       "bank_create_birthday_plan",
       "bank_cancel_birthday_plan",
@@ -35,7 +40,7 @@
 
 ## 适用请求
 
-存钱目标、预算安排、应急金和储蓄进度规划时使用，不等同于推荐理财或转账。
+存钱目标、预算安排、应急金和储蓄进度规划时使用，不等同于推荐理财或转账；本技能是理财顾问的储蓄子项，由自动匹配或理财入口加载。
 
 ## 必要信息
 
@@ -43,7 +48,9 @@
 
 ## 办理步骤
 
-需要账户实际数据才查询 bank_get_balance、bank_get_spending 或 bank_get_cashflow；收支分析可同时加载 bank-analysis。以用户确认的预算计算剩余目标与每期计划，说明不含未确认利息或投资收益。
+需要账户实际数据才查询 bank_get_balance、bank_get_spending 或 bank_get_cashflow；收支分析可同时加载 bank-analysis。先用 bank_get_savings 读取本人存钱目标、凑整设置与进度，再按用户确认的预算计算剩余目标与每期计划，说明不含未确认利息或投资收益。
+
+用户明确要建目标时用 bank_create_savings_goal（名称、目标金额、可选日期），改目标用 bank_update_savings_goal，删除用 bank_delete_savings_goal（只删计划，已留存资金与流水不变，不退款）。凑整规则用 bank_update_savings_roundup，可设置开关、凑整单位、单日上限、扣款账户与目标；只保存规则，不立即划款。
 
 ## 结果说明
 
@@ -51,6 +58,6 @@
 
 ## 能力限制
 
-不能代建、修改储蓄目标或开启自动存入，不能承诺存款利率；执行引导「理财与储蓄 → 储蓄与计划 → 存钱目标」。用户要求买理财时加载 bank-wealth，实际划款加载 bank-transfer。
+可以创建、修改、删除存钱目标和凑整规则，但这些只是计划；不能执行自动存入或立即划款，不能承诺存款利率。目标到账仍需真实转入，划款加载 bank-transfer。用户要求买理财时加载 bank-wealth。
 
 生日留款可用 bank_list_birthday_plans 查询，bank_create_birthday_plan 须明确联系人、关系、具体生日与币种金额，核对预留/订购待办时间并在银行页验证支付密码，也可引导「储蓄与计划 → 生日联动」。生日预留会减少对应币种可用余额，与不冻结余额的普通存钱目标不同；bank_cancel_birthday_plan 经独立确认只释放该计划金额。到期 bank_confirm_birthday_order 仍需单独确认，当前商户未接入，不生成真实订单、不自动消费预留资金，不能说已购买、已配送。生日过期后未消费预留释放；不读取外部通讯录或猜测爱人生日。

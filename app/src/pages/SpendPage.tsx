@@ -103,11 +103,12 @@ export function SpendPage() {
   const preset = findSpendPlatform(marker)
   const [platformId, setPlatformId] = useState<string>(preset?.id ?? SPEND_PLATFORMS[0].id)
   const [cardId, setCardId] = useState<string | null>(null)
-  const [amountText, setAmountText] = useState('38.50')
+  const [amountText, setAmountText] = useState(preset?.subscriptionAmount ? (preset.subscriptionAmount / 100).toFixed(2) : '38.50')
   /** 账单详情：店铺/商品说明，可留空 */
   const [noteText, setNoteText] = useState('')
   /** 自由商家（自定义/Stripe）的商户名称 */
   const [merchantText, setMerchantText] = useState('')
+  const [subscription, setSubscription] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [receipt, setReceipt] = useState<SpendReceipt | null>(null)
   /** 后台分类完成后回填的最终分类；null 表示还没拿到 */
@@ -169,6 +170,7 @@ export function SpendPage() {
       const result = await api.spendOnCard(selectedCard.id, {
         platform: platform.id,
         amount,
+        subscription: Boolean(presetPlatform?.subscriptionAmount && subscription),
         ...(note ? { note } : {}),
         ...(freePlatform ? { merchant: merchantName } : {}),
       })
@@ -202,9 +204,12 @@ export function SpendPage() {
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {[...SPEND_PLATFORMS, ...FREE_SPEND_MERCHANTS].map(item => {
             const active = item.id === platform.id
-            const subtitle = 'merchantId' in item ? `${item.city} · ${item.merchantId}` : item.counterpartyBank
+            const subtitle = 'subscriptionAmount' in item && item.subscriptionAmount ? `订阅商户 · 包月演示 ¥${formatAmount(item.subscriptionAmount)}` : 'merchantId' in item ? `${item.city} · ${item.merchantId}` : item.counterpartyBank
             return (
-              <button key={item.id} type="button" onClick={() => setPlatformId(item.id)}
+              <button key={item.id} type="button" disabled={submitting} onClick={() => {
+                setPlatformId(item.id); setSubscription(false); setError(null)
+                if ('subscriptionAmount' in item && item.subscriptionAmount) setAmountText((item.subscriptionAmount / 100).toFixed(2))
+              }}
                 className={`flex items-center gap-2.5 rounded-card border px-3 py-2.5 text-left transition-colors ${active ? 'border-gold bg-gold-tint text-ink' : 'border-line bg-surface text-ink-soft hover:bg-sunk'}`}>
                 <PlatformIcon id={item.id} tone={item.tone} ink={(item as { ink?: string }).ink} glyph={item.glyph} />
                 <span className="min-w-0">
@@ -266,10 +271,22 @@ export function SpendPage() {
           <p className="mt-1 text-[11px] text-ink-mute">写进流水摘要，如店铺名与商品；留空则记为「{platform.name} 消费」。</p>
         </div>
 
+        {presetPlatform?.subscriptionAmount && <div className="mt-4 rounded-card border border-line bg-sunk p-4">
+          <label className="flex items-center gap-2 text-[14px] font-medium text-ink">
+            <input type="checkbox" checked={subscription} disabled={submitting}
+              onChange={event => setSubscription(event.target.checked)} />
+            开通每月自动续费（演示）
+          </label>
+          <p className="mt-2 text-[12px] leading-relaxed text-ink-soft">
+            本次支付 ¥{amount === null ? '—' : formatAmount(amount)}，成功后按相同金额建立人民币月付合约，下次日期为下月同日（短月取月末）。
+            可在<Link to="/analysis/autodebits" className="font-medium text-gold-deep underline">自动扣款</Link>查看、停用或设置提醒。当前只演示合约管理，后续不会定时扣款；不勾选则只记本次消费。金额为演示值。
+          </p>
+        </div>}
+
         {error && <p role="alert" className="mt-4 text-[13px] text-coral">{error}</p>}
         <Button block size="lg" className="mt-5" variant="primary" loading={submitting}
           disabled={!selectedCard || amount === null || overCap || !merchantValid} onClick={() => void submit()}>
-          模拟刷卡 ¥{amount !== null ? formatAmount(amount) : '—'}
+          {subscription && presetPlatform?.subscriptionAmount ? '支付并开通月付' : '模拟刷卡'} ¥{amount !== null ? formatAmount(amount) : '—'}
         </Button>
       </Card>
 
@@ -280,6 +297,10 @@ export function SpendPage() {
             <PlatformIcon id={platform.id} tone={platform.tone} ink={(platform as { ink?: string }).ink} glyph={platform.glyph} size={30} />
             在「{receipt.transaction.counterparty}」的模拟消费已记账。
           </p>
+          {receipt.autoDebit && <p className="mt-3 text-[13px] text-ink">
+            已开通「{receipt.autoDebit.merchant}」月付合约，每期 ¥{formatAmount(receipt.autoDebit.amount)}。
+            <Link to="/analysis/autodebits" className="mt-2 inline-flex font-medium text-gold-deep underline">查看自动扣款合约</Link>
+          </p>}
           <dl className="mt-4 flex flex-col gap-3 text-[14px]">
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">商户</dt><dd className="text-right text-ink">{receipt.transaction.counterparty}</dd></div>
             <div className="flex justify-between gap-4"><dt className="text-ink-soft">账单详情</dt><dd className="text-right text-ink">{receipt.transaction.memo}</dd></div>

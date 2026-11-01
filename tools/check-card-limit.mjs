@@ -3,7 +3,7 @@
  *
  * 规则（docs/product/cards-and-membership-proposal.md 已确认口径）：
  * - 每位客户每个卡组织（Visa / 银联）至多一张；active/locked/pending 占名额，replaced 不占。
- * - 换卡在同一笔操作里旧卡失效、新卡接替名额，不额外占名额。
+ * - 换卡是同一张卡换号（卡号/CVV 更新、状态回到 pending），列表不新增卡片，名额不变。
  * - 演示档案当前按 AUM 评白金；本检查专门覆盖「钻石 2 次全免（含寄送）」路径，
  *   所以把上月快照抬到钻石门槛（评定只读快照，不看当前余额）。
  */
@@ -76,19 +76,25 @@ assert.equal(loadDb().cards.find(c => c.id === created.id).status, 'locked')
 await assert.rejects(api.openCard({ productCode: unionpay.code, address: addr, paymentPassword: '888888' }), networkLimit)
 console.log('PASS locked 状态占用名额，锁卡不释放名额')
 
-// 换卡：旧 Visa active → replaced，新 Visa pending 接替名额；第二次减免 → 实付 0
+// 换卡：同一张卡换号（卡号/CVV 更新、状态回到 pending），列表不新增，名额不变；第二次减免 → 实付 0
 const oldVisa = loadDb().cards.find(c => c.network === 'visa' && c.status === 'active')
+const cardCountBeforeReplace = loadDb().cards.length
+const oldLast4 = oldVisa.last4
+const oldPan = loadDb().cardSecrets[oldVisa.id].pan
 const replaced = await api.replaceCard(oldVisa.id, { address: addr, paymentPassword: '888888' })
+assert.equal(replaced.id, oldVisa.id)
 assert.equal(replaced.network, 'visa')
 assert.equal(replaced.status, 'pending')
-assert.equal(replaced.replacedFromId, oldVisa.id)
-assert.equal(loadDb().cards.find(c => c.id === oldVisa.id).status, 'replaced')
+assert.notEqual(replaced.last4, oldLast4)
+assert.notEqual(loadDb().cardSecrets[oldVisa.id].pan, oldPan)
+assert.equal(loadDb().cards.length, cardCountBeforeReplace)
 assert.equal(occupying('visa').length, 1)
 assert.equal(occupying('visa')[0].id, replaced.id)
 assert.equal(balance(), beforeVisaReject)
 assert.equal(loadDb().membership.benefitUsage.cardFeeWaiversUsed, 2)
 await assert.rejects(api.openCard({ productCode: visa.code, address: addr, paymentPassword: '888888' }), networkLimit)
-console.log('PASS 换卡原子接替名额：旧卡停用新卡 pending，新卡仍占用名额')
+await assert.rejects(api.replaceCard(replaced.id, { address: addr, paymentPassword: '888888' }), (e) => e.code === 'CARD_NOT_DELIVERED')
+console.log('PASS 换卡原地换号：同一张卡更新卡号/CVV，不新增卡片，仍占名额；寄送中不能重复换卡')
 
 // 年度减免耗尽后：再换银联卡按标价全额扣费（银联产品 制卡费¥10 寄送免费）
 const before3 = balance()
@@ -98,11 +104,11 @@ assert.equal(balance(), before3 - unionpay.issuingFee - unionpay.deliveryFee)
 assert.equal(loadDb().membership.benefitUsage.cardFeeWaiversUsed, 2)
 console.log('PASS 减免次数用完后按标价收费，不再核销')
 
-// 已换发的旧卡不能重复换卡；占用中的卡仍各一张
-await assert.rejects(api.replaceCard(oldVisa.id, { address: addr, paymentPassword: '888888' }), (e) => e.code === 'CARD_REPLACED')
+// 占用中的卡仍各一张；两次换卡都没有新增卡片
 assert.equal(occupying('visa').length, 1)
 assert.equal(occupying('unionpay').length, 1)
 assert(loadDb().cards.every(c => c.accountId === loadDb().accounts[0].id))
-// 历史 replaced 卡全部保留在列表里，未被删除
-assert.equal(loadDb().cards.length, cardCount0 + 3)
-console.log('PASS 历史卡保留、占用卡各一张、所有卡仍共享同一资金账户')
+// 演示档案自带的 2 张 replaced 历史卡仍在；换卡本身不再产生新卡
+assert.equal(loadDb().cards.length, cardCount0 + 1)
+assert.equal(loadDb().cards.filter(c => c.status === 'replaced').length, 2)
+console.log('PASS 换卡不新增卡片、占用卡各一张、历史卡保留且共享同一资金账户')

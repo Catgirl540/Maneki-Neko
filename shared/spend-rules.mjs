@@ -7,8 +7,8 @@
  * 「其他」一桶，看不出消费结构，页面还会长期显示「正在分类」。
  *
  * 这里给出确定性的商户规则：
- * - 预设的 12 个平台口径固定（美团外卖、瑞幸、星巴克 → 餐饮；淘宝、京东、
- *   拼多多、盒马 → 购物；滴滴 → 交通；爱奇艺、中国移动 → 订阅；自如 → 居住；
+ * - 预设平台口径固定（美团外卖、瑞幸、星巴克 → 餐饮；淘宝、京东、
+ *   拼多多、盒马 → 购物；滴滴 → 交通；爱奇艺、网易云音乐、腾讯视频、百度网盘、中国移动 → 订阅；自如 → 居住；
  *   猫眼 → 其他娱乐，没有对应分类，保留 other）。
  * - 自定义商家（custom / Stripe）按商户名里的关键词兜底，认不出来就 other。
  *
@@ -29,6 +29,9 @@ export const SPEND_PLATFORM_CATEGORIES = Object.freeze({
     pinduoduo: 'shopping',
     didi: 'transport',
     iqiyi: 'subscription',
+    'netease-music': 'subscription',
+    'tencent-video': 'subscription',
+    'baidu-drive': 'subscription',
     'china-mobile': 'subscription',
     ziroom: 'housing',
     maoyan: 'other',

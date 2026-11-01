@@ -139,11 +139,26 @@ export async function createSecurityGateway(db, auth) {
       await lock(`bank-idempotency:${owner}:${key}`)
       const row = await db.prepare('SELECT * FROM bank_idempotency WHERE owner_id=? AND key=?').get(owner, key)
       if (row) {
+        if (row.path === '__sealed__') fail('该操作已终结，不能继续提交', 409, 'IDEMPOTENCY_SEALED')
         if (row.path !== path || row.request_hash !== hash) fail('幂等键已用于不同请求', 409, 'IDEMPOTENCY_CONFLICT')
         return { hit: true, value: JSON.parse(row.response_json) }
       }
       if (result !== undefined) await db.prepare('INSERT INTO bank_idempotency (owner_id, key, path, request_hash, response_json, created_at) VALUES(?,?,?,?,?,?)').run(owner,key,path,hash,JSON.stringify(result),new Date().toISOString())
       return null
+    },
+    // Must be called inside the same transaction boundary as idempotent().
+    // Sealing an absent key under the same lock makes a delayed request unable
+    // to execute after a client has been told that it can start a new operation.
+    async resolveIdempotency(req, key) {
+      if (typeof key !== 'string' || !/^[\w.:-]{8,128}$/.test(key)) fail('无效幂等键', 400, 'INVALID_IDEMPOTENCY_KEY')
+      const owner = (await auth.identity(req)).id
+      await limit('idempotency-resolution', owner, 60, 60_000)
+      await lock(`bank-idempotency:${owner}:${key}`)
+      const row = await db.prepare('SELECT * FROM bank_idempotency WHERE owner_id=? AND key=?').get(owner, key)
+      if (row?.path === '__sealed__') return { status: 'sealed' }
+      if (row) return { status: 'completed', path: row.path, result: JSON.parse(row.response_json) }
+      await db.prepare('INSERT INTO bank_idempotency (owner_id, key, path, request_hash, response_json, created_at) VALUES(?,?,?,?,?,?)').run(owner, key, '__sealed__', '__sealed__', '{}', new Date().toISOString())
+      return { status: 'sealed' }
     },
   }
 }

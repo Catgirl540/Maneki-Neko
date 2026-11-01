@@ -1,7 +1,8 @@
 /**
  * 模拟消费的预设平台目录。
  *
- * 只描述**商户身份**（商户名、收单机构、城市、商户号）与展示用的图标元数据
+ * subscriptionAmount 为可选连续包月的演示建议金额，不代表真实商户价格。
+ * 目录描述**商户身份**（商户名、收单机构、城市、商户号）与展示用的图标元数据
  * （glyph 字形、tone 品牌底色、noteHint 账单详情示例）——分类不在这里写死。
  * 交易分类由服务端的分类器按商户名与摘要判定，和真实刷卡消费走同一条路径；
  * 分类器不可用时保持 other，与既有 `pushTransaction` 的约定一致。
@@ -111,6 +112,7 @@ export const SPEND_PLATFORMS = [
     counterpartyBank: '盒马（中国）有限公司',
   },
   {
+    subscriptionAmount: 2500,
     id: 'iqiyi',
     name: '爱奇艺会员',
     glyph: '奇',
@@ -122,6 +124,15 @@ export const SPEND_PLATFORMS = [
     location: '线上商户 · 爱奇艺',
     counterpartyBank: '北京爱奇艺科技有限公司',
   },
+  { id: 'netease-music', name: '网易云音乐', glyph: '乐', tone: '#E60026', subscriptionAmount: 2500,
+    noteHint: '连续包月会员（演示）', merchantId: 'M3301080013', country: '中国', city: '线上',
+    location: '线上商户 · 网易云音乐', counterpartyBank: '模拟订阅收单' },
+  { id: 'tencent-video', name: '腾讯视频', glyph: '视', tone: '#1685FF', subscriptionAmount: 3000,
+    noteHint: '连续包月会员（演示）', merchantId: 'M4403050014', country: '中国', city: '线上',
+    location: '线上商户 · 腾讯视频', counterpartyBank: '模拟订阅收单' },
+  { id: 'baidu-drive', name: '百度网盘', glyph: '盘', tone: '#247CFF', subscriptionAmount: 3000,
+    noteHint: '连续包月会员（演示）', merchantId: 'M1101080015', country: '中国', city: '线上',
+    location: '线上商户 · 百度网盘', counterpartyBank: '模拟订阅收单' },
   {
     id: 'china-mobile',
     name: '中国移动话费',

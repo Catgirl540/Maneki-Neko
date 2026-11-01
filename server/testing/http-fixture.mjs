@@ -182,7 +182,7 @@ async function register(app, phone, name) {
 function transfer(sender, recipient, amount, memo = 'HTTP integration') {
   return { fromAccountId: sender.accounts[0].id, channel: 'bank', scope: 'domestic',
     payeeName: recipient.user.name, payeeAccountNo: recipient.accounts[0].accountNo,
-    payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount, memo }
+    payeeBankCode: 'LCB', payeeBankRegion: 'CN', amount, memo, paymentPassword: '888888' }
 }
 async function account(app, customer, id = customer.accounts[0].id) {
   return ok(await app.call(`/api/accounts/${id}`, { token: customer.token }))

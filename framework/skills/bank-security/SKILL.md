@@ -7,6 +7,8 @@
     "label": "安全助手",
     "routes": [
       "/security",
+      "/security/membership",
+      "/security/invitations",
       "/cards"
     ],
     "tools": [
@@ -17,6 +19,11 @@
       "bank_list_transactions",
       "bank_get_transaction_detail",
       "bank_get_balance",
+      "bank_get_security",
+      "bank_update_security_rule",
+      "bank_get_membership",
+      "bank_list_invitations",
+      "bank_redeem_lounge_pass",
       "knowledge_lookup",
       "ask_user_question"
     ],
@@ -34,7 +41,7 @@
 
 ## 适用请求
 
-银行卡丢失、异常扣款、账号风险或安全设置问题时使用。紧急锁卡需求优先明确目标卡，不插入无关调查。
+银行卡丢失、异常扣款、账号风险或安全设置问题时使用。紧急锁卡需求优先明确目标卡，不插入无关调查；实际锁卡、挂失、补卡操作走 bank-cards。
 
 ## 必要信息
 
@@ -56,4 +63,8 @@
 
 ## 能力限制
 
-不能代改密码手机号、冻结或解冻客户账号、发起退款或保证找回资金。不得编造热线、网点和柜面流程；紧急情况提供现有页面入口及用户明确请求的人工工单。
+可读取风控规则并用 bank_update_security_rule 开关单条规则；关闭会削弱保护，必须先说明该规则原本拦截什么，不得声称关闭后仍然安全，也不得把规则开关说成银行保证。
+
+会员等级与权益用 bank_get_membership 查询（按上月日均储蓄资产评定，不是固定进度）；贵宾厅用 bank_redeem_lounge_pass 核销一次年度额度，先报剩余次数，额度用尽直接说明，不承诺具体机场、时段或座位。邀请奖励用 bank_list_invitations 查询，不承诺未返回的奖励。
+
+不能代改密码手机号、冻结或解冻客户账号、发起退款或保证找回资金。客户要改登录密码、支付密码或登录手机号时，说明这类操作只在安全中心办理，并输出站内链接 `[前往安全中心](/security)`（可加具体事项，如 `[前往安全中心修改支付密码](/security)`）；网页会把它渲染成跳转卡片，不要索取密码或验证码。不得编造热线、网点和柜面流程；紧急情况提供现有页面入口及用户明确请求的人工工单。
