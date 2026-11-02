@@ -39,16 +39,26 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
     // 会员档位与持卡数量取真实接口，未加载时不显示编造的数字。
-    var membership by remember { mutableStateOf<MembershipDto?>(null) }
+    // 先渲染上次的结果，再后台刷新；没有缓存时才显示占位。
+    var membership by remember { mutableStateOf(ReadCache.get<MembershipDto>(ReadCache.Key.ME_MEMBERSHIP)) }
     // 头像跟着资料走：进页面拉一次，失败就退回品牌猫。
-    var avatarId by remember { mutableStateOf<String?>(null) }
-    var cardCount by remember { mutableStateOf<Int?>(null) }
+    var avatarId by remember { mutableStateOf(ReadCache.get<String>(ReadCache.Key.ME_AVATAR)) }
+    var cardCount by remember { mutableStateOf(ReadCache.get<Int>(ReadCache.Key.ME_CARD_COUNT)) }
     var refreshing by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
     LaunchedEffect(refreshKey) {
-        runCatching { BankApi.profile() }.onSuccess { avatarId = it.avatarId }
-        runCatching { BankApi.membership() }.onSuccess { membership = it }
-        runCatching { BankApi.cards() }.onSuccess { cardCount = it.size }
+        runCatching { BankApi.profile() }.onSuccess {
+            avatarId = it.avatarId
+            ReadCache.put(ReadCache.Key.ME_AVATAR, it.avatarId)
+        }
+        runCatching { BankApi.membership() }.onSuccess {
+            membership = it
+            ReadCache.put(ReadCache.Key.ME_MEMBERSHIP, it)
+        }
+        runCatching { BankApi.cards() }.onSuccess {
+            cardCount = it.size
+            ReadCache.put(ReadCache.Key.ME_CARD_COUNT, it.size)
+        }
         refreshing = false
     }
     Column(Modifier.fillMaxSize()) {
@@ -87,8 +97,6 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
                         fontWeight = FontWeight.SemiBold,
                         color = Tokens.Ink,
                     )
-                    Spacer(Modifier.height(3.dp))
-                    Text(maskPhone(SessionStore.phone()), style = Tokens.Text.note)
                 }
                 Row(
                     Modifier
@@ -105,38 +113,20 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
             }
             Hairline()
 
-            SectionHeader("账户与安全")
+                        Spacer(Modifier.height(10.dp))
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
                 Column {
                     IconRow(Icons.Person, "个人资料") { onOpen("个人资料") }
                     Hairline()
                     IconRow(Icons.Lock, "安全中心") { onOpen("安全中心") }
                     Hairline()
-                    IconRow(Icons.Card, "银行卡管理", cardCount?.let { "$it 张" } ?: "—") { onOpen("银行卡") }
+                    IconRow(Icons.Card, "银行卡管理") { onOpen("银行卡") }
                     Hairline()
-                    IconRow(
-                        Icons.Crown,
-                        "会员等级",
-                        membership?.let {
-                            val gap = it.nextThreshold - it.aum
-                            if (gap > 0) "距${tierLabel(it.nextTier)}差 " + formatCents(gap) else it.tierLabel
-                        } ?: "—",
-                    ) { onOpen("会员等级") }
+                    IconRow(Icons.Crown, "会员等级") { onOpen("会员等级") }
                 }
             }
 
-            SectionHeader("连接与偏好")
-            HairlineCard(Modifier.padding(horizontal = 14.dp)) {
-                Column {
-                    IconRow(Icons.Bell, "IM 连接", "前往绑定") { onOpen("IM 连接") }
-                    Hairline()
-                    IconRow(Icons.Dots, "通知设置", "管理") { onOpen("通知设置") }
-                    Hairline()
-                    IconRow(Icons.Globe, "语言与地区", "管理") { onOpen("语言与地区") }
-                }
-            }
-
-            SectionHeader("其他")
+                                    Spacer(Modifier.height(10.dp))
             HairlineCard(Modifier.padding(horizontal = 14.dp)) {
                 Column {
                     IconRow(Icons.Help, "帮助与客服") { onOpen("帮助与客服") }
@@ -148,29 +138,7 @@ fun MeTab(onOpen: (String) -> Unit, onLogout: () -> Unit) {
             }
 
             Spacer(Modifier.height(20.dp))
-            Text(
-                "招财猫银行 v${BuildConfig.VERSION_NAME}",
-                fontSize = 11.sp,
-                color = Tokens.Muted,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            )
         }
         }
     }
 }
-
-/** 会员档位中文名，与网页 `shared/membership.mjs` 一致。 */
-private fun tierLabel(code: String): String = when (code) {
-    "standard" -> "标准会员"
-    "gold" -> "金卡"
-    "platinum" -> "白金卡"
-    "diamond" -> "钻石卡"
-    else -> code
-}
-
-/** 手机号打码：13800138000 → 138 **** 8000。 */
-private fun maskPhone(phone: String): String =
-    if (phone.length >= 7) phone.take(3) + " **** " + phone.takeLast(4) else phone

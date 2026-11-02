@@ -1817,23 +1817,6 @@ fun ImScreen(onBack: () -> Unit, onReminders: () -> Unit) {
 }
 
 @Composable
-fun NotifySettingsScreen(onBack: () -> Unit) {
-    PushScreen(title = "通知设置", onBack = onBack) {
-        FormCard("交易与待办", Modifier.padding(horizontal = 16.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Bell, null, tint = Tokens.AccentDeep, modifier = Modifier.size(28.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("在通知页查看", color = Tokens.Ink, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                    Text("交易动态、自动扣款预告与 AA 待付款", color = Tokens.Ink2, fontSize = 13.sp, lineHeight = 19.sp)
-                }
-            }
-            Hairline()
-            Text("通知偏好设置暂未开放。", color = Tokens.Muted, fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
 fun LanguageScreen(onBack: () -> Unit) {
     PushScreen(title = "语言与地区", onBack = onBack) {
         FormCard("显示语言", Modifier.padding(horizontal = 16.dp)) {

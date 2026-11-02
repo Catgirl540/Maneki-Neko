@@ -117,11 +117,17 @@ fun MembershipScreen(onBack: () -> Unit) {
                 if (benefits.length() > 0) {
                     val labels = (0 until benefits.length()).map { benefits.getString(it) }
                     SectionHeader("专属权益", "${labels.size} 项")
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        labels.chunked(2).forEach { pair ->
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                pair.forEach { BenefitChip(it, Modifier.weight(1f)) }
-                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    // 权益清单收进卡片，和下面的贵宾厅权益保持同一层级的容器
+                    HairlineCard {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            labels.chunked(2).forEach { pair ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    pair.forEach { BenefitChip(it, Modifier.weight(1f)) }
+                                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                                }
                             }
                         }
                     }
@@ -258,10 +264,7 @@ fun DeliveryScreen(onBack: () -> Unit) {
 @Composable
 private fun BenefitChip(text: String, modifier: Modifier = Modifier) {
     Row(
-        modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(Tokens.SurfaceWarm)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
+        modifier.padding(vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         androidx.compose.material3.Icon(

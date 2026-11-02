@@ -125,17 +125,18 @@ fun NotifyTab(onOpenAa: () -> Unit, onOpenTx: (String) -> Unit) {
     var filterOpen by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableIntStateOf(0) }
 
-    var notices by remember { mutableStateOf<List<Notice>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    var notices by remember { mutableStateOf(ReadCache.get<List<Notice>>(ReadCache.Key.NOTIFY_NOTICES) ?: emptyList()) }
+    var loading by remember { mutableStateOf(ReadCache.get<List<Notice>>(ReadCache.Key.NOTIFY_NOTICES) == null) }
     // 两类来源分别记录失败原因：任一失败都不能伪装成“没有提醒”。
     var txError by remember { mutableStateOf<String?>(null) }
     var debitError by remember { mutableStateOf<String?>(null) }
-    var aaCount by remember { mutableIntStateOf(0) }
+    var aaCount by remember { mutableIntStateOf(ReadCache.get<Int>(ReadCache.Key.NOTIFY_AA_COUNT) ?: 0) }
     var aaError by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
 
     LaunchedEffect(reloadKey) {
-        loading = true
+        // 有缓存就直接用旧内容渲染，只把失败原因清掉，避免整页变骨架。
+        loading = ReadCache.get<List<Notice>>(ReadCache.Key.NOTIFY_NOTICES) == null
         txError = null
         debitError = null
         aaError = null
@@ -163,6 +164,8 @@ fun NotifyTab(onOpenAa: () -> Unit, onOpenTx: (String) -> Unit) {
             .onFailure { aaCount = 0; aaError = it.message ?: "AA 付款通知加载失败" }
 
         notices = buildNotices(transactions, debits, LocalDate.now(bankZone))
+        ReadCache.put(ReadCache.Key.NOTIFY_NOTICES, notices)
+        ReadCache.put(ReadCache.Key.NOTIFY_AA_COUNT, aaCount)
         loading = false
         refreshing = false
     }

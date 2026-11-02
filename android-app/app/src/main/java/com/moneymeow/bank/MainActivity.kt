@@ -77,6 +77,7 @@ class MainActivity : ComponentActivity() {
         BankApi.onUnauthorized = {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 SessionStore.clear()
+                ReadCache.clear()
                 AuthState.loggedIn = false
             }
         }
@@ -294,6 +295,7 @@ fun BankApp() {
                         3 -> NotifyTab(onOpenAa = { push("AA 付款") }, onOpenTx = { id -> selectedTxId = id; push("交易详情") })
                         else -> MeTab(onOpen = push, onLogout = {
                             SessionStore.clear()
+                            ReadCache.clear()
                             AuthState.loggedIn = false
                         })
                     }
@@ -350,7 +352,6 @@ fun BankApp() {
                         "修改手机号" -> ChangePhoneScreen(onBack = pop)
                         "IM 连接" -> ImScreen(onBack = pop, onReminders = { push("微信日程提醒") })
                         "微信日程提醒" -> ImRemindersScreen(onBack = pop)
-                        "通知设置" -> NotifySettingsScreen(onBack = pop)
                         "语言与地区" -> LanguageScreen(onBack = pop)
                         "帮助与客服" -> HelpScreen(onBack = pop, onAssistant = { stack.clear(); tab = 2 })
                         "人工客服工单" -> SupportTicketsScreen(onBack = pop)

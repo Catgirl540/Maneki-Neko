@@ -111,14 +111,16 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
     var reloadKey by remember { mutableIntStateOf(0) }
     var pageCount by remember(filters, reloadKey) { mutableIntStateOf(1) }
 
-    var partitions by remember { mutableStateOf<List<CurrencyPartition>>(emptyList()) }
-    var partitionsReady by remember { mutableStateOf(false) }
+    // 缓存按「筛选 + 页码」分开存：换筛选条件不拿旧结果充数，回到同一条件才秒开。
+    val viewKey = filters.toString() + "#" + pageCount
+    var partitions by remember { mutableStateOf(ReadCache.get<List<CurrencyPartition>>(ReadCache.Key.TX_PARTITIONS) ?: emptyList()) }
+    var partitionsReady by remember { mutableStateOf(ReadCache.get<List<CurrencyPartition>>(ReadCache.Key.TX_PARTITIONS) != null) }
     var accountError by remember { mutableStateOf<String?>(null) }
 
-    var rows by remember { mutableStateOf<List<TxRecord>>(emptyList()) }
-    var totalCount by remember { mutableIntStateOf(0) }
+    var rows by remember { mutableStateOf(ReadCache.get<List<TxRecord>>("tx.rows.$viewKey") ?: emptyList()) }
+    var totalCount by remember { mutableIntStateOf(ReadCache.get<Int>("tx.total.$viewKey") ?: 0) }
     var listError by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(ReadCache.get<List<TxRecord>>("tx.rows.$viewKey") == null) }
     var exportBusy by remember { mutableStateOf(false) }
     var exportData by remember { mutableStateOf<String?>(null) }
     var exportMessage by remember { mutableStateOf<String?>(null) }
@@ -150,7 +152,11 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
             return@LaunchedEffect
         }
         runCatching { BankApi.accounts().firstOrNull()?.partitions().orEmpty() }
-            .onSuccess { partitions = it; partitionsReady = true }
+            .onSuccess {
+                partitions = it
+                partitionsReady = true
+                ReadCache.put(ReadCache.Key.TX_PARTITIONS, it)
+            }
             .onFailure {
                 accountError = it.message ?: "账户加载失败"
                 partitions = emptyList()
@@ -174,10 +180,15 @@ fun TransactionsScreen(onBack: () -> Unit, onAnalysis: () -> Unit, onOpenTx: (St
             loading = false
             return@LaunchedEffect
         }
-        loading = true
+        loading = ReadCache.get<List<TxRecord>>("tx.rows.$viewKey") == null
         listError = null
         runCatching { LedgerApi.recent(selected, size = 30, query = filters.toQuery(), pages = pageCount) }
-            .onSuccess { page -> rows = page.items; totalCount = page.total }
+            .onSuccess { page ->
+                rows = page.items
+                totalCount = page.total
+                ReadCache.put("tx.rows.$viewKey", page.items)
+                ReadCache.put("tx.total.$viewKey", page.total)
+            }
             .onFailure { failure -> rows = emptyList(); totalCount = 0; listError = failure.message ?: "流水加载失败" }
         loading = false
         refreshing = false
