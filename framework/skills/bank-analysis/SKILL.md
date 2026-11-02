@@ -66,9 +66,9 @@
 ## 办理步骤
 
 查整月花费/分类/走势直接 bank_get_spending，一次结果足够不再查月度账单或重复确认；只需统计时不先查账户或银行卡。需账户流水且编号未知才 bank_get_balance，明细用 bank_list_transactions 与 bank_get_transaction_detail。现金流用 bank_get_cashflow。
-完整月报/年报用 bank_get_billing_report，period=month/year、value=YYYY-MM/YYYY、currency=CNY/USD/HKD。读取该币种全部成功流水，排除账户内换汇，年报 12 个月；说明 asOf、partial/complete 与排除日期数，不用有界样本代替。CSV 由助手办好：流水用 bank_export_statement、月年报用 bank_export_billing_report，返回一次性链接（约 5 分钟、只能打开一次），只说链接与行数，不粘表格内容，失效重新生成。回单用 bank_get_receipt，空地址说明无 PDF，引导到交易详情打印或另存。
-问重复扣款、金额突增或异常流水时，确定账户/币种后用 bank_review_transactions；每次只检查银行第一页 20–200 条（默认 100）样本，报告覆盖条数与实际时间范围，不声称最近或完整月/年。只分析成功的餐饮、购物、住房、交通、订阅支出；工资、转账、其他、收入、未完成、无效及未来日期不作依据。
-重复候选来自同商户同金额 5 分钟记录；金额突增至少 100 元/对应币种单位，并达到先前 90 天样本中同商户中位数 3 倍，且有至少 3 个不同北京时间日期的先前记录。展示实际交易编号、金额、时间及历史依据；提示核对，不认定欺诈/重复收费，不将没有候选说成安全。不自动锁卡、退款或报案；需要核查时再查真实回单，用户明确要求时联动人工服务或安全技能。
+完整月报/年报用 bank_get_billing_report，period=month/year、value=YYYY-MM/YYYY、currency=CNY/USD/HKD。读该币种全部成功流水，排除账户内换汇；说明 asOf、partial/complete 与排除天数，不用有界样本代替。导出：流水用 bank_export_statement，月年报用 bank_export_billing_report，返回一次性链接（约 5 分钟、只能用一次），只说链接与行数，不粘表格内容，失效重生成。回单用 bank_get_receipt，空地址说明无 PDF，引到交易详情打印。
+问重复扣款、金额突增或异常流水时，确定账户/币种后用 bank_review_transactions；只查第一页 20–200 条（默认 100），报告覆盖条数与范围，不称最近或整月/整年。只分析成功的餐饮、购物、住房、交通、订阅支出；工资、转账、其他、收入、未完成与未来日期不作依据。
+重复候选为同商户同金额 5 分钟内记录；突增需 ≥100 元/对应币种单位、达先前 90 天同商户中位数 3 倍，且至少 3 个不同日期有先前记录。展示真实交易编号、金额、时间与依据；提示核对，不认定欺诈或重复收费，无候选不代表安全。不自动锁卡或退款。
 已有代扣用 bank_list_autodebits 查；同名多合约先问，明确启停才 bank_set_autodebit，查询不等于关闭。
 
 预算不查卡、勿折算周期。月目标：bank_list_monthly_budgets 查，bank_set_monthly_budget 设；明确月份/分类/币种/目标整数分并确认，仅对比支出、不拒付。bank_delete_monthly_budget 删除：按月份/分类/币种读本人目标，展示原金额并独立确认，冲突重查；保留流水/每日限额，不退款。每日限额：bank_list_budgets 查额度/已用/剩余/积分；bank_create_budget 新建、bank_update_budget 改、bank_delete_budget 删（连同积分与额度券）；bank_redeem_budget_pass 换券，不扣款、不冻结。

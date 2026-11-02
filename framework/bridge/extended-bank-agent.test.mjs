@@ -27,6 +27,10 @@ test('extended tools bind exact consent, current snapshots and secure passwords;
     if (path === '/api/auth/payment-password/verify') return body.paymentPassword === '888888' ? send({ verified: true }) : send({ message: '支付密码错误' }, 400)
     if (path === '/api/accounts/a1') return send(account)
     if (path === '/api/payees' && req.method === 'GET') return send([payee])
+    if (path === '/api/payees' && req.method === 'POST') {
+      const created = { id: 'p2', bankName: '招财猫银行', remark: '', lastUsedAt: new Date().toISOString(), ...body }
+      return send(created)
+    }
     if (path === '/api/payees/p1') { payee.remark = body.remark; return send(payee) }
     if (path === '/api/cards' && req.method === 'GET') return send([card])
     if (path === '/api/cards/card1/lost' || path === '/api/cards/card1/recover') {
@@ -80,6 +84,14 @@ test('extended tools bind exact consent, current snapshots and secure passwords;
   await assert.rejects(bank.prepare(raw('bank_schedule_transfer', { paymentPassword: '888888' })), /凭据/)
   assert.equal((await execute('bank_list_payees', { keyword: '房东' })).result.items[0].id, 'p1')
   await execute('bank_update_payee_remark', { payeeId: 'p1', remark: '房东新备注' })
+  // 新增收款人：姓名 + 手机号或账号，存进通讯录但不转账。
+  const added = await execute('bank_add_payee', { name: '李四', phone: '13700137000' })
+  assert.equal(added.result.phone, '13700137000')
+  assert.equal(calls.filter(row => row.path === '/api/payees' && row.method === 'POST').length, 1)
+  // 已在通讯录（同一账号）的不重复添加。
+  await assert.rejects(bank.prepare(raw('bank_add_payee', { name: '王明', accountNo: '6222000000000000' })), /已在收款人通讯录/)
+  // 姓名与手机号/账号都没有时拒绝。
+  await assert.rejects(bank.prepare(raw('bank_add_payee', { name: '无身份' })), /手机号或本行账号/)
   const scheduleArgs = { fromAccountId: 'a1', payeeName: '王明', payeeAccountNo: '6222000000000000', payeeBankCode: '102', amountCents: 100, executeAt: new Date(Date.now() + 180000).toISOString() }
   const schedule = await execute('bank_schedule_transfer', scheduleArgs, '888888')
   assert.equal(schedule.review.verification, 'payment-password'); assert.equal(schedule.result.fundsReserved, false)
