@@ -455,6 +455,32 @@ async function ensureSessionRole(config) {
   return { ok: true, url: parsed.url, created: parsed.created, database: parsed.database }
 }
 
+/**
+ * Create the database, the session role and both connection strings.
+ *
+ * This is what removes the last piece of manual work: with one admin connection
+ * string the launcher can derive everything a local install needs. The session
+ * password is generated here and never shown.
+ */
+async function provisionDatabase(adminUrl, database) {
+  const sessionPassword = randomBytes(24).toString('hex')
+  const result = await new Promise(resolve => {
+    const child = spawn(process.execPath, [path.join(ROOT, 'tools/provision-database.mjs')], {
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    child.stdout.on('data', buf => { stdout += String(buf) })
+    child.stderr.on('data', buf => { stderr += String(buf) })
+    child.on('error', error => resolve({ stdout, stderr: error.message }))
+    child.on('close', () => resolve({ stdout, stderr }))
+    child.stdin.end(JSON.stringify({ adminUrl, database, sessionRole: 'maneki_ai_session', sessionPassword }))
+  })
+  const line = (result.stdout ?? '').trim().split('\n').filter(Boolean).pop()
+  try { return JSON.parse(line) } catch { return { ok: false, error: (result.stderr ?? '').trim() || 'provisioning failed' } }
+}
+
 /* ------------------------------------------------------------------ *
  * Theme and drawing
  * ------------------------------------------------------------------ */
@@ -809,80 +835,135 @@ async function stepDatabase(config) {
     const action = await choose({
       title: 'Database',
       intro: ready
-        ? ['Both databases are configured. Keys are generated, never typed.']
-        : ['Two PostgreSQL connection strings are needed. Everything else is generated.'],
+        ? ['Configured. Keys and the session role are generated, never typed.']
+        : [
+            'Two ways in: let the launcher generate everything,',
+            'or provide the connection strings yourself.',
+          ],
       step: STEP_DB,
       items: [
         // When everything is already configured the first button must move on,
         // not re-open the prompt: "Continue" that re-asks is a trap.
         ready
           ? { label: 'Continue', value: 'next', default: true }
-          : { label: 'Set up now', value: 'edit', default: true },
-        ...(ready ? [{ label: 'Edit settings', value: 'edit' }] : []),
+          : { label: 'Generate automatically', value: 'auto', default: true, detail: 'one admin URL' },
+        ...(ready ? [{ label: 'Generate again', value: 'auto' }] : []),
+        { label: 'I will provide the connection strings', value: 'manual' },
         { label: 'Back', value: 'back' },
         { label: 'Quit', value: 'quit' },
       ],
       footer: [
-        `${config.bankDatabaseUrl ? ok('OK  ') : bad('MISS')} bank DB   ${muted(maskUrl(config.bankDatabaseUrl))}`,
-        `${config.sessionOwnerDatabaseUrl ? ok('OK  ') : warn('OPT ')} admin DB  ${muted(maskUrl(config.sessionOwnerDatabaseUrl))}`,
+        `${config.bankDatabaseUrl ? ok('OK  ') : bad('MISS')} bank DB    ${muted(maskUrl(config.bankDatabaseUrl))}`,
         `${config.sessionDatabaseUrl ? ok('OK  ') : bad('MISS')} session DB ${muted(maskUrl(config.sessionDatabaseUrl))}`,
         `${config.bankDataKey ? ok('OK  ') : bad('MISS')} bank data key`,
         `${config.sessionDataKey ? ok('OK  ') : bad('MISS')} session data key`,
       ],
       hint: 'Up/Down to move   Enter to select   Esc to go back',
     })
-    if (action !== 'edit') return action
+    if (action === 'next') return 'next'
+    if (action === 'back' || action === 'quit') return action
 
-    // Guided entry: two URLs, then everything else is derived.
-    const bankUrl = await askLine({
-      title: 'Database 1/2',
-      label: 'Bank database URL',
-      hint: 'Application role connection string, e.g. postgresql://app:secret@127.0.0.1:5432/maneki_bank',
-      current: config.bankDatabaseUrl,
-    })
-    if (bankUrl === 'quit' || bankUrl === 'back') return bankUrl === 'quit' ? 'quit' : 'back'
-    if (bankUrl) config.bankDatabaseUrl = bankUrl
+    if (action === 'manual') {
+      const bankUrl = await askLine({
+        title: 'Database 1/2',
+        label: 'Bank database URL',
+        hint: 'Application role connection string, e.g. postgresql://app:secret@127.0.0.1:5432/maneki_bank',
+        current: config.bankDatabaseUrl,
+      })
+      if (bankUrl === 'quit' || bankUrl === 'back') return bankUrl === 'quit' ? 'quit' : 'back'
+      if (bankUrl) config.bankDatabaseUrl = bankUrl
 
+      const adminUrl = await askLine({
+        title: 'Database 2/2',
+        label: 'Admin (owner) connection string',
+        hint: 'Used once to create the AI session role and schema. Leave empty to skip.',
+        current: config.sessionOwnerDatabaseUrl,
+      })
+      if (adminUrl === 'quit') return 'quit'
+      if (adminUrl && adminUrl !== 'back') config.sessionOwnerDatabaseUrl = adminUrl
+
+      if (!config.bankDataKey) config.bankDataKey = newKey()
+      if (!config.sessionDataKey) config.sessionDataKey = newKey()
+      const notes = []
+      if (config.sessionOwnerDatabaseUrl) {
+        const role = await withProgress('Creating AI session role', async () => ensureSessionRole(config))
+        if (role?.ok) {
+          config.sessionDatabaseUrl = role.url
+          notes.push(ok(`session role ${role.created ? 'created' : 'updated'} on ${role.database}`))
+        } else {
+          notes.push(bad(`session role was not created: ${role?.error ?? 'unknown error'}`))
+        }
+      }
+      saveConfig(config)
+      await notice({
+        title: 'Configuration saved',
+        intro: [CONFIG_PATH],
+        lines: [
+          ...notes,
+          `${muted('bank DB   ')} ${maskUrl(config.bankDatabaseUrl)}`,
+          `${muted('session DB')} ${maskUrl(config.sessionDatabaseUrl)}`,
+          '',
+          ...wrap('Keys must match the database. A new key for an existing database makes its encrypted rows unreadable.', width() - 6).map(muted),
+        ],
+      })
+      continue
+    }
+
+    // Automatic: one admin URL and one database name.
     const adminUrl = await askLine({
-      title: 'Database 2/2',
-      label: 'Admin (owner) connection string',
-      hint: 'Used once to create the AI session role and schema. Leave empty to skip.',
+      title: 'Database 1/2',
+      label: 'PostgreSQL admin connection',
+      hint: 'Superuser (or an owner) on the server, e.g. postgresql://postgres:secret@127.0.0.1:5432/postgres',
       current: config.sessionOwnerDatabaseUrl,
     })
-    if (adminUrl === 'quit') return 'quit'
-    if (adminUrl && adminUrl !== 'back') config.sessionOwnerDatabaseUrl = adminUrl
+    if (adminUrl === 'quit' || adminUrl === 'back') return adminUrl === 'quit' ? 'quit' : 'back'
+    if (adminUrl) config.sessionOwnerDatabaseUrl = adminUrl
 
+    const currentDb = (() => {
+      try { return new URL(config.bankDatabaseUrl ?? '').pathname.replace(/^\//, '') || 'maneki_bank' } catch { return 'maneki_bank' }
+    })()
+    const databaseName = await askLine({
+      title: 'Database 2/2',
+      label: 'Database name',
+      hint: 'Created if it does not exist. Enter accepts the default.',
+      current: currentDb,
+      secret: false,
+    })
+    if (databaseName === 'quit' || databaseName === 'back') return databaseName === 'quit' ? 'quit' : 'back'
+
+    const created = await withProgress('Creating database and session role', async () =>
+      provisionDatabase(config.sessionOwnerDatabaseUrl, databaseName || currentDb))
+    if (!created?.ok) {
+      await notice({
+        title: 'Database setup failed',
+        intro: [bad(created?.error ?? 'unknown error')],
+        lines: wrap('Check that the admin connection is correct and that the server is reachable, then try again.', width() - 6).map(muted),
+      })
+      continue
+    }
+
+    config.bankDatabaseUrl = created.bankUrl
+    config.sessionDatabaseUrl = created.sessionUrl
     if (!config.bankDataKey) config.bankDataKey = newKey()
     if (!config.sessionDataKey) config.sessionDataKey = newKey()
-
-    const notes = []
-    if (config.sessionOwnerDatabaseUrl) {
-      const role = await withProgress('Creating AI session role', async () => ensureSessionRole(config))
-      if (role?.ok) {
-        config.sessionDatabaseUrl = role.url
-        notes.push(ok(`session role ${role.created ? 'created' : 'updated'} on ${role.database}`))
-      } else {
-        notes.push(bad(`session role was not created: ${role?.error ?? 'unknown error'}`))
-        notes.push(warn('an existing session DB URL is kept as-is'))
-      }
-    }
     saveConfig(config)
     await notice({
-      title: 'Configuration saved',
+      title: 'Database ready',
       intro: [CONFIG_PATH],
       lines: [
-        ...notes,
+        created.createdDatabase ? ok(`database "${created.database}" created`) : ok(`database "${created.database}" reused`),
+        created.createdSessionRole ? ok('session role created') : ok('session role updated'),
+        ok('data keys generated'),
+        '',
         `${muted('bank DB   ')} ${maskUrl(config.bankDatabaseUrl)}`,
         `${muted('session DB')} ${maskUrl(config.sessionDatabaseUrl)}`,
-        `${muted('data keys ')} generated`,
         '',
-        ...wrap('Keys must match the database. A new key for an existing database makes its encrypted rows unreadable.', width() - 6).map(muted),
+        ...wrap('Local installs reuse the admin credentials for the bank URL. A deployment with real money should split owner and application roles; see server/README.md.', width() - 6).map(muted),
       ],
     })
   }
 }
 
-const STEP_SCHEMA = { index: 3, total: TOTAL_STEPS, label: 'Schema' }
 async function stepBootstrap(config) {
   const action = await choose({
     title: 'Schema',
