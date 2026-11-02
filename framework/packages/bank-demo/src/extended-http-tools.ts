@@ -8,16 +8,18 @@ export const extendedHttpTools: { name: string; kind: string; description: strin
   { name: 'bank_update_payee_remark', kind: '修改收款人备注', description: 'Edit a saved owned payee remark after confirmation. Query and disambiguate payeeId first. Stores searchable customer text only; never infer a recipient identity from a nickname.', parameters: { payeeId: str('Owned saved payee ID.', true), remark: str('User supplied single-line remark up to 140 characters, empty clears.', true) } },
   { name: 'bank_list_split_collections', kind: '查询AA收款', description: 'Read owned split collection records and actual confirmed incoming transaction evidence. Unpaid participants are not bank debits or merchant debts.', parameters: {} },
   { name: 'bank_create_split_collection', kind: '创建AA收款',
-    description: '创建向成员银行账号发送站内付款通知的 AA 收款单。必须先收齐每位付款人的注册手机号、明确应付金额（整数分）和转账备注；缺少时向用户追问，不创建仅记姓名的旧清单。members 为必填数组；均分或分项计算过程可附 allocation，逐人金额和顺序须一致。先查本人币种余额，再展示成员、金额、备注和发送范围供用户独立确认。成员本人在 AA付款 核对并输入支付密码后支付，不代扣，不发短信或微信。',
+    description: '创建向成员银行账号发送站内付款通知的 AA 收款单。必须先收齐每位成员的姓名，以及手机号或 12–19 位本行账号（二者有一个即可）、明确应付金额（整数分）和转账备注；缺少时向用户追问，不创建仅记姓名的旧清单。姓名须与账户户名一致，对不上会被拒绝。members 为必填数组；均分或分项计算过程可附 allocation，逐人金额和顺序须一致。先查本人币种余额，再展示成员、金额、备注和发送范围供用户独立确认。成员本人在 AA付款 核对并输入支付密码后支付，不代扣，不发短信或微信。',
     parameters: {
       title: str('用户提供的收款事由。', true),
       currency: str('明确币种 CNY、HKD 或 USD。', true),
       members: {
         required: true,
-        description: '1–30 位付款成员，不含本人。每项必须含 phone（11位注册手机号）、amount（应付整数分，1元=100）、memo（用户确认的转账备注，最多140字）。例如 [{"phone":"13700137000","amount":100,"memo":"聚餐AA"}]。优先直接传数组，兼容 JSON 数组字符串。不得用姓名代替手机号，不得猜测手机号、金额或备注。',
+        description: '1–30 位付款成员，不含本人。每项必须含 name（成员姓名，须与账户户名一致），以及 phone（11位注册手机号）或 accountNo（12–19 位本行账号）二者之一，还有 amount（应付整数分，1元=100）、memo（用户确认的转账备注，最多140字）。例如 [{"name":"张三","phone":"13700137000","amount":100,"memo":"聚餐AA"}] 或 [{"name":"张三","accountNo":"8820000000003605","amount":100,"memo":"聚餐AA"}]。用户只给了账号就用 accountNo，不要追问手机号。优先直接传数组，兼容 JSON 数组字符串。不得猜测姓名、手机号、账号、金额或备注。',
         oneOf: [
           { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
-            phone: str('11 位本行注册手机号。', true),
+            name: str('成员姓名，须与账户户名一致。', true),
+            phone: str('11 位本行注册手机号；与 accountNo 二者有一个即可。'),
+            accountNo: str('12–19 位本行账号；与 phone 二者有一个即可。'),
             amount: { type: 'integer', required: true, description: '应付金额，整数分。' },
             memo: str('用户确认的转账备注。', true),
           } } },

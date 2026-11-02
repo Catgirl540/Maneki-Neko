@@ -90,7 +90,7 @@ test('extended tools bind exact consent, current snapshots and secure passwords;
   assert.equal(calls.filter(row => row.method === 'DELETE').length, 0)
   await execute('bank_cancel_scheduled_transfer', { planId: 'schedule1' })
   assert.equal((await execute('bank_list_scheduled_transfers', {})).result[0].status, 'cancelled')
-  await execute('bank_create_split_collection', { title: '晚餐', currency: 'CNY', members: [{ phone: '13700137000', amount: 51, memo: '晚餐' }, { phone: '13900139000', amount: 50, memo: '晚餐' }] })
+  await execute('bank_create_split_collection', { title: '晚餐', currency: 'CNY', members: [{ name: '甲', phone: '13700137000', amount: 51, memo: '晚餐' }, { name: '乙', phone: '13900139000', amount: 50, memo: '晚餐' }] })
   assert.equal((await execute('bank_list_split_collections', {})).result.length, 1)
   assert.equal((await execute('bank_prepare_split_reminder', { collectionId: 'split1', participantId: 'person0' })).result.delivered, false)
   await execute('bank_confirm_split_payment', { collectionId: 'split1', participantId: 'person0', transactionId: 'observed-income' })

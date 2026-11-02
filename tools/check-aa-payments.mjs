@@ -15,7 +15,7 @@ for (const target of ['server', 'browser']) {
   const api = target === 'server' ? domain.createBankBusinessApi() : domain.createMockApi()
   const owner = state.loadDb(), payer = await state.findProfileByPhone('13600136000')
   const ownerBefore = owner.accounts[0].balance, payerBefore = payer.accounts[0].balance
-  const row = await api.createSplitCollection({ title: '分项 AA', currency: 'CNY', confirmed: true, clientRequestId: 'aa-phone', members: [{ phone: payer.user.phone, amount: 301, memo: '聚餐2元＋活动1.01元' }] })
+  const row = await api.createSplitCollection({ title: '分项 AA', currency: 'CNY', confirmed: true, clientRequestId: 'aa-phone', members: [{ name: payer.user.name, phone: payer.user.phone, amount: 301, memo: '聚餐2元＋活动1.01元' }] })
   assert.equal(row.participants[0].amount, 301); assert.equal(state.loadDb().accounts[0].balance, ownerBefore)
   state.activateDb(await state.findProfileByPhone(payer.user.phone))
   const [request] = await api.listSplitPaymentRequests()
@@ -43,7 +43,9 @@ for (const target of ['server', 'browser']) {
     third.cards = []; third.cardSecrets = {}; third.transactions = []; third.aaPaymentRequests = []; third.splitCollections = []
     state.persistRelatedProfiles([third])
   }
-  const pair = [{ phone: '13600136000', amount: 100, memo: '两元AA测试' }, { phone: '13900000000', amount: 100, memo: '两元AA测试' }]
+  // 成员姓名必须与户名一致，所以按档案里的真实姓名来填。
+  const second = await state.findProfileByPhone('13900000000')
+  const pair = [{ name: payer.user.name, phone: '13600136000', amount: 100, memo: '两元AA测试' }, { name: second?.user.name ?? '第三位测试客户', phone: '13900000000', amount: 100, memo: '两元AA测试' }]
   const review = await prepareExtendedBankOperation('bank_create_split_collection', {
     title: '两位成员各一元', currency: 'CNY', members: target === 'server' ? pair : JSON.stringify(pair),
     allocation: { amount: 200, participants: ['乙', '丙'] },
