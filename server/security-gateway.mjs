@@ -126,14 +126,15 @@ export async function createSecurityGateway(db, auth) {
     },
     async afterRollback(error) {
       if (error?.code === 'BAD_SMS_CODE' && error.smsPhone && error.smsChallengeHash) await db.prepare('UPDATE bank_sms_challenges SET attempts=attempts+1 WHERE phone=? AND code_hash=?').run(error.smsPhone, error.smsChallengeHash)
-      if (error?.loginOwner !== undefined) await auth.failure(error.loginOwner ? { id: error.loginOwner } : null)
+      // 请求上下文由 run(req, …) 建立，失败审计也带上来源地址与设备。
+      if (error?.loginOwner !== undefined) await auth.failure(error.loginOwner ? { id: error.loginOwner } : null, context.getStore())
     },
     // Both calls must run inside the same business db.transaction. The transaction
     // lock spans lookup, financial mutation and response INSERT, including across servers.
     async idempotent(req, method, body, result) {
       if (!IDEMPOTENT_METHODS.has(method)) return null
       const key = req.headers['idempotency-key']
-      if (key === undefined) return null
+      if (key === undefined) fail('此操作必须携带幂等键', 400, 'IDEMPOTENCY_KEY_REQUIRED')
       if (typeof key !== 'string' || !/^[\w.:-]{8,128}$/.test(key)) fail('无效幂等键', 400, 'INVALID_IDEMPOTENCY_KEY')
       const owner = (await auth.identity(req)).id, path = req.url.split('?')[0], hash = digest(canonical(body))
       await lock(`bank-idempotency:${owner}:${key}`)
