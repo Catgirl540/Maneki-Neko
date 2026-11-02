@@ -278,7 +278,11 @@ export interface ScheduledTransfer {
   transactionId?: string; settlementStatus?: 'success' | 'pending'; failureReason?: string;
 }
 export type AaAllocation = { amount: Cents; participants: string[]; collectorName?: never; expenses?: never } | { collectorName: string; expenses: SplitExpense[]; amount?: never; participants?: never }
-export interface AaMemberRequest { phone: string; amount: Cents; memo: string }
+/**
+ * AA 收款成员：姓名必填，手机号或本行账号二者有一个即可。
+ * 只给手机号或只给账号都不足以在收款单里说清成员是谁。
+ */
+export interface AaMemberRequest { name: string; phone?: string; accountNo?: string; amount: Cents; memo: string }
 export interface AaPaymentInput { version: number; confirmed: true; paymentPassword: string }
 export interface AaPaymentRequest { id: string; collectionId: string; collectorName: string; collectorAccountNo: string; title: string; amount: Cents; currency: Currency; memo: string; status: 'unpaid' | 'processing' | 'paid' | 'cancelled'; version: number; createdAt: string; transactionId?: string; paidAt?: string }
 export interface SplitExpense { title: string; amount: Cents; participants: string[] }

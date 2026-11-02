@@ -61,7 +61,9 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
     var aaNames by rememberSaveable { mutableStateOf("") }
     var collector by rememberSaveable { mutableStateOf("") }
     val expenses = remember { mutableStateListOf(ExpenseDraft()) }
+    // 成员身份：姓名 + 手机号或本行账号（二者填一个即可）。
     val phones = remember { mutableStateMapOf<String, String>() }
+    val names = remember { mutableStateMapOf<String, String>() }
     val memos = remember { mutableStateMapOf<String, String>() }
     var matching by remember { mutableStateOf<Pair<JSONObject, JSONObject>?>(null) }
     var transactionNo by remember { mutableStateOf("") }
@@ -161,7 +163,8 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
                     Text("待收总额 ${formatCents(allocation.amount, "CNY")}" + if (aaMode == 1) " · 本人份额 ${formatCents(allocation.selfAmount, "CNY")}" else "", fontSize = 12.sp)
                     allocation.participants.forEach { (participant, share) ->
                         Text("$participant 应付 ${formatCents(share, "CNY")}", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        SecureNumberField("注册手机号", phones[participant].orEmpty(), { phones[participant] = it.filter(Char::isDigit).take(11) }, placeholder = "11 位手机号", maxLength = 11)
+                        TextFieldRow("成员姓名", names[participant] ?: participant, { names[participant] = it.take(40) }, placeholder = "须与账户户名一致")
+                        SecureNumberField("手机号或本行账号", phones[participant].orEmpty(), { phones[participant] = it.filter(Char::isDigit).take(19) }, placeholder = "手机号或 12–19 位账号", maxLength = 19)
                         TextFieldRow("付款备注", memos[participant] ?: aaTitle, { memos[participant] = it.take(140) })
                     }
                 }
@@ -173,11 +176,23 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
                         val members = JSONArray()
                         val used = mutableSetOf<String>()
                         allocation.participants.forEach { (participant, share) ->
-                            val phone = phones[participant].orEmpty()
+                            val identity = phones[participant].orEmpty().trim()
+                            val memberName = (names[participant] ?: participant).trim()
                             val note = (memos[participant] ?: aaTitle).trim()
-                            require(phone.matches(Regex("1[3-9][0-9]{9}")) && used.add(phone)) { "请为每位参与者填写不同的有效手机号" }
+                            require(memberName.isNotEmpty() && memberName.length <= 40) { "请填写成员姓名" }
+                            // 11 位按手机号走，12–19 位按本行账号走；两者只能填一个。
+                            val isPhone = identity.matches(Regex("1[3-9][0-9]{9}"))
+                            val isAccount = identity.matches(Regex("\\d{12,19}"))
+                            require(isPhone || isAccount) { "请为每位成员填写手机号或 12–19 位账号" }
+                            require(used.add(identity)) { "同一位成员不能重复填写" }
                             require(note.isNotEmpty() && note.length <= 140) { "请填写有效的付款备注" }
-                            members.put(JSONObject().put("phone", phone).put("amount", share).put("memo", note))
+                            members.put(
+                                JSONObject()
+                                    .put("name", memberName)
+                                    .put(if (isPhone) "phone" else "accountNo", identity)
+                                    .put("amount", share)
+                                    .put("memo", note),
+                            )
                         }
                         val input = if (aaMode == 0) JSONObject().put("amount", planAmount(aaAmount)).put("participants", JSONArray(splitNames(aaNames)))
                         else JSONObject().put("collectorName", collector.trim()).put("expenses", JSONArray().apply { expenses.forEach { put(JSONObject().put("title", it.title.trim()).put("amount", planAmount(it.amount)).put("participants", JSONArray(splitNames(it.names)))) } })
@@ -236,12 +251,12 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
             error?.let { ErrorNote(it) }
             for (index in 0 until members.length()) {
                 val member = members.getJSONObject(index)
-                Text("${aaAllocation?.participants?.getOrNull(index)?.first.orEmpty()} · ${member.getString("phone")} · ${formatCents(member.getLong("amount"), "CNY")}\n备注：${member.getString("memo")}", fontSize = 12.sp)
+                Text("${aaAllocation?.participants?.getOrNull(index)?.first.orEmpty()} · ${member.getString("name")} · ${member.optString("phone").ifEmpty { member.optString("accountNo") }} · ${formatCents(member.getLong("amount"), "CNY")}\n备注：${member.getString("memo")}", fontSize = 12.sp)
             }
         }
     }, confirmButton = { TextButton(enabled = !submitter.busy, onClick = { runWrite {
         BankApi.paymentPlanWrite("POST", "/api/transfers/splits", review)
-        aaReview = null; formOpen = false; aaTitle = ""; aaAmount = ""; aaNames = ""; collector = ""; expenses.clear(); expenses.add(ExpenseDraft()); phones.clear(); memos.clear()
+        aaReview = null; formOpen = false; aaTitle = ""; aaAmount = ""; aaNames = ""; collector = ""; expenses.clear(); expenses.add(ExpenseDraft()); phones.clear(); names.clear(); memos.clear()
         message = "AA 收款已发起，请核对成员付款状态。"
     } }) { Text("确认发送") } }, dismissButton = { TextButton(enabled = !submitter.busy, onClick = { aaReview = null }) { Text("返回修改") } }) }
     if (reviewSchedule) AlertDialog(onDismissRequest = { if (!submitter.busy) { reviewSchedule = false; pin = "" } }, title = { Text("确认定时转账") }, text = {

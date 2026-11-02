@@ -1,5 +1,6 @@
 import { findBalance } from './account-model.mjs'
 import { calculateSplitCollection } from './split-collection.mjs'
+import { displayNameOf, maskedNameOf } from './name-display.mjs'
 
 const fail = (message, code = 'INVALID_AA_REQUEST', status = 400) => Object.assign(new Error(message), { code, status })
 const clone = value => structuredClone(value)
@@ -10,14 +11,49 @@ const text = (value, label, max) => {
 const version = (row, expected) => { if (row.version !== expected) throw fail('付款通知已变化，请刷新后确认', 'VERSION_CONFLICT', 409) }
 const balance = (profile, currency) => [ ...profile.accounts, ...(profile.currencyBalances ?? []) ].find(row => row.currency === currency)
 
+const PHONE = /^1[3-9]\d{9}$/
+const ACCOUNT_NO = /^\d{12,19}$/
+
+/** 成员的身份字段：手机号或本行账号，二者有一个即可，但必须同时给出姓名。 */
+function memberIdentity(item) {
+      const phone = typeof item.phone === 'string' ? item.phone.replace(/\s+/g, '') : ''
+      const accountNo = typeof item.accountNo === 'string' ? item.accountNo.replace(/\s+/g, '') : ''
+      if (!phone && !accountNo) throw fail('请填写成员的注册手机号或本行收款账号', 'INVALID_MEMBER_IDENTITY')
+      if (phone && !PHONE.test(phone)) throw fail('成员手机号须为 11 位', 'INVALID_PHONE')
+      if (accountNo && !ACCOUNT_NO.test(accountNo)) throw fail('成员账号须为 12 至 19 位数字', 'INVALID_ACCOUNT_NO')
+      return { ...(phone ? { phone } : {}), ...(accountNo ? { accountNo } : {}) }
+}
+
+/**
+ * 姓名核对：客户填的姓名必须对得上账户户名。
+ *
+ * 只做「像不像同一个人」这一档判断，接受三种写法，避免因为展示形态不同而误拒：
+ * 真实姓名、列表里的脱敏名（林*满）、以及「林女士」这种称呼写法。
+ * 对不上就拒绝——把付款通知发给一位名字对不上的人，比让发起人改一次更难收场。
+ */
+function nameMatches(input, user) {
+      const typed = String(input ?? '').replace(/\s+/g, '')
+      if (!typed) return false
+      const candidates = [
+        String(user?.name ?? '').replace(/\s+/g, ''),
+        maskedNameOf(user?.name ?? '').replace(/\s+/g, ''),
+        displayNameOf(user?.name ?? '', user?.honorific).replace(/\s+/g, ''),
+      ].filter(Boolean)
+      return candidates.includes(typed)
+}
+
 export function normalizeAaMembers(inputMembers) {
       if (!Array.isArray(inputMembers) || inputMembers.length < 1 || inputMembers.length > 30) throw fail('请填写 1 至 30 位 AA 成员')
       const members = inputMembers.map(item => {
-        if (!item || typeof item.phone !== 'string' || !/^1[3-9]\d{9}$/.test(item.phone.trim())) throw fail('请填写成员的 11 位注册手机号', 'INVALID_PHONE')
+        if (!item || typeof item !== 'object') throw fail('成员信息格式不正确', 'INVALID_MEMBER_IDENTITY')
+        const identity = memberIdentity(item)
+        // 姓名是成员身份的一部分：只给手机号或只给账号都不足以在列表里说清是谁。
+        const name = text(item.name, '成员姓名（最多 40 字）', 40)
         if (!Number.isSafeInteger(item.amount) || item.amount < 1 || item.amount > 100000000) throw fail('成员金额须为 1 至 100000000 整数分', 'INVALID_AMOUNT')
-        return { phone: item.phone.trim(), amount: item.amount, memo: text(item.memo, '转账备注（最多 140 字）', 140) }
+        return { ...identity, name, amount: item.amount, memo: text(item.memo, '转账备注（最多 140 字）', 140) }
       })
-      if (new Set(members.map(row => row.phone)).size !== members.length) throw fail('成员手机号不能重复')
+      const keys = members.map(row => row.phone ?? row.accountNo)
+      if (new Set(keys).size !== members.length) throw fail('同一位成员不能重复填写')
       const amount = members.reduce((sum, row) => sum + row.amount, 0)
       if (amount > 100000000) throw fail('待收总额不能超过 100000000 分', 'INVALID_AMOUNT')
       return { members, amount }
@@ -34,7 +70,7 @@ export function calculateAaAllocation(input, members) {
 }
 
 /** Account inbox requests and their transfer evidence share the bank unit of work. */
-export function createAaPayments({ getDb, persistRelatedProfiles, findProfileByPhone, findProfileByUserId, nextId, verifyPassword, executeTransfer, now = Date.now }) {
+export function createAaPayments({ getDb, persistRelatedProfiles, findProfileByPhone, findProfileByAccountNo, findProfileByUserId, nextId, verifyPassword, executeTransfer, now = Date.now }) {
   const date = () => new Date(now()).toISOString()
   const requests = profile => profile.aaPaymentRequests ?? []
   const collections = profile => profile.splitCollections ?? []
@@ -67,8 +103,8 @@ export function createAaPayments({ getDb, persistRelatedProfiles, findProfileByP
   }
   return {
     async createCollection(input) {
-      if (input.confirmed !== true) throw fail('请确认成员手机号、金额和转账备注', 'CONFIRMATION_REQUIRED')
-      if (['amount', 'participants', 'expenses', 'collectorName'].some(key => input[key] !== undefined)) throw fail('手机号 AA 仅填写成员手机号、金额和备注')
+      if (input.confirmed !== true) throw fail('请确认成员姓名、手机号或账号、金额和转账备注', 'CONFIRMATION_REQUIRED')
+      if (['amount', 'participants', 'expenses', 'collectorName'].some(key => input[key] !== undefined)) throw fail('AA 收款仅填写成员身份（姓名与手机号或账号）、金额和备注')
       const db = getDb(), title = text(input.title, '收款事由', 80), key = text(input.clientRequestId, '幂等标识', 100)
       if (!['CNY', 'USD', 'HKD'].includes(input.currency) || !balance(db, input.currency)) throw fail('请选择本人已有的币种余额', 'INVALID_CURRENCY')
       const { members, amount } = normalizeAaMembers(input.members)
@@ -81,10 +117,18 @@ export function createAaPayments({ getDb, persistRelatedProfiles, findProfileByP
       }
       if (collections(db).filter(row => row.status === 'open').length >= 50) throw fail('最多保留 50 条待收款 AA 单', 'SPLIT_LIMIT')
       // Resolve and validate EVERY recipient before writing any inbox or collection.
+      const mentioned = new Set()
       const targets = []
       for (const member of members) {
-        const target = await findProfileByPhone(member.phone)
-        if (!target || !balance(target, input.currency)) throw fail('成员未开通对应银行账号或币种，请核对手机号', 'AA_MEMBER_UNAVAILABLE')
+        // 手机号或账号任一即可定位成员；两个都填时必须指向同一位客户。
+        const byPhone = member.phone ? await findProfileByPhone(member.phone) : null
+        const byAccount = member.accountNo ? await findProfileByAccountNo(member.accountNo) : null
+        const target = byAccount ?? byPhone
+        if (!target || !balance(target, input.currency)) throw fail(`成员「${member.name}」未开通对应银行账号或币种，请核对手机号或账号`, 'AA_MEMBER_UNAVAILABLE')
+        if (byPhone && byAccount && byPhone.user.id !== byAccount.user.id) throw fail(`成员「${member.name}」的手机号与账号不属于同一位客户`, 'AA_MEMBER_MISMATCH')
+        if (!nameMatches(member.name, target.user)) throw fail(`成员「${member.name}」与账户户名不一致，请核对姓名`, 'AA_MEMBER_NAME_MISMATCH')
+        if (mentioned.has(target.user.id)) throw fail(`成员「${member.name}」重复出现`, 'AA_MEMBER_DUPLICATE')
+        mentioned.add(target.user.id)
         if (target.user.id === db.user.id) throw fail('AA 付款成员不能包含本人')
         if (requests(target).filter(row => ['unpaid', 'processing'].includes(row.status)).length >= 300) throw fail('成员待付款通知已达上限', 'AA_INBOX_LIMIT', 409)
         targets.push(target)
@@ -98,7 +142,7 @@ export function createAaPayments({ getDb, persistRelatedProfiles, findProfileByP
       }
       members.forEach((member, index) => {
         const target = targets[index], id = `${collection.id}_${db.user.id}_${nextId('aa_request')}`
-        collection.participants.push({ id: nextId('participant'), name: target.user.name, ...(allocation ? { splitName: allocation.participants[index].name } : {}), userId: target.user.id, requestId: id, ...member, status: 'unpaid', reminders: 0 })
+        collection.participants.push({ id: nextId('participant'), name: member.name, accountName: target.user.name, ...(allocation ? { splitName: allocation.participants[index].name } : {}), userId: target.user.id, requestId: id, ...member, status: 'unpaid', reminders: 0 })
         ;(target.aaPaymentRequests ??= []).push({ id, collectionId: collection.id, collectorUserId: db.user.id, collectorName: db.user.name, collectorAccountNo: collection.accountNo, title, amount: member.amount, currency: input.currency, memo: member.memo, status: 'unpaid', version: 1, createdAt })
       })
       ;(db.splitCollections ??= []).push(collection)

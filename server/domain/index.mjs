@@ -55,7 +55,7 @@ import { redactSupportText } from '../../shared/support.mjs';
 import { STORAGE_KEYS, storage } from '../lib/storage.mjs';
 import { CHANNEL_LABEL, STATUS_LABEL } from '../lib/tx.mjs';
 import { maskPhone } from '../lib/format.mjs';
-import { CARD_PAYMENT_METHOD, DEFAULT_PAY_PASSWORD, CARD_PRODUCTS, emptyCustomerDomains, lookupFpsRegistration, cardPan, RISK_QUESTIONS, WEALTH_PRODUCTS, toleranceFromScore, FX_QUOTE_TTL, FX_SPREAD, FX_MID_RATES, findBank, applyRealtimeUpgrade, cardFeeQuote, effectiveSpread, entitlements, evaluateMembership, fxRateFor, membershipOverview, recordCardFeeWaiver, redeemLoungePass, transferFee, transferFeeWaived, wealthPriorityGate, OCCUPYING_CARD_STATUSES, loadDb, findProfileByPhone, findProfileByUserId, findRecipientByNumber, persistRelatedProfiles, forgetProfilePhone, activateDb, makeReferenceNo, nextId, persist, toTransactionListItem, withBalances, } from './state.mjs';
+import { CARD_PAYMENT_METHOD, DEFAULT_PAY_PASSWORD, CARD_PRODUCTS, emptyCustomerDomains, lookupFpsRegistration, cardPan, RISK_QUESTIONS, WEALTH_PRODUCTS, toleranceFromScore, FX_QUOTE_TTL, FX_SPREAD, FX_MID_RATES, findBank, applyRealtimeUpgrade, cardFeeQuote, effectiveSpread, entitlements, evaluateMembership, fxRateFor, membershipOverview, recordCardFeeWaiver, redeemLoungePass, transferFee, transferFeeWaived, wealthPriorityGate, OCCUPYING_CARD_STATUSES, loadDb, findProfileByPhone, findProfileByAccountNo, findProfileByUserId, findRecipientByNumber, persistRelatedProfiles, forgetProfilePhone, activateDb, makeReferenceNo, nextId, persist, toTransactionListItem, withBalances, } from './state.mjs';
 import { lookupCardBin } from './card-bin.mjs';
 const delay = async () => {};
 /**
@@ -2964,7 +2964,7 @@ export async function settleHeldTransfer(transactionId, outcome, reason) {
  */
 function paymentPlans(options, api) {
     return createPaymentPlans({
-        getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword, findProfileByPhone, findProfileByUserId, persistRelatedProfiles,
+        getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword, findProfileByPhone, findProfileByAccountNo, findProfileByUserId, persistRelatedProfiles,
         resolveRecipient: async request => {
             if (request.payeeBankCode === 'LCB') {
                 const found = await findRecipientByNumber(request.payeeAccountNo);

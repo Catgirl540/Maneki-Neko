@@ -1726,6 +1726,18 @@ export async function findProfileByPhone(phone) {
         return current;
     return profiles()[normalized] ?? null;
 }
+/**
+ * 按本行账户号找一个独立演示档案，不切换当前用户。
+ *
+ * AA 收款允许用账号代替手机号定位成员，所以这里复用 `findRecipientByNumber`
+ * 的账户号解析，只取档案部分；找不到或只匹配到银行卡号时都返回 null。
+ */
+export async function findProfileByAccountNo(accountNo) {
+    const normalized = String(accountNo ?? '').replace(/\D/g, '');
+    if (!normalized) return null;
+    const found = await findRecipientByNumber(normalized);
+    return found && found.account.accountNo === normalized ? found.profile : null;
+}
 /** 按用户 id 找档案（员工端放行挂起转账用：指令里记的是 customerId，不是手机号）。 */
 export async function findProfileByUserId(userId) {
     if (storage.profileStore) return prepareLoadedProfile(await storage.profileStore.findProfileByUserId(userId));

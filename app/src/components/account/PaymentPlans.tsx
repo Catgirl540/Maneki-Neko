@@ -72,7 +72,7 @@ function ScheduledTransfers({ onBusyChange }: { onBusyChange: (busy: boolean) =>
 function SplitCollections({ onBusyChange }: { onBusyChange: (busy: boolean) => void }) {
   const collections = useAsync(() => api.listSplitCollections(), [])
   const [title, setTitle] = useState(''), [amount, setAmount] = useState(''), [names, setNames] = useState('')
-  const [contacts, setContacts] = useState<Record<string, { phone?: string; memo?: string }>>({})
+  const [contacts, setContacts] = useState<Record<string, { name?: string; phone?: string; accountNo?: string; memo?: string }>>({})
   const [review, setReview] = useState<SplitCollectionRequest | null>(null)
   const [mode, setMode] = useState<'items' | 'equal'>('items')
   const [collectorName, setCollectorName] = useState('')
@@ -116,12 +116,17 @@ function SplitCollections({ onBusyChange }: { onBusyChange: (busy: boolean) => v
       if (!title.trim()) throw Error('请填写收款事由')
       const members = calculated.participants.map(person => {
         const phone = contacts[person.name]?.phone?.trim() ?? ''
+        const accountNo = contacts[person.name]?.accountNo?.trim() ?? ''
         const memo = (contacts[person.name]?.memo ?? title).trim()
-        if (!/^1[3-9]\d{9}$/.test(phone)) throw Error(`请填写${person.name}的 11 位注册手机号`)
+        // 手机号和账号二者有一个就够；两个都没填才拦。
+        if (!phone && !accountNo) throw Error(`请填写${person.name}的手机号或本行账号`)
+        if (phone && !/^1[3-9]\d{9}$/.test(phone)) throw Error(`${person.name}的手机号须为 11 位`)
+        if (accountNo && !/^\d{12,19}$/.test(accountNo)) throw Error(`${person.name}的账号须为 12 至 19 位数字`)
         if (!memo || memo.length > 140) throw Error(`请填写${person.name}的转账备注，最多 140 字`)
-        return { phone, amount: person.amount, memo }
+        return { name: person.name, ...(phone ? { phone } : {}), ...(accountNo ? { accountNo } : {}), amount: person.amount, memo }
       })
-      if (new Set(members.map(person => person.phone)).size !== members.length) throw Error('成员手机号不能重复')
+      const keys = members.map(person => person.phone ?? person.accountNo)
+      if (new Set(keys).size !== members.length) throw Error('同一位成员不能重复填写')
       const request = { title: title.trim(), currency: 'CNY' as const, allocation, members, confirmed: true as const, clientRequestId: '' }
       const fingerprint = JSON.stringify(request)
       if (requestKey.current.fingerprint !== fingerprint) requestKey.current = { fingerprint, key: crypto.randomUUID() }
@@ -135,7 +140,7 @@ function SplitCollections({ onBusyChange }: { onBusyChange: (busy: boolean) => v
     <h3 className="font-semibold">均分清单</h3>
     {!review && <Segmented value={mode} onChange={setMode} options={[{ value: 'items', label: '分项 AA' }, { value: 'equal', label: '待收金额均分' }]} />}
     {review?.members ? <div aria-label="确认 AA 收款通知" className="rounded-field border border-line p-4"><h3 className="font-semibold">{review.title}</h3>
-      {review.members.map((person, index) => <div key={person.phone} className="border-b border-line py-3 text-[14px]"><p>{calculateSplitCollection(review.allocation!).participants[index].name} · {person.phone} · {formatCurrency(person.amount, review.currency)}</p><p className="whitespace-pre-wrap break-words">转账备注：{person.memo}</p></div>)}
+      {review.members.map((person, index) => <div key={person.phone ?? person.accountNo} className="border-b border-line py-3 text-[14px]"><p>{calculateSplitCollection(review.allocation!).participants[index].name} · {person.name} · {person.phone ?? person.accountNo} · {formatCurrency(person.amount, review.currency)}</p><p className="whitespace-pre-wrap break-words">转账备注：{person.memo}</p></div>)}
       <p className="my-4 font-medium">待收总额 {formatCurrency(review.members.reduce((sum, person) => sum + person.amount, 0), review.currency)}</p>
       <div className="flex flex-wrap gap-3"><Button disabled={busy} variant="primary" onClick={() => void run(async () => { await api.createSplitCollection(review); setReview(null); setTitle(''); setAmount(''); setNames(''); setContacts({}); setExpenses([{ title: '', amount: '', names: '' }]) }, 'AA 收款已发起，付款通知已送达成员账号。')}>确认发送付款通知</Button><Button disabled={busy} onClick={() => setReview(null)}>返回修改</Button></div>
     </div> :
@@ -160,7 +165,8 @@ function SplitCollections({ onBusyChange }: { onBusyChange: (busy: boolean) => v
         {preview.selfAmount !== undefined && <p>消费合计 {formatCurrency(preview.expenseTotal!, 'CNY')} · 本人份额 {formatCurrency(preview.selfAmount, 'CNY')}</p>}
         <p>待收总额 {formatCurrency(preview.amount, 'CNY')}</p>
         {preview.participants.map(person => <fieldset key={person.name} className="mt-3 grid gap-3 rounded-field border border-line p-3 md:grid-cols-2"><legend>{person.name} 应付 {formatCurrency(person.amount, 'CNY')}</legend>
-          <label>{person.name}手机号<input required inputMode="tel" maxLength={11} value={contacts[person.name]?.phone ?? ''} onChange={event => setContacts(rows => ({ ...rows, [person.name]: { ...rows[person.name], phone: event.target.value } }))} className={inputClass} /></label>
+          <label>{person.name}姓名<input maxLength={40} placeholder="须与账户户名一致" value={contacts[person.name]?.name ?? person.name} onChange={event => setContacts(rows => ({ ...rows, [person.name]: { ...rows[person.name], name: event.target.value } }))} className={inputClass} /></label>
+          <label>{person.name}手机号或本行账号<input inputMode="numeric" maxLength={19} placeholder="手机号或 12–19 位账号，二者填一个" value={contacts[person.name]?.phone ?? contacts[person.name]?.accountNo ?? ''} onChange={event => { const digits = event.target.value.replace(/\D/g, ''); setContacts(rows => ({ ...rows, [person.name]: { ...rows[person.name], ...(digits.length > 11 ? { accountNo: digits, phone: undefined } : { phone: digits, accountNo: undefined }) } })) }} className={inputClass} /></label>
           <label>{person.name}转账备注<textarea aria-label={person.name + '转账备注'} required maxLength={140} value={contacts[person.name]?.memo ?? title.trim()} onChange={event => setContacts(rows => ({ ...rows, [person.name]: { ...rows[person.name], memo: event.target.value } }))} className={inputClass + ' min-h-20 py-3'} /></label>
         </fieldset>)}
       </> : previewError}</div>

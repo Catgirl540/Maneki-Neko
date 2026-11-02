@@ -12,7 +12,7 @@ test('merged AA allocation verifies computed phone amounts, preserves details ac
     { title: '活动', amount: 201, participants: [owner.user.name, payer.user.name] },
   ] }
   const input = { title: '均分清单', currency: 'CNY', confirmed: true, clientRequestId: randomUUID(), allocation, members: [
-    { phone: payer.phone, amount: 200, memo: '聚餐和活动' }, { phone: other.phone, amount: 100, memo: '仅聚餐' },
+    { name: payer.user.name, phone: payer.phone, amount: 200, memo: '聚餐和活动' }, { name: other.user.name, phone: other.phone, amount: 100, memo: '仅聚餐' },
   ] }
   const before = (await account(app, payer)).balance
   const bad = await app.call(routes.splitCollections(), { token: owner.token, method: 'POST', body: { ...input, members: [{ ...input.members[0], amount: 201 }, input.members[1]] } })
@@ -36,7 +36,7 @@ test('AA phone notifications persist, isolate members, require PIN, preserve rem
   t.after(() => app.close())
   const owner = await register(app, '13900000071', 'AA收款甲'), payer = await login(app, '13600136000'), stranger = await login(app, '13800138000')
   const beforeOwner = (await account(app, owner)).balance, beforePayer = (await account(app, payer)).balance
-  const input = { title: '聚餐和后续活动', currency: 'CNY', confirmed: true, clientRequestId: randomUUID(), members: [{ phone: '13600136000', amount: 301, memo: '聚餐2元，后续活动1.01元' }] }
+  const input = { title: '聚餐和后续活动', currency: 'CNY', confirmed: true, clientRequestId: randomUUID(), members: [{ name: payer.user.name, phone: '13600136000', amount: 301, memo: '聚餐2元，后续活动1.01元' }] }
   const create = () => app.call(routes.splitCollections(), { token: owner.token, method: 'POST', body: input }).then(ok)
   const collection = await create(); assert.equal((await create()).id, collection.id)
   assert.equal((await account(app, owner)).balance, beforeOwner)
@@ -70,7 +70,7 @@ test('AA cancellation reaches member inbox; large payments use existing held-tra
   const app = await fixture({ reviewThreshold: 1000, holdSeconds: 300 })
   t.after(() => app.close())
   const owner = await register(app, '13900000072', 'AA收款乙'), payer = await login(app, '13600136000')
-  const create = async (amount, memo) => ok(await app.call(routes.splitCollections(), { token: owner.token, method: 'POST', body: { title: 'AA付款', currency: 'CNY', confirmed: true, clientRequestId: randomUUID(), members: [{ phone: '13600136000', amount, memo }] } }))
+  const create = async (amount, memo) => ok(await app.call(routes.splitCollections(), { token: owner.token, method: 'POST', body: { title: 'AA付款', currency: 'CNY', confirmed: true, clientRequestId: randomUUID(), members: [{ name: payer.user.name, phone: '13600136000', amount, memo }] } }))
   const cancelled = await create(100, '取消测试')
   ok(await app.call(routes.splitCollection(cancelled.id), { token: owner.token, method: 'DELETE', body: { version: cancelled.version } }))
   let inbox = ok(await app.call(routes.splitPaymentRequests(), { token: payer.token }))

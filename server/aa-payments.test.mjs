@@ -6,7 +6,7 @@ function fixture() {
   const profile = (id, phone) => ({ user: { id, phone, name: id }, accounts: [{ id: id + '-balance', accountNo: '882000000000000' + id.length, currency: 'CNY', balance: 100000, available: 100000 }], transactions: [] })
   const owner = profile('owner', '13800138000'), payer = profile('payer', '13600136000'), other = profile('stranger', '13900000000')
   const all = [owner, payer, other]; let current = owner, writes = 0, transfers = 0, seq = 0, pending = false
-  const api = createAaPayments({ getDb: () => current, findProfileByPhone: async phone => all.find(row => row.user.phone === phone), findProfileByUserId: async id => all.find(row => row.user.id === id), nextId: prefix => prefix + ++seq,
+  const api = createAaPayments({ getDb: () => current, findProfileByPhone: async phone => all.find(row => row.user.phone === phone), findProfileByAccountNo: async accountNo => all.find(row => row.accounts.some(account => account.accountNo === accountNo)), findProfileByUserId: async id => all.find(row => row.user.id === id), nextId: prefix => prefix + ++seq,
     persistRelatedProfiles: () => { writes++ }, verifyPassword: password => { if (password !== '888888') throw Object.assign(Error('密码错误'), { code: 'BAD_PAY_PASSWORD' }) },
     executeTransfer: async req => {
       transfers++; const tx = { id: 'tx-' + transfers, direction: 'out', amount: req.amount, accountId: payer.accounts[0].id, status: pending ? 'pending' : 'success', memo: req.memo, createdAt: new Date().toISOString() }
@@ -14,7 +14,7 @@ function fixture() {
       if (!pending) { payer.accounts[0].balance -= req.amount; owner.accounts[0].balance += req.amount }
       return { transactionId: tx.id }
     } })
-  const input = { title: '聚餐', currency: 'CNY', confirmed: true, clientRequestId: 'aa1', members: [{ phone: payer.user.phone, amount: 20000, memo: '聚餐100元＋后续活动100元' }] }
+  const input = { title: '聚餐', currency: 'CNY', confirmed: true, clientRequestId: 'aa1', members: [{ name: payer.user.name, phone: payer.user.phone, amount: 20000, memo: '聚餐100元＋后续活动100元' }] }
   return { api, input, owner, payer, other, all, activate: profile => { current = profile }, setPending: () => { pending = true }, get writes() { return writes }, get transfers() { return transfers } }
 }
 
@@ -42,7 +42,7 @@ test('AA phone request delivers exact amount/memo only to member; payment requir
 
 test('AA validates all members before delivery and cancellation withdraws only unpaid notifications', async () => {
   const f = fixture()
-  for (const patch of [{ confirmed: false }, { members: [] }, { amount: 5 }, { members: [{ phone: '1', amount: 1, memo: 'a' }] }, { members: [{ ...f.input.members[0], memo: '' }] }, { members: [f.input.members[0], f.input.members[0]] }, { members: [f.input.members[0], { phone: '13700137000', amount: 1, memo: '未注册' }] }]) await assert.rejects(f.api.createCollection({ ...f.input, ...patch }))
+  for (const patch of [{ confirmed: false }, { members: [] }, { amount: 5 }, { members: [{ name: '甲', phone: '1', amount: 1, memo: 'a' }] }, { members: [{ ...f.input.members[0], memo: '' }] }, { members: [f.input.members[0], f.input.members[0]] }, { members: [f.input.members[0], { name: '未注册', phone: '13700137000', amount: 1, memo: '未注册' }] }]) await assert.rejects(f.api.createCollection({ ...f.input, ...patch }))
   assert.equal(f.writes, 0); assert.equal(f.payer.aaPaymentRequests, undefined)
   const collection = await f.api.createCollection(f.input)
   await f.api.cancelCollection(f.owner.splitCollections[0])
@@ -73,7 +73,7 @@ test('AA equal-split list binds computed shares to phone notifications and prese
     { title: '聚餐', amount: 300, participants: ['owner', 'payer', 'stranger'] },
     { title: '活动', amount: 201, participants: ['owner', 'payer'] },
   ] }
-  const input = { ...f.input, allocation, members: [{ phone: f.payer.user.phone, amount: 200, memo: '聚餐100分＋活动100分' }, { phone: f.other.user.phone, amount: 100, memo: '仅聚餐' }] }
+  const input = { ...f.input, allocation, members: [{ name: f.payer.user.name, phone: f.payer.user.phone, amount: 200, memo: '聚餐100分＋活动100分' }, { name: f.other.user.name, phone: f.other.user.phone, amount: 100, memo: '仅聚餐' }] }
   await assert.rejects(f.api.createCollection({ ...input, members: [{ ...input.members[0], amount: 201 }, input.members[1]] }), { code: 'AA_ALLOCATION_MISMATCH' })
   await assert.rejects(f.api.createCollection({ ...input, members: input.members.slice(0, 1) }), { code: 'AA_ALLOCATION_MISMATCH' })
   assert.equal(f.writes, 0)
@@ -83,6 +83,50 @@ test('AA equal-split list binds computed shares to phone notifications and prese
   assert.deepEqual(collection.expenses[1].shares, [{ name: 'owner', amount: 101 }, { name: 'payer', amount: 100 }])
   assert.equal(f.payer.aaPaymentRequests[0].amount, 200); assert.equal(f.other.aaPaymentRequests[0].amount, 100)
   await assert.rejects(f.api.createCollection({ ...input, allocation: { ...allocation, expenses: allocation.expenses.map(row => ({ ...row, title: row.title + '修改' })) } }), { code: 'IDEMPOTENCY_CONFLICT' })
-  const equal = await f.api.createCollection({ ...f.input, clientRequestId: 'equal', allocation: { amount: 101, participants: ['payer', 'stranger'] }, members: [{ phone: f.payer.user.phone, amount: 51, memo: '均分' }, { phone: f.other.user.phone, amount: 50, memo: '均分' }] })
+  const equal = await f.api.createCollection({ ...f.input, clientRequestId: 'equal', allocation: { amount: 101, participants: ['payer', 'stranger'] }, members: [{ name: f.payer.user.name, phone: f.payer.user.phone, amount: 51, memo: '均分' }, { name: f.other.user.name, phone: f.other.user.phone, amount: 50, memo: '均分' }] })
   assert.deepEqual(equal.participants.map(row => row.amount), [51, 50])
+})
+
+test('AA member can be addressed by account number plus name, and mismatched names are refused', async () => {
+  const f = fixture()
+  // 测试桩里三个人原本的账号号长度相同会撞号，这里给 payer 一个唯一账号。
+  const accountNo = '8820000000003605'
+  f.payer.accounts[0].accountNo = accountNo
+  const collection = await f.api.createCollection({
+    ...f.input,
+    clientRequestId: 'aa-by-account',
+    members: [{ name: 'payer', accountNo, amount: 20000, memo: '按账号发通知' }],
+  })
+  assert.equal(collection.participants[0].userId, f.payer.user.id)
+  assert.equal(collection.participants[0].accountNo, accountNo)
+  assert.equal(f.payer.aaPaymentRequests.length, 1)
+  assert.equal(f.payer.aaPaymentRequests[0].amount, 20000)
+
+  // 姓名对不上户名：不发通知、不建单。
+  await assert.rejects(
+    f.api.createCollection({ ...f.input, clientRequestId: 'aa-name-mismatch', members: [{ name: '另一个人', accountNo, amount: 100, memo: 'x' }] }),
+    { code: 'AA_MEMBER_NAME_MISMATCH' },
+  )
+  assert.equal(f.payer.aaPaymentRequests.length, 1)
+
+  // 手机号和账号都给、但指向不同客户：直接拒绝。
+  await assert.rejects(
+    f.api.createCollection({
+      ...f.input,
+      clientRequestId: 'aa-mismatch',
+      members: [{ name: 'payer', phone: f.other.user.phone, accountNo, amount: 100, memo: 'x' }],
+    }),
+    { code: 'AA_MEMBER_MISMATCH' },
+  )
+
+  // 两个标识都不给：拒绝。
+  await assert.rejects(
+    f.api.createCollection({ ...f.input, clientRequestId: 'aa-no-identity', members: [{ name: 'payer', amount: 100, memo: 'x' }] }),
+    { code: 'INVALID_MEMBER_IDENTITY' },
+  )
+  // 只给身份不给姓名：也拒绝。
+  await assert.rejects(
+    f.api.createCollection({ ...f.input, clientRequestId: 'aa-no-name', members: [{ phone: f.payer.user.phone, amount: 100, memo: 'x' }] }),
+    { code: 'INVALID_AA_REQUEST' },
+  )
 })

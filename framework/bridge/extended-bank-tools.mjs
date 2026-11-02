@@ -53,9 +53,9 @@ export async function prepareExtendedBankOperation(name, a, { get, post, request
     }
     case 'bank_create_split_collection': {
       if (a.members !== undefined) {
-        if (['amountCents', 'participantNames', 'collectorName', 'expenses'].some(key => a[key] !== undefined)) throw bankError('手机号 AA 请仅提供 members，不混用旧均分参数')
+        if (['amountCents', 'participantNames', 'collectorName', 'expenses'].some(key => a[key] !== undefined)) throw bankError('AA 收款请仅提供 members，不混用旧均分参数')
         let raw
-        try { raw = typeof a.members === 'string' ? JSON.parse(a.members) : a.members } catch { throw bankError('members 须为成员数组，例如 [{"phone":"13700137000","amount":100,"memo":"聚餐AA"}]；金额单位为整数分') }
+        try { raw = typeof a.members === 'string' ? JSON.parse(a.members) : a.members } catch { throw bankError('members 须为成员数组，例如 [{"name":"张三","phone":"13700137000","amount":100,"memo":"聚餐AA"}]；手机号可换成 accountNo（12-19 位本行账号），姓名必填，金额单位为整数分') }
         const { members, amount } = normalizeAaMembers(raw)
         let allocationInput
         if (a.allocation !== undefined) {
@@ -64,10 +64,10 @@ export async function prepareExtendedBankOperation(name, a, { get, post, request
         const allocation = calculateAaAllocation(allocationInput, members)
 
         if (!['CNY', 'USD', 'HKD'].includes(a.currency)) throw bankError('币种无效')
-        return { path: '/api/transfers/splits', body: { title: text(a.title, '收款事由'), currency: a.currency, members, ...(allocationInput !== undefined ? { allocation: allocationInput } : {}), confirmed: true, clientRequestId: requestId }, fields: [field('AA 事由', a.title), ...(allocation?.expenses ? allocation.expenses.map(item => field(item.title, `${money(item.amount, a.currency)}；${item.shares.map(share => `${share.name} ${money(share.amount, a.currency)}`).join('，')}`)) : []), ...members.map(item => field(item.phone, `${money(item.amount, a.currency)}；转账备注：${item.memo}`)), field('待收总额', money(amount, a.currency), true), field('通知范围', '确认后向这些手机号对应的本行账号发送站内付款通知，可在 AA 付款的待付款模块查看；成员须自行确认并验证支付密码，不自动扣款，不发送短信或微信。')] }
+        return { path: '/api/transfers/splits', body: { title: text(a.title, '收款事由'), currency: a.currency, members, ...(allocationInput !== undefined ? { allocation: allocationInput } : {}), confirmed: true, clientRequestId: requestId }, fields: [field('AA 事由', a.title), ...(allocation?.expenses ? [field('活动总额', money(allocation.expenseTotal, a.currency)), field('本人份额', money(allocation.selfAmount, a.currency))] : []), ...(allocation?.expenses ? allocation.expenses.map(item => field(item.title, `${money(item.amount, a.currency)}；${item.shares.map(share => `${share.name} ${money(share.amount, a.currency)}`).join('，')}`)) : []), ...members.map(item => field(item.name + ' · ' + (item.phone ?? item.accountNo), `${money(item.amount, a.currency)}；转账备注：${item.memo}`)), field('待收总额', money(amount, a.currency), true), field('通知范围', '确认后向这些手机号或账号对应的本行账户发送站内付款通知，可在 AA 付款的待付款模块查看；成员须自行确认并验证支付密码，不自动扣款，不发送短信或微信。')] }
       }
 
-      throw bankError('请先向用户补齐每位付款人的注册手机号、应付整数分金额和转账备注，再通过 members 创建 AA 付款通知；不要使用仅保存姓名的旧模式。均分明细可放入 allocation。')
+      throw bankError('请先向用户补齐每位成员的姓名，以及手机号或 12-19 位本行账号（二者有一个即可）、应付整数分金额和转账备注，再通过 members 创建 AA 付款通知。姓名必须与账户户名一致。均分明细可放入 allocation。')
     }
     case 'bank_cancel_split_collection':
     case 'bank_confirm_split_payment':

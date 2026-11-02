@@ -91,11 +91,11 @@ Agent `bank_list_scheduled_transfers/bank_schedule_transfer/bank_cancel_schedule
 
 ### AA 收款
 
-网页统一使用“AA 收款 → 均分清单”：先按各项消费名单计算每人应付额，再在该清单中绑定注册手机号和转账备注，核对后发送付款通知，不再提供独立手机号收款页。members 可附 `allocation`（待收均分 `{amount,participants}` 或分项 `{collectorName,expenses}`）；服务器重算并逐人核对 members 的人数、顺序及金额，不一致报 `AA_ALLOCATION_MISMATCH` 且不送达通知。保存分项、本人份额及 splitName，保持清单与付款通知一致。
+网页统一使用“AA 收款 → 均分清单”：先按各项消费名单计算每人应付额，再在该清单中绑定成员姓名与手机号或本行账号、转账备注，核对后发送付款通知，不再提供独立手机号收款页。members 可附 `allocation`（待收均分 `{amount,participants}` 或分项 `{collectorName,expenses}`）；服务器重算并逐人核对 members 的人数、顺序及金额，不一致报 `AA_ALLOCATION_MISMATCH` 且不送达通知。保存分项、本人份额及 splitName，保持清单与付款通知一致。
 
-手机号 AA 创建 `{title,currency,members:[{phone,amount,memo}],confirmed:true,clientRequestId}`。成员为 1–30 个不重复的本行注册手机号（不含本人），每人金额为整数分、转账备注必填且最多 140 字，总额最多 100000000 分。服务端先核对所有成员账号和币种，再在同一事务内保存收款单及成员站内通知；任一成员无效时整单失败，不部分送达、不扣款、不发送短信或微信。旧均分参数不能与 members 混用。
+AA 创建 `{title,currency,members:[{name,phone|accountNo,amount,memo}],confirmed:true,clientRequestId}`。每位成员必须给出姓名，以及 `phone`（11 位本行注册手机号）或 `accountNo`（12–19 位本行账号）二者之一：只给手机号或只给账号都不构成完整成员。姓名须与账户户名一致，否则报 `AA_MEMBER_NAME_MISMATCH`；手机号与账号同时填写但指向不同客户时报 `AA_MEMBER_MISMATCH`；两个标识都不给报 `INVALID_MEMBER_IDENTITY`。成员为 1–30 个不重复成员（不含本人），每人金额为整数分、转账备注必填且最多 140 字，总额最多 100000000 分。服务端先核对所有成员账号和币种，再在同一事务内保存收款单及成员站内通知；任一成员无效时整单失败，不部分送达、不扣款、不发送短信或微信。旧均分参数不能与 members 混用。
 
-助手新建 AA 必须提供完整 members（注册手机号、整数分金额、转账备注），缺项先追问，不再回退到仅记姓名且不发送通知的旧创建模式。工具优先接收原生数组和 allocation 对象，同时兼容 JSON 字符串；解析失败给出字段格式提示，不猜测金额或手机号。网页收款页在可见且未提交、未请求时每 5 秒查询实际收款状态，重新聚焦时立即刷新，并保留手动刷新入口；到账仍只依据服务端流水，轮询不修改余额或付款状态。
+助手新建 AA 必须提供完整 members（成员姓名、手机号或本行账号、整数分金额、转账备注），缺项先追问，不再回退到仅记姓名且不发送通知的旧创建模式。工具优先接收原生数组和 allocation 对象，同时兼容 JSON 字符串；解析失败给出字段格式提示，不猜测金额或手机号。网页收款页在可见且未提交、未请求时每 5 秒查询实际收款状态，重新聚焦时立即刷新，并保留手动刷新入口；到账仍只依据服务端流水，轮询不修改余额或付款状态。
 
 `GET /api/transfers/aa-payments` 只查询本人收到的 AA 付款通知，包含收款人、金额、币种、原备注及 unpaid/processing/paid/cancelled 状态。网页“AA 付款”提供“待付款”和付款记录。`POST /api/transfers/aa-payments/:id/pay` 接受 `{version,confirmed:true,paymentPassword}`，金额、备注和收款账号来自原通知，不接受客户端覆盖；必须本人登录、独立确认并验证支付密码，冻结账号拒付。复用本行转账、在途审批及撤回规则，回款状态依据真实付款流水同步，重复/并发支付不重复扣款。备注写入双方流水和回单；密码不持久化。手机号通知、收款单和转账结果均随客户加密扩展域保存，重启后保留，不新增资金账户或修改数据库结构。
 
