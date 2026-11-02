@@ -8,7 +8,6 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.EncodeHintType
 import com.google.zxing.MultiFormatReader
 import com.google.zxing.MultiFormatWriter
-import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
@@ -99,19 +98,6 @@ internal object MemberQr {
         val pixels = IntArray(width * height)
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
         return decode(RGBLuminanceSource(width, height, pixels))
-    }
-
-    /**
-     * 解相机的一帧 YUV 图像。
-     *
-     * 只取 Y 平面（灰度）就够二维码用；`rowStride` 是相机缓冲的真实行宽，可能大于 `width`，
-     * 传错会让画面整体斜切、永远解不出来。
-     */
-    fun decodeYuv(data: ByteArray, width: Int, height: Int, rowStride: Int): String? {
-        val stride = if (rowStride >= width) rowStride else width
-        if (data.size < stride * height) return null
-        val source = PlanarYUVLuminanceSource(data, stride, height, 0, 0, width, height, false)
-        return decode(source)
     }
 
     private fun decode(source: com.google.zxing.LuminanceSource): String? {
