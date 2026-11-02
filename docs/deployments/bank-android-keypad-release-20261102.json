@@ -1,0 +1,51 @@
+{
+  "release": "20261102-8517e04",
+  "commit": "8517e04ef18eba731750485a1a934e99d1850e6a",
+  "phase": "deployed-and-verified",
+  "schemaMigration": false,
+  "database": "maneki_bank_demo",
+  "previousRelease": "/srv/maneki-bank/releases/20261102-79a1e6a",
+  "newSource": "/srv/maneki-bank/releases/20261102-8517e04",
+  "sourceSymlink": "/srv/maneki-bank/current",
+  "webRoot": "/var/www/bank.waveflow.men/current -> /srv/maneki-bank/current/app/dist",
+  "publicUrl": "https://bank.waveflow.men",
+  "databaseChanges": "none: no schema version bump, no owner bootstrap, no customer data migration",
+  "changes": [
+    "android 1.0.8 (versionCode 9): all numeric and secret input now uses an in-app drawn keypad instead of the system IME — amounts, account numbers, phone numbers, SMS codes, postal codes, dates and the 6-digit payment password",
+    "payment password keypad reshuffles on every open, the dialog carries FLAG_SECURE, and the dialog no longer dims the page behind it",
+    "amount fields clamp to one decimal point and at most two decimals inside the keypad",
+    "staff/ now reuses client components that import `@/…`, so staff build/typecheck resolve `@` to app/src; 21 staff files were switched to relative imports to stop the alias collision",
+    "new app script `build:site` builds the root-path production bundle for bank.waveflow.men; `build:server` stays for the bare-IP /bank/ subpath target",
+    "downloads/android.json bumped to 1.0.8 (9), sha256 e0b2964639d2bbd20ef2e6a5ad024d6f5e0ce08d33027ba88e36829379f432e9"
+  ],
+  "services": {
+    "luckycat-bank-demo": "active",
+    "luckycat-agent-demo": "active",
+    "luckycat-staff-agent": "active",
+    "luckycat-ops-agent": "active"
+  },
+  "build": {
+    "command": "npm --prefix app run build:site",
+    "env": {
+      "VITE_USE_MOCK": "false",
+      "VITE_BASE_PATH": "/",
+      "VITE_API_BASE_URL": "",
+      "VITE_AGENT_URL": "/agent-api"
+    },
+    "note": "构建在服务器上执行：服务器直接 clone GitHub 源码并 npm ci，APK 由服务器从 R2 下载后按 sha256 校验，避免从本机上传 23MB 产物"
+  },
+  "verification": {
+    "web": { "home": 200, "staff": 200, "indexJs": "200 application/javascript", "css": "200 text/css" },
+    "rendering": "无头 Chromium 加载首页与 /staff/，root 节点均已挂载，控制台无报错",
+    "customerLogin": { "smsCode": 200, "login": "200 返回 token", "accounts": "200", "cards": "200" },
+    "staffLogin": { "name": "王小明", "role": "csr", "result": "200 返回 token" },
+    "downloads": { "manifest": "1.0.8 (9), 11707205 字节", "apk": "200", "sha256": "e0b2964639d2bbd20ef2e6a5ad024d6f5e0ce08d33027ba88e36829379f432e9" }
+  },
+  "incident": {
+    "summary": "首轮发布用了 build:server（base=/bank/），与本站点根路径部署不符，登录后整页空白",
+    "cause": "页面引用 /bank/assets/*，nginx 把这些路径回退成 index.html，浏览器按 MIME 类型拒绝执行 module script，React 未挂载",
+    "diagnosis": "无头 Chromium 控制台报 Failed to load module script: MIME type text/html；旧发布 index.html 引用 /assets/*，新产物引用 /bank/assets/*",
+    "recovery": "在服务器上用根路径参数重建，替换 release 内 app/dist 后恢复；新产物主入口哈希与上一版一致（index-D881y4zy.js）",
+    "followUp": "新增 app 脚本 build:site 承载本域名的根路径构建，并在 app/README.md 与 deploy/single-host/README.md 写明 build:server 只用于裸 IP /bank/ 子路径，两者产物不能混用"
+  }
+}

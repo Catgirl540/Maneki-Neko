@@ -4,6 +4,7 @@
 
 | 日期 | 记录 | 内容 |
 | --- | --- | --- |
+| 2026-11-02 | [android-keypad](bank-android-keypad-release-20261102.json) | 安卓 1.0.8 自绘安全键盘上线；员工端 `@` 别名冲突修复；首轮误用 `build:server` 导致白屏，改根路径重建后恢复 |
 | 2026-11-02 | [profile-avatar](bank-profile-avatar-deployment-20261102.json) | 头像池与昵称接口上线，姓名改为称呼+脱敏；无库结构变更；首轮同步误删 `app/dist` 导致官网短暂 404，已重建并恢复 |
 | 2026-10-29 | [retire-8080](bank-retire-8080-deployment-20261029.json) | 旧 8080 服务定义移至备份并 mask；员工/运维 Agent 残留依赖改为统一后端；仅 8081 监听，现用服务未重启、数据库未修改 |
 | 2026-10-29 | [staff-im-fix](bank-staff-im-fix-deployment-20261029.json) | 员工 IM 适配器与通知 Worker 启用，二维码及签名校验通过 |

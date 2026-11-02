@@ -23,8 +23,10 @@
 客户端构建沿用根路径：
 
 ```sh
-VITE_USE_MOCK=false VITE_BASE_PATH=/ VITE_API_BASE_URL='' VITE_AGENT_URL=/agent-api npm --prefix app run build
+npm --prefix app run build:site
 ```
+
+`build:site` 等价于上面的根路径构建，并会先校验 `downloads/` 里的 APK 与元数据。不要用 `build:server`：它是给裸 IP `/bank/` 子路径准备的，产物引用 `/bank/assets/*`，发到本域名会白屏。
 
 ## 当前统一通道与权限
 

@@ -72,11 +72,11 @@ VITE_USE_MOCK=false npm --prefix app run dev
 | --- | --- |
 | `VITE_USE_MOCK` | 只有 `true` 启用浏览器 mock，默认配置为 `false` |
 | `VITE_PROXY_TARGET` | 开发时 `/api` 的代理目标，默认 `http://127.0.0.1:8080` |
-| `VITE_API_BASE_URL` | 银行请求基地址；本地留空，线上 `/bank/` 部署时为 `/bank`，不要再拼 `/api` |
+| `VITE_API_BASE_URL` | 银行请求基地址；本地与 `bank.waveflow.men` 留空，仅裸 IP `/bank/` 子路径部署时为 `/bank`，不要再拼 `/api` |
 | `VITE_AGENT_URL` | 浏览器访问 Agent 的完整前缀，本地为 `/agent-api` |
 | `VITE_AGENT_TARGET` | 开发时 Agent 代理目标，默认 `http://127.0.0.1:8788` |
 | `VITE_AGENT_ENABLED` | 设为 `false` 关闭独立 Agent 通道 |
-| `VITE_BASE_PATH` | 页面和静态资源根路径，本地为 `/`，线上为 `/bank/` |
+| `VITE_BASE_PATH` | 页面和静态资源根路径；本地与 `bank.waveflow.men` 为 `/`，仅裸 IP 子路径部署为 `/bank/` |
 
 这些变量在开发启动或构建时读取。生产构建完成后，修改服务器环境变量不会改变已有页面产物。
 `VITE_*` 会进入浏览器，不能放模型密钥或服务端访问口令。
@@ -192,12 +192,14 @@ JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
   :app:assembleDebug
 cd ..
 npm --prefix app run prepare:android
-npm --prefix app run build:server
+npm --prefix app run build:site   # bank.waveflow.men：根路径构建
 ```
+
+只给裸 IP `/bank/` 子路径准备的环境才用 `build:server`（base 为 `/bank/`）。两者产物不能混用：拿 `build:server` 的产物发到 `bank.waveflow.men`，页面会引用 `/bank/assets/*` 而资源在 `/assets/*`，Nginx 回退成 `index.html`，浏览器按 MIME 拒绝执行模块脚本，登录后整页空白。
 
 官网导航与页脚提供「下载安卓版」入口，公开地址为 `/bank/download`。Android/iPhone 等手机访问任意客户端路径都会跳到该页，且不挂载账户、登录或助手页面；电脑及平板保留网页功能。设备判断在 `src/lib/device.ts`，使用 UA 与 UA Client Hints，不按窗口宽度拦截。iPhone 显示暂无 iOS 版，不能安装 Android APK。
 
-`tools/package-android-download.mjs` 从 APK 读取版本、包名、最低系统与架构，验证签名，再生成 `app/public/downloads/android.json` 和带哈希名的安装包。可用 `node tools/package-android-download.mjs /绝对路径/app-release.apk` 替换为正式包。APK 与元数据不进 Git；部署时必须上传整个 `app/dist/`，包括 `downloads/`。`build:server` 会核对 APK 是否存在、大小及 SHA-256，缺失时直接失败。新版本使用新的文件名，避免浏览器缓存旧包。
+`tools/package-android-download.mjs` 从 APK 读取版本、包名、最低系统与架构，验证签名，再生成 `app/public/downloads/android.json` 和带哈希名的安装包。可用 `node tools/package-android-download.mjs /绝对路径/app-release.apk` 替换为正式包。APK 与元数据不进 Git；部署时必须上传整个 `app/dist/`，包括 `downloads/`。`build:site` / `build:server` 都会核对 APK 是否存在、大小及 SHA-256，缺失时直接失败。新版本使用新的文件名，避免浏览器缓存旧包。
 
 该 `android.json` 也是安卓版应用内更新源。新包必须增加 `android-app` 工程的 versionCode 并沿用签名；`android-app/releases/<version>.md` 的可选说明会写入元数据，不能手动伪造版本。更新流程见 [android-app/README.md](../android-app/README.md)。
 
