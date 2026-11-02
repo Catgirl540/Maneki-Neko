@@ -109,6 +109,12 @@
               - id: qwen/qwen3.8-flash
                 name: Qwen 3.8 Flash
                 contextWindow: 1000000
+              # 2026-11-02：qwen3.8-flash 在 OpenRouter 侧被上游限流（429），客户
+              # 助手直接「本轮没有生成完整回复」。改用 DeepSeek，实测直连可用。
+              # 注意 **不在这里登记就会报 no configured model**，换模型先加白名单。
+              - id: deepseek/deepseek-v4.1-flash-1017
+                name: DeepSeek V4.1 Flash
+                contextWindow: 1000000
               # ── 备选：ling 系（都**不是**默认，选它们的理由与坑见下面记录）────
               #
               #   模型                       工具调用   可用性
