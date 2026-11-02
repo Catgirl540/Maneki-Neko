@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { listErrorReports, resolveErrorReport } from './error-reports.mjs'
 import { hashPassword, verifyPassword, needsRehash, timingSafeTextEqual } from './passwords.mjs'
 import { Readable } from 'node:stream'
 import { createStaffIm, ensureStaffImSchema } from './staff-im.mjs'
@@ -369,7 +370,7 @@ async function readCustomerNames(db) {
  *   `settleHeldTransfer({customerId, transactionId, outcome, reason})` 放行/驳回，
  *   内部走 submitTransfer 同一条业务路（§9.4 红线：不许直接改流水表）。
  */
-export async function createStaffApi({ db, bankHooks = {}, operations }) {
+export async function createStaffApi({ db, bankHooks = {}, operations, root = process.cwd() }) {
   await ensureStaffSchema(db)
   const auth = await createStaffAuth(db)
   const writeAudit = makeWriteAudit(db)
@@ -526,6 +527,26 @@ export async function createStaffApi({ db, bankHooks = {}, operations }) {
       if (path === '/staff-api/me' && req.method === 'GET') {
         const who = await auth.resolveCurrent(req, { roles: ['csr', 'supervisor', 'ops'] })
         json(res, 200, { id: who.actorId, name: who.name, role: who.role, authVersion: who.authVersion })
+        return true
+      }
+
+      // ── 客户报错反馈（运维排查用，独立于工单） ──────────────────
+      if (path === '/staff-api/error-reports' && req.method === 'GET') {
+        // 全角色可看：客服也会被客户问「刚才那个报错怎么回事」
+        await auth.resolveCurrent(req, { roles: ['csr', 'supervisor', 'ops'] })
+        const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 100), 1), 500)
+        const status = url.searchParams.get('status') ?? undefined
+        const items = await listErrorReports(root, { limit, status })
+        json(res, 200, { items, total: items.length })
+        return true
+      }
+
+      if (path.startsWith('/staff-api/error-reports/') && req.method === 'POST') {
+        const who = await auth.resolveCurrent(req, { roles: ['supervisor', 'ops'] })
+        const id = decodeURIComponent(path.slice('/staff-api/error-reports/'.length))
+        const resolved = await resolveErrorReport(root, id, who.actorId)
+        if (!resolved) throw staffError(404, '没有这条报错记录', 'ERROR_REPORT_NOT_FOUND')
+        json(res, 200, resolved)
         return true
       }
 

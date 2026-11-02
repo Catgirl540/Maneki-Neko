@@ -73,6 +73,7 @@ const bank = await createBankApi({
 staffApi = await createStaffApi({
   db: database.db,
   operations,
+  root,
   bankHooks: {
     runStaffUnitOfWork: (work,requestId) => bank.runStaffUnitOfWork(work,requestId),
     getHeldTransfer: (args) => bank.getHeldTransfer(args),

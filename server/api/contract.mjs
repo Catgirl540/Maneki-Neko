@@ -90,6 +90,8 @@ export const routes = {
     supportHistory: () => '/api/support/messages',
     supportChat: () => '/api/support/chat',
     supportTickets: () => '/api/support/tickets',
+    /** 客户把界面报错发给运维（独立存储，不进工单） */
+    errorReports: () => '/api/support/error-reports',
     supportTicket: (id) => `/api/support/tickets/${id}`,
     supportTicketMessages: (id) => `/api/support/tickets/${id}/messages`,
     // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——

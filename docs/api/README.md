@@ -137,6 +137,15 @@
 - `name` 仍保留在服务端记录里（转账凭证、流水对手方需要真实姓名），但客户端界面不再展示。
 - 规则唯一来源 `shared/name-display.mjs`；安卓镜像 `NameDisplay.kt`；`node tools/check-name-display.mjs` 核对两边一致。
 
+#### 报错反馈（给运维）
+
+客户在界面上遇到错误时，可以把错误原文发给运维排查。
+
+- `POST /api/support/error-reports`，请求体 `{ message, note?, page?, appVersion?, platform? }`；`message` 必填，`note` 限 200 字。
+- 存储是 `server/data/error-reports.jsonl`（一条一行，最多保留 2000 条），**不进人工工单**：工单语义是「找客服」，报错是「系统出问题」，混在一起两边都不清楚。
+- 运维端：`GET /staff-api/error-reports?status=open&limit=100`（csr/supervisor/ops 均可看）、`POST /staff-api/error-reports/:id` 标记已处理（仅 supervisor/ops）。
+- 字段规则唯一来源 `shared/error-report.mjs`。
+
 #### 用户昵称
 
 昵称与姓名是**两件事**：姓名是实名（对外只给 `maskedName`），昵称只做展示。

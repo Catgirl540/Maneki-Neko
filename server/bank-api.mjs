@@ -127,6 +127,7 @@ const ROUTES = [
   ['GET', 'supportHistory', 'listSupportMessages', () => []],
   ['POST', 'supportChat', 'sendSupportMessage', (id, b) => [b.text]],
   ['POST', 'supportTickets', 'requestHumanSupport', (id, b) => [b]],
+  ['POST', 'errorReports', 'reportClientError', (id, b) => [b]],
   ['GET', 'supportTickets', 'listSupportTickets', (id, b, q) => [Number(q.get('page') ?? 1)]],
   ['GET', 'supportTicket', 'getSupportTicket', id => [id]],
   ['POST', 'supportTicketMessages', 'replySupportTicket', (id, b) => [id, b]],
@@ -335,6 +336,7 @@ export async function createBankApi({
   security,
   database,
   classify: classifyFn,
+  root = process.cwd(),
 } = {}) {
   if (!storage || !database || !auth || !security) throw new Error('Bank API requires database, authentication and security gateway')
   // 导出链接：内容在已登录请求里生成，链接一次性、短时有效（见 export-store.mjs 的已知限制）。
@@ -380,7 +382,7 @@ export async function createBankApi({
   try {
     api = createBankBusinessApi(
       // 后台分类任务要写库：走 exclusive 的单元工作，避免 scoped 投影下在事务外 persist
-      { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn,
+      { reviewThreshold, holdWindowMs: holdWindowMs ?? 5 * 60_000, security, classify: classifyFn, root,
         runInUnit: (work) => exclusiveRef ? exclusiveRef(work) : work() },
     )
     await storage.commitUnitOfWork()
@@ -595,7 +597,7 @@ export async function createBankApi({
 
     try {
       // Legacy portfolios are historical demo records, never commercial bank balances.
-      const liveSafe = new Set(['login','register','logout','profile','updateAvatar','updateNickname','sendSmsCode','verifyIdentity','changePhone','changePassword','changePaymentPassword','getSecurityOverview','listSupportMessages','sendSupportMessage','requestHumanSupport','listSupportTickets','getSupportTicket','replySupportTicket'])
+      const liveSafe = new Set(['login','register','logout','profile','updateAvatar','updateNickname','sendSmsCode','verifyIdentity','changePhone','changePassword','changePaymentPassword','getSecurityOverview','listSupportMessages','sendSupportMessage','requestHumanSupport','listSupportTickets','getSupportTicket','replySupportTicket','reportClientError'])
       if (security.mode === 'live' && !liveSafe.has(entry.bankMethod)) throw Object.assign(new Error('合作银行尚未接入或尚未授权此项能力'), { status: 503, code: 'BANK_NOT_CONNECTED' })
       const body = ['POST', 'PATCH', 'DELETE'].includes(req.method) ? await readBody(req) : {}
       if (entry.bankMethod === 'login') await security.run(req, () => security.loginAttempt(body.phone))

@@ -7,6 +7,7 @@ import type {
   CardProduct,
   Cents,
   ExportQuery,
+  ErrorReportInput,
   BudgetsOverview,
   Payee,
   ReceiptFile,
@@ -196,6 +197,13 @@ export function createHttpApi(): BankApi {
     sendSupportMessage: (text) => post(routes.supportChat(), { text }),
 
     requestHumanSupport: (req) => post(routes.supportTickets(), req),
+
+
+    /** 把界面上的报错发给运维；落盘由服务端负责，返回记录 id。 */
+
+    reportError: (input: ErrorReportInput) =>
+
+      post<{ id: string; createdAt: string }>(routes.errorReports(), input),
     listSupportTickets: (page) => request(routes.supportTickets() + `?page=${page ?? 1}`),
     getSupportTicket: (id) => request(routes.supportTicket(encodeURIComponent(id))),
     replySupportTicket: (id, req) => post(routes.supportTicketMessages(encodeURIComponent(id)), req),

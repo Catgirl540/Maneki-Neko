@@ -7,6 +7,7 @@ import type { AgentChatOptions, PendingConsent } from '../../lib/useAgentChat'
 import { AgentCardSecret } from './AgentCardSecret'
 import { ConsentCard } from './ConsentCard'
 import { EditMessageModal, MessageActions } from './MessageActions'
+import { ErrorReportModal } from './ErrorReportModal'
 import { QuestionCard } from './QuestionCard'
 import { SpeechPlayer } from './SpeechPlayer'
 // 懒加载：Markdown + KaTeX 加起来约 430KB，只有这一页用得上，
@@ -1025,11 +1026,8 @@ function AssistantTurnBubble({ turn, actions, busy, waiting }: {
         {notices.filter(item => item.id !== 'model_retry_progress').map(item => <p key={item.id} role={item.tone === 'error' ? 'alert' : undefined}
           className={cn('assistant-turn-notice', item.tone === 'error' && 'is-error')}>{item.text}</p>)}
         {(error || lastTool?.state === 'error') && turn.promptId && actions.retryablePromptId === turn.promptId && (
-          <button type="button" className="assistant-turn-retry" aria-label="重试这轮请求"
-            disabled={actions.frozen || unfinished} title={actions.frozen ? actions.frozenReason : '继续处理上一轮请求'}
-            onClick={() => actions.onRetry(turn.promptId!)}>
-            <RefreshIcon size={14} />重试
-          </button>
+          <TurnFailureActions turn={turn} lastTool={lastTool} actions={actions} unfinished={unfinished}
+            errorText={notices.filter(item => item.tone === 'error').map(item => item.text).join('\n')} />
         )}
         {reply && !unfinished && <>
           {actions.speakingId === reply.id && actions.playback && <SpeechPlayer className="mt-1.5 w-full"
@@ -1100,5 +1098,44 @@ function MessageBubble({ message }: { message: SupportMessage }) {
         </div>
       </div>
     </div>
+  )
+}
+
+/**
+ * 一轮失败后的两个动作：重试，或者把错误发给运维。
+ *
+ * 「反馈给运维」只在真的出错时出现；错误原文由这一轮的事件流带出来，
+ * 用户改不了，否则运维拿到的就不是现场了。
+ */
+function TurnFailureActions({ turn, lastTool, errorText, actions, unfinished }: {
+  turn: AssistantTurn
+  lastTool: ReturnType<typeof turnContent>['lastTool']
+  /** 这一轮回传的错误文案，来自事件流的 error notice。 */
+  errorText: string
+  actions: BubbleActions
+  /** 这一轮还没结束（流式输出/等待确认），此时不给「反馈」入口。 */
+  unfinished: boolean
+}) {
+  const [reportOpen, setReportOpen] = useState(false)
+  const fallback = lastTool?.state === 'error'
+    ? `工具执行失败：${lastTool.text ?? '未知错误'}`
+    : '本轮没有生成完整回复'
+  const message = errorText.trim() === '' ? fallback : errorText
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="assistant-turn-retry" aria-label="重试这轮请求"
+          disabled={actions.frozen || unfinished} title={actions.frozen ? actions.frozenReason : '继续处理上一轮请求'}
+          onClick={() => actions.onRetry(turn.promptId!)}>
+          <RefreshIcon size={14} />重试
+        </button>
+        <button type="button" className="assistant-turn-retry" aria-label="把这条错误反馈给运维"
+          disabled={actions.frozen} title={actions.frozen ? actions.frozenReason : '附带错误信息发送给运维'}
+          onClick={() => setReportOpen(true)}>
+          反馈给运维
+        </button>
+      </div>
+      <ErrorReportModal open={reportOpen} message={message} page="智能助手" onClose={() => setReportOpen(false)} />
+    </>
   )
 }

@@ -6,6 +6,7 @@
 
 import type {
   Account,
+  ErrorReportInput,
   AaPaymentRequest,
   AaPaymentInput,
   RegistrationRequest,
@@ -202,6 +203,8 @@ export const routes = {
   supportHistory: () => '/api/support/messages',
   supportChat: () => '/api/support/chat',
   supportTickets: () => '/api/support/tickets',
+  /** 客户把界面报错发给运维（独立存储，不进工单） */
+  errorReports: () => '/api/support/error-reports',
   supportTicket: (id: string) => `/api/support/tickets/${id}`,
   supportTicketMessages: (id: string) => `/api/support/tickets/${id}/messages`,
 
@@ -412,6 +415,9 @@ export interface BankApi {
   listSupportMessages(): Promise<SupportMessage[]>
   sendSupportMessage(text: string): Promise<SupportReply>
   requestHumanSupport(req: HumanSupportRequest): Promise<SupportTicket>
+
+  /** 把界面上的报错发给运维；返回这条记录的 id。 */
+  reportError(input: ErrorReportInput): Promise<{ id: string; createdAt: string }>
   listSupportTickets(page?: number): Promise<SupportTicketPage>
   getSupportTicket(id: string): Promise<SupportTicketDetail>
   replySupportTicket(id: string, req: { requestId: string; text: string }): Promise<{ messageId: string }>

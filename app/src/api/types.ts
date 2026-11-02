@@ -1861,3 +1861,17 @@ export type { BirthdayPlan } from '../../../shared/linked-plans.mjs'
 export type BirthdayPlanDraft = import('../../../shared/linked-plans.mjs').BirthdayPlanInput
 export type BirthdayPlanPreview = ReturnType<typeof import('../../../shared/linked-plans.mjs').previewBirthdayPlan>
 export type BirthdayPlanRequest = BirthdayPlanDraft & { confirmed: true; requestId: string; paymentPassword: string }
+
+/** 客户把界面报错发给运维时提交的字段。 */
+export interface ErrorReportInput {
+  /** 错误原文，由出错的那一轮（agent 错误或工具失败）自动带入 */
+  message: string
+  /** 用户补充说明，可选 */
+  note?: string
+  /** 出错的页面或场景标识，例如「智能助手」 */
+  page?: string
+  /** 客户端版本 */
+  appVersion?: string
+  /** web / android */
+  platform?: string
+}

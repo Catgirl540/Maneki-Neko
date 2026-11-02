@@ -2550,6 +2550,12 @@ async getSecurityOverview(): Promise<SecurityOverview> {
       return cannedReply(text)
     },
 
+    async reportError(input) {
+      // 本地模拟只做校验与记录，不落盘；真实存储由服务端负责。
+      const message = String(input?.message ?? '').trim()
+      if (message === '') throw new ApiError('缺少错误信息', 400, 'INVALID_ERROR_REPORT')
+      return { id: `err_${Date.now().toString(36)}`, createdAt: new Date().toISOString() }
+    },
     async requestHumanSupport(req) {
       if (!req.reason.trim() || req.reason.length > 500) throw new ApiError('请输入 500 字以内的问题描述', 400)
       const key = `${humanOwner()}:${req.requestId}`

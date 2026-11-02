@@ -714,7 +714,7 @@ test('explicit live mode in an isolated production fixture rejects unavailable S
     VALUES($1,'transfer',$2,'TEST ONLY existing legacy hold',NULL,'pending','pending',$3)`, [approvalId, JSON.stringify({ customerId: customer.id, transactionId, request, amount: 1200, holdUntil }), new Date().toISOString()]))
   const before = await financialState(app)
   await t.test('every legacy financial contract route refuses live demo reads and writes', async () => {
-    const safe = new Set(['login','register','logout','profile','profileAvatar','profileNickname','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages'])
+    const safe = new Set(['login','register','logout','profile','profileAvatar','profileNickname','smsCode','verifyIdentity','changePhone','changePassword','paymentPassword','security','supportHistory','supportChat','supportTickets','supportTicket','supportTicketMessages','errorReports'])
     const posts = new Set(['deposit','fpsRegistration','cardBin','fpsResolve','transferQuote','transferRecipient','transfers','transferRecall','cardOpen','cardSpend','cardActivate','cardLock','cardReplace','cardSecrets','autoDebitBind','budgets','budgetPass','wealthAccountOpen','wealthRiskAssess','wealthSubscribe','wealthRedeem','exchangeQuote','exchange','savingsGoals','virtualCard','overdraftActivate','creditApply','creditInstallment','investPlan','insuranceEnroll','membershipLoungePass'])
     const patches = new Set(['cardSettings','autoDebit','budget','securityRule','savingsGoal','savingsRoundup','salaryPlan','cashManagementSweep','investPlanStatus'])
     const deletes = new Set(['payee'])

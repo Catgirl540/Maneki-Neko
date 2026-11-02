@@ -1,4 +1,6 @@
 import { prepareSpendSubscription } from '../../shared/spend-subscription.mjs'
+import { normalizeErrorReport, validateErrorReport } from '../../shared/error-report.mjs';
+import { recordErrorReport } from '../error-reports.mjs';
 export function listStaffNotices(customerId) {
   const all = storage.get('support.staffNotices.v1', [])
   return all.filter((n) => n.customerId === customerId).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -2265,6 +2267,21 @@ async getSecurityOverview() {
         async sendSupportMessage(text) {
             await delay(650);
             return cannedReply(text);
+        },
+        /**
+         * 客户把界面上的报错发给运维。
+         *
+         * 只做校验与落盘，不判断错误归属；落盘走单独文件，不占用人工工单。
+         */
+        async reportClientError(req) {
+            const problem = validateErrorReport(req);
+            if (problem)
+                throw new ApiError(problem, 400, 'INVALID_ERROR_REPORT');
+            const db = loadDb();
+            return recordErrorReport(options?.root ?? process.cwd(), normalizeErrorReport(req), {
+                customerId: db.user.id,
+                customerPhone: db.user.phone,
+            });
         },
         async requestHumanSupport(req) {
             if (!req.reason.trim() || req.reason.length > 500)
