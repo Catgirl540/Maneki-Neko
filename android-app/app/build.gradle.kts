@@ -36,8 +36,8 @@ android {
         applicationId = "com.moneymeow.bank"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 正式包不自动登录；dev 变体会覆盖成 true。
         buildConfigField("boolean", "AUTO_LOGIN_DEMO", "false")

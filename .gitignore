@@ -76,3 +76,12 @@ android-app/.kotlin/
 /deliverables/.ppt-work/
 /deliverables/__pycache__/
 /deliverables/~$*
+
+# 比赛提交不打包的归档与设计原稿（仍在磁盘上，只是不进版本库）
+/archive/
+/docs/design/
+
+# 打包与本地临时产物
+/.release-tmp/
+/transcript
+/deliverables/预览/
