@@ -59,7 +59,31 @@ export async function createCustomerAuth(db, { lifetimeMs = 12 * 60 * 60 * 1000,
     if (!platform) return client === '浏览器' ? '未知设备' : client
     return platform + ' · ' + client
   }
-  const audit = async (owner, action, level = 'info', meta = {}) => db.prepare('INSERT INTO customer_auth_audit (id, owner_id, action, created_at, level, ip, device) VALUES (?, ?, ?, ?, ?, ?, ?)').run(randomUUID(), owner, action, stamp(), level, meta.ip ?? null, meta.device ?? null)
+  /**
+   * 新列是否已存在。
+   *
+   * 生产环境 `BANK_AUTO_MIGRATE=false`，本文件顶部的 DDL 不会执行，库可能还是旧结构。
+   * 因此启动后探一次列：没有就退回不写该列的语句，保证登录等功能不会因为
+   * 「记录来源地址」这种附加信息而整体失败。
+   */
+  const columnCache = { sessionIp: null, auditMeta: null }
+  async function columnUsable(probe, slot) {
+    if (columnCache[slot] !== null) return columnCache[slot]
+    try {
+      await db.prepare(probe).get()
+      columnCache[slot] = true
+    } catch {
+      columnCache[slot] = false
+    }
+    return columnCache[slot]
+  }
+  const audit = async (owner, action, level = 'info', meta = {}) => {
+    const detailed = await columnUsable('SELECT ip FROM customer_auth_audit LIMIT 1', 'auditMeta')
+    if (detailed) {
+      return db.prepare('INSERT INTO customer_auth_audit (id, owner_id, action, created_at, level, ip, device) VALUES (?, ?, ?, ?, ?, ?, ?)').run(randomUUID(), owner, action, stamp(), level, meta.ip ?? null, meta.device ?? null)
+    }
+    return db.prepare('INSERT INTO customer_auth_audit (id, owner_id, action, created_at, level) VALUES (?, ?, ?, ?, ?)').run(randomUUID(), owner, action, stamp(), level)
+  }
   const key = req => /^Bearer ([A-Za-z0-9_-]{43})$/.exec(req?.headers?.authorization ?? '')?.[1]
   const tokenHash = token => createHash('sha256').update(token).digest('hex')
   async function end(id, ownerId, action, meta = {}) {
@@ -94,8 +118,13 @@ export async function createCustomerAuth(db, { lifetimeMs = 12 * 60 * 60 * 1000,
       const token = randomBytes(32).toString('base64url'), id = tokenHash(token)
       // Classify, never persist arbitrary headers that could contain secrets.
       const device = deviceLabel(req?.headers?.['user-agent']), ip = clientIp(req)
+      const withIp = await columnUsable('SELECT ip FROM customer_sessions LIMIT 1', 'sessionIp')
       await db.transaction(async () => {
-        await db.prepare('INSERT INTO customer_sessions (id, owner_id, phone, device, created_at, expires_at, ended_at, ip) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)').run(id, user.id, user.phone, device, stamp(), now() + lifetimeMs, ip)
+        if (withIp) {
+          await db.prepare('INSERT INTO customer_sessions (id, owner_id, phone, device, created_at, expires_at, ended_at, ip) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)').run(id, user.id, user.phone, device, stamp(), now() + lifetimeMs, ip)
+        } else {
+          await db.prepare('INSERT INTO customer_sessions (id, owner_id, phone, device, created_at, expires_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, NULL)').run(id, user.id, user.phone, device, stamp(), now() + lifetimeMs)
+        }
         await audit(user.id, '登录成功', 'info', { ip, device })
       })
       return token

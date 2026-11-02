@@ -78,3 +78,37 @@ test('登录设备与安全日志记录真实来源地址和设备，而不是�
   assert.equal(db.audits[0].ip, '203.0.113.9')
   assert.equal(db.audits[0].device, 'macOS · Chrome')
 })
+
+test('旧库没有 ip 列时登录仍可用，只是不记录地址', async () => {
+  const { createCustomerAuth: create } = await import('./customer-auth.mjs')
+  const sessions = [], audits = []
+  const db = {
+    async exec() {},
+    async transaction(work) { return work() },
+    prepare(sql) {
+      const statement = sql.replace(/\s+/g, ' ').trim()
+      return {
+        async get() {
+          // 旧库：SELECT ip 直接报错，其余查询当不存在。
+          if (statement.includes('SELECT ip')) throw Object.assign(new Error('column "ip" does not exist'), { code: '42703' })
+          return undefined
+        },
+        async run(...args) {
+          if (statement.startsWith('INSERT INTO customer_sessions')) {
+            if (statement.includes('ip')) throw Object.assign(new Error('column "ip" does not exist'), { code: '42703' })
+            sessions.push(args); return { changes: 1 }
+          }
+          if (statement.startsWith('INSERT INTO customer_auth_audit')) { audits.push(args); return { changes: 1 } }
+          return { changes: 0 }
+        },
+        async all() { return [] },
+      }
+    },
+  }
+  const auth = await create(db, { now: () => 1_700_000_000_000 })
+  const token = await auth.issue({ id: 'u1', phone: '13800138000' }, { socket: { remoteAddress: '203.0.113.9' }, headers: { 'user-agent': 'okhttp/4.12.0' } })
+  assert.equal(typeof token, 'string')
+  assert.equal(sessions.length, 1, '登录会话照常写入')
+  assert.equal(sessions[0].length, 6, '旧库语句不含 ip 列')
+  assert.equal(audits.length, 1, '审计照常写入')
+})
