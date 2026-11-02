@@ -239,12 +239,14 @@ private fun NumberPad(
                 }
             }
         }
+        // 末行：金额键必须同时有 0 和小数点，不能拿 0 去换小数点——
+        // 少了 0 就没法输入 10、100、1000 这类最常见的金额。
+        // 所以允许小数时末行放四格：清空 / 0 / . / 退格。
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             PadKey(label = "清空", modifier = Modifier.weight(1f), muted = true, onClick = onClear)
+            PadKey(label = "0", modifier = Modifier.weight(1f), onClick = { onDigit(0) })
             if (allowDecimal) {
                 PadKey(label = ".", modifier = Modifier.weight(1f), onClick = onDot)
-            } else {
-                PadKey(label = "0", modifier = Modifier.weight(1f), onClick = { onDigit(0) })
             }
             PadKey(label = "⌫", modifier = Modifier.weight(1f), muted = true, onClick = onBackspace)
         }
