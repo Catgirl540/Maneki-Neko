@@ -718,6 +718,21 @@ object BankApi {
         request("PATCH", "/api/payees/$id", JSONObject().put("remark", remark))
     }
 
+    /**
+     * 新增收款人（`POST /api/payees`）：与转账页共用同一份通讯录。
+     *
+     * 同一手机号或同一账号已存在时后端不新建第二条，而是补齐缺的那一项并返回原记录
+     * （状态 2xx），所以这里不需要处理 409；真正冲突只在两项都指不到同一个人时才会报错。
+     */
+    internal suspend fun addPayee(identity: SplitIdentity): JSONObject = withContext(Dispatchers.IO) {
+        require(identity.name.isNotBlank()) { "请填写收款人姓名" }
+        require(identity.phone.matches(Regex("1[3-9]\\d{9}")) || identity.accountNo.matches(Regex("\\d{12,19}"))) { "请填写手机号或本行账号" }
+        request("POST", "/api/payees", JSONObject().put("name", identity.name).apply {
+            if (identity.phone.isNotEmpty()) put("phone", identity.phone)
+            if (identity.accountNo.isNotEmpty()) put("accountNo", identity.accountNo)
+        })
+    }
+
     internal suspend fun membershipData(redeem: Boolean = false): JSONObject = withContext(Dispatchers.IO) {
         request(if (redeem) "POST" else "GET", if (redeem) "/api/membership/lounge-pass" else "/api/membership", if (redeem) JSONObject() else null)
     }

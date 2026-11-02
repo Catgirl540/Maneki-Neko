@@ -87,15 +87,27 @@ class FinancialRecoveryTest {
     }
 
     @Test fun splitAllocationMatchesPerItemRoundingAndExcludesCollector() {
-        assertEquals(listOf("甲" to 34L, "乙" to 34L, "丙" to 33L), allocateSplit(101, listOf("甲", "乙", "丙")).participants)
-        val result = allocateExpenses("甲", listOf(
-            SplitExpenseInput("餐费", 101, listOf("甲", "乙", "丙")),
-            SplitExpenseInput("车费", 5, listOf("乙", "丙")),
+        val jia = SplitIdentity("甲", phone = "13800138000")
+        val yi = SplitIdentity("乙", phone = "13800138001")
+        val bing = SplitIdentity("丙", accountNo = "6222021234567890")
+        // 余数从前往后各加 1 分，与服务端 sharesOf 一致。
+        assertEquals(listOf(34L, 34L, 33L), allocateSplit(101, listOf(jia, yi, bing)).participants.map { it.amount })
+        val result = allocateExpenses(jia, listOf(
+            SplitExpenseInput("餐费", 101, listOf(jia, yi, bing)),
+            SplitExpenseInput("车费", 5, listOf(yi, bing)),
         ))
         assertEquals(34L, result.selfAmount)
-        assertEquals(listOf("乙" to 37L, "丙" to 35L), result.participants)
+        assertEquals(listOf(yi.key to 37L, bing.key to 35L), result.participants.map { it.identity.key to it.amount })
         assertEquals(72L, result.amount)
-        assertTrue(runCatching { allocateSplit(100, listOf("甲", "甲")) }.isFailure)
+        assertEquals(106L, result.expenseTotal)
+        // 同一身份重复出现要拦下；同名的两个人只要手机号不同就是两个人。
+        assertTrue(runCatching { allocateSplit(100, listOf(jia, jia)) }.isFailure)
+        // 同名不同手机号 = 两个人，各分 50 分。
+        assertEquals(listOf(50L, 50L), allocateSplit(100, listOf(jia, jia.copy(phone = "13800138009"))).participants.map { it.amount })
+        // 只填姓名不行：没有手机号或账号就没法确定钱付给谁。
+        assertTrue(runCatching { identityOf("丁", "") }.isFailure)
+        assertTrue(runCatching { identityOf("丁", "12345") }.isFailure)
+        assertEquals(SplitIdentity("丁", accountNo = "6222021234567890"), identityOf("丁", "6222021234567890"))
     }
 
     @Test fun scheduledTimeRejectsInvalidCalendarDatesAndUsesBeijing() {

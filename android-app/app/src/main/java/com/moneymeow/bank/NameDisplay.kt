@@ -48,6 +48,21 @@ object NameDisplay {
     fun nicknameOf(custom: String?, fallback: String?): String =
         normalizeNickname(custom).ifEmpty { fallback.orEmpty() }
 
+    /**
+     * 姓名核对（镜像 `shared/aa-payments.mjs` 的 `nameMatches`）。
+     *
+     * 只判断「像不像同一个人」，同时接受全名、脱敏名（林*满）和称呼写法（林女士），
+     * 避免因为展示形态不同把本人误判成别人。AA 参与者表靠它认出哪一行是发起人本人。
+     */
+    fun matches(input: String?, name: String?, honorific: String? = null): Boolean {
+        val typed = input.orEmpty().replace(Regex("\\s+"), "")
+        val full = name.orEmpty().trim()
+        if (typed.isEmpty() || full.isEmpty()) return false
+        return listOf(full, masked(full), of(full, honorific))
+            .map { it.replace(Regex("\\s+"), "") }
+            .any { it.isNotEmpty() && it == typed }
+    }
+
     /** 身份证号第 17 位定称呼：奇数先生、偶数女士；格式不对返回默认值。 */
     fun honorificFromIdNumber(idNumber: String?): String {
         val value = idNumber?.trim().orEmpty()

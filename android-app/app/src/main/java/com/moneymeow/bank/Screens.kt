@@ -32,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.semantics.semantics
@@ -98,14 +99,15 @@ fun TabBar(title: String, onRefresh: (() -> Unit)? = null, refreshing: Boolean =
 }
 
 @Composable
-fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun PrimaryButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     Box(
         modifier
             .fillMaxWidth()
             .height(48.dp)
             .clip(RoundedCornerShape(Tokens.CardRadius.dp))
             .background(Tokens.Primary)
-            .clickable { onClick() },
+            .alpha(if (enabled) 1f else 0.45f)
+            .clickable(enabled = enabled) { onClick() },
         contentAlignment = Alignment.Center,
     ) {
         Text(text, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
