@@ -1061,7 +1061,7 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         if (!service) throw bankError('提醒服务不可用', 503)
         return { dataSource: 'personal-workbench', result: service.execute(entry.ownerId, g.preview.reminder, `agent_${digest([input.sessionId, input.callId, input.toolName])}`) }
       }
-      const data = await call(entry.bankToken, g.path, body, g.method, investmentWrite || extendedWriteTools.includes(input.toolName) ? `agent_${digest([input.sessionId, input.callId, input.toolName])}` : undefined)
+      const data = await call(entry.bankToken, g.path, body, g.method, `agent_${digest([input.sessionId, input.callId, input.toolName])}`)
       if (input.toolName === 'bank_wealth_recommend') return { dataSource: 'http', result: recommendWealthProducts(data, await call(entry.bankToken, '/api/wealth/overview'), input.arguments) }
       if (input.toolName === 'bank_find_subscription_candidates') {
         const account = await call(entry.bankToken, '/api/accounts/' + enc(g.preview.subscriptionAccount.id))

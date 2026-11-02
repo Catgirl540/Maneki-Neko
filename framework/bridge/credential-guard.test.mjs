@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { hasExplicitCredential } from '../../shared/credential-guard.mjs'
-import { createCredentialGuard, decisionEndpoints, openRouterEndpoints } from './credential-guard.mjs'
+import { createCredentialGuard, decisionEndpoints, openRouterEndpoints, decisionText } from './credential-guard.mjs'
 
 const endpoint = { url: 'http://127.0.0.1:8123/v1/systemone', model: 'span-02' }
 const answer = (choice, probabilities) => ({ ok: true, json: async () => ({ answers: { credentials: { type: 'choice', choice, probabilities } } }) })
@@ -57,4 +57,15 @@ test('OpenRouter 主模型失败时备用模型使用固定 HTTPS 端点和授�
   assert.deepEqual(calls.map(call => call.model), ['respan/span-02', 'perplexity/pplx-decider-v1.2'])
   assert(calls.every(call => call.url === 'https://openrouter.ai/api/alpha/decisions' && call.auth === 'Bearer test-key'))
   await assert.rejects(createCredentialGuard({ endpoints, apiKey: '', fetcher: async () => { throw Error('must not call') } })('查询余额'), { code: 'CREDENTIAL_CHECK_UNAVAILABLE' })
+})
+
+
+test('远端凭据判定只接收不透明值的形态，不接收原始数字和字母串', async () => {
+  const raw='这是 abc123! 和 13800138000 的订单，金额 123456'
+  const projected=decisionText(raw)
+  for(const secret of ['abc123!','13800138000','123456']) assert(!projected.includes(secret))
+  assert(projected.includes('这是'));assert(projected.includes('已隐藏'))
+  let sent
+  await createCredentialGuard({endpoints:[endpoint],fetcher:async(_url,req)=>{sent=JSON.parse(req.body).state.message;return safe()}})(raw)
+  assert.equal(sent,projected)
 })

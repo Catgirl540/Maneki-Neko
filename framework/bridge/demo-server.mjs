@@ -52,6 +52,8 @@
  */
 
 import { createServer } from 'node:http'
+import { applyHttpSecurity } from './http-security.mjs'
+import { publicError } from './public-error.mjs'
 import { createCredentialGuard } from './credential-guard.mjs'
 import { compactReplay, isReplayCheckpoint, retainReplayEvent } from './session-memory.mjs'
 import { projectModelRetry, modelFailureMessage } from './model-retry.mjs'
@@ -352,7 +354,6 @@ async function sendJson(res, status, payload) {
     'content-type': 'application/json; charset=utf-8',
     'content-length': Buffer.byteLength(body),
     // 演示服务只给本机网页用；不允许被别的站点带着 cookie 调。
-    'access-control-allow-origin': '*',
     'cache-control': 'no-store',
   })
   res.end(body)
@@ -575,6 +576,7 @@ async function ensureHarness() {
     const harnessEnv={...(fallbackEnv??process.env)}
     delete harnessEnv.LUCKYCAT_STAFF_IM_SERVICE_KEY
     delete harnessEnv.LUCKYCAT_STAFF_IM_DATA_KEY
+    for (const name of ['BANK_DATABASE_URL', 'BANK_DATA_KEY', 'BANK_CSR_PASSWORD', 'BANK_SUPERVISOR_PASSWORD', 'BANK_OPS_PASSWORD', 'STAFF_AGENT_TOKEN', 'LUCKYCAT_SESSION_DATABASE_URL', 'LUCKYCAT_SESSION_DATA_KEY', 'LUCKYCAT_IM_DATA_KEY']) delete harnessEnv[name]
     const candidate = new DeepSeekHarness({
       dshBin: join(ROOT, 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js'), profile: PROFILE,
       provider: PROVIDER, model: MODEL, initializeTimeoutMs: 30_000,
@@ -671,7 +673,7 @@ async function runTurn(sessionId, input) {
       publish(sessionId, { type: 'error', message: modelFailureMessage(lastFailure, retries) })
     }
   } catch (error) {
-    if (!entry.stopping) publish(sessionId, { type: 'error', message: `agent 运行失败：${error instanceof Error ? error.message : String(error)}` })
+    if (!entry.stopping) publish(sessionId, { type: 'error', message: publicError(error).error })
   } finally {
     assistantStream.close()
     if (entry.stopping) publish(sessionId, { type: 'stopped' })
@@ -719,7 +721,7 @@ function demoBank() {
 const server = createServer((req, res) => {
   void handle(req, res).catch(async (error) => {
     if (!res.headersSent) {
-      try { await sendJson(res, error?.status ?? 500, { error: error instanceof Error ? error.message : String(error), code: error?.code }) }
+      try { await sendJson(res, publicError(error).status, { error: publicError(error).error, code: publicError(error).code }) }
       catch { res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); res.end(JSON.stringify({ error: '会话持久化服务不可用，请稍后重试', code: 'SESSION_STORE_UNAVAILABLE' })) }
     }
     else res.end()
@@ -727,6 +729,7 @@ const server = createServer((req, res) => {
 })
 
 async function handle(req, res) {
+  if (!applyHttpSecurity(req, res)) throw bankError('此来源不允许访问助手', 403, 'ORIGIN_DENIED')
   if (shuttingDown) { await sendJson(res, 503, { error: '服务正在重启，请稍后重试' }); return }
   if (persistenceFailureLogged) throw Object.assign(new Error('会话持久化服务不可用，请稍后重试'), { status: 503, code: 'SESSION_STORE_UNAVAILABLE' })
   await sessionStore?.flush()
@@ -753,7 +756,6 @@ async function handle(req, res) {
 
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
-      'access-control-allow-origin': '*',
       'access-control-allow-methods': 'GET,POST,OPTIONS',
       'access-control-allow-headers': 'content-type,authorization,x-luckycat-token',
     })
@@ -841,7 +843,7 @@ async function handle(req, res) {
   // 建会话
   if (req.method === 'POST' && parts.join('/') === 'agent-api/sessions') {
     const context = legacyContext((await readJson(req)).history)
-    if (!STAFF_MODE && context) await checkCredentials(context)
+    if (context) await checkCredentials(context)
     const sessionId = await createWebSession(identity, context)
     await sendJson(res, 200, { sessionId })
     return
@@ -884,7 +886,7 @@ async function handle(req, res) {
       await sendJson(res, 400, { error: 'text 不能为空' })
       return
     }
-    if (!STAFF_MODE) await checkCredentials(text)
+    await checkCredentials(text)
     if (STAFF_MODE && body.serviceIds !== undefined) throw bankError('工作人员助手不接受客户智能服务选择', 400)
     const skillPrefix = serviceSkillContext?.(body.serviceIds, text) ?? ''
     let blocks
@@ -981,7 +983,6 @@ async function handle(req, res) {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-store, no-transform',
       connection: 'keep-alive',
-      'access-control-allow-origin': '*',
       // 关掉 nginx 一类中间层的缓冲，否则事件会被攒着不发。
       'x-accel-buffering': 'no',
     })
@@ -1193,7 +1194,7 @@ async function handle(req, res) {
         await sendJson(res, 400, { error: `答复「${id}」的 selected 不是字符串数组` })
         return
       }
-      if (!STAFF_MODE) for (const value of selected) await checkCredentials(value)
+      for (const value of selected) await checkCredentials(value)
       if ((asked.multiSelect ?? false) === false && selected.length > 1) {
         await sendJson(res, 400, { error: `「${id}」是单选，却收到了 ${selected.length} 个选项` })
         return
@@ -1208,7 +1209,7 @@ async function handle(req, res) {
        * 正常答复会拿到 404（问题已经被空白答复消费了）。
        */
       const custom = typeof item.custom === 'string' ? item.custom : ''
-      if (!STAFF_MODE && custom.trim()) await checkCredentials(custom)
+      if (custom.trim()) await checkCredentials(custom)
       if (selected.length === 0 && custom.trim() === '') {
         await sendJson(res, 400, { error: `「${id}」这道题既没选也没填` })
         return
@@ -1297,7 +1298,6 @@ async function handle(req, res) {
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-store',
-      'access-control-allow-origin': '*',
       'x-accel-buffering': 'no',
     })
     res.flushHeaders()
@@ -1376,15 +1376,14 @@ async function handle(req, res) {
       response_format: 'mp3',
     })
     if (!upstream.ok) {
-      const detail = await upstream.text()
-      await sendJson(res, 502, { error: `合成失败（上游 ${upstream.status}）：${detail.slice(0, 200)}` })
+      await upstream.body?.cancel()
+      await sendJson(res, 502, { error: '语音合成暂时不可用，请稍后重试' })
       return
     }
     const audio = Buffer.from(await upstream.arrayBuffer())
     res.writeHead(200, {
       'content-type': 'audio/mpeg',
       'content-length': audio.length,
-      'access-control-allow-origin': '*',
       'cache-control': 'no-store',
       // 让页面知道念的是不是完整文本（被截断时好提示）。
       'x-luckycat-truncated': spoken.length < text.length ? '1' : '0',
@@ -1538,7 +1537,7 @@ if ((!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') || (STAFF_MODE && !
     run: async (id, text) => {
       const entry = sessions.get(id)
       if (!entry || entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
-      if (!STAFF_MODE) await checkCredentials(text)
+      await checkCredentials(text)
       if (entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
       const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感信息仍须在银行页面授权。】\n' + (STAFF_MODE ? '' : serviceSkillContext(undefined, text)) + text)
       activeTurns.add(turn)

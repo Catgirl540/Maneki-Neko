@@ -46,3 +46,15 @@ npm --prefix app run check:account-model
 ```
 
 HTTP 用例需要显式配置可丢弃的 `BANK_HTTP_TEST_DATABASE_URL`，缺少配置时会标记跳过，不代表持久化集成验证通过。HTTP 用例覆盖连续错误、并发请求、事务回滚、客户隔离、登录与服务重启保持冻结、工作人员核验解冻及资金不变；内存用例验证服务端与浏览器模拟遵守同一规则。
+
+## 2026-11-02 安全修复约束
+
+资金与敏感状态变更中列入 `IDEMPOTENT_METHODS` 的接口必须携带 `Idempotency-Key`，缺少时返回 400 `IDEMPOTENCY_KEY_REQUIRED`。网页只在 sessionStorage 保存随机操作编号和请求摘要，不保存请求正文或密码；网络错误保留编号，同请求重试复用编号，变更参数前先核查或封存旧编号。Agent 写请求统一采用会话、调用及工具绑定的编号。
+
+一次性导出下载同时验证当前客户与票据归属；其他客户访问不消费票据。助手链接通过网页携带 Bearer 下载，不再把裸链接视为授权。CSV 的不可信文本单元格对公式前缀加文本标记，金额等数值仍按数值导出。
+
+助手 HTTP 与事件错误统一隐藏内部异常；跨域默认仅允许当前来源，开发时用 `LUCKYCAT_ALLOWED_ORIGINS` 明确列出合法来源。客户、员工及运维文字入口均执行凭据预检，图片和语音功能保留。运维 Shell、写入、网络及进程终止操作即使获模型低风险判断也必须人工确认；Harness 子进程不再继承银行或会话数据库凭据。
+
+回归：`shared/security-fixes.test.mjs`、`server/security-required-key.test.mjs`、`server/export-store.test.mjs`、`framework/bridge/security-fixes.test.mjs` 及既有 AA 确认测试。宿主读权限/网络隔离和多模态本地凭据识别仍需独立补强，不能将本次代码加固当作已完成线上部署。
+
+远端凭据决策仅接收已隐藏不透明数字/字母串的消息表示，保留上下文与值的长度/形态；不应把这层处理解释为图片/音频识别或业务模型上下文的全面匿名化。

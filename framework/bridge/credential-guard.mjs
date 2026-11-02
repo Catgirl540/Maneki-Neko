@@ -31,8 +31,18 @@ export function openRouterEndpoints(models = 'respan/span-02,perplexity/pplx-dec
   return names.map(model => ({ url: 'https://openrouter.ai/api/alpha/decisions', model, openrouter: true }))
 }
 
+/** Decision models need intent and shape, not the actual value of opaque strings. */
+export function decisionText(text) {
+  const labels = new Set(['password', 'passcode', 'pin', 'cvv', 'cvc', 'token', 'secret'])
+  return text.replace(/[A-Za-z0-9!@#$%^&*_.+\/=-]{4,}/g, value => {
+    if (labels.has(value.toLowerCase())) return value
+    const kind = /^\d+$/.test(value) ? '数字' : /^[A-Za-z]+$/.test(value) ? '字母' : '混合字符'
+    return `〔已隐藏${value.length}位${kind}值〕`
+  })
+}
+
 export function createCredentialGuard({ endpoints, apiKey = process.env.OPENROUTER_API_KEY, fetcher = fetch, timeoutMs = 3000, threshold = 0.5 } = {}) {
-  endpoints ??= process.env.LUCKYCAT_CREDENTIAL_GUARD_PROVIDER === 'openrouter'
+  endpoints ??= (process.env.LUCKYCAT_CREDENTIAL_GUARD_PROVIDER ?? (process.env.LUCKYCAT_CREDENTIAL_GUARD_ENDPOINTS ? 'local' : 'openrouter')) === 'openrouter'
     ? openRouterEndpoints(process.env.LUCKYCAT_CREDENTIAL_GUARD_MODELS)
     : decisionEndpoints()
   return async function check(text) {
@@ -44,8 +54,8 @@ export function createCredentialGuard({ endpoints, apiKey = process.env.OPENROUT
         const response = await fetcher(endpoint.url, {
           method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
           headers: { 'content-type': 'application/json', ...(endpoint.openrouter ? { authorization: `Bearer ${apiKey}` } : {}) },
-          body: JSON.stringify({ model: endpoint.model, state: { message: text }, questions: {
-            credentials: { type: 'choice', instructions: '判断消息是否在提供实际的登录密码、支付密码、银行卡安全码或 PIN。提问、忘记密码、金额、订单号不是提供密码。无法确定时选择 uncertain。', criteria: {
+          body: JSON.stringify({ model: endpoint.model, state: { message: decisionText(text) }, questions: {
+            credentials: { type: 'choice', instructions: '判断消息是否在提供实际的登录密码、支付密码、银行卡安全码或 PIN。消息中的隐藏值标记代表原文真实值及其长度和形态；仍须按上下文判断其是否为凭据，不可因已隐藏而直接判为安全。提问、忘记密码、金额、订单号不是提供密码。无法确定时选择 uncertain。', criteria: {
               safe: '不包含实际密码或安全码', blocked: '正在提供或透露密码或安全码', uncertain: '无法确定是否在提供凭据',
             } },
           } }),

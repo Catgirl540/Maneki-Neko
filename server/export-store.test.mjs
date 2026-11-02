@@ -7,14 +7,16 @@ test('export files are single use, expire, and are never served to another owner
   const store = createExportStore({ ttlMs: 1_000, now: () => stamp })
   const { token, expiresAt } = store.put({ ownerId: 'alice', fileName: 'a.csv', csv: 'x,y\r\n' })
   assert.equal(expiresAt, 2_000)
-  const first = store.take(token)
+  assert.equal(store.take(token, 'mallory'), null)
+  assert.equal(store.take(token), null)
+  const first = store.take(token, 'alice')
   assert.equal(first.ownerId, 'alice')
   assert.equal(first.csv, 'x,y\r\n')
-  assert.equal(store.take(token), null, 'second download must fail')
+  assert.equal(store.take(token, 'alice'), null, 'second download must fail')
 
   const other = store.put({ ownerId: 'bob', fileName: 'b.csv', csv: 'ok' })
   stamp = 2_000
-  assert.equal(store.take(other.token), null, 'expired token must fail')
+  assert.equal(store.take(other.token, 'bob'), null, 'expired token must fail')
 
   assert.equal(store.take('not-a-real-token'), null)
   assert.equal(store.take(undefined), null)

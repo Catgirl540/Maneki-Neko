@@ -16,6 +16,7 @@
  * @module app/components/agent/Markdown
  */
 
+import { downloadBankExport } from '../../lib/download'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 import remarkGfm from 'remark-gfm'
@@ -62,6 +63,11 @@ const COMPONENTS: Components = {
     // 不安全或空地址都退化成纯文本：react-markdown 已经把 `javascript:` 之类
     // 抹成空串了，这里再兜一道，免得渲染出一个点了会刷新页面的空链接。
     if (!safe) return <span {...rest}>{children}</span>
+    let exportPath = typeof href === 'string' && /^\/api\/exports\/[A-Za-z0-9_-]{24,64}$/.test(href) ? href : undefined
+    if (!exportPath && typeof href === 'string' && typeof window !== 'undefined') {
+      try { const url = new URL(href, window.location.origin); if (url.origin === window.location.origin && !url.search && /^\/api\/exports\/[A-Za-z0-9_-]{24,64}$/.test(url.pathname)) exportPath = url.pathname } catch { /* invalid links remain text above */ }
+    }
+    if (exportPath) return <a {...rest} href={href} onClick={event => { event.preventDefault(); void downloadBankExport(exportPath).catch(() => window.alert('下载失败，请重新登录或重新生成文件。')) }} className="text-blue underline">{children}</a>
     // 站内路径渲染成“跳转卡片”：助手不直接改密码或手机号，只把客户送到安全中心。
     // 用自定义事件而不是直接改 history，避免 Markdown 组件依赖 Router（Node 侧检查也会渲染它）。
     if (typeof href === 'string' && href.startsWith('/') && !href.startsWith('//')) {

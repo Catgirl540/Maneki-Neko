@@ -32,7 +32,7 @@ export function createOpsGate({ bankAgent, sessions, review, workspaceRoot, audi
       while (true) { try { canonical = resolve(await realpath(parent), relative(parent, path)); break } catch (error) { if (error.code !== 'ENOENT' || dirname(parent) === parent) throw error; parent = dirname(parent) } }
     }
     const rel = relative(root, canonical)
-    if (rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(rel) || protectedPath.test(canonical)) throw bankError('路径超出运维工作区或指向受保护的凭据、会话或数据库', 403)
+    if (rel === '..' || rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(rel) || (protectedPath.test(canonical) || /(?:\.(?:pem|key|p12|pfx)|(?:^|[/\\])(?:credentials\.json|id_rsa|id_ed25519))$/i.test(canonical))) throw bankError('路径超出运维工作区或指向受保护的凭据、会话或数据库', 403)
   }
   async function prepare(input) {
     root ??= await realpath(workspaceRoot)
@@ -45,7 +45,7 @@ export function createOpsGate({ bankAgent, sessions, review, workspaceRoot, audi
     }
     if (input.arguments.workdir) { try { await checkPath(input.arguments.workdir) } catch { denied = true } }
     let risk = denied ? { action: 'deny', source: 'policy', category: 'protected_resource', reason: '凭据、受保护路径和扩大沙箱权限不能通过运维工具访问' } : await review({ operation: { tool: input.toolName, arguments: input.arguments }, employeeTask: entry.intent ?? '', workspace: root, role: 'ops' })
-    if (input.forceReview && risk.action === 'allow') risk = { ...risk, action: 'review', reason: '原生工具另有审批要求' }
+    if ((input.forceReview || ['bash', 'pwsh', 'web_fetch', 'job_kill', 'write', 'edit'].includes(input.toolName)) && risk.action === 'allow') risk = { ...risk, action: 'review', reason: '命令、写入、终止进程及网络访问必须由运维人员逐次确认' }
     await current(input.sessionId)
     if (activity !== entry.activity) throw bankError('运行轮次已变化', 409)
     await audit(entry, input, 'reviewed', { fingerprint: digest(input.arguments), risk })

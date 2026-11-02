@@ -35,14 +35,14 @@ export function createExportStore({ ttlMs = EXPORT_TTL_SECONDS * 1000, now = Dat
       return { token, expiresAt }
     },
     /**
-     * 取走文件：**一次性**。取不到（过期、已用过、伪造）一律返回 null，
+     * 取走本人文件：**一次性**。他人访问不消费票据；取不到时统一返回 null，
      * 不区分原因，避免用错误信息探测有效的 token。
      */
-    take(token) {
+    take(token, ownerId) {
       prune()
       if (typeof token !== 'string') return null
       const file = files.get(token)
-      if (!file) return null
+      if (!file || !ownerId || file.ownerId !== ownerId) return null
       files.delete(token)
       if (file.expiresAt <= now()) return null
       return file

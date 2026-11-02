@@ -44,7 +44,7 @@ async function fixture({ production = false, mode = 'sandbox', reviewThreshold =
   const dataKey = randomBytes(32).toString('base64')
   const staffPasswords = Object.fromEntries(['王小明', '李主管', '运维人员'].map(name => [name, randomBytes(24).toString('base64url')]))
   let child, output = '', base, cleaned = false, startupError
-  const call = async (path, { method = 'GET', token, body, key } = {}) => {
+  const call = async (path, { method = 'GET', token, body, key = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) ? randomUUID() : undefined } = {}) => {
     const response = await fetch(base + path, {
       method, signal: AbortSignal.timeout(15000),
       headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(key ? { 'idempotency-key': key } : {}) },

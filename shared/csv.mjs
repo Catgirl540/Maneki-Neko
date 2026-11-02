@@ -2,6 +2,8 @@
 
 /** 单元格转义：含分隔符、引号或换行时用双引号包住，内部引号翻倍。 */
 function escapeCell(value) {
+  // Treat untrusted text as text when opened by spreadsheet applications.
+  if (typeof value === 'string' && /^[\s\u0000-\u001f]*[=+@-]/u.test(value)) value = "'" + value
   return /[",\r\n]/.test(value) ? `"${String(value).replace(/"/g, '""')}"` : String(value)
 }
 
