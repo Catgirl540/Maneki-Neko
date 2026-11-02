@@ -95,6 +95,8 @@ Agent `bank_list_scheduled_transfers/bank_schedule_transfer/bank_cancel_schedule
 
 手机号 AA 创建 `{title,currency,members:[{phone,amount,memo}],confirmed:true,clientRequestId}`。成员为 1–30 个不重复的本行注册手机号（不含本人），每人金额为整数分、转账备注必填且最多 140 字，总额最多 100000000 分。服务端先核对所有成员账号和币种，再在同一事务内保存收款单及成员站内通知；任一成员无效时整单失败，不部分送达、不扣款、不发送短信或微信。旧均分参数不能与 members 混用。
 
+助手新建 AA 必须提供完整 members（注册手机号、整数分金额、转账备注），缺项先追问，不再回退到仅记姓名且不发送通知的旧创建模式。工具优先接收原生数组和 allocation 对象，同时兼容 JSON 字符串；解析失败给出字段格式提示，不猜测金额或手机号。网页收款页在可见且未提交、未请求时每 5 秒查询实际收款状态，重新聚焦时立即刷新，并保留手动刷新入口；到账仍只依据服务端流水，轮询不修改余额或付款状态。
+
 `GET /api/transfers/aa-payments` 只查询本人收到的 AA 付款通知，包含收款人、金额、币种、原备注及 unpaid/processing/paid/cancelled 状态。网页“AA 付款”提供“待付款”和付款记录。`POST /api/transfers/aa-payments/:id/pay` 接受 `{version,confirmed:true,paymentPassword}`，金额、备注和收款账号来自原通知，不接受客户端覆盖；必须本人登录、独立确认并验证支付密码，冻结账号拒付。复用本行转账、在途审批及撤回规则，回款状态依据真实付款流水同步，重复/并发支付不重复扣款。备注写入双方流水和回单；密码不持久化。手机号通知、收款单和转账结果均随客户加密扩展域保存，重启后保留，不新增资金账户或修改数据库结构。
 
 取消手机号 AA 同步撤回未付款通知，保留已付流水；存在 processing 付款时先等待结果。legacy 清单仍按下列均分/手动匹配证据规则处理，不发站内通知。验证见 `server/aa-payments.test.mjs`、`server/aa-payments-http.test.mjs`、`tools/check-aa-payments.mjs`。
@@ -196,3 +198,11 @@ Agent 的 `bank_recall_transfer` 仍逐次确认，无需支付密码，有效 I
 安卓客户端复用上述接口完成双币种转账、香港 FPS、定时及 AA 站内付款；版本冲突须重新查询，不能把旧确认覆盖新状态。分页流水、CSV 和月年报告沿用相同筛选及分币种口径。交易明细 PDF 是客户端依据查询结果生成的文件，明确标识非银行签章电子回单。原子恢复同时覆盖撤销在途转账、定投管理、生日资金预留和模拟消费，结果不明时不得直接重发或抹掉操作编号。路由映射和隔离验收见 [安卓与网页对齐清单](../product/android-web-parity.md)。
 
 本行跨币种转账的新流水同时保存双方记账币种、原币金额及确认汇率；在途占位记录也保留该确认信息。付款侧的记账汇率为报价倒数，收款侧沿用报价，CSV 与详情使用原流水快照，不回填或猜测旧流水缺失的汇率。
+
+## 汇率参考牌价
+
+`GET /api/exchange/rates` 登录后返回 CNY/USD/HKD 六个兑换方向的 `midRate/rate/spread`、`source=sandbox-reference`、查询时间 `asOf`、`marketAsOf=null` 与来源说明。rate 沿用本人会员点差口径，非实时市场行情、非锁价；不要求金额或余额，不生成交易。助手 `bank_get_exchange_rates` 筛选所问方向并返回数字。理财持仓使用 `bank_get_wealth_overview` 直接读取 `/api/wealth/overview`，月度支出直接用 `bank_get_spending`，不借余额或重复报告查询替代。
+
+## 月度分类目标
+
+`GET /api/budgets/monthly?month=YYYY-MM` 查询本人指定月（默认北京时间本月）的分类目标及实际支出；`POST /api/budgets/monthly` 接收 `{month,currency,category,limit,version}`，金额整数分1至100000000，类别 dining/shopping/housing/transport/subscription/other，币种CNY/USD/HKD。新建version=0，修改须原版本；同月/币种/分类只保存一项，版本不符返回409 VERSION_CONFLICT，每客户最多120项。响应包含spent/remaining/overBy，与月度统计同口径，跨币种不相加，成功支出分类回写时更新。不改变每日平台限额、不拒付、不冻结资金；客户隔离保存于现有加密扩展域。助手设置目标使用独立确认卡，不能把月目标折算成日限额。

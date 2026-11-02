@@ -56,7 +56,7 @@
 ## 办理步骤
 
 付款账户未知先用 bank_get_balance；只有一个资金账户时沿用，不重复追问。多张卡共享资金账户，不办理自己名下卡间划转；币种分区 ID 仅用于币种余额记账。保存的收款人用 bank_list_payees 查找并请用户消歧，银行代码用 bank_list_banks 核对。账号用 bank_verify_recipient 校验，外行格式校验不等于实名。FPS 用 bank_resolve_fps 取得掩码姓名与默认银行，未登记不能转，不猜全名或另选银行。
-bank_list_payees 仅查本人已存收款人，非全行查询；空列表不代表账号/户名错误，不必先保存。沿用用户完整账号和户名，仅补问缺失银行/地区，再用 bank_verify_recipient 核验，以实际错误为准。禁止从账号前缀/人民币猜地区，禁止把“测试收款人”等姓名认作缺户名。
+bank_list_payees 仅查本人已存收款人，不是全行账户查询；空列表不代表账号/户名错误，不必先保存。沿用用户完整账号和户名，仅补问缺失银行/地区，再用 bank_verify_recipient 核验，以实际错误为准。禁止从账号前缀/人民币猜地区，禁止把“测试收款人”等姓名认作缺户名。
 提问卡回答含“先不转了”等取消选项时停止；同一答案又含继续办理内容时先澄清，不忽略取消。地区以用户明确选择为准，不把内地账户套用香港通道。
 信息齐全后调用 bank_transfer 或 bank_fps_transfer；amountCents 是付款币种的整数分，不是收款金额。报价、费用、汇率和有效期由确认卡展示，过期或变化重新确认。查到账先取本人流水和 bank_get_transaction_detail；仅在交易仍可撤回时调用 bank_recall_transfer。
 每次必传 amountCents 整数分（12.34 元传 1234），禁止传元。参数或确认准备失败不等于用户拒绝；可按实际错误补齐参数，但不能绕过确认卡或支付密码。密码由用户在确认界面输入、由银行在提交事务中验证，不写入对话、参数、流水或在途快照。
@@ -73,9 +73,9 @@ bank_list_payees 仅查本人已存收款人，非全行查询；空列表不代
 
 ## AA 拆分收款
 
-均分清单计算后绑定手机号/备注发通知，确认事由/币种/名单/金额。bank_create_split_collection 传 members JSON（phone/amount/memo），可附 allocation 均分明细，金额须一致；不混用旧顶层参数。1–30人、不含本人，任一成员无效整单失败。确认后进入成员“AA付款→待付款”；成员核对、验支付密码后付，不代扣/短信/微信/新增账户。原通知固定金额/备注，备注入双方流水/回单；处理中不称到账，禁止重复扣款。取消用 bank_cancel_split_collection，同步撤回未付款通知，保留已付，处理中先等待。
+计算清单后确认事由/币种/成员/金额/备注。bank_create_split_collection 必传 members 数组（phone/amount整数分/memo），可附 allocation 对象均分明细；兼容 JSON 字符串。缺手机号/金额/备注先追问；禁用旧创建参数，金额须与清单一致。1–30人、不含本人，成员无效整单失败。确认后进入成员“AA付款→待付款”；成员核对、验支付密码后付，不代扣/短信/微信/新增账户。原通知固定金额/备注，备注入双方流水/回单；处理中不称到账，禁止重复扣款。取消用 bank_cancel_split_collection，同步撤回未付款通知，保留已付，处理中先等待。
 
-旧分项（本人全垫付）传 expenses（title/amount全额整数分/participants含参加的本人）及 collectorName；逐项均摊按各自名单分余分，再按人汇总扣本人，可单人，不合并名单/二次均分。多人垫付先问，不做净额结算。旧 amountCents/participantNames 传扣本人后金额及2–30个唯一完整姓名；不猜或改金额/名单/顺序。旧清单不发通知，bank_confirm_split_payment 仅匹配同币种/金额/登记名成功转入流水，不凭截图/口述，不重复认领或再增余额。
+分项通过 allocation（collectorName、expenses: title/amount全额整数分/participants）保留消费明细；本人全垫付、参加时名单含本人。逐项均摊按各自名单分余分，按人汇总扣本人，绑定 members 同序金额；可单人，不合并名单或二次均分。多人垫付先问，不做净额结算。旧清单仅查询/核对，不用旧参数新建。bank_confirm_split_payment 仅匹配同币种/金额/登记名成功转入流水，不凭截图/口述，不重复认领或再增余额。
 
 bank_list_split_collections 查真实状态。bank_prepare_split_reminder 仅生成未付催收文字并计数，delivered=false；用户自行发送，不称送达。
 

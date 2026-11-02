@@ -1,7 +1,7 @@
 ---
 {
   "name": "bank-wealth",
-  "description": "查询与比较理财产品、核对测评及开户条件、申赎和保存/管理定投计划；当前定投不自动扣款，不代开户或承诺收益。",
+  "description": "查询理财持仓、市值与盈亏、比较产品、核对测评及开户条件、申赎和保存/管理定投计划；当前定投不自动扣款，不代开户或承诺收益。",
   "metadata": {
     "serviceId": "wealth",
     "label": "理财顾问",
@@ -15,6 +15,7 @@
     ],
     "tools": [
       "bank_get_balance",
+      "bank_get_wealth_overview",
       "bank_wealth_quote",
       "bank_wealth_compare",
       "bank_wealth_recommend",
@@ -58,7 +59,7 @@
 
 ## 办理步骤
 
-用 bank_wealth_quote 查询产品列表或指定产品，用 bank_get_balance 核对持仓和风险状态。unassessed 是未完成，expired 才是过期，unknown 或空字段不是已有风险等级。
+用 bank_wealth_quote 查询产品列表或指定产品，持仓、市值、盈亏和风险状态直接用 bank_get_wealth_overview，不先查余额或产品目录。unassessed 是未完成，expired 才是过期，unknown 或空字段不是已有风险等级。
 用户明确比较两款产品时，先从当前目录定位代码，再调用 bank_wealth_compare；需要估算申购费和起购/追加门槛时附本人提出的金额（整数分）。结果同时提供风险匹配状态、期限、业绩基准、费率和金额规则，不把费用估算或风险匹配当成申购获批，也不从历史收益推断未来收益。多款产品可分次比较；未指定产品时先澄清用途、期限或风险偏好，不自行购买。
 用户要求匹配推荐时，取得明确拟投入金额、流动性与可接受期限，再用 bank_wealth_recommend 按当前目录和本人有效测评筛选。按实际返回的低风险、年度费率、申购费率、代码顺序与理由说明；没有有效测评不能推荐为可买。结果不预测收益、不等于最终适当性审批或申购授权，仍需独立申购确认。
 前置条件未满足，引导「理财与储蓄 → 理财总览」完成开户和测评，不代选答案。信息齐全调用 bank_wealth_subscribe 或 bank_wealth_redeem；风险确认语句由用户在确认卡抄录，不在聊天中生成或代填。

@@ -1,3 +1,5 @@
+import { monthlyBudgetsOverview, saveMonthlyBudget } from '../../shared/monthly-budgets.mjs'
+import { referenceExchangeRates } from '../../shared/fx-rates.mjs'
 import { prepareSpendSubscription } from '../../shared/spend-subscription.mjs'
 import { normalizeErrorReport, validateErrorReport } from '../../shared/error-report.mjs';
 import { recordErrorReport } from '../error-reports.mjs';
@@ -2051,6 +2053,8 @@ async setAutoDebitEnabled(id, enabled) {
             return item;
         },
         /* ------------------------------------------------------- 支出预算 */
+    async listMonthlyBudgets(month) { return monthlyBudgetsOverview(loadDb(), month) },
+    async setMonthlyBudget(input) { const result = saveMonthlyBudget(loadDb(), input); persist(); return result },
         async listBudgets() {
             await delay(180);
             const db = loadDb();
@@ -2320,6 +2324,7 @@ async getSecurityOverview() {
             return { messageId };
         },
         /* -------------------------------------------------- 账户域扩展 */
+        async getExchangeRates() { return referenceExchangeRates(loadDb(), FX_MID_RATES, FX_SPREAD); },
         async quoteExchange(req) {
         await delay(180);
         const db = loadDb();

@@ -24,6 +24,7 @@ dsh 子进程（profile luckycat，DSH_HOME=framework/.dsh-home）
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
+| GET | `/agent-api/services` | 客户助手能力清单，稳定功能 ID 与标签 |
 | GET | `/agent-api/health` | 是否可用 + 语音能力（前端据此决定走真 agent 还是回落固定话术）。**不返回模型名/厂商名**，见 `P11-PERSONA.md` |
 | POST | `/agent-api/sessions` | 建会话 → `{ sessionId }` |
 | GET | `/agent-api/sessions/:id` | **只读**问这段会话还在不在 → `{ sessionId, known, started, busy }`（见下） |

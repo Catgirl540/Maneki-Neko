@@ -320,8 +320,9 @@
       "bank-exchange"
     ],
     "instructionIncludes": [
-      "独立换汇",
-      "没有查询独立换汇实时汇率"
+      "bank_get_exchange_rates",
+      "不能称实时市场价",
+      "不要求金额"
     ]
   },
   {
@@ -345,8 +346,9 @@
       "bank-exchange"
     ],
     "instructionIncludes": [
-      "实时汇率",
-      "页面有效报价"
+      "bank_get_exchange_rates",
+      "来源/目标币种",
+      "固定演示行情"
     ]
   },
   {
@@ -381,7 +383,9 @@
       "bank-exchange"
     ],
     "instructionIncludes": [
-      "不调用转账给自己"
+      "同一储蓄资金账户",
+      "不改账户号",
+      "不另行开户"
     ]
   },
   {
@@ -416,8 +420,8 @@
       "bank-savings"
     ],
     "instructionIncludes": [
-      "不能代建",
-      "开启自动存入"
+      "bank_update_savings_roundup",
+      "不能执行自动存入或立即划款"
     ]
   },
   {
@@ -455,7 +459,7 @@
     ],
     "instructionIncludes": [
       "bank-transfer",
-      "实际划款"
+      "不能执行自动存入或立即划款"
     ]
   },
   {
@@ -500,7 +504,8 @@
       "bank-credit"
     ],
     "instructionIncludes": [
-      "不能查询个人额度"
+      "bank_get_credit",
+      "余额不代表可借额度"
     ]
   },
   {
@@ -511,8 +516,9 @@
       "bank-credit"
     ],
     "instructionIncludes": [
-      "没有 Agent 工具",
-      "不"
+      "bank_apply_loan",
+      "确认并验证支付密码",
+      "不能承诺审批"
     ]
   },
   {
@@ -549,7 +555,7 @@
     ],
     "instructionIncludes": [
       "缺页",
-      "免责"
+      "标为未知"
     ]
   },
   {
@@ -560,8 +566,8 @@
       "bank-insurance"
     ],
     "instructionIncludes": [
-      "未知",
-      "不得补编"
+      "以用户资料和知识库为限",
+      "标为未知"
     ]
   },
   {
@@ -572,7 +578,9 @@
       "bank-insurance"
     ],
     "instructionIncludes": [
-      "没有保险查询、投保或理赔工具"
+      "bank_enroll_insurance",
+      "确认并验证支付密码",
+      "不把演示产品说成真实在售"
     ]
   },
   {
@@ -754,10 +762,47 @@
     ],
     "instructionIncludes": [
       "不是全行账户查询",
-      "空列表不代表账号不存在",
-      "用户已提供完整账号和户名时沿用原值",
+      "空列表不代表账号/户名错误",
+      "沿用用户完整账号和户名",
       "bank_verify_recipient",
       "先澄清"
+    ]
+  },
+  {
+    "id": "bank-analysis-monthly-target",
+    "kind": "direct",
+    "query": "设置本月餐饮预算2000元",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "bank_set_monthly_budget",
+      "不拒付",
+      "勿折算"
+    ]
+  },
+  {
+    "id": "bank-analysis-month-spending-once",
+    "kind": "direct",
+    "query": "本月支出多少",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "直接 bank_get_spending",
+      "不再查月度账单或重复确认"
+    ]
+  },
+  {
+    "id": "bank-wealth-own-holdings",
+    "kind": "direct",
+    "query": "查我的理财持仓和盈亏",
+    "expectedSkills": [
+      "bank-wealth"
+    ],
+    "instructionIncludes": [
+      "bank_get_wealth_overview",
+      "不先查余额或产品目录"
     ]
   }
 ]

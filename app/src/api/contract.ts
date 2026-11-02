@@ -37,6 +37,9 @@ import type {
   BudgetInput,
   BudgetPass,
   BudgetsOverview,
+  MonthlyBudgetInput,
+  MonthlyBudget,
+  MonthlyBudgetsOverview,
   Paged,
   Payee,
   BillingReport, BillingReportQuery, ScheduledTransfer, ScheduledTransferRequest, SplitCollection, SplitCollectionRequest,
@@ -75,6 +78,7 @@ import type {
   WealthSubscribeRequest,
   WealthSubscribeResult,
   Currency,
+  ExchangeRates,
   ExchangeQuoteRequest,
   ExchangeQuote,
   ExchangeRequest,
@@ -209,6 +213,7 @@ export const routes = {
   supportTicketMessages: (id: string) => `/api/support/tickets/${id}/messages`,
 
   // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
+  exchangeRates: () => '/api/exchange/rates',
   exchangeQuote: () => '/api/exchange/quote',
   exchange: () => '/api/exchange',
   savingsOverview: () => '/api/savings/overview',
@@ -243,6 +248,7 @@ export const routes = {
   insuranceEnroll: () => '/api/wealth/insurance/enroll',
 
   // —— 支出预算（每日额度 + 打卡积分） ——
+  monthlyBudgets: () => '/api/budgets/monthly',
   budgets: () => '/api/budgets',
   budget: (id: string) => `/api/budgets/${id}`,
   budgetPass: (id: string) => `/api/budgets/${id}/passes`,
@@ -394,6 +400,8 @@ export interface BankApi {
 
   // —— 支出预算（每日额度 + 打卡积分） ——
   /** 我的预算：带今天的用量、额度、积分与额度券；服务端顺带补算历史达标日 */
+  listMonthlyBudgets(month?: string): Promise<MonthlyBudgetsOverview>
+  setMonthlyBudget(input: MonthlyBudgetInput): Promise<MonthlyBudget>
   listBudgets(): Promise<BudgetsOverview>
   createBudget(req: BudgetInput): Promise<Budget>
   updateBudget(id: string, patch: Partial<BudgetInput>): Promise<Budget>
@@ -424,6 +432,7 @@ export interface BankApi {
 
   // —— 账户域扩展 ——
   /** 账户内部换汇报价（区别于向外部账户转账）。锁价口径同转账。 */
+  getExchangeRates(): Promise<ExchangeRates>
   quoteExchange(req: ExchangeQuoteRequest): Promise<ExchangeQuote>
   /** 执行账户内部换汇；目标币种账户不存在时后端自动开立。 */
   submitExchange(req: ExchangeRequest): Promise<ExchangeResult>

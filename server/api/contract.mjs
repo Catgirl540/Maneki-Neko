@@ -95,6 +95,7 @@ export const routes = {
     supportTicket: (id) => `/api/support/tickets/${id}`,
     supportTicketMessages: (id) => `/api/support/tickets/${id}/messages`,
     // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
+    exchangeRates: () => '/api/exchange/rates',
     exchangeQuote: () => '/api/exchange/quote',
     exchange: () => '/api/exchange',
     savingsOverview: () => '/api/savings/overview',
@@ -125,6 +126,7 @@ export const routes = {
     insurance: () => '/api/wealth/insurance',
     insuranceEnroll: () => '/api/wealth/insurance/enroll',
     // —— 支出预算（每日额度 + 打卡积分） ——
+    monthlyBudgets: () => '/api/budgets/monthly',
     budgets: () => '/api/budgets',
     budget: (id) => `/api/budgets/${id}`,
     budgetPass: (id) => `/api/budgets/${id}/passes`,

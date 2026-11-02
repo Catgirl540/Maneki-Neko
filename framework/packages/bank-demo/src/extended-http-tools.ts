@@ -7,7 +7,29 @@ export const extendedHttpTools: { name: string; kind: string; description: strin
   { name: 'bank_cancel_scheduled_transfer', kind: '取消定时转账', description: 'Cancel an exact owned scheduled instruction after individual confirmation. Query planId first. Does not recall an executed payment or refund; conflicting versions require fresh confirmation.', parameters: { planId: str('Owned plan ID from list.', true) } },
   { name: 'bank_update_payee_remark', kind: '修改收款人备注', description: 'Edit a saved owned payee remark after confirmation. Query and disambiguate payeeId first. Stores searchable customer text only; never infer a recipient identity from a nickname.', parameters: { payeeId: str('Owned saved payee ID.', true), remark: str('User supplied single-line remark up to 140 characters, empty clears.', true) } },
   { name: 'bank_list_split_collections', kind: '查询AA收款', description: 'Read owned split collection records and actual confirmed incoming transaction evidence. Unpaid participants are not bank debits or merchant debts.', parameters: {} },
-  { name: 'bank_create_split_collection', kind: '创建AA收款', description: 'Create a confirmed AA collection. Preferred members JSON sends account-inbox payment notifications with exact per-phone amount and memo; receivers confirm and enter PIN in AA付款, never auto-debit or send SMS/WeChat. Query balance first. Legacy list-only: For activities with different attendees, use expenses and collectorName: split EACH activity including collector share, then sum by person excluding collector. Collector must have paid all expenses; ask if payer or amounts/attendees are unclear. Never flatten different groups or invent amounts. Legacy amountCents + participantNames is only for an already calculated receivable total. Legacy modes do not send notifications. Query currency balance first.', parameters: { allocation: str('Optional JSON equal-split allocation, used WITH members: either {amount,participants} for receivable-only equal split, or {collectorName,expenses:[{title,amount,participants}]} for separate activities including collector. Members must follow computed participant order with exact computed amounts. Preserve breakdown; no flattening.'), members: str('Preferred JSON array of 1–30 {phone,amount,memo}: exact 11-digit registered phone, positive integer cents, required transfer memo <=140 characters. Do not mix with expenses/collectorName/amountCents/participantNames. Confirm exact members, amounts, memos AND sending account-inbox notifications.'), title: str('User supplied collection purpose.', true), currency: str('Explicit CNY, HKD or USD.', true), amountCents: num('Legacy: receivable integer cents excluding collector share; omit with expenses.'), participantNames: str('Legacy: JSON array of 2–30 unique payer names; omit with expenses.'), collectorName: str('With expenses: exact collector name, must be the user who paid ALL items.'), expenses: str('JSON array of 1–30 items {title, amount, participants}; amount is full activity cost in integer cents, participants includes collector if attending, in stated order. Example [{"title":"聚餐","amount":30000,"participants":["王明","张三","李四"]},{"title":"后续活动","amount":20000,"participants":["王明","张三"]}]. Do not also pass amountCents or participantNames.') } },
+  { name: 'bank_create_split_collection', kind: '创建AA收款',
+    description: '创建向成员银行账号发送站内付款通知的 AA 收款单。必须先收齐每位付款人的注册手机号、明确应付金额（整数分）和转账备注；缺少时向用户追问，不创建仅记姓名的旧清单。members 为必填数组；均分或分项计算过程可附 allocation，逐人金额和顺序须一致。先查本人币种余额，再展示成员、金额、备注和发送范围供用户独立确认。成员本人在 AA付款 核对并输入支付密码后支付，不代扣，不发短信或微信。',
+    parameters: {
+      title: str('用户提供的收款事由。', true),
+      currency: str('明确币种 CNY、HKD 或 USD。', true),
+      members: {
+        required: true,
+        description: '1–30 位付款成员，不含本人。每项必须含 phone（11位注册手机号）、amount（应付整数分，1元=100）、memo（用户确认的转账备注，最多140字）。例如 [{"phone":"13700137000","amount":100,"memo":"聚餐AA"}]。优先直接传数组，兼容 JSON 数组字符串。不得用姓名代替手机号，不得猜测手机号、金额或备注。',
+        oneOf: [
+          { type: 'array', items: { type: 'object', additionalProperties: false, properties: {
+            phone: str('11 位本行注册手机号。', true),
+            amount: { type: 'integer', required: true, description: '应付金额，整数分。' },
+            memo: str('用户确认的转账备注。', true),
+          } } },
+          { type: 'string', description: '兼容此前调用的 JSON 数组字符串，内容与数组格式相同。' },
+        ],
+      },
+      allocation: {
+        description: '可选均分明细对象：待收金额均分 {amount,participants}，或分项 {collectorName,expenses:[{title,amount,participants}]}。所有金额为整数分，每项分别均摊后排除本人份额；members 顺序和金额必须与计算结果一致。兼容 JSON 对象字符串。',
+        oneOf: [{ type: 'object', additionalProperties: true }, { type: 'string' }],
+      },
+    },
+  },
   { name: 'bank_cancel_split_collection', kind: '取消AA收款', description: 'Cancel remaining requests in one owned open split collection after confirmation. Keeps paid evidence and does not refund any payment.', parameters: { collectionId: str('Owned collection ID.', true) } },
   { name: 'bank_confirm_split_payment', kind: '核对AA回款', description: 'Match an unpaid participant to an actual successful incoming transaction with exact registered name, amount, currency and owned balance. Query the receipt first. Transaction evidence cannot be reused. Does not change balances or mark an unobserved payment received.', parameters: { collectionId: str('Owned open collection ID.', true), participantId: str('Actual unpaid participant ID.', true), transactionId: str('Actual successful incoming transaction ID.', true) } },
   { name: 'bank_prepare_split_reminder', kind: '准备AA催收文字', description: 'After confirmation generate text for one unpaid participant and record preparation count. Does not send messages. Return the text and delivered=false accurately.', parameters: { collectionId: str('Owned open collection ID.', true), participantId: str('Actual unpaid participant ID.', true) } },

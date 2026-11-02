@@ -179,6 +179,8 @@ export function createHttpApi(): BankApi {
     cancelBirthdayPlan: (id, req) => post(routes.birthdayPlanCancel(encodeURIComponent(id)), req),
     confirmBirthdayOrder: (id, req) => post(routes.birthdayPlanOrder(encodeURIComponent(id)), req),
 
+    listMonthlyBudgets: month => request(routes.monthlyBudgets() + (month ? '?month=' + encodeURIComponent(month) : '')),
+    setMonthlyBudget: input => post(routes.monthlyBudgets(), input),
     listBudgets: () => request<BudgetsOverview>(routes.budgets()),
     createBudget: (req) => post(routes.budgets(), req),
     updateBudget: (id, req) => patch(routes.budget(id), req),
@@ -209,6 +211,7 @@ export function createHttpApi(): BankApi {
     replySupportTicket: (id, req) => post(routes.supportTicketMessages(encodeURIComponent(id)), req),
 
     // —— 账户域扩展 ——
+    getExchangeRates: () => request<import('./types').ExchangeRates>(routes.exchangeRates()),
     quoteExchange: (req) => post(routes.exchangeQuote(), req),
     submitExchange: (req) => post(routes.exchange(), req),
     getSavingsOverview: () => request(routes.savingsOverview()),

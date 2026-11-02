@@ -41,7 +41,7 @@ test('extended tools bind exact consent, current snapshots and secure passwords;
     if (path === '/api/transfers/scheduled/schedule1' && req.method === 'DELETE') { assert.equal(body.version, schedules[0].version); schedules[0].status = 'cancelled'; return send(schedules[0]) }
     if (path === '/api/transfers/splits' && req.method === 'GET') return send(splits)
     if (path === '/api/transfers/splits' && req.method === 'POST') {
-      const row = { ...body, id: 'split1', version: 1, status: 'open', participants: body.participants.map((name, i) => ({ id: 'person' + i, name, amount: i === 0 ? 51 : 50, status: 'unpaid' })) }; splits.push(row); return send(row)
+      const row = { ...body, id: 'split1', version: 1, status: 'open', participants: body.members.map((member, i) => ({ ...member, name: member.phone, id: 'person' + i, amount: member.amount, status: 'unpaid' })) }; splits.push(row); return send(row)
     }
     if (path === '/api/transfers/splits/split1/reminders') return send({ text: '请支付 AA 份额', delivered: false })
     if (path === '/api/transfers/splits/split1/payments') return send({ ...splits[0], status: 'complete' })
@@ -90,7 +90,7 @@ test('extended tools bind exact consent, current snapshots and secure passwords;
   assert.equal(calls.filter(row => row.method === 'DELETE').length, 0)
   await execute('bank_cancel_scheduled_transfer', { planId: 'schedule1' })
   assert.equal((await execute('bank_list_scheduled_transfers', {})).result[0].status, 'cancelled')
-  await execute('bank_create_split_collection', { title: '晚餐', amountCents: 101, currency: 'CNY', participantNames: '["张三","李四"]' })
+  await execute('bank_create_split_collection', { title: '晚餐', currency: 'CNY', members: [{ phone: '13700137000', amount: 51, memo: '晚餐' }, { phone: '13900139000', amount: 50, memo: '晚餐' }] })
   assert.equal((await execute('bank_list_split_collections', {})).result.length, 1)
   assert.equal((await execute('bank_prepare_split_reminder', { collectionId: 'split1', participantId: 'person0' })).result.delivered, false)
   await execute('bank_confirm_split_payment', { collectionId: 'split1', participantId: 'person0', transactionId: 'observed-income' })

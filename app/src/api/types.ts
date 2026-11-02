@@ -808,6 +808,11 @@ export interface SpendReceipt {
   currency: Currency
 }
 
+export type MonthlyBudgetCategory = 'dining' | 'shopping' | 'housing' | 'transport' | 'subscription' | 'other'
+export interface MonthlyBudgetInput { month: string; currency: Currency; category: MonthlyBudgetCategory; limit: Cents; version: number }
+export interface MonthlyBudget extends MonthlyBudgetInput { id: string; createdAt: string; updatedAt: string; categoryLabel: string; spent: Cents; remaining: Cents; overBy: Cents; status: 'over' | 'within' }
+export interface MonthlyBudgetsOverview { month: string; timeZone: 'Asia/Shanghai'; asOf: string; mode: 'monthly-category-target'; notice: string; goals: MonthlyBudget[] }
+
 /** 支出预算：把某几个消费平台的钱装进一个每日限额的罐子，超了就不让花 */
 export interface BudgetRecord {
   id: string
@@ -1330,6 +1335,14 @@ export interface ChangePaymentPasswordRequest {
    币种间划转复用账户内部换汇（不是向外部账户转账），复用现成汇率口径
    （见 db.ts 的 fxRate / FX_SPREAD）。存钱计划、虚拟卡为新增域。
    ========================================================================== */
+
+export interface ExchangeRates {
+  source: 'sandbox-reference'
+  asOf: string
+  marketAsOf: null
+  notice: string
+  rates: { fromCurrency: Currency; toCurrency: Currency; midRate: number; rate: number; spread: number }[]
+}
 
 /** 账户内部换汇报价请求。 */
 export interface ExchangeQuoteRequest {

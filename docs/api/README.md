@@ -77,6 +77,7 @@
 | GET | `/api/transactions/:id` | 单笔交易详情（凭证） | 已实现 |
 | GET | `/api/transactions/:id/receipt` | 电子回单文件 | 已实现 |
 | POST | `/api/accounts/:id/deposit` | 转入 | 已实现 |
+| GET | `/api/exchange/rates` | 固定演示基准及本人会员点差牌价；不要求金额、不锁价 | 已实现 |
 | POST | `/api/exchange/quote` | 账户内换汇报价 | 已实现 |
 | POST | `/api/exchange` | 执行账户内换汇 | 已实现 |
 
@@ -177,7 +178,8 @@
 | AA 付款 | `GET /api/transfers/aa-payments`、`POST /api/transfers/aa-payments/:id/pay` | 已实现 |
 | AA 收款 | `GET /api/transfers/splits`、`POST /api/transfers/splits`、`DELETE /api/transfers/splits/:id`、`POST /api/transfers/splits/:id/payments`、`POST /api/transfers/splits/:id/reminders` | 已实现 |
 | 理财 | `GET /api/wealth/products`、`GET /api/wealth/products/:code`、`GET /api/wealth/overview`、`POST /api/wealth/account/open`、`GET /api/wealth/risk/questions`、`POST /api/wealth/risk/assess`、`POST /api/wealth/subscribe`、`POST /api/wealth/redeem` | 已实现 |
-| 财务分析 | `GET /api/analysis/spending`、`GET /api/analysis/cashflow`、`GET /api/statistics/report`、`GET /api/statistics/report/export`、`GET /api/autodebits`、`PATCH /api/autodebits/:id` | 已实现 |
+| 财务分析 | `GET /api/analysis/spending`、`GET /api/analysis/cashflow`、`GET /api/statistics/report`、`GET /api/statistics/report/export`、`GET /api/autodebits`、`PATCH /api/autodebits/:id`、`POST /api/autodebits/:id/bind` | 已实现 |
+| 月度分类目标 | `GET /api/budgets/monthly`、`POST /api/budgets/monthly`；分类目标/实际支出/剩余，版本校验，不拒付 | 已实现 |
 | 支出预算 | `GET /api/budgets`、`POST /api/budgets`、`PATCH /api/budgets/:id`、`DELETE /api/budgets/:id`、`POST /api/budgets/:id/passes` | 已实现 |
 | 场景联动 | `GET /api/linked/birthdays`、`POST /api/linked/birthdays`、`POST /api/linked/birthdays/preview`、`POST /api/linked/birthdays/:id/cancel`、`POST /api/linked/birthdays/:id/order` | 已实现 |
 | 安全中心 | `GET /api/security/overview`、`PATCH /api/security/rules/:id`、`POST /api/security/password`、`POST /api/security/payment-password`、`POST /api/security/verify` | 已实现 |

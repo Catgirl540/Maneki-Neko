@@ -1,4 +1,5 @@
 /** 账户绑定、权威确认信息与一次性执行授权。银行 Bearer / 支付密码永不进入 harness。 */
+import { MONTHLY_BUDGET_CATEGORIES } from '../../shared/monthly-budgets.mjs'
 import { redactSupportText } from '../../shared/support.mjs'
 import { createHash } from 'node:crypto'
 
@@ -35,6 +36,10 @@ routineQueries.add('bank_list_investments')
 routineQueries.add('bank_review_transactions')
 routineQueries.add('bank_list_im_reminders')
 routineQueries.add('bank_list_budgets')
+routineQueries.add('bank_list_monthly_budgets')
+writable.add('bank_set_monthly_budget')
+routineQueries.add('bank_get_wealth_overview')
+routineQueries.add('bank_get_exchange_rates')
 routineQueries.add('bank_get_insurance')
 for (const name of ['bank_get_membership', 'bank_list_invitations', 'bank_get_security', 'bank_get_savings', 'bank_get_cash_management', 'bank_get_salary_plan', 'bank_get_credit', 'bank_get_receiving_info', 'bank_list_split_payments', 'bank_list_support_messages', 'bank_get_risk_questions']) routineQueries.add(name)
 writable.add('bank_create_im_reminder')
@@ -167,9 +172,19 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         } else fields.push(field('查询内容', '工单进度与人工回复'))
         break
       }
+      case 'bank_get_wealth_overview':
+        path = '/api/wealth/overview'
+        fields = [field('查询内容', '本人理财持仓、市值、本金、盈亏和测评状态')]
+        break
+      case 'bank_get_exchange_rates': {
+        if (!['CNY', 'USD', 'HKD'].includes(a.fromCurrency) || !['CNY', 'USD', 'HKD'].includes(a.toCurrency) || a.fromCurrency === a.toCurrency) throw bankError('请选择两个不同的币种 CNY/USD/HKD')
+        path = '/api/exchange/rates'
+        fields = [field('查询内容', '银行演示汇率牌价（非实时市场行情）'), field('汇率方向', `1 ${a.fromCurrency} = ? ${a.toCurrency}`)]
+        break
+      }
       case 'bank_get_balance': {
         path = a.accountId ? `/api/accounts/${enc(text(a.accountId, '账户编号'))}` : '/api/accounts'
-        fields = [field('账户', a.accountId || '当前客户名下全部账户'), field('查询内容', '余额、可用余额、卡片概要和理财持仓')]
+        fields = [field('账户', a.accountId || '当前客户名下全部账户'), field('查询内容', '储蓄资金账户余额、可用余额和卡片概要')]
         break
       }
       case 'bank_list_transactions': {
@@ -304,6 +319,25 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         path = '/api/wealth/risk/questions'
         fields = [field('查询内容', '当前理财风险测评题目与选项')]
         break
+      case 'bank_list_monthly_budgets':
+      case 'bank_set_monthly_budget': {
+        if (a.month !== undefined && (typeof a.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(a.month))) throw bankError('月份须为 YYYY-MM')
+        path = '/api/budgets/monthly' + (a.month ? '?month=' + enc(a.month) : '')
+        if (challenge.toolName === 'bank_list_monthly_budgets') {
+          fields = [field('查询内容', '月度分类目标、实际支出与剩余额度'), field('月份', a.month ?? '本月')]
+          break
+        }
+        if (!a.month || !Object.hasOwn(MONTHLY_BUDGET_CATEGORIES, a.category) || !['CNY', 'USD', 'HKD'].includes(a.currency)) throw bankError('请明确预算月份、币种与消费分类')
+        const limit = amount(a.limitCents)
+        if (limit > 100000000) throw bankError('月度目标不能超过 100000000 分')
+        const overview = await get(path)
+        const prior = overview.goals.find(row => row.category === a.category && row.currency === a.currency)
+        path = '/api/budgets/monthly'
+        method = 'POST'
+        body = { month: a.month, currency: a.currency, category: a.category, limit, version: prior?.version ?? 0 }
+        fields = [field('操作', prior ? '修改月度分类目标' : '创建月度分类目标'), field('月份', a.month), field('分类', MONTHLY_BUDGET_CATEGORIES[a.category]), field('目标金额', money(limit, a.currency), true), ...(prior ? [field('原目标', money(prior.limit, prior.currency))] : []), field('说明', '仅对比月度实际支出；不冻结资金、不阻止支付，不是每日平台限额。分类更新后实际支出会变化。')]
+        break
+      }
       case 'bank_create_budget': {
         const platforms = budgetPlatforms(a.platforms)
         const dailyLimit = Number(a.dailyLimitCents)
@@ -1043,6 +1077,12 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         publish(input.sessionId, { type: 'card-secret', cardId: input.arguments.cardId, field: input.arguments.field, value, expiresAt: Date.now() + Math.min(60, Math.max(1, Number(data.revealSeconds) || 30)) * 1000 })
         return { dataSource: 'http', displayed: true, notice: '卡安全信息已在临时窗口展示，不进入助手对话。' }
       }
+      if (input.toolName === 'bank_get_exchange_rates') {
+        const rates = data.rates?.filter(row => row.fromCurrency === input.arguments.fromCurrency && row.toCurrency === input.arguments.toCurrency)
+        if (!rates?.length || rates.some(row => !Number.isFinite(row.rate) || row.rate <= 0)) throw bankError('银行未返回有效的指定方向汇率', 502)
+        return { dataSource: 'http', result: { ...data, rates } }
+      }
+      if (input.toolName === 'bank_get_wealth_overview') return { dataSource: 'http', result: { ...data, risk: summarizeRiskAssessment(data.risk) } }
       if (input.toolName === 'bank_get_balance') {
         const cards = await call(entry.bankToken, '/api/cards')
         const overview = await call(entry.bankToken, '/api/wealth/overview')

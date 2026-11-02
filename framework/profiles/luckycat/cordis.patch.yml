@@ -290,6 +290,8 @@
       - bank_get_support_ticket
       - bank_reply_support_ticket
       - bank_get_balance
+      - bank_get_wealth_overview
+      - bank_get_exchange_rates
       - bank_list_transactions
       - bank_review_transactions
       - bank_get_transaction_detail
@@ -311,6 +313,8 @@
       - bank_list_support_messages
       - bank_get_risk_questions
       - bank_create_budget
+      - bank_list_monthly_budgets
+      - bank_set_monthly_budget
       - bank_update_budget
       - bank_delete_budget
       - bank_redeem_budget_pass

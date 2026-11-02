@@ -9,7 +9,7 @@ globalThis.window = { localStorage: new MemoryStorage(), sessionStorage: new Mem
 const state = await import('../server/domain/state.mjs'), { createBankBusinessApi } = await import('../server/domain/index.mjs')
 state.resetDb()
 const api = createBankBusinessApi(), user = await api.profile()
-let currentUser = user
+let currentUser = user, displayedCollections
 const root = path.resolve(import.meta.dirname, '..'), output = path.join(root, '.generated', 'aa-payments')
 await mkdir(output, { recursive: true })
 Object.assign(process.env, { VITE_USE_MOCK: 'false', VITE_BASE_PATH: '/', VITE_API_BASE_URL: '', VITE_AGENT_URL: '/agent-api' })
@@ -43,7 +43,7 @@ try {
       if (pathname.startsWith('/api/transfers/scheduled/')) return respond(await api.cancelScheduledTransfer(pathname.split('/').at(-1), body.version))
       if (pathname === '/api/transfers/aa-payments') return respond(await api.listSplitPaymentRequests())
       if (/^\/api\/transfers\/aa-payments\/[^/]+\/pay$/.test(pathname)) return respond(await api.paySplitRequest(pathname.split('/').at(-2), body))
-      if (pathname === '/api/transfers/splits') return respond(method === 'POST' ? await api.createSplitCollection(body) : await api.listSplitCollections())
+      if (pathname === '/api/transfers/splits') return respond(method === 'POST' ? await api.createSplitCollection(body) : displayedCollections ?? await api.listSplitCollections())
       if (pathname.endsWith('/reminders')) return respond(await api.remindSplitParticipant(pathname.split('/').at(-2), body))
       if (pathname === '/api/statistics/report') return respond(await api.getBillingReport(Object.fromEntries(url.searchParams)))
       if (pathname === '/api/statistics/report/export') return respond(await api.exportBillingReport(Object.fromEntries(url.searchParams)))
@@ -108,8 +108,30 @@ try {
   const tx = state.loadDb().transactions.find(tx => tx.amount === 301 && tx.direction === 'out')
   assert.equal(tx.detail.remark, '聚餐2.01元，活动1元')
   await payable.screenshot({ path: path.join(output, 'aa-paid.png') })
+  // Keep the collector's view at the genuine first-payment snapshot, then
+  // expose the second real payment and verify polling updates the mounted view.
+  state.activateDb(await state.findProfileByPhone(owner.user.phone))
+  displayedCollections = structuredClone(await api.listSplitCollections())
+  assert.equal(displayedCollections[0].participants.filter(row => row.status === 'paid').length, 1)
+  state.activateDb(await state.findProfileByPhone('13900000000'))
+  const otherRequest = (await api.listSplitPaymentRequests())[0]
+  await api.paySplitRequest(otherRequest.id, { version: otherRequest.version, confirmed: true, paymentPassword: '888888' })
+  state.activateDb(await state.findProfileByPhone(owner.user.phone))
+  currentUser = await api.profile()
+  await page.evaluate(user => sessionStorage.setItem('luckycat.session.user', JSON.stringify(user)), currentUser)
+  await page.reload()
+  await page.getByRole('tab', { name: 'AA 收款', exact: true }).click()
+  await form.getByText(/已收 1\/2/).waitFor()
+  let navigations = 0
+  page.on('framenavigated', () => navigations++)
+  displayedCollections = undefined
+  await form.getByText(/已收 2\/2/).waitFor()
+  await form.getByText(/已收齐/).waitFor()
+  assert.equal(navigations, 0, 'collector must update without page navigation or manual refresh')
+  assert.equal(state.loadDb().accounts[0].balance, ownerBefore + 502)
+  await form.screenshot({ path: path.join(output, 'aa-collected-automatically.png') })
   for (const width of [1440, 1024]) { await page.setViewportSize({ width, height: 1100 }); assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)) }
   assert.deepEqual(errors, [])
-  console.log('PASS AA UI: phone + exact amount + memo → explicit notification confirmation → recipient pending inbox → PIN/consent → balanced payment → ledger memo → desktop layout')
+  console.log('PASS AA UI: phone + exact amount + memo → explicit notification confirmation → recipient pending inbox → PIN/consent → balanced payment → ledger memo → collector auto-refresh from 1/2 to 2/2 without navigation → desktop layout')
 
 } finally { await browser?.close(); await web.close() }

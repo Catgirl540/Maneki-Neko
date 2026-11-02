@@ -1,3 +1,4 @@
+import { MonthlyBudgets } from '@/components/account/MonthlyBudgets'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '@/api'
@@ -120,13 +121,15 @@ export function BudgetsPage() {
       <div>
         <h1 className="text-[28px] font-bold tracking-[-0.02em] text-ink">支出预算</h1>
         <p className="mt-2 max-w-[640px] text-[13px] leading-relaxed text-ink-soft">
-          给容易超支的消费套一个每日限额：命中平台的钱在扣款前先过预算额度，超了这笔就花不出去。
+          月度分类目标用于对比实际支出；平台每日限额用于控制模拟消费。给容易超支的消费套一个每日限额：命中平台的钱在扣款前先过预算额度，超了这笔就花不出去。
           当天没花到门槛还能攒积分，换第二天的额外额度。
         </p>
       </div>
-      <Tag tone="gold">只拦模拟消费 · 不冻结资金</Tag>
+      <Tag tone="gold">月度目标与每日限额分开管理</Tag>
     </header>
 
+    <MonthlyBudgets />
+    <h2 className="text-[20px] font-semibold">平台每日限额</h2>
     <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
       <div className="flex flex-col gap-4">
         <Card>

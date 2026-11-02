@@ -1,7 +1,7 @@
 import { AaPayables } from './AaPayments'
 import { Segmented } from '@/components/ui/Segmented'
 import { calculateSplitCollection } from '../../../../shared/split-collection.mjs'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '@/api'
 import type { SplitCollection, SplitCollectionRequest, AaAllocation } from '@/api/types'
 import { useAsync } from '@/lib/useAsync'
@@ -82,6 +82,19 @@ function SplitCollections({ onBusyChange }: { onBusyChange: (busy: boolean) => v
   const [payment, setPayment] = useState({ collection: '', participant: '', transaction: '' })
   const [cancel, setCancel] = useState('')
   const requestKey = useRef({ fingerprint: '', key: '' })
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible' && !busy && !collections.loading && !collections.refreshing) collections.reload()
+    }
+    const timer = window.setInterval(refresh, 5000)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [busy, collections.loading, collections.refreshing, collections.reload])
   async function run(work: () => Promise<unknown>, success: string) { setBusy(true); onBusyChange(true); setMessage(''); try { await work(); if (success) setMessage(success); collections.reload() } catch (error) { setMessage(error instanceof Error ? error.message : '操作失败') } finally { setBusy(false); onBusyChange(false) } }
   const parseNames = (value: string) => value.split(/[,，\n]/).map(name => name.trim()).filter(Boolean)
   const parseAmount = (value: string) => {
@@ -154,6 +167,7 @@ function SplitCollections({ onBusyChange }: { onBusyChange: (busy: boolean) => v
       <div><Button type="submit" disabled={busy || !preview} variant="primary">核对并发起 AA 收款</Button></div>
     </form>}
     {message && <p role="status" className="whitespace-pre-wrap text-[13px] text-ink-soft">{message}</p>}
+    <div className="flex items-center justify-between gap-3 text-[13px] text-ink-mute"><span>页面可见时自动更新收款状态</span><Button disabled={busy || collections.refreshing} onClick={collections.reload}>刷新收款状态</Button></div>
     {collections.error ? <DataUnavailable message={collections.error} onRetry={collections.reload} /> : !collections.data ? <DataLoading /> : collections.data.map(row => <article key={row.id} className="border-t border-line py-4"><p className="font-semibold">{row.title} · {formatCurrency(row.amount, row.currency)} · {row.status === 'open' ? '待收款' : row.status === 'complete' ? '已收齐' : '已取消'}</p><p className="mt-1 text-[13px] text-ink-mute">收款账户 {row.accountNo} · 已收 {row.participants.filter(item => item.status === 'paid').length}/{row.participants.length}</p>{row.expenses && <div className="mt-2 text-[13px] text-ink-mute"><p>消费合计 {formatCurrency(row.expenseTotal!, row.currency)} · 本人份额 {formatCurrency(row.selfAmount!, row.currency)}</p>{row.expenses.map((item, i) => <p key={i}>{item.title}：{item.shares.map(share => `${share.name} ${formatCurrency(share.amount, row.currency)}`).join('；')}</p>)}</div>}<ul className="mt-3 flex flex-col gap-3">{row.participants.map(item => <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 text-[13px]"><span>{item.splitName ?? item.name}{item.phone ? ` · ${item.phone}` : ''} · {formatCurrency(item.amount, row.currency)} · {{ paid: '已核对到账', unpaid: '待付款', processing: '付款处理中', cancelled: '已取消' }[item.status]}{item.memo && <span className="mt-1 block whitespace-pre-wrap break-words">转账备注：{item.memo}</span>}</span>{row.delivery !== 'account-inbox' && row.status === 'open' && item.status === 'unpaid' && <div className="flex gap-2"><Button disabled={busy} onClick={() => remind(row, item.id)}>生成催收文字</Button><Button disabled={busy} onClick={() => setPayment({ collection: row.id, participant: item.id, transaction: '' })}>核对回款</Button></div>}</li>)}</ul>
       {payment.collection === row.id && <form className="mt-4 flex flex-wrap gap-2" onSubmit={event => { event.preventDefault(); void run(async () => { await api.confirmSplitPayment(row.id, { version: row.version, participantId: payment.participant, transactionId: payment.transaction }); setPayment({ collection: '', participant: '', transaction: '' }) }, '已核对该参与者回款') }}><label className="flex-1 text-[13px]">成功转入流水编号<input required value={payment.transaction} onChange={event => setPayment({ ...payment, transaction: event.target.value })} className={inputClass} /></label><Button type="submit" disabled={busy}>确认核对</Button><Button disabled={busy} onClick={() => setPayment({ collection: '', participant: '', transaction: '' })}>返回</Button></form>}
       {row.status === 'open' && <div className="mt-4">{cancel === row.id ? <><Button disabled={busy} onClick={() => void run(() => api.cancelSplitCollection(row.id, row.version), 'AA 单已取消，已到账款项不变')}>确认取消收款单</Button><Button onClick={() => setCancel('')}>保留</Button></> : <Button disabled={busy} variant="ghost" onClick={() => setCancel(row.id)}>取消收款单</Button>}</div>}

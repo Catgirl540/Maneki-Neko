@@ -109,6 +109,8 @@ const ROUTES = [
   ['POST', 'birthdayPlanOrder', 'confirmBirthdayOrder', (id, b) => [id, b]],
 
   // —— 支出预算 ——
+  ['GET', 'monthlyBudgets', 'listMonthlyBudgets', (id, b, q) => [q.get('month') ?? undefined]],
+  ['POST', 'monthlyBudgets', 'setMonthlyBudget', (id, b) => [b]],
   ['GET', 'budgets', 'listBudgets', () => []],
   ['POST', 'budgets', 'createBudget', (id, b) => [b]],
   ['PATCH', 'budget', 'updateBudget', (id, b) => [id, b]],
@@ -133,6 +135,7 @@ const ROUTES = [
   ['POST', 'supportTicketMessages', 'replySupportTicket', (id, b) => [id, b]],
 
   // —— 账户域扩展：多币种划转 / 存钱计划 / 一次性卡号 ——
+  ['GET', 'exchangeRates', 'getExchangeRates', () => []],
   ['POST', 'exchangeQuote', 'quoteExchange', (id, b) => [b]],
   ['POST', 'exchange', 'submitExchange', (id, b) => [b]],
   ['GET', 'savingsOverview', 'getSavingsOverview', () => []],

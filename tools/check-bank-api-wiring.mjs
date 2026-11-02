@@ -80,6 +80,27 @@ try {
   assert.equal(accounts.length, 1); assert.equal(otherAccounts.length, 1); assert.notEqual(accounts[0].id, otherAccounts[0].id)
   assert.equal((await call(routes.accounts(), { token: null })).status, 401)
   assert.equal((await call(routes.account(accounts[0].id), { token: otherToken })).status, 404)
+  const newFeatureMoney = storage.money()
+  assert.equal((await call(routes.exchangeRates(), { token: null })).status, 401)
+  const rates = ok(await call(routes.exchangeRates()))
+  assert.equal(rates.source, 'sandbox-reference'); assert.equal(rates.rates.length, 6)
+  assert(rates.rates.some(row => row.fromCurrency === 'CNY' && row.toCurrency === 'USD' && row.rate > 0))
+  const month = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 7)
+  const monthly = { month, currency: 'CNY', category: 'dining', limit: 200000, version: 0 }
+  assert.equal((await call(routes.monthlyBudgets(), { token: null })).status, 401)
+  const monthlyGoal = ok(await call(routes.monthlyBudgets(), { method: 'POST', body: monthly }))
+  const spending = ok(await call(routes.spending() + '?month=' + month))
+  assert.equal(monthlyGoal.spent, spending.byCurrency.CNY.categories.find(row => row.key === 'dining')?.amount ?? 0)
+  assert.equal((await call(routes.monthlyBudgets(), { method: 'POST', body: monthly })).data.code, 'VERSION_CONFLICT')
+  assert.deepEqual(ok(await call(routes.monthlyBudgets(), { token: otherToken })).goals, [])
+  storage.failNextCommit = true
+  assert.equal((await call(routes.monthlyBudgets(), { method: 'POST', body: { ...monthly, version: 1, limit: 100 } })).status, 503)
+  assert.equal(ok(await call(routes.monthlyBudgets())).goals[0].limit, monthly.limit)
+  bank = await createBankApi(bankOptions)
+  assert.equal(ok(await call(routes.monthlyBudgets())).goals[0].version, 1)
+  assert.deepEqual(storage.money(), newFeatureMoney)
+  console.log('PASS rates/monthly HTTP: authenticated numerical rates; category usage matches monthly statistics; owner isolation; stale versions and failed commit rejected; restart keeps goal; funds unchanged')
+
   const financialBefore = storage.money()
   const request = { fromAccountId: accounts[0].id, channel: 'bank', scope: 'domestic', payeeBankCode: 'LCB', payeeBankRegion: 'CN', payeeName: recipient.user.name, payeeAccountNo: otherAccounts[0].accountNo, amount: 101, memo: 'HTTP 定时接线', executeAt: new Date(Date.now() + 120_000).toISOString(), paymentPassword: '888888', confirmed: true, clientRequestId: 'http-schedule-one' }
   const plan = ok(await call(routes.scheduledTransfers(), { method: 'POST', body: request }))
@@ -150,7 +171,7 @@ try {
 
   const beforeRejectedCommit = storage.money()
   storage.failNextCommit = true
-  const failedTransfer = await call(routes.transfers(), { method: 'POST', body: { fromAccountId: accounts[0].id, channel: 'bank', scope: 'domestic', payeeBankCode: 'LCB', payeeBankRegion: 'CN', payeeName: recipient.user.name, payeeAccountNo: otherAccounts[0].accountNo, amount: 123, memo: 'TEST ONLY commit rollback' } })
+  const failedTransfer = await call(routes.transfers(), { method: 'POST', body: { fromAccountId: accounts[0].id, channel: 'bank', scope: 'domestic', payeeBankCode: 'LCB', payeeBankRegion: 'CN', payeeName: recipient.user.name, payeeAccountNo: otherAccounts[0].accountNo, amount: 123, memo: 'TEST ONLY commit rollback', paymentPassword: '888888' } })
   assert.equal(failedTransfer.status, 503); assert.equal(failedTransfer.data.code, 'FIXTURE_COMMIT_FAILED')
   assert.deepEqual(storage.money(), beforeRejectedCommit, 'HTTP transfer commit failure must roll back sender, recipient and both ledgers')
   assert(storage.rollbacks >= 7); assert.equal(heldEvents.length, 0)

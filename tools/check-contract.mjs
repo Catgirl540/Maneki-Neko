@@ -125,6 +125,12 @@ const documentedPaths = new Set([
   .filter((p) => !p.includes('*'))
   .map(normPath))
 const actualPaths = new Set(routeEntries.map((r) => normPath(r.path)))
+// File export routes are mounted directly in the authenticated HTTP adapter,
+// outside BankApi's JSON method table. Verify those mounts before counting them.
+const adapter = await read('server/bank-api.mjs')
+if (adapter.includes("url.pathname === '/api/exports'")) actualPaths.add('/api/exports')
+if (adapter.includes('const download = /^\\/api\\/exports\\/')) actualPaths.add('/api/exports/:p')
+
 const notDocumented = [...actualPaths].filter((p) => !documentedPaths.has(p))
 const notImplemented = [...documentedPaths].filter((p) => !actualPaths.has(p))
 report(

@@ -886,7 +886,7 @@ async function handle(req, res) {
     }
     if (!STAFF_MODE) await checkCredentials(text)
     if (STAFF_MODE && body.serviceIds !== undefined) throw bankError('工作人员助手不接受客户智能服务选择', 400)
-    const skillPrefix = serviceSkillContext?.(body.serviceIds) ?? ''
+    const skillPrefix = serviceSkillContext?.(body.serviceIds, text) ?? ''
     let blocks
     if (image !== undefined) {
       const data = typeof image?.data === 'string' ? image.data : ''
@@ -1540,7 +1540,7 @@ if ((!STAFF_MODE && process.env.LUCKYCAT_IM_ENABLED === '1') || (STAFF_MODE && !
       if (!entry || entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
       if (!STAFF_MODE) await checkCredentials(text)
       if (entry.busy || entry.stopTask || shuttingDown) throw bankError('会话正在处理其他请求，请稍后重试', 409)
-      const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感信息仍须在银行页面授权。】\n' + (STAFF_MODE ? '' : serviceSkillContext(undefined)) + text)
+      const turn = runTurn(id, '【可信渠道：已绑定的 IM 私聊。普通只读查询由服务端校验登录与归属后执行，不要求用户重复登录或点击查询确认；写操作与敏感信息仍须在银行页面授权。】\n' + (STAFF_MODE ? '' : serviceSkillContext(undefined, text)) + text)
       activeTurns.add(turn)
       void turn.finally(() => activeTurns.delete(turn)).catch(() => {})
       return turn

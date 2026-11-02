@@ -1,3 +1,5 @@
+import { monthlyBudgetsOverview, saveMonthlyBudget } from '../../../../shared/monthly-budgets.mjs'
+import { referenceExchangeRates } from '../../../../shared/fx-rates.mjs'
 import { prepareSpendSubscription } from '../../../../shared/spend-subscription.mjs'
 import { avatarIdFor, isAvatarId, randomAvatarId } from '../../../../shared/avatars.mjs'
 import { DEFAULT_HONORIFIC, displayNameOf, maskedNameOf } from '../../../../shared/name-display.mjs'
@@ -2296,6 +2298,8 @@ export function createMockApi(options?: {
     async getBillingReport(query) { return billingReport(loadDb(), query, CATEGORY_LABEL) },
     async exportBillingReport(query) { return buildBillingExport(loadDb(), query, CATEGORY_LABEL) },
     async getCashFlow(days = 7): Promise<CashFlow> { return cashFlowStatistics(loadDb(), days) },
+    async listMonthlyBudgets(month) { return monthlyBudgetsOverview(loadDb(), month) },
+    async setMonthlyBudget(input) { const result = saveMonthlyBudget(loadDb(), input); persist(); return result },
     async listBudgets(): Promise<BudgetsOverview> {
       await delay(180)
       const db = loadDb()
@@ -2589,6 +2593,7 @@ async getSecurityOverview(): Promise<SecurityOverview> {
 
     /* -------------------------------------------------- 账户域扩展 */
 
+    async getExchangeRates() { return referenceExchangeRates(loadDb(), FX_MID_RATES, FX_SPREAD) as import('../types').ExchangeRates },
     async quoteExchange(req): Promise<ExchangeQuote> {
       await delay(180)
       const db = loadDb()
