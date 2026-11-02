@@ -11,5 +11,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-node tools\start-tui.mjs
+REM %%* forwards arguments: --check and --help must reach the launcher
+node tools\start-tui.mjs %*
 endlocal

@@ -10,4 +10,5 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-exec node tools/start-tui.mjs
+# "$@" matters: --check and --help must reach the launcher
+exec node tools/start-tui.mjs "$@"
