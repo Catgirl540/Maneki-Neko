@@ -28,6 +28,23 @@ npm --prefix app run build:site
 
 `build:site` 等价于上面的根路径构建，并会先校验 `downloads/` 里的 APK 与元数据。不要用 `build:server`：它是给裸 IP `/bank/` 子路径准备的，产物引用 `/bank/assets/*`，发到本域名会白屏。
 
+## 复制发布目录时的属主
+
+新建 release 一般从当前 `current` 复制，再覆盖源码与 `app/dist`。**不要对整棵树执行
+`chown -R ubuntu:ubuntu`**：服务以 `maneki` 运行，下面这些可写目录必须保持 `maneki` 属主，
+否则会表现为 agent 打不开 `profiles/luckycat/cordis.yml`、报错反馈提交 500。
+
+```sh
+NEW=/srv/maneki-bank/releases/<新目录>
+sudo chown -R ubuntu:ubuntu "$NEW"
+sudo chown -R maneki:maneki "$NEW/framework/.dsh-home" "$NEW/framework/.generated"
+sudo mkdir -p "$NEW/server/data" && sudo chown maneki:maneki "$NEW/server/data"
+```
+
+`server/data` 是报错反馈的落盘目录（`error-reports.jsonl`，可用 `BANK_ERROR_REPORT_DIR` 覆盖）。
+切换 `current` 后除四个服务外，再验证：`/agent-api/health`、`/staff-agent-api/health`、
+`/staff-ops-agent-api/health` 三个 Agent 健康，以及一次 `POST /api/support/error-reports`。
+
 ## 当前统一通道与权限
 
 - 客户 `/api/` → `luckycat-bank-demo`，8081，数据库 `maneki_bank_demo`，沿用 sandbox 演示规则和现有客户数据。

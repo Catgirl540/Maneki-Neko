@@ -35,11 +35,40 @@
     "note": "构建在服务器上执行：服务器直接 clone GitHub 源码并 npm ci，APK 由服务器从 R2 下载后按 sha256 校验，避免从本机上传 23MB 产物"
   },
   "verification": {
-    "web": { "home": 200, "staff": 200, "indexJs": "200 application/javascript", "css": "200 text/css" },
+    "web": {
+      "home": 200,
+      "staff": 200,
+      "indexJs": "200 application/javascript",
+      "css": "200 text/css"
+    },
     "rendering": "无头 Chromium 加载首页与 /staff/，root 节点均已挂载，控制台无报错",
-    "customerLogin": { "smsCode": 200, "login": "200 返回 token", "accounts": "200", "cards": "200" },
-    "staffLogin": { "name": "王小明", "role": "csr", "result": "200 返回 token" },
-    "downloads": { "manifest": "1.0.8 (9), 11707205 字节", "apk": "200", "sha256": "e0b2964639d2bbd20ef2e6a5ad024d6f5e0ce08d33027ba88e36829379f432e9" }
+    "customerLogin": {
+      "smsCode": 200,
+      "login": "200 返回 token",
+      "accounts": "200",
+      "cards": "200"
+    },
+    "staffLogin": {
+      "name": "王小明",
+      "role": "csr",
+      "result": "200 返回 token"
+    },
+    "downloads": {
+      "manifest": "1.0.8 (9), 11707205 字节",
+      "apk": "200",
+      "sha256": "e0b2964639d2bbd20ef2e6a5ad024d6f5e0ce08d33027ba88e36829379f432e9"
+    },
+    "agents": {
+      "customerAgent": "会话创建 202，事件流出现 skill/bank_get_balance/consent-asked，最终回复正常",
+      "customerAgentReply": "模型返回文本回复，状态回到 idle",
+      "staffAgent": "health 200",
+      "opsAgent": "运维账户 health 200；CSR 令牌被正确拒绝（运维运行时仅限运维账户）"
+    },
+    "errorReport": {
+      "status": 200,
+      "id": "err_5b9da94046844549",
+      "file": "<release>/server/data/error-reports.jsonl"
+    }
   },
   "incident": {
     "summary": "首轮发布用了 build:server（base=/bank/），与本站点根路径部署不符，登录后整页空白",
@@ -47,5 +76,17 @@
     "diagnosis": "无头 Chromium 控制台报 Failed to load module script: MIME type text/html；旧发布 index.html 引用 /assets/*，新产物引用 /bank/assets/*",
     "recovery": "在服务器上用根路径参数重建，替换 release 内 app/dist 后恢复；新产物主入口哈希与上一版一致（index-D881y4zy.js）",
     "followUp": "新增 app 脚本 build:site 承载本域名的根路径构建，并在 app/README.md 与 deploy/single-host/README.md 写明 build:server 只用于裸 IP /bank/ 子路径，两者产物不能混用"
+  },
+  "incident2": {
+    "summary": "发布后 agent 不可用、报错反馈提交 500：新建 release 时把整棵目录 chown 成 ubuntu，且 error-reports 落盘路径多拼一层 server/",
+    "cause": [
+      "rsync 复制后用 chown -R ubuntu:ubuntu 覆盖了 framework/.dsh-home 与 framework/.generated，而服务以 maneki 运行，agent 打开 profiles/luckycat/cordis.yml 失败（节点日志显示 open EACCES）",
+      "server/error-reports.mjs 用 join(root, 'server/data') 拼路径，生产 root 退化成 process.cwd() 即 <release>/server，实际写成 <release>/server/server/data，maneki 无权创建，POST /api/support/error-reports 返回 500 EACCES"
+    ],
+    "recovery": [
+      "chown -R maneki:maneki framework/.dsh-home framework/.generated，重启三个 agent 服务",
+      "代码修复：createBankApi 显式接收 root；errorReportPath 改用模块同级 data/ 目录（提交 14b063f），部署后反馈接口返回 200 并写入 <release>/server/data/error-reports.jsonl"
+    ],
+    "followUp": "复制 release 后只对 app/server 等代码目录设 ubuntu 属主，必须保留 maneki 属主的可写目录：framework/.dsh-home、framework/.generated、server/data；部署检查项加入反馈接口与 agent 健康探测"
   }
 }
