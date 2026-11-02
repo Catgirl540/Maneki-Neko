@@ -31,7 +31,7 @@ const METHOD_LABELS: Record<VerificationMethod, string> = {
 /** 把剩余时间说成「还剩 1 分 20 秒」。 */
 function remainingText(expiresAt: number, now: number): string {
   const seconds = Math.ceil(Math.max(0, expiresAt - now) / 1000)
-  if (seconds <= 0) return '已超时，需要重新发起'
+  if (seconds <= 0) return '已超时，本次已取消'
   if (seconds < 60) return `还剩 ${seconds} 秒`
   return `还剩 ${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`
 }
@@ -58,6 +58,19 @@ export function ConsentCard({
     const timer = setInterval(() => { setNow(Date.now()) }, 1000)
     return () => { clearInterval(timer) }
   }, [])
+
+  // 默认拒绝：Esc 直接取消。这张卡代表一次**尚未执行**的敏感操作，
+  // 手滑按错键最多是取消，绝不能让误触变成确认——所以确认只能靠点按钮。
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape' && !submitting) {
+        event.preventDefault()
+        onReject()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => { window.removeEventListener('keydown', onKeyDown) }
+  }, [onReject, submitting])
 
   const expired = now > challenge.expiresAt
   const verified = /^\d{6}$/.test(password)
@@ -157,11 +170,17 @@ export function ConsentCard({
         >
           {remainingText(challenge.expiresAt, now)}
         </span>
+        {/* 把「不作选择会怎样」写在按钮旁边：确认卡默认不执行，
+            用户不点、超时或按 Esc，都等同取消。 */}
+        <span className="text-[12px] text-ink-mute">不确认即取消，不会执行</span>
+        {/* 拒绝在前、并且是这一屏唯一的高亮主按钮：确认卡对应一次
+            尚未执行的敏感操作，默认动作必须是「不执行」，误触也不能变成确认。 */}
         <span className="ml-auto flex items-center gap-2">
-          <Button variant="ghost" size="sm" disabled={submitting} onClick={onReject}>
-            取消
+          <Button variant="primary" size="sm" disabled={submitting} onClick={onReject}>
+            拒绝
           </Button>
           <Button
+            variant="ghost"
             size="sm"
             disabled={!canApprove}
             loading={submitting}
