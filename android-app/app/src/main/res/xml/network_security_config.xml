@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  正式包只允许 HTTPS。
+
+  `cleartextTrafficPermitted="false"` 与清单里的 usesCleartextTraffic="false" 同时生效，
+  防止某个构建变体只改其中一处就悄悄放开明文。
+  本地联调用的 http://10.0.2.2 只在 src/debug 的清单里放开，不进入正式包。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

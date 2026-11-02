@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  调试与 dev 变体专用清单覆盖：只放开本机模拟器的明文联调地址。
+
+  `-PbankBaseUrl=http://10.0.2.2:8081` 是模拟器访问宿主机的固定地址；
+  正式包不受影响（`src/main` 的清单与网络配置要求 HTTPS）。
+  这里用清单合并的 tools:replace 覆盖主清单的 false。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application
+        android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config_debug"
+        tools:replace="android:usesCleartextTraffic,android:networkSecurityConfig" />
+</manifest>

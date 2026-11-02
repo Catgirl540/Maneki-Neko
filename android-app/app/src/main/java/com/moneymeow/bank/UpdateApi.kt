@@ -50,6 +50,11 @@ object UpdateApi {
         val manifestUrl = config.optString("manifestUrl")
         android.util.Log.i("UpdateApi", "check: manifestUrl=" + manifestUrl.take(60))
         if (manifestUrl.isEmpty()) return@withContext null
+        // 清单是更新的信任根：正式包只允许 https，避免明文被替换后连 sha256 一起换掉。
+        if (!manifestUrl.startsWith("https://") && !(BuildConfig.DEBUG && manifestUrl.startsWith("http://"))) {
+            android.util.Log.w("UpdateApi", "check: 已拒绝非 HTTPS 的更新清单")
+            return@withContext null
+        }
 
         val connection = (URL(manifestUrl).openConnection() as HttpURLConnection).apply {
             connectTimeout = 8000
@@ -68,7 +73,7 @@ object UpdateApi {
 
         // 清单可以给相对地址（/downloads/xxx.apk），以清单自身为基准补全成绝对地址。
         val rawUrl = manifest.optString("apkUrl").ifEmpty { config.optString("apkUrl") }
-        val apkUrl = if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+        val apkUrl = if (rawUrl.startsWith("https://") || (BuildConfig.DEBUG && rawUrl.startsWith("http://"))) {
             rawUrl
         } else {
             URL(URL(manifestUrl), rawUrl).toString()
@@ -119,6 +124,13 @@ object UpdateApi {
                 target.delete()
                 throw IllegalStateException("安装包校验失败，请重试")
             }
+            // sha256 只对齐清单声明；清单本身也可能是被换掉的。
+            // 再比一次签名证书：下载包必须由与当前安装包相同的证书签名，
+            // 否则删除并拒绝安装（系统安装器也会拦，但这里先把错误说清楚）。
+            if (!sameSigner(context, target)) {
+                target.delete()
+                throw IllegalStateException("安装包签名与当前应用不一致，已拒绝安装")
+            }
             target
         } finally {
             connection.disconnect()
@@ -136,6 +148,25 @@ object UpdateApi {
         }
         context.startActivity(intent)
     }
+
+    /**
+     * 下载到的 APK 是否由与当前应用相同的证书签名。
+     *
+     * 比对的是第一个签名证书的 SHA-256 摘要；当前包取不到签名信息时保守返回 false，
+     * 宁可让用户重新下载，也不安装来源不明的包。
+     */
+    private fun sameSigner(context: Context, apk: File): Boolean = runCatching {
+        val flags = android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES
+        fun firstSigner(info: android.content.pm.SigningInfo?): ByteArray? =
+            info?.apkContentsSigners?.firstOrNull()?.toByteArray()
+
+        val current = context.packageManager.getPackageInfo(context.packageName, flags)
+        val downloaded = context.packageManager.getPackageArchiveInfo(apk.absolutePath, flags)
+        val expected = firstSigner(current.signingInfo) ?: return@runCatching false
+        val actual = firstSigner(downloaded?.signingInfo) ?: return@runCatching false
+        MessageDigest.getInstance("SHA-256").digest(expected)
+            .contentEquals(MessageDigest.getInstance("SHA-256").digest(actual))
+    }.getOrDefault(false)
 
     private fun sha256(file: File): String {
         val digest = MessageDigest.getInstance("SHA-256")

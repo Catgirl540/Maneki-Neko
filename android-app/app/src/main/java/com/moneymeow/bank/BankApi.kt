@@ -1496,7 +1496,10 @@ fun formatCents(cents: Long, currency: String = "CNY"): String {
 /** 登录态持久化：令牌存 SharedPreferences，重启应用仍可复用。 */
 object SessionStore {
     private const val PREFS = "money_meow_session"
-    private const val KEY_TOKEN = "token"
+    /** 旧版本明文令牌的键：只用于一次性迁移到加密存储。 */
+    private const val KEY_TOKEN_LEGACY = "token"
+    /** 加密后的令牌（Base64(iv + 密文)），密钥由 Android Keystore 保管。 */
+    private const val KEY_TOKEN = "tokenSealed"
     private const val KEY_NAME = "name"
     private const val KEY_PHONE = "phone"
     private const val KEY_DISPLAY = "displayName"
@@ -1504,15 +1507,32 @@ object SessionStore {
 
     private lateinit var prefs: android.content.SharedPreferences
 
+    /** 读出令牌：优先解密新格式；老版本留下的明文令牌顺便迁移并清掉。 */
+    private fun readToken(): String? {
+        TokenVault.decrypt(prefs.getString(KEY_TOKEN, null))?.let { return it }
+        val legacy = prefs.getString(KEY_TOKEN_LEGACY, null) ?: return null
+        val sealed = TokenVault.encrypt(legacy)
+        prefs.edit().apply {
+            if (sealed != null) putString(KEY_TOKEN, sealed)
+            remove(KEY_TOKEN_LEGACY)
+        }.apply()
+        return legacy
+    }
+
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         FinancialRecovery.init(context)
-        BankApi.setToken(prefs.getString(KEY_TOKEN, null))
+        BankApi.setToken(readToken())
     }
 
     @Synchronized fun save(result: LoginResult) {
+        // 令牌必须以密文落盘：SharedPreferences 本身不提供加密。
+        val sealed = TokenVault.encrypt(result.token)
+        prefs.edit().apply {
+            if (sealed != null) putString(KEY_TOKEN, sealed) else remove(KEY_TOKEN)
+            remove(KEY_TOKEN_LEGACY)
+        }.apply()
         prefs.edit()
-            .putString(KEY_TOKEN, result.token)
             .putString(KEY_NAME, result.name)
             .putString(KEY_PHONE, result.phone)
             .putString(KEY_DISPLAY, result.displayName.ifEmpty { NameDisplay.of(result.name) })
@@ -1537,10 +1557,13 @@ object SessionStore {
         prefs.edit().putString(KEY_NICKNAME, value).apply()
     }
 
-    @Synchronized fun credentials(): Pair<String, String?> = phone() to prefs.getString(KEY_TOKEN, null)
+    @Synchronized fun credentials(): Pair<String, String?> = phone() to readToken()
 
     @Synchronized fun clear() {
         prefs.edit().clear().apply()
         BankApi.setToken(null)
     }
+
+    /** 令牌是否仍然可用（Keystore 密钥失效时会被判定为不可用，等同未登录）。 */
+    fun hasToken(): Boolean = readToken() != null
 }

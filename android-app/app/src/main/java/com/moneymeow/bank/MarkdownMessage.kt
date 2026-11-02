@@ -41,7 +41,14 @@ fun MarkdownMessage(markdown: String, modifier: Modifier = Modifier) {
                 isVerticalScrollBarEnabled = false
                 isHorizontalScrollBarEnabled = false
                 overScrollMode = WebView.OVER_SCROLL_NEVER
-                webViewClient = WebViewClient()
+                // 点链接不在这个测量用的 WebView 里导航；非白名单协议直接吞掉，
+                // 避免 javascript:/intent: 之类在已开启 JS 的页面里执行或跳出应用。
+                webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: android.webkit.WebResourceRequest): Boolean {
+                        val url = request.url.toString()
+                        return !(url.startsWith("https://") || url.startsWith("http://") || url.startsWith("file:///android_asset/"))
+                    }
+                }
                 addJavascriptInterface(
                     object {
                         @android.webkit.JavascriptInterface
@@ -234,8 +241,22 @@ $body
         out = out.replace(Regex("`([^`]+)`"), "<code>$1</code>")
         out = out.replace(Regex("\\*\\*([^*]+)\\*\\*"), "<strong>$1</strong>")
         out = out.replace(Regex("(?<!\\*)\\*([^*]+)\\*(?!\\*)"), "<em>$1</em>")
-        out = out.replace(Regex("\\[([^]]+)]\\(([^)]+)\\)"), "<a href=\"$2\">$1</a>")
+        out = out.replace(Regex("\\[([^]]+)]\\(([^)]+)\\)")) { match ->
+            val label = match.groupValues[1]
+            val target = match.groupValues[2]
+            // 只放行 https、http 与站内相对路径：模型输出里的 javascript:/data: 之类
+            // 在 JS 已开启的 WebView 里等于可执行脚本，一律退化成纯文本。
+            if (isSafeLink(target)) "<a href=\"$target\">$label</a>" else label
+        }
         return out
+    }
+
+    /** 链接白名单：绝对地址只允许 http/https，其余按站内相对路径处理。 */
+    private fun isSafeLink(target: String): Boolean {
+        val value = target.trim()
+        if (value.isEmpty() || value.startsWith("//")) return false
+        val scheme = Regex("^([a-zA-Z][a-zA-Z0-9+.-]*):").find(value)?.groupValues?.get(1)?.lowercase()
+        return scheme == null || scheme == "http" || scheme == "https"
     }
 
     private fun escape(text: String): String = text

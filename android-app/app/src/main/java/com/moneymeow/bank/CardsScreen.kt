@@ -60,6 +60,9 @@ private data class UnlockedSecrets(val secrets: CardSecrets, val expiresAt: Long
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CardsScreen(onBack: () -> Unit, onDelivery: () -> Unit) {
+    // 这个页面会展示完整卡号与安全码（按服务端给的可视时长），
+    // 因此整页禁止截屏与录屏：倒计时期间被截走，等于把卡面信息交出去。
+    SecureWindow()
     var cards by remember { mutableStateOf<List<BankCard>>(emptyList()) }
     var products by remember { mutableStateOf<List<CardProduct>>(emptyList()) }
     var account by remember { mutableStateOf<AccountDto?>(null) }

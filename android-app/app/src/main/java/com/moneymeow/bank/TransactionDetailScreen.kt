@@ -27,6 +27,8 @@ import java.time.Instant
 
 @Composable
 fun TxDetailScreen(onBack: () -> Unit, transactionId: String?) {
+    // 详情里有完整资金账户号与对方账号，按敏感页面处理，禁止截屏/录屏。
+    SecureWindow()
     var detail by remember(transactionId) { mutableStateOf<TransactionDetailDto?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
