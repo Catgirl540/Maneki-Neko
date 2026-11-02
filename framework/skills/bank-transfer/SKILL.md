@@ -14,6 +14,7 @@
       "bank_get_balance",
       "bank_list_banks",
       "bank_list_payees",
+      "bank_add_payee",
       "bank_delete_payee",
       "bank_verify_recipient",
       "bank_resolve_fps",
@@ -55,21 +56,22 @@
 
 ## 办理步骤
 
-付款账户未知先用 bank_get_balance；只有一个资金账户时沿用，不重复追问。多张卡共享资金账户，不办理自己名下卡间划转；币种分区 ID 仅用于币种余额记账。保存的收款人用 bank_list_payees 查找并请用户消歧，银行代码用 bank_list_banks 核对。账号用 bank_verify_recipient 校验，外行格式校验不等于实名。FPS 用 bank_resolve_fps 取得掩码姓名与默认银行，未登记不能转，不猜全名或另选银行。
-bank_list_payees 仅查本人已存收款人，不是全行账户查询；空列表不代表账号/户名错误，不必先保存。沿用用户完整账号和户名，仅补问缺失银行/地区，再用 bank_verify_recipient 核验，以实际错误为准。禁止从账号前缀/人民币猜地区，禁止把“测试收款人”等姓名认作缺户名。
-提问卡回答含“先不转了”等取消选项时停止；同一答案又含继续办理内容时先澄清，不忽略取消。地区以用户明确选择为准，不把内地账户套用香港通道。
-信息齐全后调用 bank_transfer 或 bank_fps_transfer；amountCents 是付款币种的整数分，不是收款金额。报价、费用、汇率和有效期由确认卡展示，过期或变化重新确认。查到账先取本人流水和 bank_get_transaction_detail；仅在交易仍可撤回时调用 bank_recall_transfer。
-每次必传 amountCents 整数分（12.34 元传 1234），禁止传元。参数或确认准备失败不等于用户拒绝；可按实际错误补齐参数，但不能绕过确认卡或支付密码。密码由用户在确认界面输入、由银行在提交事务中验证，不写入对话、参数、流水或在途快照。
+付款账户未知先用 bank_get_balance；只有一个资金账户就沿用，不重复追问。多张卡共享资金账户，不办自己名下卡间划转。收款人用 bank_list_payees 查找并消歧，银行代码用 bank_list_banks 核对。账号用 bank_verify_recipient 校验，外行格式校验不等于实名。FPS 用 bank_resolve_fps 取掩码姓名与默认银行，未登记不能转。
+bank_list_payees 只查本人已存收款人，非全行查询；空列表不代表账号或户名有误，不必先保存。沿用用户给的完整账号与户名，只补问缺失银行/地区，再 bank_verify_recipient 核验。不从账号前缀或人民币猜地区。
+回答含“先不转了”等取消项时停止；同一答案又含继续办理先澄清，不忽略取消。地区以用户明选为准，内地账户不套香港通道。
+信息齐全后调用 bank_transfer 或 bank_fps_transfer；amountCents 为付款币种整数分，不是收款金额。报价、费用、汇率与有效期由确认卡展示，过期即重新确认。查到账先取本人流水和 bank_get_transaction_detail；仅在仍可撤回时调用 bank_recall_transfer。
+amountCents 必传整数分（12.34 元传 1234），禁止传元。参数失败不等于用户拒绝，可按实际错误补齐，但不能绕过确认卡或支付密码。密码由用户在确认界面输入、银行在提交事务中验证，不写入对话或流水。
 
 ## 定时转账与收款人备注
 
-已保存收款人可按姓名、账号或本人维护的 remark 检索；用户说“爱人”“房东”只能先查备注并消歧，不凭称呼推断登记姓名。bank_update_payee_remark 修改准确 payeeId 的备注需独立确认，不构成转账授权。香港 FPS 手机号为登记的 8 位标识，内地手机号不可套用，不能虚构解析结果。
+已存收款人可按姓名、账号或 remark 检索；称呼如“房东”先查备注消歧，不推断登记姓名。bank_update_payee_remark 改准确 payeeId 备注需独立确认，不构成转账授权。香港 FPS 手机号为登记的 8 位标识，内地手机号不可套用。
 
-用户明确要求未来某日转账时，用 bank_list_scheduled_transfers 查询已有指令避免重复；收集完整姓名、12–19 位账号、内地银行代码、本人付款币种和整数分金额，以及带时区的准确 executeAt。当前 bank_schedule_transfer 仅支持境内银行同币种、零手续费的一次性指令，金额不超过 100000000 分，时间在一分钟后至未来 366 天内。不能把定投计划、在途冻结窗口或微信文字提醒当作定时转账。核验收款人后展示独立确认卡并通过安全输入校验支付密码，禁止在聊天收集密码。
+未来某日转账用 bank_list_scheduled_transfers 查重；收集姓名、12–19 位账号、内地银行代码、付款币种、整数分金额和带时区 executeAt。bank_schedule_transfer 仅支持境内同币种零手续费一次性指令，金额≤100000000 分，时间一分钟至 366 天内。定投计划、冻结窗口、微信提醒都不是定时转账。核验收款人后出独立确认卡，支付密码走安全输入，禁止在聊天收集。
 
 创建不扣款或冻结，说明到期仍需足额可用余额；失败应以实际 failed 原因报告，不承诺必达。executed 只表示原转账路径已受理，settlementStatus=pending 时继续查询原交易，大额仍走风控在途窗口。取消先查本人实际 planId 和当前状态，以 bank_cancel_scheduled_transfer 确认后取消未来指令；版本冲突刷新重确认，不重新创建或退款。超时先查清单核对原幂等指令，不反复提交。
 
-删除收款人用 bank_delete_payee，先核对姓名与银行；只删记录，不影响已有转账与流水。
+删除收款人用 bank_delete_payee，先核对姓名与银行；只删记录，不影响转账与流水。
+bank_add_payee 存收款人：姓名必填，手机号或 12–19 位本行账号填一个（都填须同属一人）。不动账、不核验账号存在；先查重。
 
 ## AA 拆分收款
 
@@ -85,4 +87,4 @@ bank_list_split_collections 查真实状态。bank_prepare_split_reminder 仅生
 
 ## 能力限制
 
-不能凭截图认定到账、推测完整账号、提高限额或承诺到账时间。独立换汇加载 bank-exchange；丢卡处置加载 bank-security。未指定收款人、金额或付款币种不得替用户决定；唯一资金账户可在查询确认后使用。
+不凭截图认定到账、不推测完整账号、不承诺到账时间。换汇加载 bank-exchange，丢卡加载 bank-security。未指定收款人、金额或币种不替用户决定；唯一资金账户可查询确认后使用。

@@ -49,7 +49,7 @@ writable.add('bank_spend')
 for (const tool of extendedPasswordTools) passwordTools.add(tool)
 for (const tool of extendedWriteTools) writable.add(tool)
 for (const tool of extendedQueryTools) routineQueries.add(tool)
-for (const name of ['bank_create_budget', 'bank_update_budget', 'bank_delete_budget', 'bank_redeem_budget_pass', 'bank_create_savings_goal', 'bank_update_savings_goal', 'bank_delete_savings_goal', 'bank_update_savings_roundup', 'bank_update_cash_sweep', 'bank_update_salary_plan', 'bank_submit_risk_assessment', 'bank_activate_overdraft', 'bank_convert_installment', 'bank_update_security_rule', 'bank_redeem_lounge_pass', 'bank_delete_payee', 'bank_export_statement', 'bank_export_billing_report']) writable.add(name)
+for (const name of ['bank_create_budget', 'bank_update_budget', 'bank_delete_budget', 'bank_redeem_budget_pass', 'bank_create_savings_goal', 'bank_update_savings_goal', 'bank_delete_savings_goal', 'bank_update_savings_roundup', 'bank_update_cash_sweep', 'bank_update_salary_plan', 'bank_submit_risk_assessment', 'bank_activate_overdraft', 'bank_convert_installment', 'bank_update_security_rule', 'bank_redeem_lounge_pass', 'bank_add_payee', 'bank_delete_payee', 'bank_export_statement', 'bank_export_billing_report']) writable.add(name)
 const boolean = (value, label) => { if (typeof value !== 'boolean') throw bankError(`${label}必须为布尔值`); return value }
 const cardLabel = card => `${card.productName} · 尾号 ${card.last4}`
 const safeCard = ({ shippingAddress, cardholder, ...card }) => card
@@ -574,6 +574,23 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         body = {}
         preview = { loungeQuota: digest(membership.lounge) }
         fields = [field('会员等级', membership.tierLabel), field('年度额度', `${membership.lounge.perYear} 次`), field('剩余', `${remaining} 次`), field('操作', '核销 1 次贵宾厅', true), field('说明', '核销后不可退回；具体机场/车站与可用时间以现场为准，不保证座位或时段')]
+        break
+      }
+      case 'bank_add_payee': {
+        // 先查一遍：已经在通讯录里就别再建一条，把已存在这件事如实告诉用户。
+        const existing = await get('/api/payees')
+        const name = text(a.name, '收款人姓名（最多 40 字）', 40)
+        const phone = a.phone === undefined ? '' : String(a.phone).replace(/\s+/g, '')
+        const accountNo = a.accountNo === undefined ? '' : String(a.accountNo).replace(/\s+/g, '')
+        if (!phone && !accountNo) throw bankError('请提供手机号或本行账号，二者填一个即可')
+        if (phone && !/^1[3-9]\d{9}$/.test(phone)) throw bankError('手机号须为 11 位')
+        if (accountNo && !/^\d{12,19}$/.test(accountNo)) throw bankError('账号须为 12 至 19 位数字')
+        const duplicate = existing.find(row => (phone && row.phone === phone) || (accountNo && row.accountNo === accountNo))
+        if (duplicate) throw bankError(`「${duplicate.name}」已在收款人通讯录里，无需重复添加`, 409)
+        path = '/api/payees'
+        method = 'POST'
+        body = { name, ...(phone ? { phone } : {}), ...(accountNo ? { accountNo } : {}) }
+        fields = [field('收款人', name, true), field('手机号', phone || '—'), field('本行账号', accountNo || '—'), field('影响', '只保存到收款人通讯录，不动账、不发起转账；之后转账或发起 AA 收款可以直接选。')]
         break
       }
       case 'bank_delete_payee': {

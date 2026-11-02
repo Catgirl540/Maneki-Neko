@@ -44,15 +44,14 @@ export function ContactsPage() {
       const accountNo = draft.accountNo.replace(/\D/g, '')
       if (!name) throw Error('请填写收款人姓名')
       if (!phone && !accountNo) throw Error('手机号或账号至少填一个')
-      const created = await api.addPayee({ name, ...(phone ? { phone } : {}), ...(accountNo ? { accountNo } : {}) })
+      const saved = await api.addPayee({ name, ...(phone ? { phone } : {}), ...(accountNo ? { accountNo } : {}) })
       setDraft({ name: '', phone: '', accountNo: '' })
-      setMessage(`已添加 ${created.name}`)
+      // 命中已有记录时后端会补齐缺的那条线索并照常返回，这里按"更新"提示。
+      const existed = (payees.data ?? []).some(row => row.id === saved.id)
+      setMessage(existed ? `已更新 ${saved.name} 的手机号或账号` : `已添加 ${saved.name}`)
       payees.reload()
     } catch (caught) {
-      // 已存在分两种：补齐了另一条线索（是好事，刷新让人看到），或完全重复（提示即可）。
-      const code = (caught as { code?: string } | null)?.code
-      const text = caught instanceof Error ? caught.message : '添加失败'
-      if (code === 'PAYEE_EXISTS') { setMessage(text); payees.reload() } else setError(text)
+      setError(caught instanceof Error ? caught.message : '添加失败')
     }
     finally { setBusy(false) }
   }

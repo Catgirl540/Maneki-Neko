@@ -1,7 +1,7 @@
 export function searchPayees(payees, keyword) {
   if (keyword !== undefined && (typeof keyword !== 'string' || keyword.length > 140)) throw Object.assign(new Error('收款人检索词无效'), { status: 400, code: 'INVALID_KEYWORD' })
   const needle = (keyword ?? '').trim().toLocaleLowerCase()
-  return [...payees].filter(row => !needle || [row.name, row.bankName, row.bankCode, row.accountNo, row.fpsId, row.remark].filter(value => typeof value === 'string').some(value => value.toLocaleLowerCase().includes(needle))).sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))
+  return [...payees].filter(row => !needle || [row.name, row.bankName, row.bankCode, row.phone, row.accountNo, row.fpsId, row.remark].filter(value => typeof value === 'string').some(value => value.toLocaleLowerCase().includes(needle))).sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt))
 }
 export function updatePayeeRemark(payees, id, remark) {
   if (typeof remark !== 'string' || remark.trim().length > 140 || /[\x00-\x1f\x7f]/.test(remark)) throw Object.assign(new Error('收款人备注须为最多 140 字的单行文字'), { status: 400, code: 'INVALID_PAYEE_REMARK' })
@@ -86,13 +86,17 @@ export function addPayee(payees, input, nextId) {
   if (duplicate) {
     // 已在通讯录里：把这次新填的线索补上去，而不是直接报错了事。
     // 用户往往先只存了账号，过几天又加上手机号——两条线索合到同一条记录才对。
+    //
+    // 注意：**改动了数据就必须返回 2xx**。早先这里补完线索仍抛 409，
+    // 前端按失败处理，可出现库里其实已经改了，用户看到"失败"却被悄悄改掉了记录。
     const before = `${duplicate.phone ?? ''}|${duplicate.accountNo ?? ''}`
     if (phone && !duplicate.phone) duplicate.phone = phone
     if (accountNo && !duplicate.accountNo) duplicate.accountNo = accountNo
     if (duplicate.name !== name) duplicate.name = name
     duplicate.lastUsedAt = new Date().toISOString()
     const after = `${duplicate.phone ?? ''}|${duplicate.accountNo ?? ''}`
-    throw Object.assign(new Error(before === after ? '这位收款人已在通讯录里' : '已为该收款人补齐手机号或账号'), { status: 409, code: 'PAYEE_EXISTS', updated: before !== after })
+    if (before === after) throw Object.assign(new Error('这位收款人已在通讯录里'), { status: 409, code: 'PAYEE_EXISTS' })
+    return duplicate
   }
   if (payees.length >= 50) throw Object.assign(new Error('通讯录最多保存 50 位收款人'), { status: 400, code: 'PAYEE_LIMIT' })
   const row = { id: nextId('pay'), name, channel: 'bank', scope: 'domestic', bankName: '招财猫银行', ...(phone ? { phone } : {}), ...(accountNo ? { accountNo } : {}), remark: '', lastUsedAt: new Date().toISOString() }
