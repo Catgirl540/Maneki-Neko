@@ -51,6 +51,8 @@ HTTP 用例需要显式配置可丢弃的 `BANK_HTTP_TEST_DATABASE_URL`，缺少
 
 资金与敏感状态变更中列入 `IDEMPOTENT_METHODS` 的接口必须携带 `Idempotency-Key`，缺少时返回 400 `IDEMPOTENCY_KEY_REQUIRED`。网页只在 sessionStorage 保存随机操作编号和请求摘要，不保存请求正文或密码；网络错误保留编号，同请求重试复用编号，变更参数前先核查或封存旧编号。Agent 写请求统一采用会话、调用及工具绑定的编号。
 
+助手普通转账和 FPS 的最终 `POST /api/transfers` 同样必须携带该编号，不能只覆盖定投或扩展工具；最终请求还须携带确认界面输入的支付密码，由银行在交易事务内验证，独立验密不代替提交时验密。回归命令：`node --test framework/bridge/transfer-agent-security.test.mjs`，替换 `fetch` 的内存 HTTP 夹具验证两种通道、授权隔离和重复提交保护，不连接真实账户。客户 Agent 直接加载 `framework/bridge/bank-agent.mjs`；发布须更新实际运行目录并重启客户 Agent 才会加载修复，不能只更新银行后端或网页。
+
 一次性导出下载同时验证当前客户与票据归属；其他客户访问不消费票据。助手链接通过网页携带 Bearer 下载，不再把裸链接视为授权。CSV 的不可信文本单元格对公式前缀加文本标记，金额等数值仍按数值导出。
 
 助手 HTTP 与事件错误统一隐藏内部异常；跨域默认仅允许当前来源，开发时用 `LUCKYCAT_ALLOWED_ORIGINS` 明确列出合法来源。客户、员工及运维文字入口均执行凭据预检，图片和语音功能保留。运维 Shell、写入、网络及进程终止操作即使获模型低风险判断也必须人工确认；Harness 子进程不再继承银行或会话数据库凭据。

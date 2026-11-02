@@ -4,7 +4,7 @@ title: "转入转出、费用与到账"
 navigation: "账户"
 routes: ["/accounts?flow=in", "/transfer", "/transactions/:id"]
 keywords: ["转账", "FPS", "跨境", "换汇"]
-sources: ["app/src/api/mock/index.ts", "app/src/pages/TransferPage.tsx", "app/src/components/account/MoneyDialogs.tsx", "app/src/pages/ReceivingPage.tsx", "framework/bridge/bank-agent.mjs", "framework/bridge/transfer-agent.mjs", "app/src/lib/transfer-confirmation.ts"]
+sources: ["app/src/api/mock/index.ts", "app/src/pages/TransferPage.tsx", "app/src/components/account/MoneyDialogs.tsx", "app/src/pages/ReceivingPage.tsx", "framework/bridge/bank-agent.mjs", "framework/bridge/transfer-agent.mjs", "app/src/lib/transfer-confirmation.ts", "server/security-gateway.mjs", "docs/api/security.md"]
 ---
 
 ## 转账手续费怎么收？最低费用与费用上限 {#fees}
@@ -22,6 +22,10 @@ sources: ["app/src/api/mock/index.ts", "app/src/pages/TransferPage.tsx", "app/sr
 ## 怎么转账给别人？助手能直接转账吗？ {#bank-transfer}
 
 在「账户 → 转出」填写金额、完整收款账号、姓名、银行与地区，核对报价并确认。助手可办理境内或香港银行转账，需要明确付款账户、完整收款姓名和账号、银行代码及地区、金额及收款币种；只给卡号尾号不能执行。可先查询已保存收款人及银行代码，同名收款人须本人指定。外部银行的格式校验不等于实名核验。涉及转账须在确认卡片核对信息并验证支付密码，成功与否以返回回执为准。
+
+## 转账提示“此操作必须携带幂等键”怎么办？ {#idempotency-required}
+
+这表示提交请求缺少防止重复扣款的操作编号，由系统自动生成，无需客户填写。助手普通转账和 FPS 都须携带与本次授权绑定的编号及确认界面输入的支付密码。出现该错误应修复并更新实际运行的助手服务；不能让客户在聊天提供密码或自行编造编号绕过校验。若还有超时或断线，先查询原交易状态，不能据此认定未扣款或自动再次转账。
 
 ## 如何按收款人备注查找？ {#payee-remark}
 
@@ -55,7 +59,9 @@ sources: ["app/src/api/mock/index.ts", "app/src/pages/TransferPage.tsx", "app/sr
 
 网页“转账 → AA 收款”先按名单均分，再逐人填姓名与手机号或本行账号、备注，核对后发站内通知。后台重算校验金额。1–30 人，不含本人，各币种分别处理。成员在“AA 付款”确认支付。
 
-旧均分清单仅保存清单。分项按各自参加者（含本人）均摊后汇总扣本人，余分按名单顺序；三人聚餐300、我和张三后续200且我垫付，则张三200、李四100、本人200。
+## 旧均分清单如何计算？ {#legacy-split-calculation}
+
+旧均分清单与分项计算仍仅保存清单。分项按各自参加者（含本人）分别均摊后汇总扣本人，余分按每项名单顺序；三人聚餐300、我和张三后续200且我全垫付，张三200、李四100、本人200。不能合并名单或猜金额。legacy 清单不发通知。
 
 ## AA 收款如何核对到账？ {#split-evidence}
 
