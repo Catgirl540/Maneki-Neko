@@ -61,20 +61,40 @@ Maneki-Neko（招财猫）把账户、转账、银行卡、账单和理财等业
 
 ### 一键启动（推荐）
 
+> 以下快捷启动流程对应已修订的源码交付包。当前 GitHub 仓库的启动脚本尚未同步该修订；直接克隆仓库时，请先使用下方的手动启动步骤。修订版补齐了 Windows npm 调用、失败退出码和三个 Agent 的初始化。
+
 `start.sh`（macOS / Linux）与 `start.cmd`（Windows）打开一个终端界面，把银行 API、三个 Agent 和网页一起跑起来，**使用真实后端而非浏览器模拟数据**：
 
+先解压修订后的源码包，以下命令中的 `maneki-neko` 为解压后的目录名（Git 克隆默认目录名为 `Maneki-Neko`，Linux 区分大小写）。安装 Node.js 24+（含 npm），首次安装依赖需要网络。数据库可使用本机 Docker 创建 PostgreSQL 16，也可以连接自行准备的独立开发库。
+
+Linux / macOS：
 ```bash
-./start.sh          # macOS / Linux
-start.cmd           # Windows
+cd maneki-neko
+chmod +x start.sh
+./start.sh
+# 或 bash start.sh
 ```
 
-界面提供：环境检查、安装依赖、配置数据库、初始化数据库、启动全套、停止、查看状态。数据库连接串与密钥保存在仓库根的 `.start.local.json`（已被 `.gitignore` 排除，权限 0600），只写入一次，之后每次启动自动读取；密钥输入不回显，也不会进入任何 `VITE_*` 变量。
+Windows PowerShell：
+```powershell
+cd maneki-neko
+.\start.cmd
+```
+Windows 命令提示符（CMD）使用 `start.cmd`。
+
+按向导依次检查环境、安装依赖、配置数据库、初始化数据库、启动服务。安装步骤会自动链接和构建 Agent 插件，并生成客户、员工、运维三个 profile。编译失败会显示失败日志，请解决后重试。保持启动终端打开；退出启动器会停止其启动的服务。
+
+界面提供：环境检查、安装依赖、配置数据库、初始化数据库、启动全套、停止、查看状态。数据库连接串与密钥保存在仓库根的 `.start.local.json`（已被 `.gitignore` 排除，POSIX 权限 0600；Windows 使用文件系统 ACL），只写入一次，之后每次启动自动读取；密钥输入不回显，也不会进入任何 `VITE_*` 变量。
 
 需要脚本化或排查环境时用非交互模式，不依赖终端界面：
 
 ```bash
 node tools/start-tui.mjs --check
+# Linux: ./start.sh --check
+# Windows PowerShell: .\start.cmd --check
 ```
+
+检查失败返回非零退出码。首次运行尚未安装依赖、未配置数据库时出现 FAIL 属于待完成配置。AI 对话还需要配置有效的 `OPENROUTER_API_KEY`。
 
 启动后的入口：银行 API `http://127.0.0.1:8080`，客户网页 `http://127.0.0.1:5180/login`，员工网页 `http://127.0.0.1:5180/staff/login`，客户 Agent `:8788`，员工 Agent `:8789`，运维 Agent `:8790`。
 
