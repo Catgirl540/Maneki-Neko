@@ -8,7 +8,7 @@ globalThis.window = { localStorage: new MemoryStorage(), sessionStorage: new Mem
 const state = await import('../server/domain/state.mjs'), { createBankBusinessApi } = await import('../server/domain/index.mjs')
 state.resetDb()
 const api = createBankBusinessApi(), user = await api.profile(), initial = structuredClone(state.loadDb().accounts)
-const root = path.resolve(import.meta.dirname, '..'), errors = [], writes = []
+const root = path.resolve(import.meta.dirname, '..'), errors = [], writes = [], deletes = []
 Object.assign(process.env, { VITE_USE_MOCK: 'false', VITE_BASE_PATH: '/', VITE_API_BASE_URL: '', VITE_AGENT_URL: '/agent-api' })
 const web = await createServer({ root: path.join(root, 'app'), configFile: path.join(root, 'app/vite.config.ts'), logLevel: 'error', server: { host: '127.0.0.1', port: 0, hmr: false } })
 let browser
@@ -34,6 +34,7 @@ try {
         case '/api/support/messages': return respond([])
         case '/api/budgets': return respond(await api.listBudgets())
         case '/api/budgets/monthly':
+          if (req.method() === 'DELETE') { deletes.push(body); return respond(await api.deleteMonthlyBudget(body)) }
           if (req.method() === 'POST') { writes.push(body); return respond(await api.setMonthlyBudget(body)) }
           return respond(await api.listMonthlyBudgets(url.searchParams.get('month') ?? undefined))
         default: errors.push(url.pathname); return respond({}, 404)
@@ -59,9 +60,28 @@ try {
   await form.getByRole('button', { name: '确认保存月度目标' }).click()
   await form.getByText('月度预算已变化，请重新查询并确认', { exact: true }).waitFor()
   assert.equal((await api.listMonthlyBudgets()).goals[0].limit, 180000)
+  await form.getByRole('button', { name: /^删除.*月度目标$/ }).click()
+  await form.getByLabel('确认删除月度目标').waitFor()
+  assert.equal(deletes.length, 0)
+  await form.getByRole('button', { name: '取消删除' }).click()
+  assert.equal(deletes.length, 0)
+  assert.equal((await api.listMonthlyBudgets()).goals.length, 1)
+  await form.getByRole('button', { name: /^删除.*月度目标$/ }).click()
+  const original = (await api.listMonthlyBudgets()).goals[0]
+  await api.setMonthlyBudget({ ...original, limit: 170000 })
+  await form.getByRole('button', { name: '确认删除月度目标', exact: true }).click()
+  await form.getByText('月度预算已变化，请重新查询并确认', { exact: true }).waitFor()
+  assert.equal((await api.listMonthlyBudgets()).goals[0].limit, 170000)
+  await form.getByRole('button', { name: /^删除.*月度目标$/ }).click()
+  await form.getByRole('button', { name: '确认删除月度目标', exact: true }).click()
+  await form.getByText('月度分类目标已删除', { exact: true }).waitFor()
+  await form.getByText('本月尚未设置分类目标', { exact: true }).waitFor()
+  assert.equal(deletes.length, 2)
+  await page.reload()
+  await form.getByText('本月尚未设置分类目标', { exact: true }).waitFor()
   assert.deepEqual(state.loadDb().accounts, initial)
   assert.deepEqual(errors, [])
   await mkdir(path.join(root, '.generated/monthly-budgets'), { recursive: true })
   await page.screenshot({ path: path.join(root, '.generated/monthly-budgets/overview.png'), fullPage: true })
-  console.log('PASS monthly budget UI: category target → explicit review → persist/reload → usage/remaining → version conflict protects concurrent update → funds unchanged')
+  console.log('PASS monthly budget UI: category target → explicit review → persist/reload → usage/remaining → version conflict protects concurrent update → cancel/delete/stale-delete/reload → funds unchanged')
 } finally { await browser?.close(); await web.close() }

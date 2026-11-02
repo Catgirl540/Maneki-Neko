@@ -99,6 +99,21 @@ try {
   bank = await createBankApi(bankOptions)
   assert.equal(ok(await call(routes.monthlyBudgets())).goals[0].version, 1)
   assert.deepEqual(storage.money(), newFeatureMoney)
+  const deletion = { id: monthlyGoal.id, version: monthlyGoal.version }
+  assert.equal((await call(routes.monthlyBudgets(), { method: 'DELETE', token: null, body: deletion })).status, 401)
+  assert.equal((await call(routes.monthlyBudgets(), { method: 'DELETE', token: otherToken, body: deletion })).status, 404)
+  assert.equal((await call(routes.monthlyBudgets(), { method: 'DELETE', body: { ...deletion, version: 2 } })).data.code, 'VERSION_CONFLICT')
+  storage.failNextCommit = true
+  assert.equal((await call(routes.monthlyBudgets(), { method: 'DELETE', body: deletion })).status, 503)
+  assert.equal(ok(await call(routes.monthlyBudgets())).goals[0].id, monthlyGoal.id)
+  assert.equal(ok(await call(routes.monthlyBudgets(), { method: 'DELETE', body: deletion })).deleted, true)
+  bank = await createBankApi(bankOptions)
+  assert.deepEqual(ok(await call(routes.monthlyBudgets())).goals, [])
+  const recreatedGoal = ok(await call(routes.monthlyBudgets(), { method: 'POST', body: monthly }))
+  assert.notEqual(recreatedGoal.id, monthlyGoal.id)
+  assert.equal((await call(routes.monthlyBudgets(), { method: 'DELETE', body: deletion })).status, 404)
+  assert.equal(ok(await call(routes.monthlyBudgets())).goals[0].id, recreatedGoal.id)
+  assert.deepEqual(storage.money(), newFeatureMoney)
   console.log('PASS rates/monthly HTTP: authenticated numerical rates; category usage matches monthly statistics; owner isolation; stale versions and failed commit rejected; restart keeps goal; funds unchanged')
 
   const financialBefore = storage.money()

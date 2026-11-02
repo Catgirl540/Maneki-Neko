@@ -1,4 +1,4 @@
-import { monthlyBudgetsOverview, saveMonthlyBudget } from '../../../../shared/monthly-budgets.mjs'
+import { monthlyBudgetsOverview, saveMonthlyBudget, removeMonthlyBudget } from '../../../../shared/monthly-budgets.mjs'
 import { referenceExchangeRates } from '../../../../shared/fx-rates.mjs'
 import { prepareSpendSubscription } from '../../../../shared/spend-subscription.mjs'
 import { avatarIdFor, isAvatarId, randomAvatarId } from '../../../../shared/avatars.mjs'
@@ -2300,6 +2300,7 @@ export function createMockApi(options?: {
     async getCashFlow(days = 7): Promise<CashFlow> { return cashFlowStatistics(loadDb(), days) },
     async listMonthlyBudgets(month) { return monthlyBudgetsOverview(loadDb(), month) },
     async setMonthlyBudget(input) { const result = saveMonthlyBudget(loadDb(), input); persist(); return result },
+    async deleteMonthlyBudget(input) { const result = removeMonthlyBudget(loadDb(), input); persist(); return result },
     async listBudgets(): Promise<BudgetsOverview> {
       await delay(180)
       const db = loadDb()

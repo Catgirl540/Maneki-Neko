@@ -111,6 +111,7 @@ const ROUTES = [
   // —— 支出预算 ——
   ['GET', 'monthlyBudgets', 'listMonthlyBudgets', (id, b, q) => [q.get('month') ?? undefined]],
   ['POST', 'monthlyBudgets', 'setMonthlyBudget', (id, b) => [b]],
+  ['DELETE', 'monthlyBudgets', 'deleteMonthlyBudget', (id, b) => [b]],
   ['GET', 'budgets', 'listBudgets', () => []],
   ['POST', 'budgets', 'createBudget', (id, b) => [b]],
   ['PATCH', 'budget', 'updateBudget', (id, b) => [id, b]],

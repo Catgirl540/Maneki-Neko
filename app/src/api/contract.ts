@@ -38,6 +38,8 @@ import type {
   BudgetPass,
   BudgetsOverview,
   MonthlyBudgetInput,
+  MonthlyBudgetDeleteInput,
+  MonthlyBudgetDeleteResult,
   MonthlyBudget,
   MonthlyBudgetsOverview,
   Paged,
@@ -402,6 +404,7 @@ export interface BankApi {
   /** 我的预算：带今天的用量、额度、积分与额度券；服务端顺带补算历史达标日 */
   listMonthlyBudgets(month?: string): Promise<MonthlyBudgetsOverview>
   setMonthlyBudget(input: MonthlyBudgetInput): Promise<MonthlyBudget>
+  deleteMonthlyBudget(input: MonthlyBudgetDeleteInput): Promise<MonthlyBudgetDeleteResult>
   listBudgets(): Promise<BudgetsOverview>
   createBudget(req: BudgetInput): Promise<Budget>
   updateBudget(id: string, patch: Partial<BudgetInput>): Promise<Budget>

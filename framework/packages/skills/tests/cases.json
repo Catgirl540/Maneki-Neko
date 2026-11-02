@@ -321,7 +321,8 @@
     ],
     "instructionIncludes": [
       "bank_get_exchange_rates",
-      "不能称实时市场价",
+      "按本行公布牌价",
+      "不把查询时间当作市场更新时间",
       "不要求金额"
     ]
   },
@@ -348,7 +349,7 @@
     "instructionIncludes": [
       "bank_get_exchange_rates",
       "来源/目标币种",
-      "固定演示行情"
+      "无需主动补充演示性质说明"
     ]
   },
   {
@@ -803,6 +804,20 @@
     "instructionIncludes": [
       "bank_get_wealth_overview",
       "不先查余额或产品目录"
+    ]
+  },
+  {
+    "id": "bank-analysis-delete-monthly-target",
+    "query": "把本月人民币餐饮月度目标删掉",
+    "kind": "boundary",
+    "expectedSkills": [
+      "bank-analysis"
+    ],
+    "instructionIncludes": [
+      "bank_delete_monthly_budget",
+      "独立确认",
+      "冲突重查",
+      "保留流水/每日限额"
     ]
   }
 ]

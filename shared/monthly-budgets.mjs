@@ -30,8 +30,19 @@ export function saveMonthlyBudget(db, input, now = Date.now()) {
   if ((old?.version ?? 0) !== input.version) throw fail('月度预算已变化，请重新查询并确认', 'VERSION_CONFLICT', 409)
   if (!old && rows.length >= 120) throw fail('最多保存 120 项月度预算', 'MONTHLY_BUDGET_LIMIT', 409)
   const timestamp = new Date(now).toISOString()
-  const goal = { id: old?.id ?? `monthly:${input.month}:${input.currency}:${input.category}`, month: input.month, currency: input.currency, category: input.category, limit: input.limit, version: input.version + 1, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }
+  const goal = { id: old?.id ?? `monthly:${input.month}:${input.currency}:${input.category}:${crypto.randomUUID()}`, month: input.month, currency: input.currency, category: input.category, limit: input.limit, version: input.version + 1, createdAt: old?.createdAt ?? timestamp, updatedAt: timestamp }
   const view = goalView(goal, spendingStatistics(db, input.month, MONTHLY_BUDGET_CATEGORIES, now))
   db.monthlyBudgets = [...rows.filter(row => row !== old), goal]
   return view
+}
+
+/** Deletes only the owned target snapshot; never removes ledger history or daily caps. */
+export function removeMonthlyBudget(db, input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input) || typeof input.id !== 'string' || !input.id || input.id.length > 160 || !Number.isSafeInteger(input.version) || input.version < 1) throw fail('请提供月度目标编号与有效版本')
+  const rows = db.monthlyBudgets ?? []
+  const goal = rows.find(row => row.id === input.id)
+  if (!goal) throw fail('月度目标不存在或已删除，请重新查询', 'MONTHLY_BUDGET_NOT_FOUND', 404)
+  if (goal.version !== input.version) throw fail('月度预算已变化，请重新查询并确认', 'VERSION_CONFLICT', 409)
+  db.monthlyBudgets = rows.filter(row => row !== goal)
+  return { id: goal.id, deleted: true }
 }

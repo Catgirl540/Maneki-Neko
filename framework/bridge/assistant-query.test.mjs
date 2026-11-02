@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { createBankAgent } from './bank-agent.mjs'
-import { monthlyBudgetsOverview, saveMonthlyBudget } from '../../shared/monthly-budgets.mjs'
+import { monthlyBudgetsOverview, saveMonthlyBudget, removeMonthlyBudget } from '../../shared/monthly-budgets.mjs'
 import { referenceExchangeRates } from '../../shared/fx-rates.mjs'
 
 test('focused query tools return month totals, holdings and numerical rates; monthly target requires one-use confirmation', async t => {
@@ -22,7 +22,7 @@ test('focused query tools return month totals, holdings and numerical rates; mon
       if (url.pathname === '/api/analysis/spending') return send({ month: url.searchParams.get('month'), total: 12345, byCurrency: { CNY: { total: 12345 } } })
       if (url.pathname === '/api/wealth/overview') return send({ holdings: [{ id: 'h1', marketValue: 23400 }], totalMarketValue: 23400, risk: { done: false } })
       if (url.pathname === '/api/exchange/rates') return send(invalidRates ? { rates: [] } : rates())
-      if (url.pathname === '/api/budgets/monthly') return send(req.method === 'GET' ? monthlyBudgetsOverview(db, url.searchParams.get('month') ?? undefined) : saveMonthlyBudget(db, body))
+      if (url.pathname === '/api/budgets/monthly') return send(req.method === 'GET' ? monthlyBudgetsOverview(db, url.searchParams.get('month') ?? undefined) : req.method === 'DELETE' ? removeMonthlyBudget(db, body) : saveMonthlyBudget(db, body))
       return send({ message: 'unexpected route' }, 404)
     } catch (error) { return send({ message: error.message, code: error.code }, error.status ?? 500) }
   })
@@ -55,6 +55,23 @@ test('focused query tools return month totals, holdings and numerical rates; mon
   await bank.approve(staleReview)
   await assert.rejects(bank.execute(stale), { code: 'VERSION_CONFLICT' })
   assert.equal(db.monthlyBudgets[0].limit, 250000)
+  const deletionArgs = { month: '2026-11', currency: 'CNY', category: 'dining' }
+  const deletion = raw('bank_delete_monthly_budget', deletionArgs)
+  const deletionReview = await bank.prepare(deletion)
+  assert(deletionReview.fields.some(row => row.label === '原目标' && row.value.includes('2500.00')))
+  await assert.rejects(bank.execute(deletion), { code: 'CONSENT_REQUIRED' })
+  assert.equal(db.monthlyBudgets.length, 1)
+  saveMonthlyBudget(db, { month: '2026-11', currency: 'CNY', category: 'dining', limit: 260000, version: 2 })
+  await bank.approve(deletionReview)
+  await assert.rejects(bank.execute(deletion), { code: 'VERSION_CONFLICT' })
+  const freshDelete = raw('bank_delete_monthly_budget', deletionArgs)
+  const freshReview = await bank.prepare(freshDelete)
+  await bank.approve(freshReview)
+  assert.equal((await bank.execute(freshDelete)).result.deleted, true)
+  assert.equal(db.monthlyBudgets.length, 0)
+  await assert.rejects(bank.execute(freshDelete), { code: 'CONSENT_REQUIRED' })
+  await assert.rejects(bank.prepare(raw('bank_delete_monthly_budget', deletionArgs)), { code: 'MONTHLY_BUDGET_NOT_FOUND' })
+  assert.equal(calls.filter(c => c.method === 'DELETE').length, 2, 'unauthorized/replayed deletion never reaches bank')
   invalidRates = true
   await assert.rejects(execute('bank_get_exchange_rates', { fromCurrency: 'CNY', toCurrency: 'USD' }), /有效.*汇率/)
 })

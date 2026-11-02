@@ -810,6 +810,8 @@ export interface SpendReceipt {
 
 export type MonthlyBudgetCategory = 'dining' | 'shopping' | 'housing' | 'transport' | 'subscription' | 'other'
 export interface MonthlyBudgetInput { month: string; currency: Currency; category: MonthlyBudgetCategory; limit: Cents; version: number }
+export interface MonthlyBudgetDeleteInput { id: string; version: number }
+export interface MonthlyBudgetDeleteResult { id: string; deleted: true }
 export interface MonthlyBudget extends MonthlyBudgetInput { id: string; createdAt: string; updatedAt: string; categoryLabel: string; spent: Cents; remaining: Cents; overBy: Cents; status: 'over' | 'within' }
 export interface MonthlyBudgetsOverview { month: string; timeZone: 'Asia/Shanghai'; asOf: string; mode: 'monthly-category-target'; notice: string; goals: MonthlyBudget[] }
 

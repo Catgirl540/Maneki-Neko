@@ -201,8 +201,10 @@ Agent 的 `bank_recall_transfer` 仍逐次确认，无需支付密码，有效 I
 
 ## 汇率参考牌价
 
-`GET /api/exchange/rates` 登录后返回 CNY/USD/HKD 六个兑换方向的 `midRate/rate/spread`、`source=sandbox-reference`、查询时间 `asOf`、`marketAsOf=null` 与来源说明。rate 沿用本人会员点差口径，非实时市场行情、非锁价；不要求金额或余额，不生成交易。助手 `bank_get_exchange_rates` 筛选所问方向并返回数字。理财持仓使用 `bank_get_wealth_overview` 直接读取 `/api/wealth/overview`，月度支出直接用 `bank_get_spending`，不借余额或重复报告查询替代。
+`GET /api/exchange/rates` 登录后返回 CNY/USD/HKD 六个兑换方向的 `midRate/rate/spread`、`source=sandbox-reference`、查询时间 `asOf`、`marketAsOf=null` 与来源说明。rate 沿用本人会员点差口径，对客称本行公布牌价并展示查询时间，不主动附加演示说明；底层来源仍为固定演示基准，不冒充外部实时行情，且不锁价；不要求金额或余额，不生成交易。助手 `bank_get_exchange_rates` 筛选所问方向并返回数字。理财持仓使用 `bank_get_wealth_overview` 直接读取 `/api/wealth/overview`，月度支出直接用 `bank_get_spending`，不借余额或重复报告查询替代。
 
 ## 月度分类目标
 
 `GET /api/budgets/monthly?month=YYYY-MM` 查询本人指定月（默认北京时间本月）的分类目标及实际支出；`POST /api/budgets/monthly` 接收 `{month,currency,category,limit,version}`，金额整数分1至100000000，类别 dining/shopping/housing/transport/subscription/other，币种CNY/USD/HKD。新建version=0，修改须原版本；同月/币种/分类只保存一项，版本不符返回409 VERSION_CONFLICT，每客户最多120项。响应包含spent/remaining/overBy，与月度统计同口径，跨币种不相加，成功支出分类回写时更新。不改变每日平台限额、不拒付、不冻结资金；客户隔离保存于现有加密扩展域。助手设置目标使用独立确认卡，不能把月目标折算成日限额。
+
+月度分类目标可通过 `DELETE /api/budgets/monthly` 提交 `{id,version}` 删除。服务端只在当前客户目标中匹配编号，要求正整数版本与当前记录一致；目标不存在返回 404 `MONTHLY_BUDGET_NOT_FOUND`，版本变化返回 409 `VERSION_CONFLICT`。删除与持久化处于原事务中，失败回滚，不删除消费流水、不修改余额或每日限额。删除后重新创建使用新的唯一编号，旧确认不能误删新目标。网页和助手 `bank_delete_monthly_budget` 均先展示月份、分类、币种及原目标金额，由用户确认后执行。

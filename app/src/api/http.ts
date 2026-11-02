@@ -181,6 +181,7 @@ export function createHttpApi(): BankApi {
 
     listMonthlyBudgets: month => request(routes.monthlyBudgets() + (month ? '?month=' + encodeURIComponent(month) : '')),
     setMonthlyBudget: input => post(routes.monthlyBudgets(), input),
+    deleteMonthlyBudget: input => del(routes.monthlyBudgets(), input),
     listBudgets: () => request<BudgetsOverview>(routes.budgets()),
     createBudget: (req) => post(routes.budgets(), req),
     updateBudget: (id, req) => patch(routes.budget(id), req),

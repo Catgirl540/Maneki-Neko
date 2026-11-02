@@ -38,6 +38,7 @@ routineQueries.add('bank_list_im_reminders')
 routineQueries.add('bank_list_budgets')
 routineQueries.add('bank_list_monthly_budgets')
 writable.add('bank_set_monthly_budget')
+writable.add('bank_delete_monthly_budget')
 routineQueries.add('bank_get_wealth_overview')
 routineQueries.add('bank_get_exchange_rates')
 routineQueries.add('bank_get_insurance')
@@ -320,7 +321,8 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
         fields = [field('查询内容', '当前理财风险测评题目与选项')]
         break
       case 'bank_list_monthly_budgets':
-      case 'bank_set_monthly_budget': {
+      case 'bank_set_monthly_budget':
+      case 'bank_delete_monthly_budget': {
         if (a.month !== undefined && (typeof a.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(a.month))) throw bankError('月份须为 YYYY-MM')
         path = '/api/budgets/monthly' + (a.month ? '?month=' + enc(a.month) : '')
         if (challenge.toolName === 'bank_list_monthly_budgets') {
@@ -328,10 +330,18 @@ export function createBankAgent({ baseUrl, sessions, publish, reminders = () => 
           break
         }
         if (!a.month || !Object.hasOwn(MONTHLY_BUDGET_CATEGORIES, a.category) || !['CNY', 'USD', 'HKD'].includes(a.currency)) throw bankError('请明确预算月份、币种与消费分类')
-        const limit = amount(a.limitCents)
-        if (limit > 100000000) throw bankError('月度目标不能超过 100000000 分')
         const overview = await get(path)
         const prior = overview.goals.find(row => row.category === a.category && row.currency === a.currency)
+        if (challenge.toolName === 'bank_delete_monthly_budget') {
+          if (!prior) throw bankError('该月份、币种和分类没有月度目标，请重新查询', 404, 'MONTHLY_BUDGET_NOT_FOUND')
+          path = '/api/budgets/monthly'
+          method = 'DELETE'
+          body = { id: prior.id, version: prior.version }
+          fields = [field('操作', '删除月度分类目标'), field('月份', prior.month), field('分类', MONTHLY_BUDGET_CATEGORIES[prior.category]), field('原目标', money(prior.limit, prior.currency), true), field('说明', '仅删除此分类目标，已有消费流水与每日平台限额保留，不退款、不改变资金余额。')]
+          break
+        }
+        const limit = amount(a.limitCents)
+        if (limit > 100000000) throw bankError('月度目标不能超过 100000000 分')
         path = '/api/budgets/monthly'
         method = 'POST'
         body = { month: a.month, currency: a.currency, category: a.category, limit, version: prior?.version ?? 0 }

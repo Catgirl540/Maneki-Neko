@@ -67,4 +67,4 @@ sources: ["app/src/pages/AnalysisPage.tsx", "app/src/pages/AutoDebitsPage.tsx", 
 
 ## 能设置每月餐饮预算吗？ {#monthly-category-budget}
 
-可以设置月度分类目标：明确 YYYY-MM、币种、餐饮等分类和目标金额，助手用 bank_set_monthly_budget 独立确认保存；bank_list_monthly_budgets 查询，网页「支出预算」也能操作。目标显示实际成功支出和剩余额度，超出单列，按北京时间、原记账币种统计，不阻止支付、不冻结资金。消费分类完成或更新后用量可能变化。同月份/币种/分类修改原目标，版本冲突重新核对。平台每日限额是另一种规则，不把月目标除以天数代替，也不跳到银行卡设置。
+可以设置月度分类目标：明确 YYYY-MM、币种、餐饮等分类和目标金额，助手用 bank_set_monthly_budget 独立确认保存；bank_list_monthly_budgets 查询，bank_delete_monthly_budget 删除，需明确月份/币种/分类并独立确认，仅删除目标，保留支出流水、每日限额和余额；网页「支出预算」也能操作。目标显示实际成功支出和剩余额度，超出单列，按北京时间、原记账币种统计，不阻止支付、不冻结资金。消费分类完成或更新后用量可能变化。同月份/币种/分类修改原目标，版本冲突重新核对。平台每日限额是另一种规则，不把月目标除以天数代替，也不跳到银行卡设置。

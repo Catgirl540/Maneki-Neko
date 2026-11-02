@@ -11,7 +11,7 @@ export function requestRouteHints(message = '') {
   const hints = []
   const add = (serviceId, instruction) => hints.push({ serviceId, instruction })
   if (/预算|消费限额/.test(text)) {
-    add('analysis', '预算属于账单分析，不能路由成银行卡查询。月度分类目标查 bank_list_monthly_budgets、设 bank_set_monthly_budget；每日平台限额才用 bank_create_budget/bank_update_budget，修改先查准确预算编号；不得声称只有查询工具。月度分类目标与平台每日限额不同，禁止除以天数、替换周期或伪称已设置。')
+    add('analysis', '预算属于账单分析，不能路由成银行卡查询。月度分类目标查 bank_list_monthly_budgets、设 bank_set_monthly_budget、删 bank_delete_monthly_budget；删除先读取本人目标并独立确认，不删除流水或每日限额；每日平台限额才用 bank_create_budget/bank_update_budget，修改先查准确预算编号；不得声称只有查询工具。月度分类目标与平台每日限额不同，禁止除以天数、替换周期或伪称已设置。')
   } else if (/(月|月份)/.test(text) && /支出|花了|花费|消费/.test(text) && !/导出|下载|月报|年报|账单明细/.test(text)) {
     add('analysis', '本轮查询月度支出：直接用 bank_get_spending（month 为所问 YYYY-MM，未指定则本月），该接口已有总额、分类和走势；无需先查余额或月度账单，同一问题已有完整结果后不要再次确认消费分析。')
   } else if (/月报|年报|月度账单|年度账单/.test(text)) {
