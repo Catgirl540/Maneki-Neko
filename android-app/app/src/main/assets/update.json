@@ -1,9 +1,9 @@
 {
   "manifestUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/latest.json",
-  "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-7.apk",
-  "versionCode": 7,
-  "versionName": "1.0.6",
-  "notes": "1.0.6：转账接入线上后端，支持收付款币种与支付密码确认",
+  "apkUrl": "https://pub-030196afaecd441399ff1f6ef0ce428c.r2.dev/android/app-8.apk",
+  "versionCode": 8,
+  "versionName": "1.0.7",
+  "notes": "1.0.7：换头像与昵称、姓名脱敏、二级页转场修复、我的页瘦身、页面级缓存、助手换 DeepSeek",
   "expiresAt": null,
-  "publishedAt": "2026-10-29T08:22:00.000Z"
+  "publishedAt": "2026-11-02T02:32:38.281Z"
 }

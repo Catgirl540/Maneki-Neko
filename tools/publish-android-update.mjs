@@ -24,7 +24,11 @@ import path from 'node:path'
 
 const root = path.resolve(import.meta.dirname, '..')
 const appDir = path.join(root, 'android-app')
-const apkPath = path.join(appDir, 'app/build/outputs/apk/debug/app-debug.apk')
+// 默认发 debug 包；正式发包用 --apk 指到 release 产物，别把 debug 包当正式版发出去。
+const apkArg = process.argv.indexOf('--apk')
+const apkPath = apkArg > -1
+  ? path.resolve(process.argv[apkArg + 1])
+  : path.join(appDir, 'app/build/outputs/apk/debug/app-debug.apk')
 const assetsDir = path.join(appDir, 'app/src/main/assets')
 const gradlePath = path.join(appDir, 'app/build.gradle.kts')
 
