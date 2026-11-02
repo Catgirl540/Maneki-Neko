@@ -156,6 +156,8 @@ Agent 独立运行。先安装依赖与 PostgreSQL 会话驱动，再构建插�
 ```powershell
 npm --prefix framework ci
 npm --prefix framework/bridge/pg-runtime ci --omit=dev --ignore-scripts
+# bank-demo 是 TypeScript 包，lib/ 为 tsc 产物且不进版本库；不编译则 Bridge 启动与测试都会找不到模块
+npm --prefix framework/packages/bank-demo exec tsc -- -p tsconfig.json
 npm --prefix framework run bootstrap:customer
 ```
 

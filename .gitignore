@@ -85,3 +85,7 @@ android-app/.kotlin/
 /.release-tmp/
 /transcript
 /deliverables/预览/
+
+
+# 员工端演示密码：含生产凭据，不入库也不进提交包
+staff-demo-accounts.md
