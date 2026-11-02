@@ -58,6 +58,27 @@ Maneki-Neko（招财猫）把账户、转账、银行卡、账单和理财等业
 
 以下命令从**仓库根目录**执行，环境变量示例使用 **PowerShell**。先启动银行后端与统一网页，再按需接入 Agent。
 
+### 一键启动（推荐）
+
+`start.sh`（macOS / Linux）与 `start.cmd`（Windows）打开一个终端界面，把银行 API、三个 Agent 和网页一起跑起来，**使用真实后端而非浏览器模拟数据**：
+
+```bash
+./start.sh          # macOS / Linux
+start.cmd           # Windows
+```
+
+界面提供：环境检查、安装依赖、配置数据库、初始化数据库、启动全套、停止、查看状态。数据库连接串与密钥保存在仓库根的 `.start.local.json`（已被 `.gitignore` 排除，权限 0600），只写入一次，之后每次启动自动读取；密钥输入不回显，也不会进入任何 `VITE_*` 变量。
+
+需要脚本化或排查环境时用非交互模式，不依赖终端界面：
+
+```bash
+node tools/start-tui.mjs --check
+```
+
+启动后的入口：银行 API `http://127.0.0.1:8080`，客户网页 `http://127.0.0.1:5180/login`，员工网页 `http://127.0.0.1:5180/staff/login`，客户 Agent `:8788`，员工 Agent `:8789`，运维 Agent `:8790`。
+
+> 完整启动需要两个数据库：银行库（`BANK_DATABASE_URL` + `BANK_DATA_KEY`）与独立的 AI 会话库（`LUCKYCAT_SESSION_DATABASE_URL` + `LUCKYCAT_SESSION_DATA_KEY`）。会话库未配置时银行与网页仍可启动，三个 Agent 会提示缺少配置。数据密钥必须与库中已有密文匹配；对已有库重新生成密钥会让历史数据无法解密。
+
 ### 1. 准备环境与依赖
 
 | 依赖 | 要求 |
