@@ -1,0 +1,578 @@
+<mxfile host="Electron" agent="Codex" pages="2">
+  <diagram id="agent-1" name="01 Agent 架构总览">
+    <mxGraphModel dx="1001" dy="1206" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1280" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="n1" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=34;fontColor=#18334D;fontStyle=1;" value="招财猫银行 · Agent 架构" vertex="1">
+          <mxGeometry height="53" width="1600" x="44" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#52677B;fontStyle=0;" value="三类角色分别运行；下方展开每个实例的桥接层与运行时结构。依据当前仓库实现 · 2026-11-02" vertex="1">
+          <mxGeometry height="28" width="1700" x="46" y="88" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="01 / 02" vertex="1">
+          <mxGeometry height="35" width="100" x="1770" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#EFF6FF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="145" width="580" x="44" y="139" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" parent="n4" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="客户 Agent  ·  customer" vertex="1">
+          <mxGeometry height="28" width="544" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" parent="n4" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;" value="入口 /agent-api   ·   端口 8788&#xa;profile: luckycat   ·   客户银行 tools + skills / RAG&#xa;独立客户会话空间；read-only 主机沙箱" vertex="1">
+          <mxGeometry height="86" width="544" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#EDF8F6;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="145" width="580" x="644" y="139" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" parent="n7" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;" value="客服 / 主管 Agent  ·  staff" vertex="1">
+          <mxGeometry height="28" width="544" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" parent="n7" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;" value="入口 /staff-agent-api   ·   端口 8789&#xa;profile: staff   ·   员工 tools / 代客核验 / 主管审批&#xa;独立员工会话空间；read-only 主机沙箱" vertex="1">
+          <mxGeometry height="86" width="544" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F5F0FA;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="145" width="632" x="1244" y="139" as="geometry" />
+        </mxCell>
+        <mxCell id="n11" parent="n10" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#7650A5;fontStyle=1;" value="运维 Agent  ·  ops" vertex="1">
+          <mxGeometry height="28" width="596" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n12" parent="n10" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;" value="入口 /staff-ops-agent-api   ·   端口 8790&#xa;profile: staff-ops   ·   原生文件 / 终端 / 作业工具&#xa;独立运维会话空间；workspace-write + Clef 风险决策" vertex="1">
+          <mxGeometry height="86" width="596" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n13" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F4F8FD;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="657" width="254" x="44" y="329" as="geometry" />
+        </mxCell>
+        <mxCell id="n14" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#2865B6;fontStyle=1;" value="接入层" vertex="1">
+          <mxGeometry height="27" width="214" x="64" y="346" as="geometry" />
+        </mxCell>
+        <mxCell id="n15" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#52677B;fontStyle=0;" value="按登录角色选择 Agent 通道" vertex="1">
+          <mxGeometry height="25" width="214" x="64" y="378" as="geometry" />
+        </mxCell>
+        <mxCell id="n16" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F4F8FD;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="657" width="352" x="378" y="329" as="geometry" />
+        </mxCell>
+        <mxCell id="n17" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#2865B6;fontStyle=1;" value="可信桥接层" vertex="1">
+          <mxGeometry height="27" width="312" x="398" y="346" as="geometry" />
+        </mxCell>
+        <mxCell id="n18" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#52677B;fontStyle=0;" value="demo-server.mjs；staff / ops 复用入口" vertex="1">
+          <mxGeometry height="25" width="312" x="398" y="378" as="geometry" />
+        </mxCell>
+        <mxCell id="n19" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F1F8F8;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="657" width="568" x="810" y="329" as="geometry" />
+        </mxCell>
+        <mxCell id="n20" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#137D79;fontStyle=1;" value="DSH Agent 运行时" vertex="1">
+          <mxGeometry height="27" width="528" x="830" y="346" as="geometry" />
+        </mxCell>
+        <mxCell id="Ha5NMZtV417TDXsVDjaI-1" edge="1" parent="1" source="n21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;defaultLabelBackgroundColor=page;" target="n45" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n21" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#52677B;fontStyle=0;" value="每实例独立子进程 · profile 隔离" vertex="1">
+          <mxGeometry height="25" width="528" x="830" y="378" as="geometry" />
+        </mxCell>
+        <mxCell id="n22" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F4F8FD;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="657" width="418" x="1458" y="329" as="geometry" />
+        </mxCell>
+        <mxCell id="n23" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#2865B6;fontStyle=1;" value="外部服务与执行目标" vertex="1">
+          <mxGeometry height="27" width="378" x="1478" y="346" as="geometry" />
+        </mxCell>
+        <mxCell id="n24" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#52677B;fontStyle=0;" value="通过模型适配器、业务适配器或沙箱调用" vertex="1">
+          <mxGeometry height="25" width="378" x="1478" y="378" as="geometry" />
+        </mxCell>
+        <mxCell id="n25" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="120" width="214" x="64" y="417" as="geometry" />
+        </mxCell>
+        <mxCell id="n26" parent="n25" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="客户网页 / Android" vertex="1">
+          <mxGeometry height="28" width="178" x="36" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n27" parent="n25" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="文本、图片、确认卡&#xa;REST + SSE" vertex="1">
+          <mxGeometry height="61" width="178" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n28" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="111" width="214" x="64" y="569" as="geometry" />
+        </mxCell>
+        <mxCell id="n29" parent="n28" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;" value="工作人员网页" vertex="1">
+          <mxGeometry height="28" width="178" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n30" parent="n28" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="客服 / 主管 / 运维&#xa;按角色路由" vertex="1">
+          <mxGeometry height="52" width="178" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n31" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="142" width="214" x="64" y="718" as="geometry" />
+        </mxCell>
+        <mxCell id="n32" parent="n31" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="微信 / 企微〔可选〕" vertex="1">
+          <mxGeometry height="28" width="178" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n33" parent="n31" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="绑定既有银行身份&#xa;复用会话与确认入口&#xa;提醒仅投递文字" vertex="1">
+          <mxGeometry height="83" width="178" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n34" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="122" width="312" x="398" y="417" as="geometry" />
+        </mxCell>
+        <mxCell id="n35" parent="n34" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="身份、权限与会话归属" vertex="1">
+          <mxGeometry height="28" width="276" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n36" parent="n34" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;" value="校验银行 / 员工 Bearer&#xa;会话 owner 与角色校验&#xa;停止、恢复与请求限流" vertex="1">
+          <mxGeometry height="63" width="276" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n37" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="127" width="312" x="398" y="578" as="geometry" />
+        </mxCell>
+        <mxCell id="n38" parent="n37" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="消息与交互通道" vertex="1">
+          <mxGeometry height="28" width="276" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n39" parent="n37" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="SSE / 事件重放与轮询&#xa;补问卡、确认卡、图片附件&#xa;ASR / TTS 服务端代理〔可选〕" vertex="1">
+          <mxGeometry height="68" width="276" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n40" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="178" width="312" x="398" y="752" as="geometry" />
+        </mxCell>
+        <mxCell id="n41" parent="n40" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="可信业务适配与授权" vertex="1">
+          <mxGeometry height="28" width="276" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n42" parent="n40" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="bank-agent / staff-agent&#xa;准备真实字段、验证、一次授权&#xa;携带令牌调用银行 HTTP&#xa;ops-gate：风险判定与运维授权" vertex="1">
+          <mxGeometry height="119" width="276" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n43" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="122" width="524" x="832" y="417" as="geometry" />
+        </mxCell>
+        <mxCell id="n44" parent="n43" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;" value="DeepSeek Harness 0.2.1-rc.2" vertex="1">
+          <mxGeometry height="28" width="488" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n45" parent="n43" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;" value="SDK 驱动 · Cordis 插件装配&#xa;LLM 回合 / 工具调用 / 上下文压缩与检查点&#xa;llm-pi-ai：OpenRouter 或本地兼容模型" vertex="1">
+          <mxGeometry height="63" width="488" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n46" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="157" width="250" x="832" y="581" as="geometry" />
+        </mxCell>
+        <mxCell id="n47" parent="n46" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=16;fontColor=#137D79;fontStyle=1;" value="技能与知识〔客户〕" vertex="1">
+          <mxGeometry height="28" width="214" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n48" parent="n46" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="skills 按需加载业务流程&#xa;RAG：knowledge_lookup&#xa;向量 + 关键词；异常降级&#xa;语料来自 knowledge/*.md" vertex="1">
+          <mxGeometry height="98" width="214" x="21" y="42" as="geometry" />
+        </mxCell>
+        <mxCell id="n49" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="157" width="254" x="1102" y="581" as="geometry" />
+        </mxCell>
+        <mxCell id="n50" parent="n49" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=16;fontColor=#137D79;fontStyle=1;" value="按角色装配工具" vertex="1">
+          <mxGeometry height="28" width="218" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n51" parent="n49" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="客户：bank_*&#xa;客服 / 主管：staff_*&#xa;运维：文件 / 终端 / 作业&#xa;工具定义与业务适配分离" vertex="1">
+          <mxGeometry height="98" width="218" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n52" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="152" width="524" x="832" y="778" as="geometry" />
+        </mxCell>
+        <mxCell id="n53" parent="n52" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;" value="执行约束与交互插件" vertex="1">
+          <mxGeometry height="28" width="488" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n54" parent="n52" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;" value="hardening：工具白名单、结果及遥测脱敏&#xa;consent：tools/pre-execute → 原生 approval&#xa;ask：收集补充信息，并拦截凭据输入&#xa;ops-native：专属风险检查 + 原生沙箱" vertex="1">
+          <mxGeometry height="93" width="488" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n55" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="122" width="378" x="1478" y="417" as="geometry" />
+        </mxCell>
+        <mxCell id="n56" parent="n55" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="模型服务" vertex="1">
+          <mxGeometry height="28" width="342" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n57" parent="n55" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;" value="OpenRouter 主 / 备用模型路由&#xa;本地 OpenAI 兼容服务〔可选〕&#xa;Embedding 为 RAG 提供向量" vertex="1">
+          <mxGeometry height="63" width="342" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n58" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="128" width="378" x="1478" y="606" as="geometry" />
+        </mxCell>
+        <mxCell id="n59" parent="n58" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="银行 HTTP 服务  ·  server/" vertex="1">
+          <mxGeometry height="28" width="342" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n60" parent="n58" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="/api/* 客户业务  ·  /staff-api/* 员工业务&#xa;最终鉴权、业务校验、幂等与事务&#xa;业务结果以银行实际回执为准" vertex="1">
+          <mxGeometry height="69" width="342" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n61" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="128" width="378" x="1478" y="802" as="geometry" />
+        </mxCell>
+        <mxCell id="n62" parent="n61" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#7650A5;fontStyle=1;" value="运维执行环境〔仅 ops〕" vertex="1">
+          <mxGeometry height="28" width="342" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n63" parent="n61" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="Clef 决策 → 自动 / 人工 / 拒绝&#xa;原生文件、PowerShell / bash、作业&#xa;workspace-write 沙箱 + 审计日志" vertex="1">
+          <mxGeometry height="69" width="342" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n64" edge="1" parent="1" source="n25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=0;exitX=1.0;exitY=0.5083333333333333;entryX=0.0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;" target="n34" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n65" edge="1" parent="1" source="n28" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=0;exitX=1.0;exitY=0.4954954954954955;entryX=0.0;entryY=0.36220472440944884;exitPerimeter=0;entryPerimeter=0;" target="n37" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n66" edge="1" parent="1" source="n31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=1;exitX=1.0;exitY=0.49295774647887325;entryX=0.0;entryY=0.7559055118110236;exitPerimeter=0;entryPerimeter=0;" target="n37" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="338" y="788" />
+              <mxPoint x="338" y="674" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n67" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=12;fontColor=#2865B6;fontStyle=0;" value="Bearer&#xa;REST / SSE" vertex="1">
+          <mxGeometry height="44" width="82" x="295" y="431" as="geometry" />
+        </mxCell>
+        <mxCell id="n68" edge="1" parent="1" source="n34" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=0;exitX=1.0;exitY=0.5;entryX=0.0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;" target="n43" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n69" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=12;fontColor=#2865B6;fontStyle=0;" value="SDK&#xa;stdio RPC" vertex="1">
+          <mxGeometry height="44" width="84" x="729" y="426" as="geometry" />
+        </mxCell>
+        <mxCell id="n70" edge="1" parent="1" source="n43" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=0;exitX=1.0;exitY=0.5;entryX=0.0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;" target="n55" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n71" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=12;fontColor=#2865B6;fontStyle=0;" value="模型 / 向量&#xa;API" vertex="1">
+          <mxGeometry height="44" width="84" x="1375" y="427" as="geometry" />
+        </mxCell>
+        <mxCell id="n72" edge="1" parent="1" source="n43" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.2385496183206107;exitY=1.0;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;" target="n46" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n73" edge="1" parent="1" source="n43" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.7576335877862596;exitY=1.0;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;" target="n49" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n74" edge="1" parent="1" source="n46" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=0.2385496183206107;entryY=0.0;exitPerimeter=0;entryPerimeter=0;" target="n52" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n75" edge="1" parent="1" source="n49" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=0.7576335877862596;entryY=0.0;exitPerimeter=0;entryPerimeter=0;" target="n52" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n76" edge="1" parent="1" source="n52" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=0;exitX=0.0;exitY=0.506578947368421;entryX=1.0;entryY=0.5786516853932584;exitPerimeter=0;entryPerimeter=0;" target="n40" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n77" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=12;fontColor=#2865B6;fontStyle=0;" value="本机 HTTP&#xa;随机口令" vertex="1">
+          <mxGeometry height="44" width="80" x="730" y="792" as="geometry" />
+        </mxCell>
+        <mxCell id="n78" edge="1" parent="1" source="n40" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=0;exitX=1.0;exitY=0.8651685393258427;entryX=0.0;entryY=0.703125;exitPerimeter=0;entryPerimeter=0;" target="n58" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="760" y="906" />
+              <mxPoint x="760" y="961" />
+              <mxPoint x="1417" y="961" />
+              <mxPoint x="1417" y="696" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n79" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#2865B6;fontStyle=0;" value="携带真实身份 · 银行业务 HTTP" vertex="1">
+          <mxGeometry height="44" width="280" x="1050" y="940" as="geometry" />
+        </mxCell>
+        <mxCell id="n80" edge="1" parent="1" source="n49" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#7650A5;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=1;exitX=1.0;exitY=0.4840764331210191;entryX=0.0;entryY=0.359375;exitPerimeter=0;entryPerimeter=0;" target="n61" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1402" y="657" />
+              <mxPoint x="1402" y="848" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n81" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=12;fontColor=#7650A5;fontStyle=0;" value="ops 专属&#xa;风险闸门" vertex="1">
+          <mxGeometry height="44" width="103" x="1366" y="748" as="geometry" />
+        </mxCell>
+        <mxCell id="n82" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="137" width="452" x="378" y="1064" as="geometry" />
+        </mxCell>
+        <mxCell id="n83" parent="n82" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="AI 会话 PostgreSQL  ·  ai_sessions" vertex="1">
+          <mxGeometry height="28" width="416" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n84" parent="n82" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="Bridge 保存会话归属与 AES-256-GCM 加密事件&#xa;namespace: customer / staff / ops&#xa;每个 namespace 单实例持锁；AI 角色无资金表权限" vertex="1">
+          <mxGeometry height="78" width="416" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n85" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="137" width="520" x="858" y="1064" as="geometry" />
+        </mxCell>
+        <mxCell id="n86" parent="n85" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;" value="本地持久化目录" vertex="1">
+          <mxGeometry height="28" width="484" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n87" parent="n85" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="Harness sessions：完整模型上下文、检查点&#xa;上传附件、IM 绑定与任务资料〔按启用能力隔离〕&#xa;运维 native-audit.jsonl；恢复需匹配目录与密钥" vertex="1">
+          <mxGeometry height="78" width="484" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n88" parent="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;" value="" vertex="1">
+          <mxGeometry height="137" width="418" x="1458" y="1064" as="geometry" />
+        </mxCell>
+        <mxCell id="n89" parent="n88" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;" value="银行 PostgreSQL" vertex="1">
+          <mxGeometry height="28" width="382" x="18" y="14" as="geometry" />
+        </mxCell>
+        <mxCell id="n90" parent="n88" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="资金、账户、交易、工单与审批&#xa;仅由银行服务提交业务事务&#xa;银行数据密钥与 AI 会话密钥分别管理" vertex="1">
+          <mxGeometry height="78" width="382" x="18" y="49" as="geometry" />
+        </mxCell>
+        <mxCell id="n91" edge="1" parent="1" source="n37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=0.3893805309734513;entryY=0.0;exitPerimeter=0;entryPerimeter=0;" target="n82" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="354" y="705" />
+              <mxPoint x="354" y="1030" />
+              <mxPoint x="554" y="1030" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n92" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#2865B6;fontStyle=0;" value="归属 / 加密回放" vertex="1">
+          <mxGeometry height="44" width="160" x="363" y="1016" as="geometry" />
+        </mxCell>
+        <mxCell id="n93" edge="1" parent="1" source="n52" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5458015267175572;exitY=1.0;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;" target="n85" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n94" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#137D79;fontStyle=0;" value="运行上下文 / 附件" vertex="1">
+          <mxGeometry height="44" width="184" x="1123" y="1009" as="geometry" />
+        </mxCell>
+        <mxCell id="n95" edge="1" parent="1" source="n58" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=1.0;exitY=0.5;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;" target="n88" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1900" y="670" />
+              <mxPoint x="1900" y="1030" />
+              <mxPoint x="1667" y="1030" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n96" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#18334D;fontStyle=1;" value="连线说明" vertex="1">
+          <mxGeometry height="28" width="284" x="46" y="1059" as="geometry" />
+        </mxCell>
+        <mxCell id="n97" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="实线：主要请求 / 数据链路&#xa;虚线：可选或角色专属链路&#xa;双向箭头：请求与返回" vertex="1">
+          <mxGeometry height="98" width="284" x="46" y="1100" as="geometry" />
+        </mxCell>
+        <mxCell id="n98" parent="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;" value="边界：银行 Bearer 与支付密码留在可信桥接层；客户和员工工具通过桥接层访问银行。图示为代码架构，通道启用情况以部署配置为准。" vertex="1">
+          <mxGeometry height="25" width="1790" x="46" y="1231" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="agent-2" name="02 工具确认与执行链路">
+    <mxGraphModel dx="1920" dy="1280" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1330" math="0" shadow="0" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="n1" value="工具调用 · 用户确认 · 银行执行" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=34;fontColor=#18334D;fontStyle=1;">
+          <mxGeometry x="44" y="28" width="1720" height="53" as="geometry" />
+        </mxCell>
+        <mxCell id="n2" value="以需要确认的客户 / 员工银行工具为例；工具参数、可信确认字段、最终执行结果分别处理。" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="46" y="88" width="1740" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="n3" value="02 / 02" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="1770" y="40" width="100" height="35" as="geometry" />
+        </mxCell>
+        <mxCell id="n4" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F6F9FD;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="44" y="153" width="392" height="1009" as="geometry" />
+        </mxCell>
+        <mxCell id="n5" value="用户与客户端" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="64" y="170" width="352" height="27" as="geometry" />
+        </mxCell>
+        <mxCell id="n6" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F1F8F8;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="476" y="153" width="408" height="1009" as="geometry" />
+        </mxCell>
+        <mxCell id="n7" value="Harness 与插件" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#137D79;fontStyle=1;">
+          <mxGeometry x="496" y="170" width="368" height="27" as="geometry" />
+        </mxCell>
+        <mxCell id="n8" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F6F9FD;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="924" y="153" width="496" height="1009" as="geometry" />
+        </mxCell>
+        <mxCell id="n9" value="可信 Bridge" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="944" y="170" width="456" height="27" as="geometry" />
+        </mxCell>
+        <mxCell id="n10" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F6F9FD;strokeColor=#D9E4EF;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="1460" y="153" width="416" height="1009" as="geometry" />
+        </mxCell>
+        <mxCell id="n11" value="银行 HTTP 服务" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=20;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="1480" y="170" width="376" height="27" as="geometry" />
+        </mxCell>
+        <mxCell id="n12" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="66" y="231" width="348" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="n13" value="① 发起需求" parent="n12" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="312" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n14" value="自然语言 / 功能入口 / 图片" parent="n12" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="312" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="n15" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="498" y="231" width="364" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="n16" value="② 选择技能与工具" parent="n15" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="328" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n17" value="LLM 理解需求；知识检索 / 补问" parent="n15" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="328" height="36" as="geometry" />
+        </mxCell>
+        <mxCell id="n18" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="498" y="362" width="364" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="n19" value="③ 形成结构化工具调用" parent="n18" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="328" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n20" value="工具名、参数与本次调用标识" parent="n18" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="328" height="33" as="geometry" />
+        </mxCell>
+        <mxCell id="n21" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="498" y="492" width="364" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="n22" value="④ 执行前进入审批" parent="n21" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="328" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n23" value="tools/pre-execute → consent&#xa;approval/request 等待可信答复" parent="n21" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="328" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n24" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="946" y="492" width="452" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="n25" value="⑤ prepare：构造可信确认内容" parent="n24" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="416" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n26" value="重新验证身份、归属、工具及参数&#xa;读取当前业务数据，绑定本次调用" parent="n24" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="416" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n27" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="1482" y="492" width="372" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="n28" value="读取权威状态" parent="n27" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="336" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n29" value="客户 / 收款信息 / 产品 / 工单等&#xa;生成可核对的真实业务字段" parent="n27" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="336" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n30" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFF9EF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="66" y="656" width="348" height="143" as="geometry" />
+        </mxCell>
+        <mxCell id="n31" value="⑥ 展示确认卡并由本人操作" parent="n30" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#B36B16;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="312" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n32" value="核对真实字段、金额和后果&#xa;按需支付密码 / 风险语句&#xa;员工代办按需完成客户核验" parent="n30" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="312" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="n33" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="946" y="739" width="452" height="123" as="geometry" />
+        </mxCell>
+        <mxCell id="n34" value="⑦ approve：验证并登记授权" parent="n33" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="416" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n35" value="按业务要求核验；仅 Bridge 持有凭据&#xa;授权绑定身份、会话、轮次、调用与参数&#xa;取消 / 超时 / 停止使待执行授权失效" parent="n33" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="416" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="n36" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="498" y="932" width="364" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="n37" value="⑧ 白名单守卫 → 工具执行" parent="n36" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#137D79;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="328" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n38" value="批准后经 hardening 守卫&#xa;仅发送工具名、参数与调用标识" parent="n36" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="328" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n39" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="946" y="932" width="452" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="n40" value="⑨ execute：提交前再次校验" parent="n39" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="416" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n41" value="核对授权、参数指纹、有效期与状态&#xa;先消费一次授权，再调用银行服务" parent="n39" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="416" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n42" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="1482" y="932" width="372" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="n43" value="⑩ 银行业务执行" parent="n42" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=17;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="336" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n44" value="后端再次鉴权与业务校验&#xa;幂等 / 事务 / 业务回执" parent="n42" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=15;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="336" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="n45" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="498" y="1084" width="364" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="n46" value="⑪ 根据真实结果生成回复" parent="n45" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=16;fontColor=#137D79;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="328" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n47" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#FFFFFF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="66" y="1084" width="348" height="62" as="geometry" />
+        </mxCell>
+        <mxCell id="n48" value="⑫ SSE 展示回复与实际状态" parent="n47" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=16;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="312" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n49" value="" parent="1" edge="1" source="n12" target="n15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=1.0;exitY=0.5052631578947369;entryX=0.0;entryY=0.5052631578947369;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n50" value="" parent="1" edge="1" source="n15" target="n18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n51" value="" parent="1" edge="1" source="n18" target="n21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#137D79;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n52" value="" parent="1" edge="1" source="n21" target="n24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=1.0;exitY=0.5043478260869565;entryX=0.0;entryY=0.5043478260869565;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n53" value="内部通道" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=12;fontColor=#2865B6;fontStyle=0;">
+          <mxGeometry x="867" y="509" width="74" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="n54" value="" parent="1" edge="1" source="n24" target="n27" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=block;startFill=1;dashed=0;exitX=1.0;exitY=0.5043478260869565;entryX=0.0;entryY=0.5043478260869565;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n55" value="" parent="1" edge="1" source="n24" target="n30" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#B36B16;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1172" y="633" />
+              <mxPoint x="240" y="633" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n56" value="真实确认字段经 SSE 下发" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#B36B16;fontStyle=0;">
+          <mxGeometry x="683" y="607" width="330" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="n57" value="" parent="1" edge="1" source="n30" target="n33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#B36B16;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=1.0;exitY=0.6993006993006993;entryX=0.0;entryY=0.4959349593495935;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="454" y="756" />
+              <mxPoint x="454" y="826" />
+              <mxPoint x="909" y="826" />
+              <mxPoint x="909" y="800" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n58" value="确认与验证信息直接发往 Bridge" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#B36B16;fontStyle=0;">
+          <mxGeometry x="549" y="799" width="320" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="n59" value="" parent="1" edge="1" source="n33" target="n36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=0.5;entryY=0.0;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1172" y="893" />
+              <mxPoint x="680" y="893" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n60" value="仅返回批准 / 拒绝；凭据留在 Bridge" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#2865B6;fontStyle=0;">
+          <mxGeometry x="744" y="865" width="344" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="n61" value="" parent="1" edge="1" source="n36" target="n39" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=1.0;exitY=0.5043478260869565;entryX=0.0;entryY=0.5043478260869565;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n62" value="" parent="1" edge="1" source="n39" target="n42" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=1.0;exitY=0.5043478260869565;entryX=0.0;entryY=0.5043478260869565;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n63" value="" parent="1" edge="1" source="n42" target="n45" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.5;exitY=1.0;entryX=1.0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1668" y="1115" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="n64" value="银行回执经 Bridge 投影 / 脱敏" parent="1" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=13;fontColor=#2865B6;fontStyle=0;">
+          <mxGeometry x="1010" y="1087" width="373" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="n65" value="" parent="1" edge="1" source="n45" target="n47" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeWidth=2;strokeColor=#2865B6;endArrow=block;endFill=1;startArrow=none;startFill=1;dashed=0;exitX=0.0;exitY=0.5;entryX=1.0;entryY=0.5;exitPerimeter=0;entryPerimeter=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="n66" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#EFF6FF;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="44" y="1191" width="890" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="n67" value="IM 查询特例" parent="n66" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=16;fontColor=#2865B6;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="854" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n68" value="有效绑定内，白名单只读 GET 可由可信 Bridge 发放本轮一次查询授权；写入及敏感信息仍走确认。" parent="n66" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="854" height="29" as="geometry" />
+        </mxCell>
+        <mxCell id="n69" value="" parent="1" vertex="1" style="rounded=1;arcSize=10;whiteSpace=wrap;html=0;fillColor=#F5F0FA;strokeColor=#CBD9E6;strokeWidth=1.3;shadow=0;">
+          <mxGeometry x="956" y="1191" width="920" height="88" as="geometry" />
+        </mxCell>
+        <mxCell id="n70" value="运维工具分支" parent="n69" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=16;fontColor=#7650A5;fontStyle=1;">
+          <mxGeometry x="18" y="14" width="884" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="n71" value="ops-native → ops-gate / Clef → 自动通过、人工确认或拒绝 → 一次授权 → 原生沙箱工具；审计留档。" parent="n69" vertex="1" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;overflow=hidden;spacing=0;fontFamily=Microsoft YaHei;fontSize=14;fontColor=#52677B;fontStyle=0;">
+          <mxGeometry x="18" y="49" width="884" height="29" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

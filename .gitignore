@@ -74,5 +74,8 @@ android-app/.kotlin/
 
 # 答辩材料生成过程的临时目录、Python 缓存与 Office 锁文件
 /deliverables/.ppt-work/
+/deliverables/.color-*/
+/deliverables/.text-fill-*/
+/deliverables/**/*.drawio.bkp
 /deliverables/__pycache__/
 /deliverables/~$*
