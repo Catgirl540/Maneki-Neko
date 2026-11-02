@@ -40,9 +40,11 @@ for (const target of ['server', 'browser']) {
   assert.notEqual(created.id, originalId)
   const report = await api.getBillingReport({ period: 'year', value: new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 4), currency: 'CNY' })
   assert(report.totalExpense >= 101); assert.equal(report.months.length, 12)
-  const splitRequest = { title: '分项AA', currency: 'CNY', collectorName: '本人', clientRequestId: `${target}-split`, expenses: [
-    { title: '聚餐', amount: 30000, participants: ['本人', '张三', '李四'] },
-    { title: '后续活动', amount: 20000, participants: ['本人', '张三'] },
+  // 参加者以「姓名 + 手机号」表示；只写名字无法区分同名的人。
+  const self = { name: '本人', phone: '13800138000' }, zhang3 = { name: '张三', phone: '13700137000' }, li4 = { name: '李四', phone: '13900139000' }
+  const splitRequest = { title: '分项AA', currency: 'CNY', collectorName: self, clientRequestId: `${target}-split`, expenses: [
+    { title: '聚餐', amount: 30000, participants: [self, zhang3, li4] },
+    { title: '后续活动', amount: 20000, participants: [self, zhang3] },
   ] }
   const balanceBeforeSplit = structuredClone(state.loadDb().accounts)
   const split = await api.createSplitCollection(splitRequest)

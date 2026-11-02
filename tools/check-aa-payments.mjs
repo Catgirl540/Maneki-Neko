@@ -48,7 +48,8 @@ for (const target of ['server', 'browser']) {
   const pair = [{ name: payer.user.name, phone: '13600136000', amount: 100, memo: '两元AA测试' }, { name: second?.user.name ?? '第三位测试客户', phone: '13900000000', amount: 100, memo: '两元AA测试' }]
   const review = await prepareExtendedBankOperation('bank_create_split_collection', {
     title: '两位成员各一元', currency: 'CNY', members: target === 'server' ? pair : JSON.stringify(pair),
-    allocation: { amount: 200, participants: ['乙', '丙'] },
+    // 参加者必须带手机号或账号：只写名字无法区分同名的人，也无法确定钱发给谁。
+    allocation: { amount: 200, participants: [{ name: payer.user.name, phone: '13600136000' }, { name: second?.user.name ?? '第三位测试客户', phone: '13900000000' }] },
   }, { requestId: target + '-two-member-agent' })
   const beforePair = state.loadDb().accounts[0].balance
   const created = await api.createSplitCollection(review.body)

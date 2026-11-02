@@ -57,22 +57,30 @@ try {
   await page.getByRole('tab', { name: 'AA 收款', exact: true }).click()
   const form = page.getByRole('region', { name: 'AA 收款管理' })
   await form.getByLabel('收款事由', { exact: true }).fill('聚餐与活动')
+  // 默认是均分，分项 AA 要显式切换。
+  await form.getByRole('tab', { name: '分项 AA', exact: true }).click()
   assert.equal(await page.getByRole('tab', { name: '手机号收款', exact: true }).count(), 0)
   const payerName = (await state.findProfileByPhone('13600136000')).user.name
   const otherName = (await state.findProfileByPhone('13900000000')).user.name
-  await form.getByLabel('本人完整姓名', { exact: true }).fill(user.name)
-  await form.getByLabel('活动事由', { exact: true }).fill('聚餐')
-  await form.getByLabel('消费全额（人民币元）', { exact: true }).fill('6.03')
-  await form.getByLabel('本项参加者（逗号或换行分隔，本人参加时须包含）', { exact: true }).fill([user.name, payerName, otherName].join(','))
+  // 参与者身份表：每人姓名 + 手机号或账号。本人也在其中，按登录户名自动识别，不再单独填。
+  const identities = [[user.name, '13800138000'], [payerName, '13600136000'], [otherName, '13900000000']]
+  for (const [index, [name, identity]] of identities.entries()) {
+    if (index > 0) await form.getByRole('button', { name: '添加参与者', exact: true }).click()
+    await form.getByLabel(`第 ${index + 1} 位参与者姓名`, { exact: true }).fill(name)
+    await form.getByLabel(`第 ${index + 1} 位参与者手机号或本行账号`, { exact: true }).fill(identity)
+  }
+  await form.getByLabel('第 1 项消费事由', { exact: true }).fill('聚餐')
+  await form.getByLabel('第 1 项消费全额（人民币元）', { exact: true }).fill('6.03')
+  const first = form.getByRole('group', { name: '第 1 项消费的参加者' })
+  for (const name of [user.name, payerName, otherName]) await first.getByText(name, { exact: true }).click()
   await form.getByRole('button', { name: '添加消费', exact: true }).click()
-  await form.getByLabel('活动事由', { exact: true }).nth(1).fill('活动')
-  await form.getByLabel('消费全额（人民币元）', { exact: true }).nth(1).fill('2.01')
-  await form.getByRole('group', { name: '消费 2', exact: true }).locator('textarea').fill([user.name, payerName].join(','))
-  await form.getByLabel(payerName + '手机号', { exact: true }).fill('13600136000')
+  await form.getByLabel('第 2 项消费事由', { exact: true }).fill('活动')
+  await form.getByLabel('第 2 项消费全额（人民币元）', { exact: true }).fill('2.01')
+  const second = form.getByRole('group', { name: '第 2 项消费的参加者' })
+  for (const name of [user.name, payerName]) await second.getByText(name, { exact: true }).click()
   await form.getByLabel(payerName + '转账备注', { exact: true }).fill('聚餐2.01元，活动1元')
-  await form.getByLabel(otherName + '手机号', { exact: true }).fill('13900000000')
   await form.getByLabel(otherName + '转账备注', { exact: true }).fill('仅聚餐')
-  await form.getByRole('group', { name: new RegExp(payerName + ' 应付') }).screenshot({ path: path.join(output, 'aa-merged-member.png') })
+  await form.getByRole('table', { name: /AA 参与人清单/ }).screenshot({ path: path.join(output, 'aa-merged-member.png') })
   await form.getByRole('button', { name: '核对并发起 AA 收款', exact: true }).click()
   assert.equal((await state.findProfileByPhone('13600136000')).aaPaymentRequests, undefined)
   await form.getByRole('button', { name: '确认发送付款通知', exact: true }).click()

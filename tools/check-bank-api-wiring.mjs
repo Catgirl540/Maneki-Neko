@@ -153,7 +153,7 @@ try {
   assert.equal(updated.remark, '家人 HTTP 测试')
   assert.equal(ok(await call(routes.payees() + '?keyword=' + encodeURIComponent('家人 HTTP'))).length, 1)
   assert.equal((await call(routes.payee(payee.id), { token: otherToken, method: 'PATCH', body: { remark: '禁止跨客户编辑' } })).status, 404)
-  const split = ok(await call(routes.splitCollections(), { method: 'POST', body: { title: 'HTTP AA', amount: 101, currency: 'CNY', participants: ['张三', '李四'], clientRequestId: 'http-split-one' } }))
+  const split = ok(await call(routes.splitCollections(), { method: 'POST', body: { title: 'HTTP AA', amount: 101, currency: 'CNY', participants: [{ name: '张三', phone: '13700137000' }, { name: '李四', phone: '13900139000' }], clientRequestId: 'http-split-one' } }))
   assert.deepEqual(split.participants.map(row => row.amount), [51, 50])
   assert.equal(ok(await call(routes.splitCollections())).length, 1)
   const reminder = ok(await call(routes.splitReminder(split.id), { method: 'POST', body: { version: split.version, participantId: split.participants[0].id } }))
