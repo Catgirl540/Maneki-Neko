@@ -1838,6 +1838,22 @@ export function findProfileByPhone(phone: string): MockDb | null {
   return profiles()[normalized] ?? null
 }
 
+/**
+ * 按本行账户号找一个独立演示档案，不切换当前用户。
+ *
+ * AA 收款允许用账号代替手机号定位成员，所以浏览器 mock 也要有同样的解析：
+ * 只认账户号本身，卡号不算。
+ */
+export function findProfileByAccountNo(accountNo: string): MockDb | null {
+  const normalized = accountNo.replace(/\D/g, '')
+  if (!normalized) return null
+  const all = [loadDb(), ...Object.values(profiles())]
+  for (const profile of all) {
+    if (profile.accounts.some(account => account.accountNo === normalized)) return profile
+  }
+  return null
+}
+
 /** 按用户 id 找档案（员工端放行挂起转账用：指令里记的是 customerId，不是手机号）。 */
 export function findProfileByUserId(userId: string): MockDb | null {
   const current = loadDb()

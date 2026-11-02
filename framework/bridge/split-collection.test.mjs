@@ -4,8 +4,10 @@ import { prepareExtendedBankOperation } from './extended-bank-tools.mjs'
 import { calculateSplitCollection } from '../../shared/split-collection.mjs'
 
 test('AA agent review and submitted request use the same per-activity calculation', async () => {
-  const expenses = [{ title: '聚餐', amount: 30000, participants: ['王明', '张三', '李四'] }, { title: '后续活动', amount: 20000, participants: ['王明', '张三'] }]
-  const args = { title: 'AA', currency: 'CNY', allocation: { collectorName: '王明', expenses }, members: [{ name: '张三', phone: '13700137000', amount: 20000, memo: '聚餐与后续活动' }, { name: '李四', phone: '13900139000', amount: 10000, memo: '仅聚餐' }] }
+  // 参加者以「姓名 + 手机号」表示：只写名字会把同名的人合并成一份钱。
+  const wang = { name: '王明', phone: '13800138000' }, zhang3 = { name: '张三', phone: '13700137000' }, li4 = { name: '李四', phone: '13900139000' }
+  const expenses = [{ title: '聚餐', amount: 30000, participants: [wang, zhang3, li4] }, { title: '后续活动', amount: 20000, participants: [wang, zhang3] }]
+  const args = { title: 'AA', currency: 'CNY', allocation: { collectorName: wang, expenses }, members: [{ name: '张三', phone: '13700137000', amount: 20000, memo: '聚餐与后续活动' }, { name: '李四', phone: '13900139000', amount: 10000, memo: '仅聚餐' }] }
   const review = await prepareExtendedBankOperation('bank_create_split_collection', args, { requestId: 'review-1' })
   assert.deepEqual(review.body.allocation.expenses, expenses)
   assert.equal(review.body.amount, undefined)
@@ -34,7 +36,7 @@ test('AA member notification review binds exact phones, amounts, memos and sendi
 
 
 test('AA merged list review binds deterministic allocation to phone request', async () => {
-  const args = { title: 'AA', currency: 'CNY', allocation: JSON.stringify({ amount: 101, participants: ['甲', '乙'] }), members: JSON.stringify([{ name: '甲', phone: '13600136000', amount: 51, memo: '聚餐' }, { name: '乙', phone: '13900000000', amount: 50, memo: '聚餐' }]) }
+  const args = { title: 'AA', currency: 'CNY', allocation: JSON.stringify({ amount: 101, participants: [{ name: '甲', phone: '13600136000' }, { name: '乙', phone: '13900000000' }] }), members: JSON.stringify([{ name: '甲', phone: '13600136000', amount: 51, memo: '聚餐' }, { name: '乙', phone: '13900000000', amount: 50, memo: '聚餐' }]) }
   const review = await prepareExtendedBankOperation('bank_create_split_collection', args, { requestId: 'merged' })
   assert.equal(review.body.allocation.amount, 101)
   await assert.rejects(prepareExtendedBankOperation('bank_create_split_collection', { ...args, members: args.members.replace('51', '52') }, {}), { code: 'AA_ALLOCATION_MISMATCH' })
@@ -49,7 +51,7 @@ test('AA rejects legacy creation instead of silently dropping phones and inbox d
 
 test('AA accepts native arrays and JSON strings with identical confirmation and request', async () => {
   const members = [{ name: '乙', phone: '13700137000', amount: 100, memo: '聚餐AA' }, { name: '丙', phone: '13900139000', amount: 100, memo: '聚餐AA' }]
-  const allocation = { amount: 200, participants: ['乙', '丙'] }
+  const allocation = { amount: 200, participants: [{ name: '乙', phone: '13700137000' }, { name: '丙', phone: '13900139000' }] }
   const prepare = (members, allocation) => prepareExtendedBankOperation('bank_create_split_collection', { title: '两元AA', currency: 'CNY', members, allocation }, { requestId: 'same-request' })
   const native = await prepare(members, allocation)
   assert.deepEqual(native, await prepare(JSON.stringify(members), JSON.stringify(allocation)))

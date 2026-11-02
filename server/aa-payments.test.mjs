@@ -69,9 +69,11 @@ test('AA pending transfer cannot be paid twice/cancelled and follows authoritati
 
 test('AA equal-split list binds computed shares to phone notifications and preserves activity/self breakdown', async () => {
   const f = fixture()
-  const allocation = { collectorName: 'owner', expenses: [
-    { title: '聚餐', amount: 300, participants: ['owner', 'payer', 'stranger'] },
-    { title: '活动', amount: 201, participants: ['owner', 'payer'] },
+  // 参加者用「姓名 + 手机号」表示：只写名字的话同名的人会被合并成一份钱。
+  const ownerId = { name: 'owner', phone: '13800138000' }, payerId = { name: 'payer', phone: '13600136000' }, strangerId = { name: 'stranger', phone: '13900000000' }
+  const allocation = { collectorName: ownerId, expenses: [
+    { title: '聚餐', amount: 300, participants: [ownerId, payerId, strangerId] },
+    { title: '活动', amount: 201, participants: [ownerId, payerId] },
   ] }
   const input = { ...f.input, allocation, members: [{ name: f.payer.user.name, phone: f.payer.user.phone, amount: 200, memo: '聚餐100分＋活动100分' }, { name: f.other.user.name, phone: f.other.user.phone, amount: 100, memo: '仅聚餐' }] }
   await assert.rejects(f.api.createCollection({ ...input, members: [{ ...input.members[0], amount: 201 }, input.members[1]] }), { code: 'AA_ALLOCATION_MISMATCH' })
@@ -80,10 +82,10 @@ test('AA equal-split list binds computed shares to phone notifications and prese
   const collection = await f.api.createCollection(input)
   assert.equal(collection.amount, 300); assert.equal(collection.selfAmount, 201); assert.equal(collection.expenseTotal, 501)
   assert.deepEqual(collection.participants.map(row => row.splitName), ['payer', 'stranger'])
-  assert.deepEqual(collection.expenses[1].shares, [{ name: 'owner', amount: 101 }, { name: 'payer', amount: 100 }])
+  assert.deepEqual(collection.expenses[1].shares.map(row => [row.name, row.amount]), [['owner', 101], ['payer', 100]])
   assert.equal(f.payer.aaPaymentRequests[0].amount, 200); assert.equal(f.other.aaPaymentRequests[0].amount, 100)
   await assert.rejects(f.api.createCollection({ ...input, allocation: { ...allocation, expenses: allocation.expenses.map(row => ({ ...row, title: row.title + '修改' })) } }), { code: 'IDEMPOTENCY_CONFLICT' })
-  const equal = await f.api.createCollection({ ...f.input, clientRequestId: 'equal', allocation: { amount: 101, participants: ['payer', 'stranger'] }, members: [{ name: f.payer.user.name, phone: f.payer.user.phone, amount: 51, memo: '均分' }, { name: f.other.user.name, phone: f.other.user.phone, amount: 50, memo: '均分' }] })
+  const equal = await f.api.createCollection({ ...f.input, clientRequestId: 'equal', allocation: { amount: 101, participants: [payerId, strangerId] }, members: [{ name: f.payer.user.name, phone: f.payer.user.phone, amount: 51, memo: '均分' }, { name: f.other.user.name, phone: f.other.user.phone, amount: 50, memo: '均分' }] })
   assert.deepEqual(equal.participants.map(row => row.amount), [51, 50])
 })
 

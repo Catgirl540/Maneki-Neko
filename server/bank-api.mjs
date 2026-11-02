@@ -53,6 +53,7 @@ const ROUTES = [
   ['POST', 'fpsRegistration', 'registerFps', (id, b) => [b]],
   ['POST', 'cardBin', 'resolveCardBin', (id, b) => [b]],
   ['GET', 'payees', 'listPayees', (id, b, q) => [q.get('keyword') ?? undefined]],
+  ['POST', 'payees', 'addPayee', (id, b) => [b]],
   ['PATCH', 'payee', 'updatePayeeRemark', (id, b) => [id, b.remark]],
   ['DELETE', 'payee', 'deletePayee', (id) => [id]],
   ['GET', 'scheduledTransfers', 'listScheduledTransfers', () => []],
@@ -533,11 +534,11 @@ export async function createBankApi({
       return true
     }
 
-    // 一次性导出文件下载：链接本身即凭据，不要求再带登录态，
-    // 因为助手会把链接直接给客户在浏览器打开。token 只能被取走一次，过期即失效。
+    // 下载必须同时具备登录身份与一次性票据，其他客户不能消费该票据。
     const download = /^\/api\/exports\/([A-Za-z0-9_-]{24,64})$/.exec(url.pathname)
     if (download !== null && req.method === 'GET') {
-      const file = exportFiles.take(download[1])
+      const identity = await auth.identity(req)
+      const file = exportFiles.take(download[1], identity.id)
       if (file === null) {
         sendJson(res, 404, { message: '下载链接已失效，请在银行页面重新生成', code: 'EXPORT_LINK_EXPIRED' })
         return true

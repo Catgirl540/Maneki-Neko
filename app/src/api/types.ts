@@ -277,7 +277,15 @@ export interface ScheduledTransfer {
   currency: Currency; fee: Cents; fundsReserved: false; status: 'scheduled' | 'executed' | 'failed' | 'cancelled';
   transactionId?: string; settlementStatus?: 'success' | 'pending'; failureReason?: string;
 }
-export type AaAllocation = { amount: Cents; participants: string[]; collectorName?: never; expenses?: never } | { collectorName: string; expenses: SplitExpense[]; amount?: never; participants?: never }
+/**
+ * 参与者身份：姓名必填，手机号或本行账号至少填一个。
+ *
+ * 参加者不能只写名字——同名的两个人会被合并成一份钱，且钱最终发给谁由账号决定。
+ * 所以分摊的聚合键是手机号或账号，姓名只用于核对户名。
+ */
+export interface SplitIdentity { name: string; phone?: string; accountNo?: string }
+/** 均分清单：均分模式直接给参与者，分项模式给各项消费；本人用身份表示，便于按身份扣除自付份额。 */
+export type AaAllocation = { amount: Cents; participants: SplitIdentity[]; collectorName?: never; expenses?: never } | { collectorName: SplitIdentity; expenses: SplitExpense[]; amount?: never; participants?: never }
 /**
  * AA 收款成员：姓名必填，手机号或本行账号二者有一个即可。
  * 只给手机号或只给账号都不足以在收款单里说清成员是谁。
@@ -285,19 +293,21 @@ export type AaAllocation = { amount: Cents; participants: string[]; collectorNam
 export interface AaMemberRequest { name: string; phone?: string; accountNo?: string; amount: Cents; memo: string }
 export interface AaPaymentInput { version: number; confirmed: true; paymentPassword: string }
 export interface AaPaymentRequest { id: string; collectionId: string; collectorName: string; collectorAccountNo: string; title: string; amount: Cents; currency: Currency; memo: string; status: 'unpaid' | 'processing' | 'paid' | 'cancelled'; version: number; createdAt: string; transactionId?: string; paidAt?: string }
-export interface SplitExpense { title: string; amount: Cents; participants: string[] }
-export interface SplitExpenseDetail extends SplitExpense { shares: { name: string; amount: Cents }[] }
+export interface SplitExpense { title: string; amount: Cents; participants: SplitIdentity[] }
+export interface SplitExpenseDetail extends SplitExpense { shares: SplitParticipant[] }
 export type SplitCollectionRequest = { title: string; currency: Currency; clientRequestId: string } & (
-  { amount: Cents; participants: string[]; members?: never; collectorName?: never; expenses?: never } |
-  { collectorName: string; expenses: SplitExpense[]; members?: never; amount?: never; participants?: never } |
+  { amount: Cents; participants: SplitIdentity[]; members?: never; collectorName?: never; expenses?: never } |
+  { collectorName: SplitIdentity; expenses: SplitExpense[]; members?: never; amount?: never; participants?: never } |
   { members: AaMemberRequest[]; allocation?: AaAllocation; confirmed: true; amount?: never; participants?: never; collectorName?: never; expenses?: never }
 )
+/** 均分清单里的一位参与者（或其份额）：姓名 + 手机号或账号。 */
+export interface SplitParticipant { name: string; amount: Cents; phone?: string; accountNo?: string; id?: string; memo?: string; splitName?: string; userId?: string; requestId?: string; status?: 'unpaid' | 'processing' | 'paid' | 'cancelled'; reminders?: number; lastRemindedAt?: string; transactionId?: string; paidAt?: string }
 export interface SplitCollection {
   delivery?: 'account-inbox';
   collectorName?: string; expenseTotal?: Cents; selfAmount?: Cents; expenses?: SplitExpenseDetail[];
   id: string; version: number; title: string; amount: Cents; currency: Currency; accountId: string; accountNo: string;
   status: 'open' | 'complete' | 'cancelled'; createdAt: string; updatedAt: string;
-  participants: { id: string; name: string; amount: Cents; phone?: string; memo?: string; splitName?: string; userId?: string; requestId?: string; status: 'unpaid' | 'processing' | 'paid' | 'cancelled'; reminders: number; lastRemindedAt?: string; transactionId?: string; paidAt?: string }[];
+  participants: SplitParticipant[];
 }
 
 export interface Payee {
@@ -309,6 +319,8 @@ export interface Payee {
   bankRegion?: BankRegion
   bankName?: string
   accountNo?: string
+  /** 本行收款人的注册手机号：AA 参与者可用手机号识别，转账用账号识别，两条路共用一条通讯录记录。 */
+  phone?: string
   /** channel === 'fps' */
   fpsMethod?: FpsMethod
   fpsId?: string

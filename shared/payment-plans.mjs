@@ -20,8 +20,8 @@ const publicSchedule = row => {
 }
 
 /** A standing instruction is independent of an in-flight transfer and stores no password. */
-export function createPaymentPlans({ getDb, persist, nextId, verifyPassword, resolveRecipient, executeTransfer, findProfileByPhone, findProfileByUserId, persistRelatedProfiles, now = Date.now }) {
-  const aa = createAaPayments({ getDb, nextId, verifyPassword, executeTransfer, findProfileByPhone, findProfileByUserId, persistRelatedProfiles, now })
+export function createPaymentPlans({ getDb, persist, nextId, verifyPassword, resolveRecipient, executeTransfer, findProfileByPhone, findProfileByAccountNo, findProfileByUserId, persistRelatedProfiles, now = Date.now }) {
+  const aa = createAaPayments({ getDb, nextId, verifyPassword, executeTransfer, findProfileByPhone, findProfileByAccountNo, findProfileByUserId, persistRelatedProfiles, now })
   const schedules = () => getDb().scheduledTransfers ?? []
   const splits = () => getDb().splitCollections ?? []
   const getSchedule = id => {
@@ -107,8 +107,9 @@ export function createPaymentPlans({ getDb, persist, nextId, verifyPassword, res
       if (!['CNY', 'USD', 'HKD'].includes(input.currency)) throw fail('币种无效', 'INVALID_CURRENCY')
       const account = [ ...db.accounts, ...(db.currencyBalances ?? []) ].find(row => row.currency === input.currency)
       if (!account) throw fail('请先开通该币种余额', 'ACCOUNT_NOT_FOUND')
-      const names = calculation.participants.map(item => item.name)
-      const fingerprint = JSON.stringify({ amount, title, currency: input.currency, names, ...(calculation.expenses ? { collectorName: calculation.collectorName, expenses: calculation.expenses } : {}) })
+      // 幂等指纹按「身份 + 金额」算，不按姓名：同名的两个人是不同的付款人。
+      const identities = calculation.participants.map(item => `${item.accountNo ?? item.phone}:${item.amount}`)
+      const fingerprint = JSON.stringify({ amount, title, currency: input.currency, identities, ...(calculation.expenses ? { collectorName: calculation.collectorName, collector: calculation.collector, expenses: calculation.expenses } : {}) })
       const prior = splits().find(row => row.clientRequestId === clientRequestId)
       if (prior) { if (prior.fingerprint !== fingerprint) throw fail('幂等标识已用于其他收款单', 'IDEMPOTENCY_CONFLICT', 409); return clone(prior) }
       if (splits().filter(row => row.status === 'open').length >= 50) throw fail('最多保留 50 条待收款 AA 单', 'SPLIT_LIMIT')

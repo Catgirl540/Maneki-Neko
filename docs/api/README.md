@@ -73,7 +73,7 @@
 | GET | `/api/accounts/:id/transactions` | 账户流水（分页；支持 `category` / `keyword` / `currency` / `direction` / `from` / `to`；支出分类由服务端自动归类，见 [accounts.md](accounts.md)） | 已实现 |
 | GET | `/api/accounts/:id/transactions/export` | 流水导出数据集（与列表同口径的 `category` / `keyword` / `currency` / `direction` / `from` / `to`） | 已实现 |
 | POST | `/api/exports` | 生成一次性导出链接：`{ kind: 'statement', accountId, from?, to?, category?, keyword?, direction? }` 或 `{ kind: 'billing', period, value, currency }` → `{ url, fileName, batchNo, total, range, expiresAt }` | 已实现 |
-| GET | `/api/exports/:token` | 下载上面生成的 CSV；链接只能用一次，约 5 分钟过期，无需登录态 | 已实现 |
+| GET | `/api/exports/:token` | 下载上面生成的 CSV；必须携带生成链接的客户登录态，链接只能用一次，约 5 分钟过期；他人访问不消费票据 | 已实现 |
 | GET | `/api/transactions/:id` | 单笔交易详情（凭证） | 已实现 |
 | GET | `/api/transactions/:id/receipt` | 电子回单文件 | 已实现 |
 | POST | `/api/accounts/:id/deposit` | 转入 | 已实现 |
@@ -173,7 +173,7 @@
 
 | 域 | 端点 | 状态 |
 | --- | --- | --- |
-| 转账 | `GET /api/banks`、`GET /api/receiving`、`POST /api/receiving/fps`、`POST /api/cards/bin`、`GET /api/payees`、`PATCH /api/payees/:id`、`DELETE /api/payees/:id`、`POST /api/fps/resolve`、`POST /api/transfers/quote`、`POST /api/transfers/recipient`、`POST /api/transfers`、`POST /api/transfers/:id/recall` | 已实现 |
+| 转账 | `GET /api/banks`、`GET /api/receiving`、`POST /api/receiving/fps`、`POST /api/cards/bin`、`GET /api/payees`、`POST /api/payees`、`PATCH /api/payees/:id`、`DELETE /api/payees/:id`、`POST /api/fps/resolve`、`POST /api/transfers/quote`、`POST /api/transfers/recipient`、`POST /api/transfers`、`POST /api/transfers/:id/recall` | 已实现 |
 | 定时转账 | `GET /api/transfers/scheduled`、`POST /api/transfers/scheduled`、`DELETE /api/transfers/scheduled/:id` | 已实现 |
 | AA 付款 | `GET /api/transfers/aa-payments`、`POST /api/transfers/aa-payments/:id/pay` | 已实现 |
 | AA 收款 | `GET /api/transfers/splits`、`POST /api/transfers/splits`、`DELETE /api/transfers/splits/:id`、`POST /api/transfers/splits/:id/payments`、`POST /api/transfers/splits/:id/reminders` | 已实现 |

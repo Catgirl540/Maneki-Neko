@@ -316,6 +316,8 @@ export interface BankApi {
   /** 卡 BIN 查询：卡号前缀 → 发卡行。前缀不认识时明确回 unsupported，界面据此提示 */
   resolveCardBin(req: CardBinQuery): Promise<CardBinResolution>
   listPayees(keyword?: string): Promise<Payee[]>
+  /** 手动添加收款人（本行账户用手机号或账号识别；转账与 AA 共用这份通讯录）。 */
+  addPayee(input: { name: string; phone?: string; accountNo?: string }): Promise<Payee>
   updatePayeeRemark(id: string, remark: string): Promise<Payee>
   listScheduledTransfers(): Promise<ScheduledTransfer[]>
   createScheduledTransfer(req: ScheduledTransferRequest): Promise<ScheduledTransfer>

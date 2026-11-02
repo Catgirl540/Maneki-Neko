@@ -33,6 +33,7 @@ const WealthPlansPage = lazy(() => import('@/pages/WealthPlansPage').then(module
 const WealthRecordsPage = lazy(() => import('@/pages/WealthRecordsPage').then(module => ({ default: module.WealthRecordsPage })))
 const TransferPage = lazy(() => import('@/pages/TransferPage').then(module => ({ default: module.TransferPage })))
 const ServicesPage = lazy(() => import('@/pages/ServicesPage').then(module => ({ default: module.ServicesPage })))
+const ContactsPage = lazy(() => import('@/pages/ContactsPage').then(module => ({ default: module.ContactsPage })))
 import { SessionProvider, RequireAuth } from '@/store/session'
 import { useSession } from '@/store/session-context'
 import { clientDevice } from '@/lib/device'
@@ -116,6 +117,7 @@ export default function App() {
                 </Route>
                 <Route path="/transfer" element={<TransferPage />} />
                 <Route path="/services" element={<ServicesPage />} />
+                <Route path="/contacts" element={<ContactsPage />} />
                 <Route path="/wealth" element={<WealthPage />} />
                 <Route path="/wealth/products" element={<WealthPage view="products" />} />
                 <Route path="/wealth/holdings" element={<WealthPage view="holdings" />} />

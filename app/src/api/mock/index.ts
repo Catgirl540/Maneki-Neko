@@ -10,7 +10,7 @@ import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowSt
 import { previewBirthdayPlan as previewBirthday, createBirthdayPlan as createBirthday, listBirthdayPlans as listBirthdays, cancelBirthdayPlan as cancelBirthday, confirmBirthdayOrder as confirmBirthday } from '../../../../shared/linked-plans.mjs'
 import { billingReport, exportBillingReport as buildBillingExport } from '../../../../shared/billing-reports.mjs'
 import { createPaymentPlans } from '../../../../shared/payment-plans.mjs'
-import { searchPayees, updatePayeeRemark as patchPayeeRemark, rememberInternalPayee } from '../../../../shared/payee-search.mjs'
+import { searchPayees, updatePayeeRemark as patchPayeeRemark, rememberInternalPayee, addPayee as insertPayee } from '../../../../shared/payee-search.mjs'
 import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../../../shared/invest-plan.mjs'
 import { wealthHoldingLots, wealthHoldingState, wealthRedemptionQuote } from '../../../../shared/wealth-redemption.mjs'
 import { supportGuidance } from '../../../../shared/support-guidance.mjs'
@@ -180,6 +180,7 @@ import {
   wealthPriorityGate,
   loadDb,
   findProfileByPhone,
+  findProfileByAccountNo,
   findProfileByUserId,
   findRecipientByNumber,
   persistRelatedProfiles,
@@ -1080,6 +1081,12 @@ export function createMockApi(options?: {
     async listPayees(keyword): Promise<Payee[]> {
       await delay(140)
       return searchPayees(loadDb().payees, keyword)
+    },
+    async addPayee(input) {
+      await delay(160)
+      const db = loadDb()
+      const row = insertPayee(db.payees, input, nextId)
+      persist(); return row
     },
     async updatePayeeRemark(id, remark) {
       const row = patchPayeeRemark(loadDb().payees, id, remark)
@@ -3172,7 +3179,7 @@ export interface HeldTransferInfo {
 }
 
 function browserPaymentPlans(api: () => BankApi) {
-  return createPaymentPlans({ getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword, findProfileByPhone, findProfileByUserId, persistRelatedProfiles,
+  return createPaymentPlans({ getDb: loadDb, persist, nextId, verifyPassword: verifyPayPassword, findProfileByPhone, findProfileByAccountNo, findProfileByUserId, persistRelatedProfiles,
     resolveRecipient: async request => {
       if (request.payeeBankCode === 'LCB') {
         const found = findRecipientByNumber(request.payeeAccountNo ?? '')

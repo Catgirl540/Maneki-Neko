@@ -28,7 +28,7 @@ import { previewBirthdayPlan as previewBirthday, createBirthdayPlan as createBir
 import { requireCurrencyBalance, validateRoundup, spendingStatistics, cashFlowStatistics } from '../../shared/account-model.mjs'
 import { billingReport, exportBillingReport as buildBillingExport } from '../../shared/billing-reports.mjs'
 import { createPaymentPlans } from '../../shared/payment-plans.mjs'
-import { searchPayees, updatePayeeRemark as patchPayeeRemark, rememberInternalPayee } from '../../shared/payee-search.mjs'
+import { searchPayees, updatePayeeRemark as patchPayeeRemark, rememberInternalPayee, addPayee as insertPayee } from '../../shared/payee-search.mjs'
 import { validateInvestPlan, nextInvestDate, transitionInvestPlan } from '../../shared/invest-plan.mjs'
 import { wealthHoldingLots, wealthHoldingState, wealthRedemptionQuote } from '../../shared/wealth-redemption.mjs'
 import { supportGuidance } from '../../shared/support-guidance.mjs'
@@ -926,6 +926,11 @@ export function createBankBusinessApi(options) {
         async listPayees(keyword) {
             await delay(140);
             return searchPayees(loadDb().payees, keyword);
+        },
+        async addPayee(input) {
+            await delay(160);
+            const row = insertPayee(loadDb().payees, input, nextId);
+            persist(); return row;
         },
         async updatePayeeRemark(id, remark) {
             const row = patchPayeeRemark(loadDb().payees, id, remark);

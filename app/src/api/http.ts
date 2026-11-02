@@ -17,13 +17,34 @@ import type {
   TransferRequest,
   User,
 } from './types'
-import { AUTH_EXPIRED_EVENT, forgetSession, getAuthToken } from '@/lib/authToken'
+import { createClientOperations, type ClientOperation } from '../../../shared/client-idempotency.mjs'
+import { AUTH_EXPIRED_EVENT, forgetSession, getAuthToken, restoreSession } from '@/lib/authToken'
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').trim().replace(/\/+$/, '')
 const REQUEST_TIMEOUT_MS = 12_000
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getAuthToken()
+  let operation: ClientOperation | undefined
+  const operations = createClientOperations(window.sessionStorage)
+  const method = (init.method ?? 'GET').toUpperCase()
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && token) {
+    try { operation = await operations.begin(restoreSession()?.user.id ?? token, method, path, typeof init.body === 'string' ? JSON.parse(init.body) : null) }
+    catch (error) {
+      if ((error as { code?: string }).code === 'OPERATION_UNRESOLVED') {
+        const previous = (error as { operation: ClientOperation }).operation
+        const resolution = await fetch(BASE_URL + '/api/idempotency/' + previous.key + '/resolve', { method: 'POST', headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(12000) })
+        if (resolution.ok) {
+          const state = await resolution.json()
+          if (state.status === 'completed' || state.status === 'sealed') {
+            operations.finish(previous)
+            throw new ApiError(state.status === 'completed' ? '上一笔操作已提交，请刷新记录后重新确认。' : '上一笔操作未执行，请重新确认本次操作。', 409, 'OPERATION_RESOLVED')
+          }
+        }
+      }
+      throw error instanceof ApiError ? error : new ApiError('请先核对上一笔操作结果，暂未提交新操作。', 409, 'OPERATION_UNRESOLVED')
+    }
+  }
   const controller = new AbortController()
   const timer = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   try {
@@ -33,6 +54,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       headers: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(operation ? { 'Idempotency-Key': operation.key } : {}),
         ...(init.headers ?? {}),
       },
     })
@@ -44,6 +66,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         throw new ApiError('银行接口返回了无效响应，请检查后端服务与 /api 代理配置', res.status || 502, 'INVALID_RESPONSE')
       }
     }
+    if (operation && res.status < 500 && res.status !== 408) operations.finish(operation)
     if (!res.ok) {
       const body = payload as { message?: string; code?: string } | null
       if (res.status === 401 && token && (body?.code === 'UNAUTHORIZED' || (!body?.code && path !== routes.login()))) {
@@ -120,6 +143,7 @@ export function createHttpApi(): BankApi {
     registerFps: (req) => post(routes.fpsRegistration(), req),
     resolveCardBin: (req) => post(routes.cardBin(), req),
     listPayees: (keyword) => request<Payee[]>(routes.payees() + (keyword ? `?keyword=${encodeURIComponent(keyword)}` : '')),
+    addPayee: (input) => post<Payee>(routes.payees(), input),
     updatePayeeRemark: (id, remark) => patch(routes.payee(encodeURIComponent(id)), { remark }),
     listScheduledTransfers: () => request(routes.scheduledTransfers()),
     createScheduledTransfer: req => post(routes.scheduledTransfers(), req),

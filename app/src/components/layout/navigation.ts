@@ -20,6 +20,7 @@ export const serviceGroups = [
     { to: '/transfer', label: '转账与支付', Icon: TransferIcon },
     { to: '/accounts?flow=in', label: '收款与转入', Icon: WalletIcon },
     { to: '/exchange', label: '多币种换汇', Icon: GlobalIcon },
+    { to: '/contacts', label: '收款人通讯录', Icon: UserIcon },
     { to: '/cards', label: '银行卡管理', Icon: CardIcon },
     { to: '/spend', label: '模拟消费', Icon: CardIcon },
   ] },

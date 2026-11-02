@@ -1,6 +1,7 @@
 import { findBalance } from './account-model.mjs'
 import { calculateSplitCollection } from './split-collection.mjs'
 import { displayNameOf, maskedNameOf } from './name-display.mjs'
+import { rememberAaContact } from './payee-search.mjs'
 
 const fail = (message, code = 'INVALID_AA_REQUEST', status = 400) => Object.assign(new Error(message), { code, status })
 const clone = value => structuredClone(value)
@@ -31,7 +32,7 @@ function memberIdentity(item) {
  * 真实姓名、列表里的脱敏名（林*满）、以及「林女士」这种称呼写法。
  * 对不上就拒绝——把付款通知发给一位名字对不上的人，比让发起人改一次更难收场。
  */
-function nameMatches(input, user) {
+export function nameMatches(input, user) {
       const typed = String(input ?? '').replace(/\s+/g, '')
       if (!typed) return false
       const candidates = [
@@ -59,12 +60,25 @@ export function normalizeAaMembers(inputMembers) {
       return { members, amount }
 }
 
+/**
+ * 均分结果与成员表逐人对齐。
+ *
+ * 两侧顺序由客户端一致产生，但**身份必须对得上**：均分清单里写的是谁、成员表里发给谁，
+ * 不能因为顺序一致就放行。这里按「手机号 / 账号」比对身份，金额再逐人核对一次。
+ */
 export function calculateAaAllocation(input, members) {
   if (input === undefined) return undefined
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw fail('请提供有效的均分清单')
   const result = calculateSplitCollection(input)
   if (result.participants.length !== members.length || result.participants.some((person, index) => person.amount !== members[index].amount)) {
     throw fail('成员付款金额须与均分清单逐人一致，请重新核对', 'AA_ALLOCATION_MISMATCH')
+  }
+  const identityOf = person => person.accountNo || person.phone
+  const allocationIds = result.participants.map(identityOf)
+  if (allocationIds.some(id => !id) || new Set(allocationIds).size !== allocationIds.length) throw fail('均分清单里的参与者缺少手机号或账号', 'AA_ALLOCATION_MISMATCH')
+  if (result.participants.some((person, index) => !identityOf(members[index]))) throw fail('成员表里的付款人缺少手机号或账号', 'AA_ALLOCATION_MISMATCH')
+  if (result.participants.some((person, index) => identityOf(person) !== identityOf(members[index]))) {
+    throw fail('均分清单的参与者与成员表不一致，请重新核对', 'AA_ALLOCATION_MISMATCH')
   }
   return result
 }
@@ -146,7 +160,11 @@ export function createAaPayments({ getDb, persistRelatedProfiles, findProfileByP
         ;(target.aaPaymentRequests ??= []).push({ id, collectionId: collection.id, collectorUserId: db.user.id, collectorName: db.user.name, collectorAccountNo: collection.accountNo, title, amount: member.amount, currency: input.currency, memo: member.memo, status: 'unpaid', version: 1, createdAt })
       })
       ;(db.splitCollections ??= []).push(collection)
-      persistRelatedProfiles(targets)
+      // 发起成功后把参与者存进通讯录：下次发起 AA 或转账时可以直接从户名下拉里选。
+      // 只记成功建单的成员，被拒绝的输入不污染通讯录。
+      // 通讯录挂在**发起人**名下，所以要把发起人一并落盘，不能只存参与者。
+      for (const member of members) rememberAaContact(db, member, nextId)
+      persistRelatedProfiles([db, ...targets])
       return clone(collection)
     },
     async listRequests() {
