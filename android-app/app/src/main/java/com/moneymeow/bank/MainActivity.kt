@@ -57,6 +57,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
@@ -112,7 +115,10 @@ private fun DevAutoLogin(onLoggedIn: () -> Unit) {
         }.onSuccess { result ->
             SessionStore.save(result)
             onLoggedIn()
-        }.onFailure { failure = it.message ?: "自动登录失败" }
+        }.onFailure {
+            android.util.Log.e("DevAutoLogin", "自动登录失败", it)
+            failure = it.message ?: "自动登录失败"
+        }
     }
     if (failure == null) {
         Box(
@@ -187,12 +193,25 @@ fun BankApp() {
 
     Scaffold(
         containerColor = Tokens.Page,
-        bottomBar = { if (showBottomBar) BottomBar(current = tab, onSelect = { tab = it }) },
+        bottomBar = {
+            // 底栏跟页面一起进退：二级页推入时向下滑出，回来时滑入，避免"啪"地消失。
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showBottomBar,
+                enter = androidx.compose.animation.slideInVertically(tween(200, easing = StandardOutSlowIn)) { it } +
+                    androidx.compose.animation.fadeIn(tween(160)),
+                exit = androidx.compose.animation.slideOutVertically(tween(200, easing = StandardOutSlowIn)) { it } +
+                    androidx.compose.animation.fadeOut(tween(140)),
+            ) { BottomBar(current = tab, onSelect = { tab = it }) }
+        },
     ) { padding ->
+        // 转场容器固定铺满：底栏显隐只改页面内部留白，不再改变容器尺寸。
+        val topInset = padding.calculateTopPadding()
+        val navInset = WindowInsets.navigationBars
+            .asPaddingValues().calculateBottomPadding()
+        val tabBottomInset = navInset + 64.dp
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .background(Tokens.Page),
         ) {
             androidx.compose.animation.AnimatedContent(
@@ -200,33 +219,36 @@ fun BankApp() {
                 modifier = Modifier.fillMaxSize(),
                 transitionSpec = {
                     when {
-                        // 1) Push 二级页：新页从右侧 18% 处短程滑入 + 淡入，旧页原位淡出（不叠加大幅横移残影）
+                        // 1) Push 二级页：新页整页从右侧推入，旧页向左让出一小段并淡出。
+                        // 之前只位移 18% 再交叉淡出，看起来像整页在抖，这里改成标准推入。
                         targetState.depth > initialState.depth -> {
                             (androidx.compose.animation.slideInHorizontally(
-                                tween(220, easing = StandardOutSlowIn)
-                            ) { (it * 0.18f).toInt() } +
-                                androidx.compose.animation.fadeIn(tween(180, easing = StandardOutSlowIn)))
+                                tween(260, easing = StandardOutSlowIn)
+                            ) { it } +
+                                androidx.compose.animation.fadeIn(tween(150, easing = StandardOutSlowIn)))
                                 .togetherWith(
                                     androidx.compose.animation.slideOutHorizontally(
-                                        tween(220, easing = StandardOutSlowIn)
-                                    ) { -(it * 0.06f).toInt() } +
-                                        androidx.compose.animation.fadeOut(tween(150))
+                                        tween(260, easing = StandardOutSlowIn)
+                                    ) { -(it * 0.22f).toInt() } +
+                                        androidx.compose.animation.fadeOut(tween(200))
                                 )
-                                .apply { targetContentZIndex = targetState.depth.toFloat() }
+                                .using(androidx.compose.animation.SizeTransform(clip = false) { _, _ -> tween(0) })
+                                .apply { targetContentZIndex = 1f }
                         }
-                        // 2) Pop 返回上一页：当前页向右轻滑 18% + 淡出，上一页从左侧 -6% 归位
+                        // 2) Pop 返回：上一页从左归位，当前页整页推出右侧。
                         targetState.depth < initialState.depth -> {
                             (androidx.compose.animation.slideInHorizontally(
-                                tween(200, easing = StandardOutSlowIn)
-                            ) { -(it * 0.06f).toInt() } +
-                                androidx.compose.animation.fadeIn(tween(160)))
+                                tween(260, easing = StandardOutSlowIn)
+                            ) { -(it * 0.22f).toInt() } +
+                                androidx.compose.animation.fadeIn(tween(200)))
                                 .togetherWith(
                                     androidx.compose.animation.slideOutHorizontally(
-                                        tween(200, easing = StandardOutSlowIn)
-                                    ) { (it * 0.18f).toInt() } +
-                                        androidx.compose.animation.fadeOut(tween(160))
+                                        tween(260, easing = StandardOutSlowIn)
+                                    ) { it } +
+                                        androidx.compose.animation.fadeOut(tween(150))
                                 )
-                                .apply { targetContentZIndex = targetState.depth.toFloat() }
+                                .using(androidx.compose.animation.SizeTransform(clip = false) { _, _ -> tween(0) })
+                                .apply { targetContentZIndex = 1f }
                         }
                         // 3) 同级路由替换
                         targetState.route != initialState.route -> {
@@ -257,6 +279,8 @@ fun BankApp() {
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .padding(top = topInset)
+                        .padding(bottom = if (route == null) tabBottomInset else navInset),
                 ) {
                 if (route == null) {
                     when (state.tab) {
