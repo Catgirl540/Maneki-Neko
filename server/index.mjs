@@ -60,6 +60,9 @@ classify.detailed = (tx) => categorizer.enabled
 const bank = await createBankApi({
   security,
   database,
+  // 显式传入仓库根：不传时 createBankApi 用 process.cwd()，
+  // 而服务的工作目录是 <release>/server，落盘路径会多拼一层 server/。
+  root,
   searchFrom: root,
   auth,
   storage: database.storage,

@@ -17,8 +17,16 @@ const FILE_NAME = 'error-reports.jsonl'
 /** 单文件保留上限：超过就丢弃最旧的，避免无限增长。 */
 const MAX_ROWS = 2000
 
-export function errorReportPath(root) {
-  const dir = process.env.BANK_ERROR_REPORT_DIR ?? join(root, 'server/data')
+/**
+ * 报错文件位置。
+ *
+ * 默认放在本模块旁边的 `data/`：老实现用 `join(root, 'server/data')`，
+ * 但生产上服务工作目录已经是 `<release>/server`，`root` 又退化成 process.cwd()，
+ * 于是拼出 `<release>/server/server/data`，服务账号没有权限创建，接口直接 500 EACCES。
+ * 改成按模块定位后，从哪个目录启动都落到 `<release>/server/data/error-reports.jsonl`。
+ */
+export function errorReportPath(_root) {
+  const dir = process.env.BANK_ERROR_REPORT_DIR ?? join(import.meta.dirname, 'data')
   return join(dir, FILE_NAME)
 }
 
