@@ -1,0 +1,48 @@
+{
+  "release": "20261102-profile-avatar",
+  "commit": "67f7d771b2f9e8bcdaa9722b1303145e171d5eb2",
+  "phase": "deployed-and-verified",
+  "schemaMigration": false,
+  "database": "maneki_bank_demo",
+  "previousRelease": "/srv/maneki-bank/releases/20261101-idempotency",
+  "newSource": "/srv/maneki-bank/releases/20261102-profile-avatar",
+  "sourceSymlink": "/srv/maneki-bank/current",
+  "webRoot": "/srv/maneki-bank/current/app/dist",
+  "publicUrl": "https://bank.waveflow.men",
+  "databaseChanges": "none: no schema version bump, no owner bootstrap, no customer data migration; the new avatarId / nickname live inside the existing user JSON blob",
+  "changes": [
+    "avatar pool of 10 illustrations, random assignment at registration, deterministic fallback for legacy users",
+    "PATCH /api/auth/profile/avatar and PATCH /api/auth/profile/nickname with validation (400 on unknown avatar or over-long nickname)",
+    "user payload now carries displayName / maskedName / honorific / nickname / customNickname, and full name is no longer rendered in either client",
+    "web: avatar picker dialog behind a pencil on the avatar, nickname editor, masked name in the profile card",
+    "android 1.0.7: network I/O unified in HttpTransport, submit actions in Submitter, centered avatar with pencil badge, nickname editor, dev build variant with auto-login",
+    "AGENTS.md restored the client/account-model rules that the account-model gate depends on, while keeping the technical-documentation guidance"
+  ],
+  "services": {
+    "luckycat-bank-demo": "active",
+    "luckycat-agent-demo": "active",
+    "luckycat-staff-agent": "active",
+    "luckycat-ops-agent": "active"
+  },
+  "verification": {
+    "web": { "home": 200, "login": 200, "staffLogin": 200, "avatarAsset": 200 },
+    "profile": { "displayName": "林女士", "maskedName": "林*满", "nickname": "林女士", "avatarId": "avatar-03" },
+    "avatarUpdate": { "ok": 200, "restored": "avatar-03", "invalid": 400 },
+    "nicknameUpdate": { "ok": 200, "restored": "林女士", "tooLong": 400 },
+    "agentCapabilities": { "status": 200, "ids": ["transfer", "wealth", "insurance", "analysis", "cards", "exchange", "credit", "security"] },
+    "staffAgent": "401 without token (reachable)",
+    "opsAgent": "401 without token (reachable)"
+  },
+  "incident": {
+    "summary": "首轮 rsync 误把当前发布目录当成目标：新目录名当时是 current 的符号链接，app/dist 被清理，官网短暂 404",
+    "impact": "https://bank.waveflow.men/ 与 /login 在 01:0x-01:1x（北京时间）返回 404；API 进程未受影响，登录态与数据未变",
+    "recovery": "本地按生产参数重建 app/dist 并回传，官网恢复 200；随后删除误建符号链接、把发布目录移正并切换 current，重启四个服务",
+    "followUp": "后续部署先确认 releases/<新目录> 是真实目录再 rsync；对 app/dist 使用单独拷贝而不是 --delete 同步"
+  },
+  "rollback": "ln -sfn /srv/maneki-bank/releases/20261101-idempotency /srv/maneki-bank/current then restart the four luckycat services; no database rollback is required",
+  "limits": [
+    "the demo library keeps full names in the user JSON because transfer receipts and statements still need the real name; only the clients stop rendering it",
+    "legacy accounts without an ID number default to the 女士 honorific",
+    "android APK was rebuilt locally but not published to the download page"
+  ]
+}

@@ -4,6 +4,7 @@
 
 | 日期 | 记录 | 内容 |
 | --- | --- | --- |
+| 2026-11-02 | [profile-avatar](bank-profile-avatar-deployment-20261102.json) | 头像池与昵称接口上线，姓名改为称呼+脱敏；无库结构变更；首轮同步误删 `app/dist` 导致官网短暂 404，已重建并恢复 |
 | 2026-10-29 | [retire-8080](bank-retire-8080-deployment-20261029.json) | 旧 8080 服务定义移至备份并 mask；员工/运维 Agent 残留依赖改为统一后端；仅 8081 监听，现用服务未重启、数据库未修改 |
 | 2026-10-29 | [staff-im-fix](bank-staff-im-fix-deployment-20261029.json) | 员工 IM 适配器与通知 Worker 启用，二维码及签名校验通过 |
 | 2026-10-29 | [unified-environment](bank-unified-environment-deployment-20261029.json) | 官网、工作人员与运维统一到现有 demo；7 位客户同库、原员工凭据与旧库表保全、兼容入口权限及双库对账通过 |
