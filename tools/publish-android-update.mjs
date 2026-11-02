@@ -3,10 +3,18 @@
  * 发布安卓应用内更新到 Cloudflare R2（S3 兼容）。
  *
  * 做三件事：
- *  1. 把 `app-debug.apk` 上传到 `s3://<bucket>/android/app-<versionCode>.apk`
+ *  1. 把 APK 上传到 `s3://<bucket>/android/app-<versionCode>.apk`
  *  2. 生成 `android/latest.json`（版本号、大小、sha256、下载地址）
- *  3. 因为桶没有公开域名，脚本会给 APK 与 manifest 各生成一个 7 天有效的
- *     预签名 URL，写进 `app/src/main/assets/update.json`，随应用一起打包。
+ *  3. 写 `app/src/main/assets/update.json`，随应用一起打包。
+ *
+ * **站点优先**：App 检查更新和下载都走网站自己的域名（`/downloads/…`），
+ * 不再依赖 `pub-*.r2.dev`——那个域名在部分网络下解析不了，检查更新会静默失败。
+ * 因此还需要把 `latest.json` 与 APK 放到站点的 `dist/downloads/` 下：
+ *
+ *   cp android-app/app/build/outputs/apk/release/app-release.apk \
+ *      <站点>/downloads/luckycat-android-<sha前12位>.apk
+ *
+ * 未配置 `PUBLIC_BASE_URL` 时才退回 7 天预签名地址（仅作应急）。
  *
  * 用法：
  *   AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… \
@@ -151,9 +159,14 @@ if (!publicBase && (!apkUrl.includes('X-Amz-Signature') || !manifestUrl.includes
 }
 console.log(publicBase ? `使用公开域名：${publicBase}` : '未配置 PUBLIC_BASE_URL，使用 7 天预签名地址')
 
+// 站点同源地址：App 只要能连上银行，就一定连得上这里
+const siteBase = (process.env.SITE_BASE_URL ?? 'https://bank.waveflow.men').replace(/\/$/, '')
+const siteManifestUrl = `${siteBase}/downloads/android.json`
+const siteApkUrl = `${siteBase}/downloads/luckycat-android-${sha256.slice(0, 12)}.apk`
+
 const bundled = {
-  manifestUrl,
-  apkUrl,
+  manifestUrl: siteManifestUrl,
+  apkUrl: siteApkUrl,
   versionCode,
   versionName,
   notes,
@@ -161,6 +174,7 @@ const bundled = {
   publishedAt: manifest.publishedAt,
 }
 writeFileSync(path.join(assetsDir, 'update.json'), JSON.stringify(bundled, null, 2))
-console.log('已写入 assets/update.json（含 7 天有效的预签名地址）')
+console.log(`已写入 assets/update.json（站点地址 ${siteBase}）`)
+console.log(`别忘了把 APK 放到站点：${siteApkUrl}`)
 console.log(`版本：${versionName} (${versionCode}) · sha256 ${sha256.slice(0, 12)}…`)
 console.log(`APK：${apkUrl.slice(0, 96)}…`)

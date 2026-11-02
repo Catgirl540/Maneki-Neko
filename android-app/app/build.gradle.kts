@@ -58,6 +58,8 @@ android {
             applicationIdSuffix = ".dev"
             versionNameSuffix = "-dev"
             buildConfigField("boolean", "AUTO_LOGIN_DEMO", "true")
+        // 本地验证更新流程时指到测试站点；留空则用 assets/update.json 的线上地址
+        buildConfigField("String", "UPDATE_MANIFEST_URL", "\"${project.findProperty("updateManifestUrl") ?: ""}\"")
             resValue("string", "app_name", "招财猫 Dev")
         }
     }

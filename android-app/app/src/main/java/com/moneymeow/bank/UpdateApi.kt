@@ -12,8 +12,13 @@ import java.net.URL
 import java.security.MessageDigest
 
 /**
- * 应用内更新：清单在 `assets/update.json`（发布脚本写入，含 R2 预签名地址），
- * 拉取 `latest.json` 比对 versionCode，下载 APK 校验 sha256 后走系统安装器。
+ * 应用内更新：清单在 `assets/update.json`（发布脚本写入），
+ * 拉取清单比对 versionCode，下载 APK 校验 sha256 后走系统安装器。
+ *
+ * 清单与安装包都由**网站自己的域名**提供（`/downloads/…`）。
+ * 以前用 R2 的 `pub-*.r2.dev`，但那个域名在部分网络下解析不了，
+ * 更新检查会静默失败、用户以为「没有新版本」。只要 App 能登录银行，
+ * 同一个站点的下载地址就一定可达，所以统一走站点。
  */
 object UpdateApi {
     data class Info(
@@ -25,10 +30,18 @@ object UpdateApi {
         val downloadUrl: String,
     )
 
-    /** 读取随包内置的更新配置。 */
+    /**
+     * 读取随包内置的更新配置。
+     *
+     * `BuildConfig.UPDATE_MANIFEST_URL` 非空时优先用它：本地联调可以让 dev 包
+     * 指向测试站点，不必为了验证一次更新检查重新打包线上地址。
+     */
     private fun bundledConfig(context: Context): JSONObject? = runCatching {
         val text = context.assets.open("update.json").bufferedReader().use { it.readText() }
-        JSONObject(text)
+        val config = JSONObject(text)
+        val override = BuildConfig.UPDATE_MANIFEST_URL
+        if (override.isNotEmpty()) config.put("manifestUrl", override)
+        config
     }.getOrNull()
 
     /** 查询是否有新版本；没有更新时返回 null。 */
@@ -53,8 +66,13 @@ object UpdateApi {
         android.util.Log.i("UpdateApi", "check: remote=$remoteCode current=$currentVersionCode")
         if (remoteCode <= currentVersionCode) return@withContext null
 
-        // 清单里带最新 APK 的预签名地址；老版本应用也能据此拿到新包
-        val apkUrl = manifest.optString("apkUrl").ifEmpty { config.optString("apkUrl") }
+        // 清单可以给相对地址（/downloads/xxx.apk），以清单自身为基准补全成绝对地址。
+        val rawUrl = manifest.optString("apkUrl").ifEmpty { config.optString("apkUrl") }
+        val apkUrl = if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
+            rawUrl
+        } else {
+            URL(URL(manifestUrl), rawUrl).toString()
+        }
         Info(
             versionCode = remoteCode,
             versionName = manifest.optString("versionName"),
