@@ -1,0 +1,22 @@
+TAP version 13
+# Subtest: 登录设备与安全日志记录真实来源地址和设备，而不是一律未知
+ok 1 - 登录设备与安全日志记录真实来源地址和设备，而不是一律未知
+  ---
+  duration_ms: 3.462741
+  type: 'test'
+  ...
+# Subtest: 旧库没有 ip 列时登录仍可用，只是不记录地址
+ok 2 - 旧库没有 ip 列时登录仍可用，只是不记录地址
+  ---
+  duration_ms: 1.01111
+  type: 'test'
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12.922315

@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+<title id="title">招财猫 Bank 系统总体架构</title><desc id="desc">客户与员工 Web 端经 Nginx 调用银行后端及客户、员工、运维三个独立助手服务；银行后端连接 PostgreSQL，助手连接模型服务和客户文字凭据检查。</desc>
+<defs>
+  <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M1,1 L11,6 L1,11 z" fill="#806f60"/></marker>
+  <marker id="arrow-strong" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M1,1 L11,6 L1,11 z" fill="#9b765e"/></marker>
+  <style>
+    text{font-family:SimSun,serif;fill:#2f2924}.latin{font-family:"Times New Roman",serif}
+    .zone{fill:#fcfbf9;stroke:#e3ddd5;stroke-width:2}
+    .zone-title{font-size:27px;font-weight:700;letter-spacing:1px;fill:#6e594a}
+    .node{fill:#fff;stroke:#a79585;stroke-width:2}
+    .node-gateway{fill:#eee8e0;stroke:#8b7768;stroke-width:2.5}
+    .node-main{fill:#f4eee8;stroke:#9d806c;stroke-width:2.3}
+    .node-label{font-size:28px;font-weight:700;text-anchor:middle}
+    .node-sub{font-size:19px;text-anchor:middle;fill:#6e665f}
+    .edge{fill:none;stroke:#806f60;stroke-width:3;marker-end:url(#arrow)}
+    .edge-main{fill:none;stroke:#9b765e;stroke-width:3.4;marker-end:url(#arrow-strong)}
+    .edge-label{font-size:19px;fill:#5e5147}
+    .label-bg{fill:#fff;opacity:.94}
+  </style>
+</defs>
+<rect width="1920" height="1080" fill="#fff"/>
+<!-- domain panels -->
+<rect class="zone" x="42" y="118" width="350" height="864" rx="22"/>
+<rect class="zone" x="426" y="118" width="340" height="864" rx="22"/>
+<rect class="zone" x="800" y="118" width="500" height="864" rx="22"/>
+<rect class="zone" x="1334" y="118" width="544" height="864" rx="22"/>
+<text class="zone-title" x="78" y="170">访问端</text>
+<text class="zone-title" x="462" y="170">入口路由</text>
+<text class="zone-title" x="836" y="170">银行与助手服务</text>
+<text class="zone-title" x="1370" y="170">数据与模型服务</text>
+<!-- client applications -->
+<rect class="node" x="92" y="232" width="250" height="78" rx="14"/>
+<text class="node-label" x="217" y="282">客户浏览器</text>
+<rect class="node" x="92" y="354" width="250" height="102" rx="14"/>
+<text class="node-label" x="217" y="398">客户 <tspan class="latin">Web</tspan></text><text class="node-sub" x="217" y="430">银行与助手 <tspan class="latin">API</tspan></text>
+<rect class="node" x="92" y="622" width="250" height="78" rx="14"/>
+<text class="node-label" x="217" y="672">员工浏览器</text>
+<rect class="node" x="92" y="744" width="250" height="102" rx="14"/>
+<text class="node-label" x="217" y="788">员工 <tspan class="latin">Web</tspan></text><text class="node-sub" x="217" y="820">员工与助手 <tspan class="latin">API</tspan></text>
+<path class="edge" d="M217 310 V354"/><path class="edge" d="M217 700 V744"/>
+<!-- gateway -->
+<rect class="node-gateway" x="482" y="454" width="228" height="160" rx="20"/>
+<text class="node-label latin" x="596" y="520">Nginx</text><text class="node-sub" x="596" y="554">反向代理</text>
+<!-- app to gateway -->
+<path class="edge" d="M342 405 H400 V492 H482"/>
+<rect class="label-bg" x="350" y="456" width="125" height="30" rx="5"/><text class="edge-label latin" x="358" y="478">/api · /agent-api</text>
+<path class="edge" d="M342 795 H414 V576 H482"/>
+<rect class="label-bg" x="350" y="738" width="130" height="30" rx="5"/><text class="edge-label" x="358" y="760">员工 <tspan class="latin">API</tspan> · 助手</text>
+<!-- banking and agent services -->
+<rect class="node-main" x="884" y="220" width="330" height="110" rx="17"/>
+<text class="node-label" x="1049" y="268">银行后端</text><text class="node-sub latin" x="1049" y="302">Server</text>
+<rect class="node-main" x="884" y="454" width="330" height="110" rx="17"/>
+<text class="node-label" x="1049" y="502">客户助手</text><text class="node-sub latin" x="1049" y="536">Bridge</text>
+<rect class="node-main" x="884" y="650" width="330" height="110" rx="17"/>
+<text class="node-label" x="1049" y="698">员工助手</text><text class="node-sub" x="1049" y="732"><tspan class="latin">Bridge</tspan> · 员工接口</text>
+<rect class="node-main" x="884" y="850" width="330" height="110" rx="17"/>
+<text class="node-label" x="1049" y="896">运维助手</text><text class="node-sub" x="1049" y="932">独立 Bridge · 运维工具网关</text>
+<!-- gateway to services -->
+<path class="edge" d="M710 480 H800 V275 H884"/>
+<path class="edge" d="M710 532 H884"/>
+<path class="edge" d="M710 586 H780 V705 H884"/>
+<path class="edge" d="M710 606 H764 V905 H884"/>
+<path class="edge" d="M884 905 H824 V315 H884"/>
+<path class="edge" d="M1214 905 H1316 V560 H1430"/>
+<!-- assistants call bank API -->
+<path class="edge-main" d="M1049 454 V330"/>
+<rect class="label-bg" x="1064" y="368" width="212" height="31" rx="5"/><text class="edge-label" x="1071" y="391">携客户身份调用银行 <tspan class="latin">API</tspan></text>
+<path class="edge-main" d="M884 705 H842 V300 H884"/>
+<!-- data and model services -->
+<rect class="node" x="1430" y="220" width="350" height="110" rx="17"/>
+<text class="node-label latin" x="1605" y="286">PostgreSQL</text>
+<rect class="node" x="1430" y="454" width="350" height="110" rx="17"/>
+<text class="node-label latin" x="1605" y="502">DeepSeek Harness</text><text class="node-sub" x="1605" y="536">模型服务</text>
+<rect class="node" x="1430" y="704" width="350" height="96" rx="17"/>
+<text class="node-label" x="1605" y="762">客户文字凭据检查</text>
+<rect class="node" x="1430" y="866" width="350" height="88" rx="17"/>
+<text class="node-label" x="1605" y="920"><tspan class="latin">OpenRouter</tspan> 决策模型</text>
+<!-- service dependencies -->
+<path class="edge" d="M1214 275 H1430"/>
+<path class="edge" d="M1214 500 H1430"/>
+<path class="edge" d="M1214 705 H1298 V548 H1430"/>
+<path class="edge-main" d="M1214 530 H1266 V752 H1430"/>
+<rect class="label-bg" x="1268" y="632" width="122" height="30" rx="5"/><text class="edge-label" x="1275" y="654">客户文字检查</text>
+<path class="edge-main" d="M1605 800 V866"/>
+<rect class="label-bg" x="1620" y="817" width="150" height="30" rx="5"/><text class="edge-label" x="1626" y="839"><tspan class="latin">OpenRouter</tspan> 模式</text>
+</svg>

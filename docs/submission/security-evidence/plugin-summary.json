@@ -1,0 +1,22 @@
+[
+  {
+    "file": "framework/packages/consent/tests/consent.test.mjs",
+    "exitCode": 0,
+    "summary": [
+      "# tests 29",
+      "# pass 29",
+      "# fail 0",
+      "# skipped 0"
+    ]
+  },
+  {
+    "file": "framework/packages/hardening/tests/hardening.test.mjs",
+    "exitCode": 0,
+    "summary": [
+      "# tests 17",
+      "# pass 17",
+      "# fail 0",
+      "# skipped 0"
+    ]
+  }
+]

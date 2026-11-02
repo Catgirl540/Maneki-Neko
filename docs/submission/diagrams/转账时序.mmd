@@ -1,0 +1,19 @@
+sequenceDiagram
+  actor U as 客户
+  participant W as 客户 Web
+  participant A as 客户助手
+  participant B as 银行后端
+  participant D as PostgreSQL
+  U->>W: 提供转账意图
+  W->>A: 发送消息与会话凭据
+  A->>B: 认证、查询账户与收款人、获取报价
+  B-->>A: 权威信息与报价
+  A-->>W: 确认卡与验证要求
+  U->>W: 核对并确认，输入支付密码
+  W->>A: 提交确认
+  A->>B: 校验支付密码，重新核对报价
+  A->>B: 提交转账请求
+  B->>D: 事务锁、校验、余额/流水和审计写入
+  D-->>B: 提交或回滚
+  B-->>A: 银行结果或错误
+  A-->>W: 返回工具结果

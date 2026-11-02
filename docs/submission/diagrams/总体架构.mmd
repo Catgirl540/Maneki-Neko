@@ -1,0 +1,36 @@
+flowchart LR
+  subgraph clients[访问端]
+    direction TB
+    C[客户浏览器] --> W[客户 Web]
+    S[员工浏览器] --> SW[员工 Web]
+  end
+  N[Nginx 反向代理]
+  subgraph services[银行与助手服务]
+    direction TB
+    B[银行后端 Server]
+    CA[客户助手 Bridge]
+    SA[员工助手 Bridge]
+    OA[运维助手 Bridge / 运维工具网关]
+  end
+  subgraph dependencies[数据与模型服务]
+    direction TB
+    P[(PostgreSQL)]
+    H[DeepSeek Harness / Agent 模型服务]
+    G[客户文字凭据检查]
+    OR[OpenRouter 决策模型]
+  end
+  W -->|银行 /api 与助手 /agent-api| N
+  SW -->|员工 /staff-api、员工与运维助手 API| N
+  N --> B
+  N --> CA
+  N --> SA
+  N --> OA
+  CA -->|携客户身份调用银行 API| B
+  SA -->|员工接口| B
+  CA --> H
+  SA --> H
+  OA -->|运维权限校验| B
+  OA --> H
+  CA --> G
+  G -->|OpenRouter 模式| OR
+  B --> P
