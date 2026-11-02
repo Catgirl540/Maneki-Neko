@@ -421,202 +421,563 @@ function ensureSessionRole(config) {
 }
 
 /* ------------------------------------------------------------------ *
- * Screens
+ * Theme and drawing
  * ------------------------------------------------------------------ */
 
-function header(config) {
-  const lines = [
-    rule('='),
-    bold('  Maneki-Neko  -  local full stack'),
-    dim('  bank API + 3 agents + web client (real backend, no mock)'),
-    rule('-'),
-    `  Node ${process.versions.node}   ${process.platform}   ` +
-      (config.bankDatabaseUrl ? green('DB configured') : yellow('DB not configured')),
-    rule('-'),
-  ]
-  return lines.join('\n')
-}
-
-const MENU = [
-  ['1', 'Environment check'],
-  ['2', 'Install dependencies'],
-  ['3', 'Configure database'],
-  ['4', 'Bootstrap databases'],
-  ['5', 'Start all services'],
-  ['6', 'Stop all services'],
-  ['7', 'Show status'],
-  ['q', 'Quit'],
-]
+/** Colours degrade to plain text when disabled, so logs stay readable when piped. */
+const NO_COLOR = Boolean(process.env.NO_COLOR) || process.env.TERM === 'dumb'
+const can = code => (NO_COLOR ? (t => t) : code)
+const ink = can(t => `${CSI}97m${t}${CSI}0m`)          // bright white
+const muted = can(t => `${CSI}90m${t}${CSI}0m`)        // grey
+const accent = can(t => `${CSI}96m${t}${CSI}0m`)       // cyan
+const ok = can(t => `${CSI}92m${t}${CSI}0m`)           // green
+const warn = can(t => `${CSI}93m${t}${CSI}0m`)         // yellow
+const bad = can(t => `${CSI}91m${t}${CSI}0m`)          // red
+const strong = can(t => `${CSI}1m${t}${CSI}0m`)
 
 /**
- * Menu plus a live log tail.
- *
- * The tail matters: start/stop only append to the log buffer, so without it
- * pressing "Start all services" appears to do nothing at all.
+ * Selected rows use reverse video. The `>` marker is drawn by the caller, so the
+ * no-colour fallback must not add a second one.
  */
-function renderMenu(config, message) {
-  clear()
-  out(header(config) + '\n\n')
-  for (const [key, label] of MENU) out(`   ${cyan(key)}  ${label}\n`)
-  out('\n' + rule('-') + '\n')
-  const running = [...children.values()].map(({ service }) => service.label)
-  out(`  Running: ${running.length ? green(running.join(', ')) : dim('none')}\n`)
-  if (message) out(`  ${message}\n`)
+const selected = text => (NO_COLOR ? text : `${CSI}7m${text}${CSI}0m`)
 
-  const tail = logs.slice(-8)
-  out('\n' + dim('  Log') + '\n')
-  if (tail.length === 0) out(dim('  (empty)\n'))
-  else for (const line of tail) out(`  ${line.slice(0, WIDTH - 2)}\n`)
+const termWidth = () => Math.max(56, Math.min(92, (process.stdout.columns || 80) - 2))
+const termHeight = () => Math.max(16, process.stdout.rows || 24)
+const width = () => termWidth()
+const strip = t => t.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '')
+const fit = (text, w) => {
+  const visible = strip(text)
+  if (visible.length >= w) return strip(text).slice(0, w)
+  return text + ' '.repeat(w - visible.length)
+}
+const wrap = (text, w) => {
+  const words = strip(text).split(/\s+/)
+  const lines = []
+  let line = ''
+  for (const word of words) {
+    if (line.length + word.length + 1 > w) { if (line) lines.push(line); line = word }
+    else line = line ? `${line} ${word}` : word
+  }
+  if (line) lines.push(line)
+  return lines
+}
 
-  out(`\n  ${dim('Press a key.')}\n`)
+function draw(lines) {
+  const w = width()
+  let buffer = `${CSI}H`
+  for (const line of lines) buffer += fit(line, w) + `${CSI}K\n`
+  buffer += `${CSI}J`
+  out(buffer)
+}
+
+/**
+ * The frame is sized from the visible width of each row, not from guesses about
+ * how long the text is: ANSI escapes are invisible, and hardcoded padding makes
+ * the right border drift out of alignment the moment a label changes.
+ */
+function banner() {
+  const w = width()
+  const row = content => `${muted('|')} ${fit(content, w - 4)} ${muted('|')}`
+  return [
+    muted('+' + '-'.repeat(w - 2) + '+'),
+    row(`${strong('Maneki-Neko')}  ${muted('-')}  ${ink('local full stack')}`),
+    row(muted('bank API + 3 agents + web client, real backend')),
+    muted('+' + '-'.repeat(w - 2) + '+'),
+  ]
+}
+
+function stepBar(current, total, label) {
+  const w = width()
+  const cells = []
+  for (let i = 0; i < total; i++) cells.push(i < current ? ok('#') : i === current ? accent('#') : muted('.'))
+  const left = `Step ${Math.min(current + 1, total)}/${total}`
+  return `${accent(left)}  ${cells.join('')}  ${muted(label)}`
 }
 
 /* ------------------------------------------------------------------ *
- * Key handling
+ * Keys
  * ------------------------------------------------------------------ */
 
-function waitForKey() {
-  return new Promise(resolve => {
-    process.stdin.setRawMode?.(true)
-    process.stdin.resume()
-    // stdin can end (piped input, closed terminal). Without this the promise
-    // never settles and the launcher looks hung instead of exiting.
-    const finish = key => {
-      process.stdin.removeListener('data', onData)
-      process.stdin.removeListener('end', onEnd)
-      resolve(key)
+let stdinEnded = false
+let listenerInstalled = false
+/**
+ * Keys are buffered by one permanent listener.
+ *
+ * Reading a key per prompt loses anything typed while a long job is running
+ * (npm ci, bootstrap): during that window no promise is waiting, and stdin is
+ * already flowing, so the keystroke is emitted and dropped. Pressing Enter
+ * during an install then appears to do nothing. Queueing fixes that.
+ */
+const keyQueue = []
+const keyWaiters = []
+
+function decodeKeys(chunk) {
+  const keys = []
+  let rest = chunk
+  while (rest.length) {
+    if (rest.startsWith('\x1b[A')) { keys.push('up'); rest = rest.slice(3) }
+    else if (rest.startsWith('\x1b[B')) { keys.push('down'); rest = rest.slice(3) }
+    else if (rest.startsWith('\x1b[C')) { keys.push('right'); rest = rest.slice(3) }
+    else if (rest.startsWith('\x1b[D')) { keys.push('left'); rest = rest.slice(3) }
+    else if (rest.startsWith('\x1b')) { keys.push('escape'); rest = rest.slice(1) }
+    else {
+      const ch = rest[0]
+      rest = rest.slice(1)
+      if (ch === '\r' || ch === '\n') keys.push('enter')
+      else if (ch === '\x03') keys.push('interrupt')
+      else if (ch === '\x7f' || ch === '\b') keys.push('backspace')
+      else if (ch === ' ') keys.push('enter')
+      else keys.push(ch)
     }
-    const onData = buf => finish(buf.toString('utf8') === '\x03' ? 'q' : buf.toString('utf8'))
-    const onEnd = () => finish('q')
-    process.stdin.on('data', onData)
-    process.stdin.once('end', onEnd)
+  }
+  return keys
+}
+
+function pushKey(key) {
+  if (keyWaiters.length) keyWaiters.shift()(key)
+  else keyQueue.push(key)
+}
+
+function installKeyListener() {
+  if (listenerInstalled) return
+  listenerInstalled = true
+  process.stdin.setRawMode?.(true)
+  process.stdin.resume()
+  process.stdin.on('data', chunk => { for (const key of decodeKeys(chunk.toString('utf8'))) pushKey(key) })
+  process.stdin.once('end', () => {
+    stdinEnded = true
+    while (keyWaiters.length) keyWaiters.shift()('eof')
+  })
+}
+
+function readKey() {
+  installKeyListener()
+  if (keyQueue.length) return Promise.resolve(keyQueue.shift())
+  if (stdinEnded) return Promise.resolve('eof')
+  return new Promise(resolve => keyWaiters.push(resolve))
+}
+
+/* ------------------------------------------------------------------ *
+ * Widgets
+ * ------------------------------------------------------------------ */
+
+/**
+ * A vertical list of buttons driven by the arrow keys.
+ *
+ * Resolves with the chosen item's `value`, or 'back' / 'quit' for the
+ * implied actions. Nothing has to be typed: the selection is the input.
+ */
+async function choose({ title, intro = [], items, hint, footer, step }) {
+  let index = Math.max(0, items.findIndex(item => item.default))
+  for (;;) {
+    const w = width()
+    const lines = [...banner(), '']
+    if (step) { lines.push(`  ${stepBar(step.index, step.total, step.label)}`, '') }
+    lines.push(`  ${strong(title)}`)
+    for (const line of intro) lines.push(`  ${muted(line)}`)
+    if (intro.length) lines.push('')
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      const label = `${item.label}${item.detail ? `  ${muted(item.detail)}` : ''}`
+      // One marker column either way, so labels do not shift when the selection moves.
+      lines.push(i === index
+        ? `  ${selected(fit(`> ${strip(label)}`, w - 4))}`
+        : `    ${label}`)
+    }
+    lines.push('')
+    for (const line of footer ?? []) lines.push(`  ${line}`)
+    lines.push(`  ${muted(hint ?? 'Up/Down to move   Enter to select   Esc to go back   q to quit')}`)
+    draw(lines)
+
+    const key = await readKey()
+    if (key === 'up') index = (index - 1 + items.length) % items.length
+    else if (key === 'down') index = (index + 1) % items.length
+    else if (key === 'enter') return items[index].value
+    else if (key === 'escape' || key === 'left') return 'back'
+    else if (key === 'quit' || key === 'interrupt' || key === 'eof') return 'quit'
+    else if (/^[1-9]$/.test(key) && Number(key) <= items.length) return items[Number(key) - 1].value
+  }
+}
+
+/** Yes/No as two buttons; the safe answer is preselected. */
+async function confirm({ title, question, yes = 'Yes', no = 'No', danger = false }) {
+  const answer = await choose({
+    title,
+    intro: wrap(question, width() - 6),
+    items: [
+      { label: no, value: false, default: danger },
+      { label: yes, value: true, default: !danger },
+    ],
+    hint: 'Up/Down to move   Enter to confirm',
+  })
+  if (answer === 'quit' || answer === 'back') return 'back'
+  return answer
+}
+
+/** Read-only screen with a single Continue button. */
+async function notice({ title, lines, button = 'Continue', intro = [] }) {
+  return choose({
+    title,
+    intro,
+    items: [{ label: button, value: 'ok', default: true }],
+    footer: lines,
+    hint: 'Enter to continue   q to quit',
   })
 }
 
 /**
- * Draw a result screen and wait for a key.
+ * Run an async job while showing progress.
  *
- * Waiting inside this function (instead of letting the menu loop handle it)
- * is what makes the screen readable at all: without it the loop immediately
- * redraws the menu and the output is cleared before anyone can see it.
+ * Without this the screen freezes for the tens of seconds an `npm ci` takes and
+ * looks like a crash. The spinner plus the log tail proves it is still working.
  */
-async function showScreen(title, lines, message) {
-  clear()
-  out(rule('=') + '\n' + bold(`  ${title}`) + '\n' + rule('-') + '\n\n')
-  for (const line of lines) out(`  ${line}\n`)
-  if (message) out(`\n  ${message}\n`)
-  out('\n' + rule('-') + '\n' + dim('  Press any key to return.') + '\n')
-  await waitForKey()
+async function withProgress(title, job) {
+  let done = false
+  let result
+  let error
+  const frames = ['-', '\\', '|', '/']
+  let frame = 0
+  const started = Date.now()
+
+  const painter = setInterval(() => {
+    if (done) return
+    const w = width()
+    const lines = [...banner(), '']
+    lines.push(`  ${strong(title)}`)
+    lines.push('')
+    lines.push(`  ${accent(frames[frame++ % frames.length])} ${muted(`${Math.round((Date.now() - started) / 1000)}s`)}`)
+    lines.push('')
+    const tail = logs.slice(-(termHeight() - 10))
+    for (const line of tail) lines.push(`  ${line.slice(0, w - 4)}`)
+    if (tail.length === 0) lines.push(`  ${muted('(no output yet)')}`)
+    draw(lines)
+  }, 120)
+
+  try {
+    result = await job()
+  } catch (caught) {
+    error = caught
+  } finally {
+    done = true
+    clearInterval(painter)
+  }
+  if (error) throw error
+  return result
 }
 
 /* ------------------------------------------------------------------ *
- * Main loop
+ * Text input (only for connection strings)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The one place that still needs typing: a PostgreSQL URL cannot be chosen.
+ * A value that is already configured is shown masked and kept on Enter.
+ */
+async function askLine({ title, label, hint, current, secret = true }) {
+  const shown = current ? (secret ? maskUrl(current) : current) : ''
+  let buffer = ''
+  for (;;) {
+    const w = width()
+    const lines = [...banner(), '']
+    lines.push(`  ${strong(title)}`)
+    lines.push('')
+    lines.push(`  ${ink(label)}`)
+    for (const line of wrap(hint, w - 6)) lines.push(`  ${muted(line)}`)
+    lines.push('')
+    const display = buffer || ''
+    lines.push(`  ${accent('>')} ${display}${NO_COLOR ? '_' : ''}`)
+    if (buffer === '' && shown) lines.push(`  ${muted(`Enter keeps the current value: ${shown}`)}`)
+    lines.push('')
+    lines.push(`  ${muted('Enter to confirm   Esc to go back   Ctrl+U to clear')}`)
+    draw(lines)
+
+    const key = await readKey()
+    if (key === 'enter') return buffer === '' ? (current ?? '') : buffer
+    if (key === 'escape' || key === 'left') return 'back'
+    if (key === 'quit' || key === 'interrupt' || key === 'eof') return 'quit'
+    if (key === 'up' || key === 'down') continue
+    if (key === '\x15') { buffer = ''; continue }   // Ctrl+U
+    if (key === '\x7f' || key === 'backspace') { buffer = buffer.slice(0, -1); continue }
+    if (key.length === 1 && key >= ' ') buffer += key
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Steps
+ * ------------------------------------------------------------------ */
+
+const TOTAL_STEPS = 5
+
+const STEP_ENV = { index: 0, total: TOTAL_STEPS, label: 'Environment' }
+async function stepEnvironment(config) {
+  for (;;) {
+    const checks = await withProgress('Environment check', async () => runEnvironmentCheck(config))
+    const failing = checks.filter(([passed]) => !passed)
+    const body = checks.map(([passed, name, detail]) =>
+      `${passed ? ok('OK  ') : bad('FAIL')} ${fit(name, 34)} ${muted(detail)}`)
+    const action = await choose({
+      title: 'Environment',
+      intro: failing.length === 0
+        ? ['Everything this launcher needs is present.']
+        : [`${failing.length} item(s) need attention before the stack can run.`],
+      step: STEP_ENV,
+      items: [
+        { label: 'Continue', value: 'next', default: failing.length === 0 },
+        { label: 'Re-check', value: 'retry' },
+        ...(failing.length ? [{ label: 'Install dependencies', value: 'install' }] : []),
+        { label: 'Quit', value: 'quit' },
+      ],
+      footer: ['', ...body],
+      hint: 'Up/Down to move   Enter to select',
+    })
+    if (action === 'next') return 'next'
+    if (action === 'quit' || action === 'back') return 'quit'
+    if (action === 'install') {
+      await withProgress('Installing dependencies', async () => installDependencies())
+      continue
+    }
+  }
+}
+
+const STEP_DEPS = { index: 1, total: TOTAL_STEPS, label: 'Dependencies' }
+async function stepDependencies(config) {
+  for (;;) {
+    const installed = ['server', 'app', 'staff', 'framework', 'framework/bridge/pg-runtime']
+      .every(dir => existsSync(path.join(ROOT, dir, 'node_modules')))
+    const libBuilt = existsSync(path.join(ROOT, 'framework/packages/bank-demo/lib/index.js'))
+    if (installed && libBuilt) return 'next'
+    const action = await choose({
+      title: 'Dependencies',
+      intro: ['Node modules and the compiled bank-demo package are required.'],
+      step: STEP_DEPS,
+      items: [
+        { label: 'Install now', value: 'install', default: true },
+        { label: 'Skip', value: 'next' },
+        { label: 'Back', value: 'back' },
+        { label: 'Quit', value: 'quit' },
+      ],
+      footer: [
+        `${installed ? ok('OK  ') : bad('MISS')} node modules`,
+        `${libBuilt ? ok('OK  ') : bad('MISS')} framework/packages/bank-demo/lib`,
+      ],
+      hint: 'Up/Down to move   Enter to select   Esc to go back',
+    })
+    if (action === 'install') { await withProgress('Installing dependencies', async () => installDependencies()); continue }
+    return action
+  }
+}
+
+const STEP_DB = { index: 2, total: TOTAL_STEPS, label: 'Database' }
+async function stepDatabase(config) {
+  for (;;) {
+    const ready = Boolean(config.bankDatabaseUrl && config.bankDataKey && config.sessionDatabaseUrl && config.sessionDataKey)
+    const action = await choose({
+      title: 'Database',
+      intro: ready
+        ? ['Both databases are configured. Keys are generated, never typed.']
+        : ['Two PostgreSQL connection strings are needed. Everything else is generated.'],
+      step: STEP_DB,
+      items: [
+        // When everything is already configured the first button must move on,
+        // not re-open the prompt: "Continue" that re-asks is a trap.
+        ready
+          ? { label: 'Continue', value: 'next', default: true }
+          : { label: 'Set up now', value: 'edit', default: true },
+        ...(ready ? [{ label: 'Edit settings', value: 'edit' }] : []),
+        { label: 'Back', value: 'back' },
+        { label: 'Quit', value: 'quit' },
+      ],
+      footer: [
+        `${config.bankDatabaseUrl ? ok('OK  ') : bad('MISS')} bank DB   ${muted(maskUrl(config.bankDatabaseUrl))}`,
+        `${config.sessionOwnerDatabaseUrl ? ok('OK  ') : warn('OPT ')} admin DB  ${muted(maskUrl(config.sessionOwnerDatabaseUrl))}`,
+        `${config.sessionDatabaseUrl ? ok('OK  ') : bad('MISS')} session DB ${muted(maskUrl(config.sessionDatabaseUrl))}`,
+        `${config.bankDataKey ? ok('OK  ') : bad('MISS')} bank data key`,
+        `${config.sessionDataKey ? ok('OK  ') : bad('MISS')} session data key`,
+      ],
+      hint: 'Up/Down to move   Enter to select   Esc to go back',
+    })
+    if (action !== 'edit') return action
+
+    // Guided entry: two URLs, then everything else is derived.
+    const bankUrl = await askLine({
+      title: 'Database 1/2',
+      label: 'Bank database URL',
+      hint: 'Application role connection string, e.g. postgresql://app:secret@127.0.0.1:5432/maneki_bank',
+      current: config.bankDatabaseUrl,
+    })
+    if (bankUrl === 'quit' || bankUrl === 'back') return bankUrl === 'quit' ? 'quit' : 'back'
+    if (bankUrl) config.bankDatabaseUrl = bankUrl
+
+    const adminUrl = await askLine({
+      title: 'Database 2/2',
+      label: 'Admin (owner) connection string',
+      hint: 'Used once to create the AI session role and schema. Leave empty to skip.',
+      current: config.sessionOwnerDatabaseUrl,
+    })
+    if (adminUrl === 'quit') return 'quit'
+    if (adminUrl && adminUrl !== 'back') config.sessionOwnerDatabaseUrl = adminUrl
+
+    if (!config.bankDataKey) config.bankDataKey = newKey()
+    if (!config.sessionDataKey) config.sessionDataKey = newKey()
+
+    const notes = []
+    if (config.sessionOwnerDatabaseUrl) {
+      const role = await withProgress('Creating AI session role', async () => ensureSessionRole(config))
+      if (role?.ok) {
+        config.sessionDatabaseUrl = role.url
+        notes.push(ok(`session role ${role.created ? 'created' : 'updated'} on ${role.database}`))
+      } else {
+        notes.push(bad(`session role was not created: ${role?.error ?? 'unknown error'}`))
+        notes.push(warn('an existing session DB URL is kept as-is'))
+      }
+    }
+    saveConfig(config)
+    await notice({
+      title: 'Configuration saved',
+      intro: [CONFIG_PATH],
+      lines: [
+        ...notes,
+        `${muted('bank DB   ')} ${maskUrl(config.bankDatabaseUrl)}`,
+        `${muted('session DB')} ${maskUrl(config.sessionDatabaseUrl)}`,
+        `${muted('data keys ')} generated`,
+        '',
+        ...wrap('Keys must match the database. A new key for an existing database makes its encrypted rows unreadable.', width() - 6).map(muted),
+      ],
+    })
+  }
+}
+
+const STEP_SCHEMA = { index: 3, total: TOTAL_STEPS, label: 'Schema' }
+async function stepBootstrap(config) {
+  const action = await choose({
+    title: 'Schema',
+    intro: ['Create the bank schema and the AI session schema. Safe to re-run.'],
+    step: STEP_SCHEMA,
+    items: [
+      { label: 'Bootstrap databases', value: 'run', default: true },
+      { label: 'Skip', value: 'next' },
+      { label: 'Back', value: 'back' },
+      { label: 'Quit', value: 'quit' },
+    ],
+    hint: 'Up/Down to move   Enter to select   Esc to go back',
+  })
+  if (action !== 'run') return action
+  await withProgress('Bootstrapping databases', async () => bootstrapDatabases(config, askLine))
+  const failed = logs.filter(line => /failed/i.test(strip(line))).length
+  const next = await choose({
+    title: 'Schema',
+    intro: [failed ? bad(`${failed} step(s) failed - see the log below`) : ok('Bootstrap finished')],
+    items: [
+      { label: 'Start services', value: 'next', default: !failed },
+      { label: 'Retry', value: 'retry' },
+      { label: 'Back', value: 'back' },
+    ],
+    footer: logs.slice(-14),
+  })
+  if (next === 'retry') return stepBootstrap(config)
+  return next
+}
+
+const STEP_START = { index: 4, total: TOTAL_STEPS, label: 'Start' }
+async function stepStart(config) {
+  const action = await choose({
+    title: 'Ready to start',
+    intro: ['The bank API, three agents and the web client start together.'],
+    step: STEP_START,
+    items: [
+      { label: 'Start all services', value: 'start', default: true },
+      { label: 'Back', value: 'back' },
+      { label: 'Quit', value: 'quit' },
+    ],
+    footer: [
+      `${muted('bank API')}  http://127.0.0.1:8080`,
+      `${muted('agents  ')}  :8788  :8789  :8790`,
+      `${muted('web     ')}  http://127.0.0.1:5180/login`,
+    ],
+  })
+  if (action !== 'start') return action
+  await withProgress('Starting services', async () => startAll(config))
+  return 'next'
+}
+
+/* ------------------------------------------------------------------ *
+ * Dashboard
+ * ------------------------------------------------------------------ */
+
+async function dashboard(config) {
+  await choose({
+    title: 'Running',
+    intro: [],
+    items: [
+      { label: 'Stop all services', value: 'stop' },
+      { label: 'Restart', value: 'restart' },
+      { label: 'Refresh status', value: 'refresh' },
+      { label: 'Quit (leaves services running)', value: 'detach' },
+    ],
+    footer: await statusLines(config),
+    hint: 'Up/Down to move   Enter to select',
+  }).then(async action => {
+    if (action === 'stop' || action === 'quit') { await stopAll(); return }
+    if (action === 'detach') return
+    if (action === 'restart') { await stopAll(); await withProgress('Restarting services', async () => startAll(config)); return dashboard(config) }
+    if (action === 'refresh') return dashboard(config)
+  })
+}
+
+async function statusLines(config) {
+  const list = services(config)
+  const lines = []
+  for (const service of list) {
+    const running = children.has(service.id)
+    const listening = await checkPort(service.port)
+    const state = listening ? ok('listening') : running ? warn('starting') : bad('stopped')
+    lines.push(`${fit(service.label, 16)} ${muted(`:${service.port}`)}  ${state}`)
+  }
+  lines.push('', `${muted('Web  ')} http://127.0.0.1:5180/login`)
+  lines.push(`${muted('Staff')} http://127.0.0.1:5180/staff/login`)
+  const tail = logs.slice(-4)
+  if (tail.length) lines.push('', muted('log'), ...tail)
+  return lines
+}
+
+/* ------------------------------------------------------------------ *
+ * Main
  * ------------------------------------------------------------------ */
 
 async function main() {
-  let config = loadConfig()
+  const config = loadConfig()
   altScreen(true)
   hideCursor(true)
-  let message = config.bankDatabaseUrl
-    ? green('Configuration found in .start.local.json')
-    : yellow('No configuration yet - choose [3] to set the database URLs and keys')
+
+  const start = await choose({
+    title: 'Local full stack',
+    intro: [
+      'Runs the real backend, not mock data.',
+      'Five guided steps, then the services start together.',
+    ],
+    items: [
+      { label: 'Start setup', value: 'go', default: true },
+      { label: 'Quit', value: 'quit' },
+    ],
+  })
 
   try {
-    for (;;) {
-      renderMenu(config, message)
-      message = ''
-      const key = await waitForKey()
-
-      if (key === 'q' || key === '\x03') break
-
-      if (key === '1') {
-        const checks = await runEnvironmentCheck(config)
-        await showScreen('Environment check', checks.map(([ok, name, detail]) =>
-          `${ok ? green('OK  ') : red('FAIL')} ${pad(name, 34)} ${dim(detail)}`))
-      } else if (key === '2') {
-        message = yellow('Installing dependencies...')
-        renderMenu(config, message)
-        const ok = await installDependencies()
-        await showScreen('Install dependencies', logs.slice(-24))
-        message = ok ? green('Dependencies installed.') : red('Installation failed - see log above.')
-      } else if (key === '3') {
-        hideCursor(false)
-        clear()
-        out(rule('=') + '\n' + bold('  Configure database') + '\n' + rule('-') + '\n')
-        out(dim('\n  Input is hidden for secrets. Press Enter to keep the current value.\n'))
-        for (const [field, label] of CONFIG_KEYS) {
-          const current = config[field] ?? ''
-          const entered = await promptLine(label, current)
-          if (entered) config[field] = entered
-        }
-        // Generate the two data keys when they are still empty: they must be
-        // 32 bytes of canonical base64, and only for a brand-new empty database.
-        if (!config.bankDataKey) config.bankDataKey = newKey()
-        if (!config.sessionDataKey) config.sessionDataKey = newKey()
-        // With an admin connection string we can create the session role and
-        // derive its URL ourselves, so nobody has to invent a password or paste
-        // a second connection string.
-        const roleNote = []
-        if (config.sessionOwnerDatabaseUrl) {
-          const role = ensureSessionRole(config)
-          if (role?.ok) {
-            config.sessionDatabaseUrl = role.url
-            roleNote.push(green(`session role ${role.created ? 'created' : 'updated'} on ${role.database}`))
-          } else {
-            roleNote.push(red(`session role was not created: ${role?.error ?? 'unknown error'}`))
-            roleNote.push(yellow('set the session DB URL by hand if it already exists'))
-          }
-        }
-
-        saveConfig(config)
-        hideCursor(true)
-        await showScreen('Saved', [
-          `file: ${CONFIG_PATH}`,
-          `bank DB:    ${maskUrl(config.bankDatabaseUrl)}`,
-          `session DB: ${maskUrl(config.sessionDatabaseUrl)}`,
-          `bank key:   ${mask(config.bankDataKey)}`,
-          `session key:${mask(config.sessionDataKey)}`,
-          '',
-          ...roleNote,
-          '',
-          yellow('Data keys must match the database. Generating a new one for an'),
-          yellow('existing database makes its encrypted rows unreadable.'),
-        ])
-        message = green('Configuration saved.')
-      } else if (key === '4') {
-        message = yellow('Bootstrapping databases...')
-        renderMenu(config, message)
-        const ok = await bootstrapDatabases(config, promptLine)
-        await showScreen('Bootstrap databases', logs.slice(-20))
-        message = ok ? green('Bootstrap finished.') : red('Bootstrap failed - see log above.')
-      } else if (key === '5') {
-        message = yellow('Starting services...')
-        renderMenu(config, message)
-        await startAll(config)
-        message = green('Start requested. Press [7] for status, [6] to stop.')
-      } else if (key === '6') {
-        await stopAll()
-        message = green('All services stopped.')
-      } else if (key === '7') {
-        const list = services(config)
-        const lines = []
-        for (const service of list) {
-          const running = children.has(service.id)
-          const listening = await checkPort(service.port)
-          const state = listening ? green('listening') : running ? yellow('starting') : dim('stopped')
-          lines.push(`${pad(service.label, 18)} :${service.port}   ${state}`)
-        }
-        lines.push('', dim('Web:    http://127.0.0.1:5180/login'), dim('Staff:  http://127.0.0.1:5180/staff/login'))
-        await showScreen('Status', lines)
+    if (start === 'go') {
+      const steps = [stepEnvironment, stepDependencies, stepDatabase, stepBootstrap, stepStart]
+      let index = 0
+      while (index < steps.length) {
+        const result = await steps[index](config)
+        if (result === 'quit') return
+        if (result === 'back') { index = Math.max(0, index - 1); continue }
+        index++
       }
+      await dashboard(config)
     }
   } finally {
     await stopAll()
     hideCursor(false)
     altScreen(false)
     if (rl) { try { rl.close() } catch { /* already closed */ } }
-    // waitForKey resumes stdin, which keeps a handle open and the process
-    // alive after the menu returns. Release it so quitting actually exits.
     process.stdin.setRawMode?.(false)
     process.stdin.pause()
     process.stdin.unref?.()
