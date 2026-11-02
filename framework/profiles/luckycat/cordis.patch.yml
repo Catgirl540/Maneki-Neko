@@ -246,6 +246,7 @@
       - bank_convert_installment
       - bank_update_security_rule
       - bank_redeem_lounge_pass
+      - bank_add_payee
       - bank_delete_payee
       - bank_export_statement
       - bank_export_billing_report
