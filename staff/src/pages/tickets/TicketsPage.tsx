@@ -1,8 +1,8 @@
-import { PageHeader } from '@/components/PageHeader'
+import { PageHeader } from '../../components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useSession } from '@/store/session-context'
-import { ApiError, api, type Ticket, type TicketChannel, type TicketStatus } from '@/api'
+import { useSession } from '../../store/session-context'
+import { ApiError, api, type Ticket, type TicketChannel, type TicketStatus } from '../../api'
 import { CHANNEL_LABEL, STATUS_CLASS, TICKET_STATUS_LABEL, formatTime } from './labels'
 import { TicketDrawer } from './TicketDrawer'
 

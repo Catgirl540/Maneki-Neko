@@ -1,4 +1,4 @@
-import type { TicketChannel, TicketStatus } from '@/api'
+import type { TicketChannel, TicketStatus } from '../../api'
 
 /** 工单展示用字典。单独一个文件，组件文件只导出组件（Fast Refresh 要求）。 */
 

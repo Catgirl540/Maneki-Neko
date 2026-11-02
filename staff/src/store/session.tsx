@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
-import { api, type StaffUser } from '@/api'
-import { STAFF_AUTH_EXPIRED_EVENT } from '@/api/agent'
+import { api, type StaffUser } from '../api'
+import { STAFF_AUTH_EXPIRED_EVENT } from '../api/agent'
 import { SessionContext, useSession } from './session-context'
 
 /**

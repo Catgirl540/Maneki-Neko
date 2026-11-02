@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, api, type TicketDetail, type TicketStatus } from '@/api'
-import { useSession } from '@/store/session-context'
+import { ApiError, api, type TicketDetail, type TicketStatus } from '../../api'
+import { useSession } from '../../store/session-context'
 import { TICKET_STATUS_LABEL, formatTime } from './labels'
 
 /**
@@ -69,7 +69,7 @@ export function TicketDrawer({
   // 注意：客户自己开的单，对话流本来就整条对客户公开；这个勾只是再推一条提醒。
   // 员工主动开的内部单客户整单看不到，这个勾是唯一能触达客户的通道。
   const [visibleToCustomer, setVisibleToCustomer] = useState(false)
-  const [assignees,setAssignees]=useState<import('@/api').StaffUser[]>([])
+  const [assignees,setAssignees]=useState<import('../../api').StaffUser[]>([])
   const [assigneeId,setAssigneeId]=useState('')
 
   const load = useCallback(async () => {

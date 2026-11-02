@@ -1,4 +1,4 @@
-import type { StaffRole } from '@/api'
+import type { StaffRole } from '../api'
 import { HomeIcon, SparkleIcon, ReceiptIcon, ShieldIcon, UsersIcon, CardIcon, HistoryIcon, DeviceIcon,ChatIcon } from '../../../app/src/components/ui/icons'
 
 export const staffNavigation = [

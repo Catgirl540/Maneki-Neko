@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { TerminalPane, type TerminalHandle, type TerminalTab, type TerminalStatus } from './TerminalPane'
-import { terminalApi, type TerminalSession } from '@/api/terminal'
+import { terminalApi, type TerminalSession } from '../../../api/terminal'
 import { PlusIcon, CloseIcon, CopyIcon, TrashIcon, DeviceIcon } from '../../../../../app/src/components/ui/icons'
 import './terminal.css'
 

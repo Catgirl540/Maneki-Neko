@@ -18,7 +18,8 @@
 
     /* Path alias（TS 4.4+ 无需 baseUrl，按本文件位置解析） */
     "paths": {
-      "@/*": ["./src/*"],
+      "@/shared/*": ["../shared/*"],
+      "@/*": ["../app/src/*"],
       "react": ["./node_modules/@types/react"],
       "react/*": ["./node_modules/@types/react/*"],
       "react-dom": ["./node_modules/@types/react-dom"],
@@ -36,5 +37,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src", "../app/src"]
 }

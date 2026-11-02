@@ -1,6 +1,6 @@
-import { PageHeader } from '@/components/PageHeader'
+import { PageHeader } from '../../components/PageHeader'
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { api, type OperationsOverview } from '@/api'
+import { api, type OperationsOverview } from '../../api'
 
 const OpsTerminal = lazy(() => import('./terminal/OpsTerminal').then(module => ({ default: module.OpsTerminal })))
 

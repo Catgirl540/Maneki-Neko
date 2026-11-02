@@ -12,8 +12,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     dedupe: ['react', 'react-dom', 'react-markdown', 'remark-breaks', 'remark-gfm', 'remark-math', 'rehype-katex', 'katex'],
+    // 员工端复用客户端的一批组件（ChatWorkspace、Field、icons…），这些组件内部用 `@/…`
+    // 引用客户端自己的模块（@/lib/cn、@/api 等），所以 `@` 必须解析到 app/src。
+    // staff 自己的模块一律用相对路径，不参与 `@` 解析。
     alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@': fileURLToPath(new URL('../app/src', import.meta.url)),
     },
   },
   server: {

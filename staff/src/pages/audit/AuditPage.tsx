@@ -1,6 +1,6 @@
-import { PageHeader } from '@/components/PageHeader'
+import { PageHeader } from '../../components/PageHeader'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ApiError, api, type AuditLog } from '@/api'
+import { ApiError, api, type AuditLog } from '../../api'
 
 /**
  * 审计日志（清单 §2 P2，乙模块）：仅主管可见（前端拦一道，后端还有 403）。

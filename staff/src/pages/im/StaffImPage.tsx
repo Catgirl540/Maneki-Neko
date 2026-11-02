@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PageHeader } from '@/components/PageHeader'
-import { request } from '@/api/http/base'
-import { STAFF_AUTH_EXPIRED_EVENT } from '@/api/agent'
-import { useSession } from '@/store/session-context'
-import { ApiError, type StaffUser } from '@/api'
+import { PageHeader } from '../../components/PageHeader'
+import { request } from '../../api/http/base'
+import { STAFF_AUTH_EXPIRED_EVENT } from '../../api/agent'
+import { useSession } from '../../store/session-context'
+import { ApiError, type StaffUser } from '../../api'
 import './staff-im.css'
 
 type Binding={id:string;label:string;sessionId:string;connected:boolean;notificationReady:boolean}

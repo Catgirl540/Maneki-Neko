@@ -1,4 +1,4 @@
-import { PageHeader } from '@/components/PageHeader'
+import { PageHeader } from '../../components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -7,7 +7,7 @@ import {
   type CustomerActionRequest,
   type CustomerProfile,
   type CustomerSummary,
-} from '@/api'
+} from '../../api'
 import { CARD_STATUS_LABEL, formatCents } from '../customers/labels'
 
 /**

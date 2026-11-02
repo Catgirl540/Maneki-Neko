@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useImperativeHandle, type Ref } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import { terminalApi, type TerminalSession } from '@/api/terminal'
+import { terminalApi, type TerminalSession } from '../../../api/terminal'
 import '@xterm/xterm/css/xterm.css'
 
 export interface TerminalHandle { focus: () => void; clear: () => void; copy: () => Promise<boolean> }

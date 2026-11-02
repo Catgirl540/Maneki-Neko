@@ -1,5 +1,5 @@
-import { useSession } from '@/store/session-context'
-import { staffAgent, opsAgent } from '@/api/agent'
+import { useSession } from '../../store/session-context'
+import { staffAgent, opsAgent } from '../../api/agent'
 import { ChatWorkspace } from '../../../../app/src/components/agent/ChatWorkspace'
 import { StaffConsentCard } from './StaffConsentCard'
 

@@ -1,4 +1,4 @@
-import type { ApprovalBizType, ApprovalStatus, ExecutionStatus } from '@/api'
+import type { ApprovalBizType, ApprovalStatus, ExecutionStatus } from '../../api'
 
 /** 处置展示字典。单独文件，组件文件只导出组件（Fast Refresh 要求）。 */
 

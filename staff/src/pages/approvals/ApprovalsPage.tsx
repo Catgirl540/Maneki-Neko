@@ -1,4 +1,4 @@
-import { PageHeader } from '@/components/PageHeader'
+import { PageHeader } from '../../components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
@@ -8,8 +8,8 @@ import {
   type Approval,
   type ApprovalStatus,
   type InterceptReason,
-} from '@/api'
-import { useSession } from '@/store/session-context'
+} from '../../api'
+import { useSession } from '../../store/session-context'
 import { formatTime } from '../tickets/labels'
 import { ThresholdPanel } from './ThresholdPanel'
 import {

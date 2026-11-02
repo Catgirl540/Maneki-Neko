@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { StaffUser } from '@/api'
+import type { StaffUser } from '../api'
 
 export interface SessionValue {
   user: StaffUser | null

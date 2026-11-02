@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { useSession } from '@/store/session-context'
+import { useSession } from '../store/session-context'
 import { staffNavigation, staffRoleLabel } from './navigation'
 import { useStaffClock } from './useStaffClock'
 import { WorkbenchBrand } from '../../../app/src/components/brand/WorkbenchBrand'

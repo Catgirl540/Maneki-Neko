@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { ApiError } from '@/api'
-import { useSession } from '@/store/session-context'
+import { ApiError } from '../api'
+import { useSession } from '../store/session-context'
 import { WorkbenchBrand } from '../../../app/src/components/brand/WorkbenchBrand'
 import { AlertIcon, ArrowLeftIcon, EyeIcon, EyeOffIcon, ArrowRightIcon } from '../../../app/src/components/ui/icons'
 

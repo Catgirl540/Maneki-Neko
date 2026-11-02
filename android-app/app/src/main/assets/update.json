@@ -1,9 +1,9 @@
 {
   "manifestUrl": "https://bank.waveflow.men/downloads/android.json",
-  "apkUrl": "https://bank.waveflow.men/downloads/luckycat-android-12f5f46c6ed1.apk",
-  "versionCode": 8,
-  "versionName": "1.0.7",
-  "notes": "1.0.7：换头像与昵称、姓名脱敏、二级页转场修复、我的页瘦身、页面级缓存、助手换 DeepSeek",
+  "apkUrl": "https://bank.waveflow.men/downloads/luckycat-android-e0b2964639d2.apk",
+  "versionCode": 9,
+  "versionName": "1.0.8",
+  "notes": "数字类输入改用自绘安全键盘",
   "expiresAt": null,
-  "publishedAt": "2026-11-02T02:32:38.281Z"
+  "publishedAt": "2026-11-02T06:44:18.457Z"
 }

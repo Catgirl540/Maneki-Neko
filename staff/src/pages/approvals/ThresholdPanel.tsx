@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ApiError, api, type TransferThreshold } from '@/api'
-import { useSession } from '@/store/session-context'
+import { ApiError, api, type TransferThreshold } from '../../api'
+import { useSession } from '../../store/session-context'
 import { formatCents } from './labels'
 
 /**

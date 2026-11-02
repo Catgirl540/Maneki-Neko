@@ -1,7 +1,7 @@
-import { PageHeader } from '@/components/PageHeader'
+import { PageHeader } from '../../components/PageHeader'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ApiError, api, type CustomerProfile, type CustomerSummary } from '@/api'
+import { ApiError, api, type CustomerProfile, type CustomerSummary } from '../../api'
 import { CARD_STATUS_LABEL, TX_STATUS_LABEL, formatCents, formatTime } from './labels'
 
 /**
