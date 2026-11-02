@@ -19,7 +19,7 @@ const patch = resolve(temporary, 'knowledge-only.yml')
 await writeFile(patch, '- id: luckycat-bank-demo\n  disabled: true\n')
 try {
 for (const check of checks) {
-  const harness = new DeepSeekHarness({ dshBin: resolve(root, 'node_modules/.bin/dsh'), profile: 'luckycat', provider: process.env.LUCKYCAT_PROVIDER ?? 'openrouter', model: process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash', initializeTimeoutMs: 30000, patches: [patch] })
+  const harness = new DeepSeekHarness({ dshBin: resolve(root, 'node_modules/.bin/dsh'), profile: 'luckycat', provider: process.env.LUCKYCAT_PROVIDER ?? 'openrouter', model: process.env.LUCKYCAT_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017', initializeTimeoutMs: 30000, patches: [patch] })
   try {
     const result = await harness.run(check.question)
     const text = result.finalResponse

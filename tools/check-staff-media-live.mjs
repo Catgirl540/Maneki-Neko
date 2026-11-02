@@ -50,7 +50,7 @@ try {
   secrets.push(staff.token)
   const agentLog = start('framework/bridge/staff-server.mjs', { ...process.env,
     LUCKYCAT_DEMO_PORT: String(agentPort), LUCKYCAT_BANK_URL: bank,
-    LUCKYCAT_PROVIDER: 'openrouter', LUCKYCAT_MODEL: process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash',
+    LUCKYCAT_PROVIDER: 'openrouter', LUCKYCAT_MODEL: process.env.LUCKYCAT_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017',
     LUCKYCAT_PATCHES: '', LUCKYCAT_FALLBACK_MODELS: '', LUCKYCAT_SESSION_DIR: join(dir, 'staff-context'),
   })
   const health = await ready(agent, '/agent-api/health', staff.token, agentLog)

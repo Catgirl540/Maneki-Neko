@@ -47,15 +47,13 @@
             baseURL: https://openrouter.ai/api/v1
             retryPolicy:
               mode: normal
-            models: !!js "[{id: process.env.LUCKYCAT_MODEL ?? 'qwen/qwen3.8-flash', name: '工作人员助手', contextWindow: 131072}]"
-          local:
-            displayName: Local
-            apiKeyEnv: LOCAL_API_KEY
-            api: openai-completions
-            baseURL: !!js process.env.LUCKYCAT_LOCAL_LLM_URL ?? 'http://127.0.0.1:8081/v1'
-            retryPolicy:
-              mode: normal
-            models: !!js "[{id: process.env.LUCKYCAT_MODEL ?? 'qwen3.8-9b-q4', name: '工作人员助手', contextWindow: 65536}]"
+            models:
+              - id: deepseek/deepseek-v4.1-flash-1017
+                name: DeepSeek V4.1 Flash
+                contextWindow: 1000000
+              - id: qwen/qwen3.8-flash
+                name: Qwen 3.8 Flash
+                contextWindow: 131072
 - id: system-prompt
   config:
     includeHarnessIdentity: false

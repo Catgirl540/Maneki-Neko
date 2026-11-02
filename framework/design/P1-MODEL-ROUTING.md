@@ -2,6 +2,10 @@
 
 > 2026-09-17。目标：让框架能连我们自己选的模型，**换模型只改配置**，一行业务代码不写。
 > 结论：**已完成并端到端验证**，包括工具调用。
+>
+> 2026-11-02 更新：文本模型白名单收敛为两个——`deepseek/deepseek-v4.1-flash-1017`（默认）
+> 与 `qwen/qwen3.8-flash`（备选）。nemotron、ling 四档和本机 llama.cpp 路由均已从 profile
+> 移除，历史记录保留在本文下一节，作为选型依据而不是现行配置。
 
 ## 1. 做了什么
 
@@ -23,19 +27,21 @@ sdk-minimal 出厂只装了 `llm-deepseek`（官方 DeepSeek 适配器）。DSH 
             api: openai-completions
             baseURL: https://openrouter.ai/api/v1
             retryPolicy: { mode: normal } # 必须显式写：always 会无限重试且每次都计费
-            models: [...]
-          local:                          # 本机 llama.cpp（OpenAI 兼容），备用
-            apiKeyEnv: LOCAL_API_KEY
-            api: openai-completions
-            baseURL: http://127.0.0.1:8080
-            retryPolicy: { mode: normal }
-            models: [...]
+            models:                       # 只登记要用的；不在表里会被运行时拒绝
+              - id: deepseek/deepseek-v4.1-flash-1017
+                name: DeepSeek V4.1 Flash
+                contextWindow: 1000000
+              - id: qwen/qwen3.8-flash
+                name: Qwen 3.8 Flash
+                contextWindow: 1000000
 ```
 
 同时把出厂人设从 `"You are a helpful software engineer assistant."` 换成业务口径
 （整行覆盖 `system-prompt`，可用 `LUCKYCAT_SYSTEM_PROMPT` 环境变量替换）。
 
 ## 2. 验证证据（都是真跑的，不是推断）
+
+以下结果产生于白名单收敛之前，保留用于说明为什么不再使用这些模型。
 
 跑法：`node bridge/run.mjs "<问题>"`，桥以子进程 + stdio JSON-RPC 驱动 luckycat profile。
 
@@ -59,12 +65,16 @@ sdk-minimal 出厂只装了 `llm-deepseek`（官方 DeepSeek 适配器）。DSH 
 ## 3. 怎么换模型
 
 ```sh
-# 换云端模型
-LUCKYCAT_MODEL=nvidia/nemotron-3.5-lightning:free node bridge/run.mjs "问题"
+# 默认：DeepSeek V4.1 Flash
+node bridge/run.mjs "问题"
 
-# 换到本机 CUDA 模型（需先启动 127.0.0.1:8080 的 llama.cpp）
-LUCKYCAT_PROVIDER=local LUCKYCAT_MODEL=qwen3.8-9b-q4 node bridge/run.mjs "问题"
+# 临时切到 Qwen 3.8 Flash
+LUCKYCAT_MODEL=qwen/qwen3.8-flash node bridge/run.mjs "问题"
 ```
+
+两个模型都必须先在 profile 的 `models:` 里登记，否则运行时直接报
+`no configured model`。增加第三个模型之前想清楚：文本模型越少，换模型时
+漏改的地方越少，`verify.sh` 也越好维护。
 
 模型由调用方在 SDK 握手里指定（`InitializeParams.provider/model`），
 所以"每个业务方用哪个模型"是**部署配置**，不是代码分支。

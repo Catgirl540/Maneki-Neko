@@ -14,7 +14,7 @@ const dir = await mkdtemp(join(tmpdir(), 'staff-live-model-'))
 const free = async () => { const socket = createServer(); await new Promise(r => socket.listen(0, '127.0.0.1', r)); const port = socket.address().port; await new Promise(r => socket.close(r)); return port }
 const [bankPort, agentPort] = await Promise.all([free(), free()])
 const bank = `http://127.0.0.1:${bankPort}`, agent = `http://127.0.0.1:${agentPort}`
-const model = process.env.LUCKYCAT_MODEL ?? 'z-ai/glm-5.3-flash'
+const model = process.env.LUCKYCAT_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017'
 const children = [], results = [], active = []
 let log = ''
 const safe = value => String(value).replaceAll(process.env.OPENROUTER_API_KEY, '[密钥已隐藏]').replace(/sk-or-v1-[\w-]+/g, '[密钥已隐藏]')

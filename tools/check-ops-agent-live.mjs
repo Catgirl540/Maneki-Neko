@@ -16,7 +16,7 @@ await writeFile(join(workspace, 'cleanup.txt'), 'isolated synthetic file, safe t
 const free = async () => { const s = createServer(); await new Promise(r => s.listen(0, '127.0.0.1', r)); const p = s.address().port; await new Promise(r => s.close(r)); return p }
 const [bankPort, agentPort] = await Promise.all([free(), free()])
 const bank = `http://127.0.0.1:${bankPort}`, agent = `http://127.0.0.1:${agentPort}`, children = [], results = []
-const model = process.env.LUCKYCAT_MODEL ?? 'z-ai/glm-5.3-flash'
+const model = process.env.LUCKYCAT_MODEL ?? 'deepseek/deepseek-v4.1-flash-1017'
 const safe = x => String(x).replaceAll(process.env.OPENROUTER_API_KEY, '[密钥已隐藏]').replace(/sk-or-v1-[\w-]+/g, '[密钥已隐藏]')
 let log = '', token
 const start = (file, env) => { const c = spawn(process.execPath, [join(root, file)], { cwd: root, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true }); c.stdout.on('data', x => log += safe(x)); c.stderr.on('data', x => log += safe(x)); children.push(c) }

@@ -100,7 +100,7 @@ if grep -q 'LUCKYCAT_SYSTEM_PROMPT' <<<"$dump"; then ok "业务人设覆盖已�
 if grep -q 'id: luckycat-embedding' <<<"$dump"; then ok "向量服务行 luckycat-embedding 在树中"; else bad "向量服务行缺失"; fi
 if grep -q 'api: openai-embeddings' <<<"$dump"; then ok "向量路由协议 openai-embeddings 已配置"; else bad "向量路由协议缺失"; fi
 if grep -q 'model: baai/bge-m3' <<<"$dump"; then ok "向量默认模型已配置（bge-m3，付费档 1024 维）"; else bad "向量默认模型缺失"; fi
-if grep -q 'id: qwen/qwen3.8-flash' <<<"$dump"; then ok "聊天默认模型已配置（qwen/qwen3.8-flash，唯一过了 e2e-consent 的付费档）"; else bad "聊天默认模型不对"; fi
+if grep -q 'id: deepseek/deepseek-v4.1-flash-1017' <<<"$dump"; then ok "聊天默认模型已配置（deepseek/deepseek-v4.1-flash-1017）"; else bad "聊天默认模型不对"; fi
 if grep -q 'dimensions: 1024' <<<"$dump"; then ok "向量维度已按新模型改成 1024（旧的 2048 会静默算错相似度）"; else bad "向量维度没跟着模型改"; fi
 
 # V2d 知识库检索

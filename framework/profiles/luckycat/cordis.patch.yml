@@ -93,105 +93,20 @@
                 maxDelayMs: 4000
                 jitterRatio: 0
             models:
-              - id: nvidia/nemotron-3-ultra-550b-a55b:free
-                name: Nemotron 3 Ultra 550B (free)
-                contextWindow: 1000000
-              - id: nvidia/nemotron-3.5-lightning:free
-                name: Nemotron 3.5 Lightning (free)
-                contextWindow: 1000000
-              # ══ 默认：Qwen 3.8 Flash ══════════════════════════════════════
-              # 2026-09-20 实测：**e2e-consent.sh 全过（23 项 ok、0 失败）**，
-              # 工具调用与参数都正确（`bank_transfer`：梁乐怡 / 尾号 9123 /
-              # 80000 分 / 备注房租），并且正常发起审批。
-              # 唯一 provider 是 Alibaba（`/endpoints` 查过），和 DeepInfra 那摊
-              # 过载无关，所以不会重演下面 ling 系的 429。
-              # 代价：$0.15/M 输入、$0.47/M 输出（比 ling 免费档贵）。
-              - id: qwen/qwen3.8-flash
-                name: Qwen 3.8 Flash
-                contextWindow: 1000000
-              # 2026-11-02：qwen3.8-flash 在 OpenRouter 侧被上游限流（429），客户
-              # 助手直接「本轮没有生成完整回复」。改用 DeepSeek，实测直连可用。
-              # 注意 **不在这里登记就会报 no configured model**，换模型先加白名单。
+              # ══ 默认：DeepSeek V4.1 Flash ════════════════════════
+              # 2026-11-02 起为默认。起因是 qwen3.8-flash 在 OpenRouter 侧被上游
+              # 限流（429），客户助手直接「本轮没有生成完整回复」。
+              # 注意不在这里登记会报 no configured model，换模型先加白名单。
               - id: deepseek/deepseek-v4.1-flash-1017
                 name: DeepSeek V4.1 Flash
                 contextWindow: 1000000
-              # ── 备选：ling 系（都**不是**默认，选它们的理由与坑见下面记录）────
-              #
-              #   模型                       工具调用   可用性
-              #   ─────────────────────────────────────────────────────────
-              #   ling-3.0-flash-vl:free     ✅ 会      共享池，并发 429
-              #   ling-3.0-flash-vl (付费)   （测不了） 3/3 engine_overloaded
-              #   ling-3.0-flash    (付费)   ❌ 不会    可用、快
-              #   ling-3.0-flash-fin(付费)   ❌ 不会    可用、快
-              #
-              # 「不会」的具体样子：系统提示里明明写了「不要用文字向用户征求确认、
-              # 也不要问『要不要我帮您执行』——直接调用工具即可」，这两个付费档
-              # **无视它**，反过来问用户「请确认以上信息是否正确，我将为您执行转账」，
-              # 然后 `finish: stop`，一个工具都不调。后果是整条敏感操作链路断掉：
-              # 没有工具调用 → 没有确认卡片 → e2e-consent.sh 用例 1 直接失败。
-              # **注意别被裸测骗了**：用两三个工具的极简 prompt 裸测时，这两个档
-              # 是会调工具的；只有放进真实应用（10 个工具 + 完整人设）才暴露。
-              #
-              # 所以换模型时**不要只打一发 chat 接口**，要跑 e2e-consent.sh。
-              - id: inclusionai/ling-3.0-flash-vl:free
-                name: Ling 3.0 Flash VL (free · shared pool)
-                contextWindow: 262144
-              # 注意：**不在这个列表里的模型会被运行时直接拒绝**
-              # （报 `pi-ai provider "openrouter" has no configured model "…"`），
-              # 所以「临时试试某个模型」也必须先在这里登记。
-              # ── 以下是备选，都**不是**默认 ────────────────────────────
-              #
-              # `ling-3.0-flash-fin`（付费，金融微调）——**测过了，不能用**：
-              #   单发很快（1.2-1.4s）、也会调工具（用两三个工具的裸测下），
-              #   但在**真实应用**里（10 个工具 + 完整人设）它把整段思维链写进
-              #   **给用户看的正文**（不是 reasoning 字段），然后 `finish: stop`，
-              #   **一次工具都不调**。后果是敏感操作链路整条失效：
-              #   `framework/scripts/e2e-consent.sh` 用例 1 直接失败
-              #   （「120 秒内没收到待确认事项」→ 转账永远不会走到确认卡片）。
-              #   保留在目录里只是留个记录，别拿来当默认。
-              - id: inclusionai/ling-3.0-flash-fin
-                name: Ling 3.0 Flash Fin (paid · 实测不调工具，勿用)
-                contextWindow: 262144
-              # 关于「付费就不限流」这件事，实测答案是**否**。记在这里免得再踩：
-              #
-              #   · `ling-3.0-flash-vl:free`（上游 Novita）：并发几个请求就 429，
-              #     `limit_source: upstream_provider_shared_pool`。
-              #   · `ling-3.0-flash-vl`（付费档 $0.06/M，DeepInfra）**同样 429**：
-              #     `provider_error_code: engine_overloaded`、
-              #     `limit_source: upstream_provider_shared_pool`、`is_byok: false`。
-              #     `is_byok: false` 是关键——OpenRouter 用的是**它自己的** DeepInfra
-              #     账号，所以付费并没有换到「我们自己的额度」。实测连续 7 次全 429。
-              #     真要脱离共享池得 **BYOK**（到 openrouter.ai/settings/integrations
-              #     配自己的 provider key），或给模型配多家 provider 做回落。
-              #
-              # 每个 ling 模型都只有 DeepInfra 一家 provider（`/endpoints` 查过），
-              # 所以「换一家 provider」在当前配置下走不通，只能换模型或 BYOK。
-              - id: inclusionai/ling-3.0-flash-vl
-                name: Ling 3.0 Flash VL (paid · engine_overloaded)
-                contextWindow: 131072
-              - id: inclusionai/ling-3.0-flash-fin:free
-                name: Ling 3.0 Flash Fin (free · shared pool)
-                contextWindow: 262144
-
-          # 本机：CUDA llama.cpp（OpenAI 兼容）。当前未启动，属备用路由。
-          # 启动后用 LUCKYCAT_PROVIDER=local LUCKYCAT_MODEL=... 即可切过来。
-          local:
-            displayName: 本机 llama.cpp (CUDA)
-            apiKeyEnv: LOCAL_API_KEY
-            api: openai-completions
-            baseURL: http://127.0.0.1:8080
-            retryPolicy:
-              mode: normal
-              maxRetries: 3
-              retryableCodes: [EMPTY_RESPONSE, RATE_LIMIT, SERVER, TIMEOUT, TRANSPORT]
-              backoff:
-                initialDelayMs: 1000
-                maxDelayMs: 4000
-                jitterRatio: 0
-            models:
-              - id: qwen3.8-9b-q4
-                name: Qwen3.8-9B-Q4 (RTX5060 CUDA)
-                contextWindow: 65536
+              # ══ 备选：Qwen 3.8 Flash ══════════════════════════
+              # 2026-09-20 实测 e2e-consent.sh 全过（23 项 ok、0 失败），
+              # 工具调用与参数都正确。唯一 provider 是 Alibaba。
+              # 费用：$0.15/M 输入、$0.47/M 输出。
+              - id: qwen/qwen3.8-flash
+                name: Qwen 3.8 Flash
+                contextWindow: 1000000
 
 # ── 5. 人设与运行时上下文 ──────────────────────────────────────────────────
 # sdk-minimal 出厂人设是 "You are a helpful software engineer assistant."，

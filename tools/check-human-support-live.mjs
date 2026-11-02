@@ -22,7 +22,7 @@ try {
   start('server/index.mjs',{BANK_PORT:String(bankPort),BANK_DB_FILE:join(dir,'bank.sqlite'),BANK_STATE_FILE:join(dir,'empty.json')});await ready(bank,'/health')
   const phone='13800138000',sms=await api(bank,'/api/auth/sms-code',null,{phone}),customer=await api(bank,'/api/auth/login',null,{phone,password:'123456',smsCode:sms.demoCode})
   secrets.push(customer.token)
-  start('framework/bridge/demo-server.mjs',{LUCKYCAT_DEMO_PORT:String(agentPort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_PROVIDER:'openrouter',LUCKYCAT_MODEL:process.env.LUCKYCAT_MODEL??'qwen/qwen3.8-flash',LUCKYCAT_PATCHES:'',LUCKYCAT_FALLBACK_MODELS:'',LUCKYCAT_SESSION_DIR:join(dir,'context'),LUCKYCAT_DISABLE_VOICE:'1'})
+  start('framework/bridge/demo-server.mjs',{LUCKYCAT_DEMO_PORT:String(agentPort),LUCKYCAT_BANK_URL:bank,LUCKYCAT_PROVIDER:'openrouter',LUCKYCAT_MODEL:process.env.LUCKYCAT_MODEL??'deepseek/deepseek-v4.1-flash-1017',LUCKYCAT_PATCHES:'',LUCKYCAT_FALLBACK_MODELS:'',LUCKYCAT_SESSION_DIR:join(dir,'context'),LUCKYCAT_DISABLE_VOICE:'1'})
   await ready(agent,'/agent-api/health',customer.token)
   const {sessionId}=await api(agent,'/agent-api/sessions',customer.token,{})
   await api(agent,`/agent-api/sessions/${sessionId}/messages`,customer.token,{text:'本地验收：我需要人工客服帮我核实一笔转账是否到账。请直接提交人工工单，问题摘要是“核实转账到账情况”。不要查询账户或执行转账。'})

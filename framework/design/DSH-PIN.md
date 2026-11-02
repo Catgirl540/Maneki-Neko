@@ -64,17 +64,25 @@ Node 要求 `^22.19.0 || >=24`；本机 v22.22.1。
 注意：**装插件 = 执行代码**，且 DSH 明确写了它 "executes in-process outside the
 workspace sandbox"（见 [P4-PACKAGING.md](P4-PACKAGING.md) §4）——所以这是特权操作。
 
-### 已验证可用的模型（2026-09-17 实测）
+### 已验证可用的文本模型（2026-11-02 收敛）
+
+**仅保留两个**：`deepseek/deepseek-v4.1-flash-1017`（默认）与 `qwen/qwen3.8-flash`（备选）。
+其余模型（nemotron 两档、ling 四档、本机 llama.cpp 路由）已从 profile 移除。
 
 | 模型 id | 结果 |
 |---|---|
-| `qwen/qwen3.8-flash`（付费档） | ✅ **当前默认**；$0.15/$0.47 每 M；100 万上下文；**`e2e-consent.sh` 全过 23 项**，工具调用与参数均正确 |
-| `inclusionai/ling-3.0-flash`（付费档） | ❌ **实测不能用**：和 fin 一样反问用户、不调工具（`e2e-consent.sh` 用例 1 失败）。裸测会调工具，只有真实应用里才暴露 |
-| `inclusionai/ling-3.0-flash-fin`（付费档） | ❌ **实测不能用**：在真实应用里（10 个工具）把整段思维链写进**给用户看的正文**、然后 `finish: stop`、**一次工具都不调**，`e2e-consent.sh` 用例 1 直接失败。裸测（两三个工具）反而会调——所以"单测过了"不等于能用 |
-| `inclusionai/ling-3.0-flash-vl`（付费档） | ⚠️ 也能用，但**实测持续 429** `engine_overloaded`（DeepInfra，连续 7 次全失败）。付费**不等于**脱离共享池，见下 |
-| `inclusionai/ling-3.0-flash-vl:free` | ⚠️ 3.2s 可用，但上游是共享池（Novita）：并发几个请求就 429。不要拿来跑密集的自动化检查 |
-| `nvidia/nemotron-3.5-lightning:free` | ✅ 15.1s |
-| `nvidia/nemotron-3-ultra-550b-a55b:free` | ❌ 上游过载（免费档），保留在配置里但不作默认 |
+| `deepseek/deepseek-v4.1-flash-1017` | ✅ **当前默认**；100 万上下文。切换起因是 qwen 被上游 429 限流 |
+| `qwen/qwen3.8-flash`（付费档） | ✅ **备选**；$0.15/$0.47 每 M；**`e2e-consent.sh` 全过 23 项**，工具调用与参数均正确 |
+
+已移除模型的历史结论留档：
+
+- `inclusionai/ling-3.0-flash` 与 `-fin`（付费档）**实测不能用**：在真实应用里把思维链
+  写进给用户看的正文、然后 `finish: stop`、一次工具都不调，`e2e-consent.sh` 用例 1 失败。
+  裸测会调工具，只有真实应用才暴露——所以"单测过了"不等于能用。
+- `inclusionai/ling-3.0-flash-vl`（付费档）**实测持续 429** `engine_overloaded`（DeepInfra，
+  连续 7 次全失败）。付费**不等于**脱离共享池。
+- `nvidia/nemotron-3.5-lightning:free` 可用但慢（15.1s）；
+  `nvidia/nemotron-3-ultra-550b-a55b:free` 上游过载。
 
 ### 已验证可用的向量路由（2026-09-17 实测）
 

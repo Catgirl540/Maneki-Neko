@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import {createFallbackFetch} from '../framework/bridge/model-fallback-fetch.mjs'
 const calls=[]
 const response=new Response('data: test\n\n',{headers:{'content-type':'text/event-stream'}})
-const send=createFallbackFetch(async(input,init)=>{calls.push(new Request(input,init));return response},['deepseek/deepseek-v4.1-flash','z-ai/glm-5.3-flash'])
+const send=createFallbackFetch(async(input,init)=>{calls.push(new Request(input,init));return response},['deepseek/deepseek-v4.1-flash-1017'])
 const controller=new AbortController()
 const body={model:'qwen/qwen3.8-flash',stream:true,messages:[{role:'user',content:'fixture'}],tools:[{type:'function',function:{name:'ping',parameters:{type:'object'}}}],max_tokens:2048}
 const headers={authorization:'Bearer fixture-only','content-type':'application/json','content-length':String(JSON.stringify(body).length)}
 assert.equal(await send('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers,body:JSON.stringify(body),signal:controller.signal}),response)
 const request=calls.pop();const actual=await request.json()
-assert.deepEqual(actual.models,['qwen/qwen3.8-flash','deepseek/deepseek-v4.1-flash','z-ai/glm-5.3-flash'])
+assert.deepEqual(actual.models,['qwen/qwen3.8-flash','deepseek/deepseek-v4.1-flash-1017'])
 assert.equal(actual.model,undefined)
 assert.deepEqual(actual.tools,body.tools);assert.deepEqual(actual.messages,body.messages)
 assert.equal(actual.stream,true);assert.equal(request.headers.get('authorization'),'Bearer fixture-only')
