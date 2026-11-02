@@ -24,6 +24,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -330,6 +331,26 @@ private fun AddRowButton(label: String, enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * 表格底部的「图标 + 小字」动作：扫码这类低频操作要能被看见，
+ * 只给一个图标方块会认不出来，所以图标后面跟一行 12sp 文字。
+ */
+@Composable
+private fun FooterAction(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label }
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = if (enabled) Tokens.Ink2 else Tokens.Muted, modifier = Modifier.size(16.dp))
+        Text(label, fontSize = 12.sp, color = if (enabled) Tokens.Ink2 else Tokens.Muted, maxLines = 1)
+    }
+}
+
 /** 删除一行的文字按钮：用珊瑚色，和网页端 `text-coral` 一致，不做成实心红块。 */
 @Composable
 private fun RemoveRowButton(label: String, enabled: Boolean, onClick: () -> Unit) {
@@ -370,12 +391,20 @@ private fun AaPersonTable(
     onRemove: (String) -> Unit,
     onAdd: () -> Unit,
     onSaveContact: (AaPersonDraft) -> Unit,
+    onScan: () -> Unit,
+    onShowCode: () -> Unit,
 ) {
     val selfRow = people.firstOrNull { it.name.trim().isNotEmpty() && NameDisplay.matches(it.name, selfName) }
     TableCard(
         title = "参与者身份",
         note = "${people.size} 人 · 至少 2 人",
-        footer = { AddRowButton("添加参与者", enabled && people.size < 30, onAdd) },
+        footer = {
+            AddRowButton("添加参与者", enabled && people.size < 30, onAdd)
+            Spacer(Modifier.width(2.dp))
+            // 扫一扫与「我的身份码」是同一件事的两半：一个把别人填进来，一个让别人的手机把自己填进去。
+            FooterAction(Icons.Scan, "扫码加成员", enabled, onScan)
+            FooterAction(Icons.Qr, "我的身份码", enabled, onShowCode)
+        },
     ) {
         TableHeadRow(
             listOf(
@@ -737,6 +766,9 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
     var matching by remember { mutableStateOf<Pair<JSONObject, JSONObject>?>(null) }
     var transactionNo by remember { mutableStateOf("") }
     var aaReview by remember { mutableStateOf<JSONObject?>(null) }
+    // 扫码加成员：开着扫码页时整个表单让位，扫完回来直接多一行参与者。
+    var scanning by remember { mutableStateOf(false) }
+    var myCode by remember { mutableStateOf<SplitIdentity?>(null) }
     val selfName = SessionStore.name()
     // 发起人就是收款人：参与者表里姓名与本人户名一致的那行就是本人，不再单独问「你是哪一位」。
     val selfPerson = aaPeople.firstOrNull { it.name.trim().isNotEmpty() && NameDisplay.matches(it.name, selfName) }
@@ -789,7 +821,35 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
             onFinally = { pin = "" },
         ) { work() }
     }
-    BackHandler(enabled = formOpen || submitter.busy) { if (!submitter.busy) formOpen = false }
+    // 扫码页开着时把返回键让给它，否则按返回会先关掉表单、相机还留在屏幕上。
+    BackHandler(enabled = (formOpen || submitter.busy) && !scanning) { if (!submitter.busy) formOpen = false }
+    // 扫码页是全屏相机：直接顶掉表单，扫完（或返回）再回到原处。
+    if (scanning) {
+        QrScanScreen(
+            onBack = { scanning = false },
+            onPicked = { member ->
+                scanning = false
+                // 表里一行只存一个数字（手机号或账号），所以按「扫到的手机号/账号里有没有命中这一行」判重。
+                val landed = aaPeople.firstOrNull { person ->
+                    val value = person.identity.filter(Char::isDigit)
+                    value.isNotEmpty() && (value == member.phone || value == member.accountNo)
+                }
+                val empty = aaPeople.indexOfFirst { it.name.isBlank() && it.identity.isBlank() }
+                when {
+                    // 同一个人已经在表里就别再加一行，省得后面分摊时把他算两遍。
+                    landed != null -> message = "${member.name} 已经在参与者表里。"
+                    empty < 0 && aaPeople.size >= 30 -> error = "参与者最多 30 人。"
+                    else -> {
+                        val filled = AaPersonDraft(name = member.name, identity = member.identity)
+                        aaPeople = if (empty >= 0) aaPeople.toMutableList().also { it[empty] = filled } else aaPeople + filled
+                        message = "已加入 ${member.name}（${member.identity}），核对金额后即可发起。"
+                    }
+                }
+            },
+        )
+        return
+    }
+    myCode?.let { code -> MemberQrDialog(code) { myCode = null } }
     PushScreen(
         title = if (formOpen) { if (tab == 0) "新建定时转账" else "发起 AA 收款" } else "定时转账与 AA",
         onBack = { if (!submitter.busy) { if (formOpen) { formOpen = false; error = null } else onBack() } },
@@ -863,6 +923,16 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
                                     message = "已把 ${person.name.trim()} 存入收款人通讯录。"
                                 }
                                 .onFailure { error = it.message ?: "保存失败" }
+                        }
+                    },
+                    onScan = { scanning = true; error = null; message = null },
+                    onShowCode = {
+                        // 身份码用登录账户的姓名 + 手机号：AA 收款的服务端就是以这两项核对本人的。
+                        val who = SplitIdentity(selfName, phone = SessionStore.phone())
+                        if (selfName.isBlank() || SessionStore.phone().isBlank()) {
+                            error = "当前账户缺少姓名或手机号，无法生成身份码。"
+                        } else {
+                            myCode = who
                         }
                     },
                 )

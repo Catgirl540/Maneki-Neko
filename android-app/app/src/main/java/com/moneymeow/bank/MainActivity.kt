@@ -367,6 +367,7 @@ fun BankApp() {
                         "开户·核验" -> OpenFaceScreen(onBack = pop)
                         "开户·支付密码" -> OpenPasswordScreen(onBack = pop)
                         "开户完成" -> OpenDoneScreen(onBack = pop, onHome = goHome)
+                        "收款人通讯录" -> ContactsScreen(onBack = pop)
                         "自动扣款" -> AutoDebitScreen(onBack = pop)
                         "定时转账与 AA" -> PaymentPlansScreen(onBack = pop)
                         "AA 付款" -> PaymentPlansScreen(onBack = pop, initialTab = 2)

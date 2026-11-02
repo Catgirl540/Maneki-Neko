@@ -36,8 +36,8 @@ android {
         applicationId = "com.moneymeow.bank"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.0.9"
+        versionCode = 11
+        versionName = "1.0.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // 正式包不自动登录；dev 变体会覆盖成 true。
         buildConfigField("boolean", "AUTO_LOGIN_DEMO", "false")
@@ -94,4 +94,11 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // 扫码加成员：CameraX 只负责预览与取帧，二维码的编解码用 zxing 的纯 Java 核心库。
+    implementation("androidx.camera:camera-core:1.4.2")
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+    implementation("com.google.zxing:core:3.5.3")
+    testImplementation("junit:junit:4.13.2")
 }

@@ -506,6 +506,7 @@ private val serviceGroups = listOf(
             "银行卡管理" to Icons.Card,
             "模拟消费" to Icons.Shop,
             "定时转账与 AA" to Icons.Clock,
+            "收款人通讯录" to Icons.Person,
             "存款" to Icons.Pig,
         ),
     ),

@@ -713,6 +713,12 @@ object BankApi {
         JSONArray(requestRaw("GET", "/api/payees?keyword=" + java.net.URLEncoder.encode(keyword, "UTF-8"), null))
     }
 
+    /** 删除通讯录里的收款人（`DELETE /api/payees/:id`）：只删记录，不影响已有转账与流水。 */
+    internal suspend fun deletePayee(id: String) = withContext(Dispatchers.IO) {
+        require(id.matches(Regex("[A-Za-z0-9_-]+"))) { "收款人编号无效" }
+        request("DELETE", "/api/payees/$id", null)
+    }
+
     internal suspend fun payeeRemark(id: String, remark: String): JSONObject = withContext(Dispatchers.IO) {
         require(id.matches(Regex("[A-Za-z0-9_-]+")))
         request("PATCH", "/api/payees/$id", JSONObject().put("remark", remark))
