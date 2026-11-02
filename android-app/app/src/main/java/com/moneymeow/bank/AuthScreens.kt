@@ -98,6 +98,8 @@ fun LoginScreen(
     var hint by remember { mutableStateOf<String?>(null) }
     var passwordHelp by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // 登录页有密码框：开着防截屏，避免明文被截屏/录屏工具取走
+    SecureWindow()
 
     AuthScaffold(
         title = "登录",
@@ -115,12 +117,12 @@ fun LoginScreen(
                 Text("招财猫银行", fontSize = 19.sp, fontWeight = FontWeight.SemiBold, color = Tokens.Ink)
             }
             Column(Modifier.padding(horizontal = 20.dp)) {
-                TextFieldRow(
+                SecureNumberField(
                     label = "手机号",
                     value = phone,
                     onValueChange = { phone = it.filter(Char::isDigit).take(11) },
                     placeholder = "请输入手机号",
-                    keyboardType = KeyboardType.Phone,
+                    maxLength = 11,
                 )
                 Spacer(Modifier.height(14.dp))
                 TextFieldRow(
@@ -131,12 +133,12 @@ fun LoginScreen(
                     password = true,
                 )
                 Spacer(Modifier.height(14.dp))
-                TextFieldRow(
+                SecureNumberField(
                     label = "短信验证码",
                     value = smsCode,
                     onValueChange = { smsCode = it.filter(Char::isDigit).take(6) },
                     placeholder = "6 位验证码",
-                    keyboardType = KeyboardType.Number,
+                    maxLength = 6,
                     trailing = {
                         Box(
                             Modifier
@@ -300,20 +302,20 @@ private fun PhoneStep(draft: OpenAccountDraft, onBack: () -> Unit, onNext: () ->
         content = {
             StepHeader(1, "先验证手机号", "这个号码会成为你的登录账号，也用于接收账户变动通知。")
             Column(Modifier.padding(horizontal = 20.dp)) {
-                TextFieldRow(
+                SecureNumberField(
                     label = "手机号",
                     value = draft.phone,
                     onValueChange = { draft.phone = it.filter(Char::isDigit).take(11) },
                     placeholder = "请输入 11 位手机号",
-                    keyboardType = KeyboardType.Phone,
+                    maxLength = 11,
                 )
                 Spacer(Modifier.height(14.dp))
-                TextFieldRow(
+                SecureNumberField(
                     label = "短信验证码",
                     value = draft.smsCode,
                     onValueChange = { draft.smsCode = it.filter(Char::isDigit).take(6) },
                     placeholder = "6 位验证码",
-                    keyboardType = KeyboardType.Number,
+                    maxLength = 6,
                     trailing = {
                         Box(
                             Modifier
@@ -568,22 +570,17 @@ private fun PasswordStep(
         content = {
             StepHeader(4, "设置 6 位支付密码", "转账、办卡等敏感操作需要输入这个密码，请勿与登录密码相同。")
             Column(Modifier.padding(horizontal = 20.dp)) {
-                TextFieldRow(
+                SecurePinField(
                     label = "支付密码",
                     value = draft.paymentPassword,
                     onValueChange = { draft.paymentPassword = it.filter(Char::isDigit).take(6) },
-                    placeholder = "6 位数字",
-                    keyboardType = KeyboardType.Number,
-                    password = true,
                 )
                 Spacer(Modifier.height(14.dp))
-                TextFieldRow(
+                SecurePinField(
                     label = "确认支付密码",
                     value = draft.confirmPaymentPassword,
                     onValueChange = { draft.confirmPaymentPassword = it.filter(Char::isDigit).take(6) },
                     placeholder = "再输一次",
-                    keyboardType = KeyboardType.Number,
-                    password = true,
                 )
                 Spacer(Modifier.height(18.dp))
                 Box(

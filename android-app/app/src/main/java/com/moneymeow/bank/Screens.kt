@@ -443,45 +443,42 @@ fun TextFieldRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     Column {
-        Text(label, fontSize = 12.sp, color = Tokens.Ink2, modifier = Modifier.padding(bottom = 8.dp, start = 2.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = 52.dp)
-                    .clip(RoundedCornerShape(Tokens.FieldRadius.dp))
-                    .background(Tokens.SurfaceWarm)
-                    .border(1.dp, Tokens.Border, RoundedCornerShape(Tokens.FieldRadius.dp))
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                androidx.compose.foundation.text.BasicTextField(
-                    value = value,
-                    onValueChange = onValueChange,
-                    singleLine = true,
-                    textStyle = androidx.compose.ui.text.TextStyle(
-                        fontSize = 14.sp,
-                        color = Tokens.Ink,
-                    ),
-                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Tokens.Accent),
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                        keyboardType = keyboardType,
-                        imeAction = androidx.compose.ui.text.input.ImeAction.Next,
-                    ),
-                    visualTransformation = if (password) {
-                        androidx.compose.ui.text.input.PasswordVisualTransformation()
-                    } else {
-                        androidx.compose.ui.text.input.VisualTransformation.None
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp).semantics { contentDescription = label },
-                    decorationBox = { inner ->
-                        if (value.isEmpty() && placeholder.isNotEmpty()) {
-                            Text(placeholder, fontSize = 14.sp, color = Tokens.Muted)
-                        }
-                        inner()
-                    },
-                )
-            }
+            // 关键：不要用外层 Box 自绘边框把输入框包起来。
+            // 荣耀/小米这类 ROM 的输入法，只有见到**平台标准输入框**才会切安全键盘；
+            // 套一层带 background+border 的容器后仍会被当成普通输入框。
+            androidx.compose.material3.OutlinedTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                modifier = Modifier.weight(1f).semantics { contentDescription = label },
+                shape = RoundedCornerShape(Tokens.FieldRadius.dp),
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, color = Tokens.Ink),
+                label = { Text(label, fontSize = 12.sp) },
+                placeholder = if (placeholder.isEmpty()) null else {
+                    { Text(placeholder, fontSize = 14.sp) }
+                },
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Tokens.SurfaceWarm,
+                    unfocusedContainerColor = Tokens.SurfaceWarm,
+                    focusedBorderColor = Tokens.Accent,
+                    unfocusedBorderColor = Tokens.Border,
+                    focusedTextColor = Tokens.Ink,
+                    unfocusedTextColor = Tokens.Ink,
+                    focusedLabelColor = Tokens.Ink2,
+                    unfocusedLabelColor = Tokens.Ink2,
+                    cursorColor = Tokens.Accent,
+                ),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                    keyboardType = keyboardType,
+                    imeAction = androidx.compose.ui.text.input.ImeAction.Next,
+                ),
+                visualTransformation = if (password) {
+                    androidx.compose.ui.text.input.PasswordVisualTransformation()
+                } else {
+                    androidx.compose.ui.text.input.VisualTransformation.None
+                },
+            )
             if (trailing != null) {
                 Spacer(Modifier.size(8.dp))
                 trailing()

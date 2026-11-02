@@ -14,10 +14,8 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
@@ -37,8 +35,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -316,40 +312,14 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                 KvRow("申购费率", purchaseFeeLabel(item))
                 Spacer(Modifier.height(10.dp))
 
-                Text("申购金额（元）", style = Tokens.Text.hint)
-                Spacer(Modifier.height(6.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                        .clip(CircleShape)
-                        .background(Tokens.Surface)
-                        .border(1.dp, Tokens.Border, CircleShape)
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    BasicTextField(
-                        value = amountText,
-                        onValueChange = { amountText = it.filter { ch -> ch.isDigit() || ch == '.' }.take(12) },
-                        singleLine = true,
-                        textStyle = TextStyle(fontSize = 14.sp, color = Tokens.Ink),
-                        cursorBrush = SolidColor(Tokens.Accent),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth(),
-                        decorationBox = { inner ->
-                            Box(contentAlignment = Alignment.CenterStart) {
-                                if (amountText.isEmpty()) {
-                                    Text(
-                                        "最低 " + formatCents(item.minAmount),
-                                        fontSize = 13.sp,
-                                        color = Tokens.Muted,
-                                    )
-                                }
-                                inner()
-                            }
-                        },
-                    )
-                }
+                SecureNumberField(
+                    label = "申购金额（元）",
+                    value = amountText,
+                    onValueChange = { amountText = it },
+                    placeholder = "最低 " + formatCents(item.minAmount),
+                    allowDecimal = true,
+                    maxLength = 12,
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(
                     if (amountCents > 0) {
@@ -428,35 +398,11 @@ fun ProductDetailScreen(onBack: () -> Unit, productCode: String?) {
                 )
                 Spacer(Modifier.height(12.dp))
 
-                Text("支付密码", style = Tokens.Text.hint)
-                Spacer(Modifier.height(6.dp))
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(46.dp)
-                        .clip(CircleShape)
-                        .background(Tokens.Surface)
-                        .border(1.dp, Tokens.Border, CircleShape)
-                        .padding(horizontal = 16.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    BasicTextField(
-                        value = password,
-                        onValueChange = { password = it.filter(Char::isDigit).take(6) },
-                        singleLine = true,
-                        textStyle = TextStyle(fontSize = 14.sp, color = Tokens.Ink),
-                        cursorBrush = SolidColor(Tokens.Accent),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        visualTransformation = PasswordVisualTransformation(),
-                        modifier = Modifier.fillMaxWidth(),
-                        decorationBox = { inner ->
-                            Box(contentAlignment = Alignment.CenterStart) {
-                                if (password.isEmpty()) Text("6 位支付密码", fontSize = 13.sp, color = Tokens.Muted)
-                                inner()
-                            }
-                        },
-                    )
-                }
+                SecurePinField(
+                    label = "支付密码",
+                    value = password,
+                    onValueChange = { password = it.filter(Char::isDigit).take(6) },
+                )
                 if (submitError != null) {
                     Spacer(Modifier.height(8.dp))
                     Text(submitError!!, fontSize = 11.5.sp, color = Tokens.Coral, lineHeight = 18.sp)

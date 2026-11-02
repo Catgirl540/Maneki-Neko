@@ -14,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -109,8 +108,8 @@ fun BudgetScreen(onBack: () -> Unit) {
             FormCard("预算设置") {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     TextFieldRow("预算名称", name, { if (!submitter.busy) name = it.take(40) }, placeholder = "例如：日常餐饮")
-                    TextFieldRow("每日限额（元）", limit, { if (!submitter.busy) limit = it.take(16) }, placeholder = "至少 1.00 元", keyboardType = KeyboardType.Decimal)
-                    TextFieldRow("积分门槛（元）", threshold, { if (!submitter.busy) threshold = it.take(16) }, placeholder = "不超过每日限额", keyboardType = KeyboardType.Decimal)
+                    SecureNumberField("每日限额（元）", limit, { if (!submitter.busy) limit = it }, placeholder = "至少 1.00 元", allowDecimal = true)
+                    SecureNumberField("积分门槛（元）", threshold, { if (!submitter.busy) threshold = it }, placeholder = "不超过每日限额", allowDecimal = true)
                 }
             }
             FormCard("适用平台") {

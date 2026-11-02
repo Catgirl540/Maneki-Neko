@@ -37,7 +37,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -216,14 +215,12 @@ fun WealthTab(
                 Spacer(Modifier.height(10.dp))
                 ChipRow(listOf("全部赎回", "部分赎回"), redeemMode) { redeemMode = it }
                 if (redeemMode == 1) {
-                    TextFieldRow(
+                    SecureNumberField(
                         label = "本次赎回份额",
                         value = redeemSharesText,
-                        onValueChange = {
-                            redeemSharesText = it.filter { ch -> ch.isDigit() || ch == '.' }.take(16)
-                        },
+                        onValueChange = { redeemSharesText = it },
                         placeholder = "最多 " + formatShares(target.redeemableShares),
-                        keyboardType = KeyboardType.Decimal,
+                        allowDecimal = true,
                     )
                     Spacer(Modifier.height(10.dp))
                 } else {

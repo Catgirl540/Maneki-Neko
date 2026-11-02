@@ -11,7 +11,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.BackHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -122,11 +121,11 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
             if (tab == 0 && formOpen) {
                 FormCard("收款与执行信息", subtitle = "按北京时间执行；保存后不冻结资金，到期余额不足会失败。") {
                 TextFieldRow("收款人姓名", name, { name = it.take(80) })
-                TextFieldRow("收款账号", number, { number = it.filter(Char::isDigit).take(19) }, keyboardType = KeyboardType.Number)
+                SecureNumberField("收款账号", number, { number = it.filter(Char::isDigit).take(19) }, placeholder = "完整收款账号", maxLength = 19)
                 if (banks.isNotEmpty()) {
                     BankSelector(banks, "CN", bank, enabled = !submitter.busy) { bank = it }
                 }
-                TextFieldRow("金额（元）", amount, { amount = it.take(16) }, keyboardType = KeyboardType.Decimal)
+                SecureNumberField("金额（元）", amount, { amount = it }, allowDecimal = true)
                 TextFieldRow("执行时间（北京时间）", date, { date = it.take(16) }, placeholder = "YYYY-MM-DD HH:MM")
                 TextFieldRow("转账备注", memo, { memo = it.take(140) })
                 }
@@ -145,14 +144,14 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
                 SegTabs(listOf("均分待收金额", "分项 AA"), aaMode) { if (!submitter.busy) aaMode = it }
                 TextFieldRow("收款事由", aaTitle, { aaTitle = it.take(80) })
                 if (aaMode == 0) {
-                    TextFieldRow("待收总额（元）", aaAmount, { aaAmount = it.take(16) }, keyboardType = KeyboardType.Decimal)
+                    SecureNumberField("待收总额（元）", aaAmount, { aaAmount = it }, allowDecimal = true)
                     TextFieldRow("参与者姓名（逗号分隔）", aaNames, { aaNames = it.take(500) })
                 } else {
                     TextFieldRow("本人完整姓名", collector, { collector = it.take(40) })
                     expenses.forEachIndexed { index, expense ->
                         Text("消费 ${index + 1}", fontWeight = FontWeight.Medium)
                         TextFieldRow("消费事由", expense.title, { expenses[index] = expense.copy(title = it.take(80)) })
-                        TextFieldRow("消费全额（元）", expense.amount, { expenses[index] = expense.copy(amount = it.take(16)) }, keyboardType = KeyboardType.Decimal)
+                        SecureNumberField("消费全额（元）", expense.amount, { expenses[index] = expense.copy(amount = it) }, allowDecimal = true)
                         TextFieldRow("本项参加者（逗号分隔）", expense.names, { expenses[index] = expense.copy(names = it.take(500)) })
                         if (expenses.size > 1) TextButton(onClick = { expenses.removeAt(index) }) { Text("删除本项") }
                     }
@@ -162,7 +161,7 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
                     Text("待收总额 ${formatCents(allocation.amount, "CNY")}" + if (aaMode == 1) " · 本人份额 ${formatCents(allocation.selfAmount, "CNY")}" else "", fontSize = 12.sp)
                     allocation.participants.forEach { (participant, share) ->
                         Text("$participant 应付 ${formatCents(share, "CNY")}", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                        TextFieldRow("注册手机号", phones[participant].orEmpty(), { phones[participant] = it.filter(Char::isDigit).take(11) }, keyboardType = KeyboardType.Phone)
+                        SecureNumberField("注册手机号", phones[participant].orEmpty(), { phones[participant] = it.filter(Char::isDigit).take(11) }, placeholder = "11 位手机号", maxLength = 11)
                         TextFieldRow("付款备注", memos[participant] ?: aaTitle, { memos[participant] = it.take(140) })
                     }
                 }
@@ -248,7 +247,7 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
     if (reviewSchedule) AlertDialog(onDismissRequest = { if (!submitter.busy) { reviewSchedule = false; pin = "" } }, title = { Text("确认定时转账") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("$name · $number\n银行：$bank\n金额：$amount 元\n执行：$date（北京时间）\n备注：$memo")
-            TextFieldRow("支付密码", pin, { if (!submitter.busy) pin = it.filter(Char::isDigit).take(6) }, password = true, keyboardType = KeyboardType.Number)
+            SecurePinField("支付密码", pin, { if (!submitter.busy) pin = it.filter(Char::isDigit).take(6) }, enabled = !submitter.busy)
             error?.let { ErrorNote(it) }
         }
     }, confirmButton = { TextButton(enabled = !submitter.busy && pin.length == 6, onClick = {
@@ -263,7 +262,7 @@ fun PaymentPlansScreen(onBack: () -> Unit, initialTab: Int = 0) {
     selected?.let { row -> AlertDialog(onDismissRequest = { if (!submitter.busy) { selected = null; pin = "" } }, title = { Text(when (tab) { 0 -> "取消定时转账"; 1 -> "取消 AA 收款"; else -> "确认 AA 付款" }) }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(when (tab) { 0 -> "确认取消 ${row.optString("payeeName")} 的定时转账？"; 1 -> "确认取消 ${row.optString("title")} 的 AA 收款？"; else -> "收款人：${row.optString("collectorName")}\n账号：${row.optString("collectorAccountNo")}\n金额：${formatCents(row.optLong("amount"), row.optString("currency", "CNY"))}\n备注：${row.optString("memo")}" })
-            if (tab == 2) TextFieldRow("支付密码", pin, { if (!submitter.busy) pin = it.filter(Char::isDigit).take(6) }, password = true, keyboardType = KeyboardType.Number)
+            if (tab == 2) SecurePinField("支付密码", pin, { if (!submitter.busy) pin = it.filter(Char::isDigit).take(6) }, enabled = !submitter.busy)
             error?.let { ErrorNote(it) }
         }
     }, confirmButton = { TextButton(enabled = !submitter.busy && (tab != 2 || pin.length == 6), onClick = {

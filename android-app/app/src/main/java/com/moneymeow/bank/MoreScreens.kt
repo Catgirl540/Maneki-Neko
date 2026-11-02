@@ -41,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
@@ -491,9 +490,9 @@ private fun SalaryEditSheet(
                 lineHeight = 18.sp,
             )
             Spacer(Modifier.height(14.dp))
-            TextFieldRow("每月发薪日", day, { day = it.filter(Char::isDigit).take(2) }, placeholder = "1–28", keyboardType = KeyboardType.Number)
+            SecureNumberField("每月发薪日", day, { day = it.filter(Char::isDigit).take(2) }, placeholder = "1–28", maxLength = 2)
             Spacer(Modifier.height(12.dp))
-            TextFieldRow("预计月薪", amount, { amount = it }, placeholder = "0.00", keyboardType = KeyboardType.Decimal)
+            SecureNumberField("预计月薪", amount, { amount = it }, placeholder = "0.00", allowDecimal = true)
             Spacer(Modifier.height(12.dp))
             TextFieldRow("发薪单位（选填）", employer, { if (it.length <= 40) employer = it }, placeholder = "公司名称")
             if (error != null) {
@@ -861,7 +860,7 @@ private fun LoanApplySheet(
             Spacer(Modifier.height(4.dp))
             Text("核对金额、期限和收款账户后提交；放款结果以服务端返回为准。", fontSize = 11.5.sp, color = Tokens.Ink2, lineHeight = 18.sp)
             Spacer(Modifier.height(14.dp))
-            TextFieldRow("借款金额", amountText, { amountText = it }, placeholder = "0.00", keyboardType = KeyboardType.Decimal)
+            SecureNumberField("借款金额", amountText, { amountText = it }, placeholder = "0.00", allowDecimal = true)
             Spacer(Modifier.height(12.dp))
             Text("借款期限", style = Tokens.Text.hint, modifier = Modifier.padding(bottom = 6.dp, start = 2.dp))
             ChipRow(
@@ -872,13 +871,10 @@ private fun LoanApplySheet(
             Spacer(Modifier.height(4.dp))
             TextFieldRow("借款用途", purpose, { if (it.length <= 20) purpose = it }, placeholder = "日常消费")
             Spacer(Modifier.height(12.dp))
-            TextFieldRow(
+            SecurePinField(
                 "支付密码",
                 password,
                 { password = it.filter(Char::isDigit).take(6) },
-                placeholder = "6 位数字",
-                keyboardType = KeyboardType.NumberPassword,
-                password = true,
             )
             Spacer(Modifier.height(12.dp))
             HairlineCard {
@@ -1196,13 +1192,10 @@ private fun InsuranceEnrollSheet(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            TextFieldRow(
+            SecurePinField(
                 "支付密码",
                 password,
                 { password = it.filter(Char::isDigit).take(6) },
-                placeholder = "6 位数字",
-                keyboardType = KeyboardType.NumberPassword,
-                password = true,
             )
             if (error != null) {
                 Spacer(Modifier.height(10.dp))

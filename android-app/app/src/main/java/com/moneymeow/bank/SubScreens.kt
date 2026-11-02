@@ -406,18 +406,16 @@ fun ExchangeScreen(onBack: () -> Unit) {
                     color = Tokens.Muted,
                 )
                 Spacer(Modifier.height(14.dp))
-                TextFieldRow(
+                SecureNumberField(
                     label = "卖出金额",
                     value = amountText,
                     onValueChange = {
-                        amountText = sanitizeAmountInput(it)
+                        amountText = it
                         invalidateQuote()
                     },
                     placeholder = "0.00",
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
-                    trailing = {
-                        Text(fromBalance?.currency ?: "", style = Tokens.Text.note)
-                    },
+                    allowDecimal = true,
+                    suffix = fromBalance?.currency,
                 )
                 Spacer(Modifier.height(14.dp))
                 Text("买入币种", style = Tokens.Text.hint)
@@ -648,13 +646,10 @@ private fun ExchangeConfirmDialog(
                 if (live) {
                     QuoteLine("报价有效期", "剩余 ${ttlLeft} 秒")
                     Spacer(Modifier.height(4.dp))
-                    TextFieldRow(
+                    SecurePinField(
                         label = "支付密码",
                         value = password,
                         onValueChange = onPasswordChange,
-                        placeholder = "6 位支付密码",
-                        password = true,
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
                     )
                     Text(
                         "提交前会重新获取一次报价；若汇率或到账金额变化，需要重新确认。",
@@ -704,16 +699,6 @@ private fun balancesOf(account: AccountDto?): List<CurrencyBalanceDto> {
             available = account.available,
         ),
     )
-}
-
-/** 只允许数字和一个小数点，最多两位小数；避免在输入阶段就产生四舍五入。 */
-private fun sanitizeAmountInput(raw: String): String {
-    val filtered = raw.filter { it.isDigit() || it == '.' }
-    val dot = filtered.indexOf('.')
-    if (dot < 0) return filtered.take(12)
-    val whole = filtered.substring(0, dot).take(12)
-    val fraction = filtered.substring(dot + 1).filter(Char::isDigit).take(2)
-    return "$whole.$fraction"
 }
 
 private fun amountToCents(text: String): Long? {
@@ -1372,42 +1357,36 @@ private fun PaymentPasswordDialog(
                             )
                         }
                     } else {
-                        TextFieldRow(
+                        SecurePinField(
                             label = "原支付密码",
                             value = oldPassword,
                             onValueChange = {
                                 oldPassword = it.filter(Char::isDigit).take(6)
                                 error = null
                             },
-                            placeholder = "6 位支付密码",
-                            password = true,
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                            enabled = !submitter.busy,
                         )
                     }
-                    TextFieldRow(
+                    SecurePinField(
                         label = "新支付密码",
                         value = newPassword,
                         onValueChange = {
                             newPassword = it.filter(Char::isDigit).take(6)
                             error = null
                         },
-                        placeholder = "6 位数字",
-                        password = true,
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                        enabled = !submitter.busy,
                     )
                     if (newPassword.isNotEmpty() && !newValid) {
                         Text("支付密码须为 6 位数字", style = Tokens.Text.error)
                     }
-                    TextFieldRow(
+                    SecurePinField(
                         label = "确认新支付密码",
                         value = confirmation,
                         onValueChange = {
                             confirmation = it.filter(Char::isDigit).take(6)
                             error = null
                         },
-                        placeholder = "再次输入",
-                        password = true,
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                        enabled = !submitter.busy,
                     )
                     if (confirmation.isNotEmpty() && confirmation != newPassword) {
                         Text("两次输入的新支付密码不一致", style = Tokens.Text.error)

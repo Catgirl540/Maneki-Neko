@@ -326,13 +326,28 @@ fun TransferFormScreen(
         FormCard("收款信息") {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (fps && title != "手机号转账") SegTabs(listOf("手机号", "电邮", "FPS ID", "账户"), fpsType) { if (!preparing) { fpsType = it; identifier = ""; formError = null } }
-            TextFieldRow(
-                if (!fps) "完整收款账号" else listOf("香港手机号", "电邮", "FPS ID", "收款账号")[fpsType],
-                identifier,
-                { if (!preparing) identifier = it.filter { c -> !c.isWhitespace() }.take(if (!fps) 19 else 60) },
-                placeholder = when { !fps -> "12–19 位完整收款账号"; method == "mobile" -> "8 位香港手机号"; method == "email" -> "收款人登记的电邮"; method == "fpsid" -> "7 位 FPS ID"; else -> "6–24 位完整收款账号" },
-                keyboardType = when { !fps || method in listOf("mobile", "fpsid") -> KeyboardType.Number; method == "email" -> KeyboardType.Email; else -> KeyboardType.Text },
-            )
+            // 纯数字类收款标识（内地账号、香港手机号、FPS ID）用自绘数字键盘；
+            // 电邮 / 账户名等需要字母的一律保留系统键盘。
+            val identifierLabel = if (!fps) "完整收款账号" else listOf("香港手机号", "电邮", "FPS ID", "收款账号")[fpsType]
+            val identifierPlaceholder = when { !fps -> "12–19 位完整收款账号"; method == "mobile" -> "8 位香港手机号"; method == "email" -> "收款人登记的电邮"; method == "fpsid" -> "7 位 FPS ID"; else -> "6–24 位完整收款账号" }
+            if (!fps || method in listOf("mobile", "fpsid")) {
+                SecureNumberField(
+                    label = identifierLabel,
+                    value = identifier,
+                    onValueChange = { if (!preparing) identifier = it.filter(Char::isDigit).take(if (!fps) 19 else 8) },
+                    placeholder = identifierPlaceholder,
+                    maxLength = if (!fps) 19 else 8,
+                    enabled = !preparing,
+                )
+            } else {
+                TextFieldRow(
+                    identifierLabel,
+                    identifier,
+                    { if (!preparing) identifier = it.filter { c -> !c.isWhitespace() }.take(60) },
+                    placeholder = identifierPlaceholder,
+                    keyboardType = if (method == "email") KeyboardType.Email else KeyboardType.Text,
+                )
+            }
             if (!fps || method == "account") {
                 TextFieldRow("收款人姓名", payeeName, { if (!preparing) payeeName = it.take(80) }, placeholder = "与收款账户登记姓名一致")
                 BankSelector(banks, region, bankCode, enabled = !preparing) { bankCode = it }
@@ -521,6 +536,9 @@ fun AmountScreen(
     var fpsConfirmed by remember { mutableStateOf<FpsRecipientDto?>(null) }
     var confirmation by remember { mutableStateOf<TransferConfirmation?>(null) }
     var idempotencyKey by remember { mutableStateOf<String?>(null) }
+    // 金额用自绘数字键盘：开关放在函数状态区，避免在列表/卡片里重复 remember 出多个实例。
+    var amountPadOpen by remember { mutableStateOf(false) }
+    val amountFocus: androidx.compose.ui.focus.FocusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     val currencies = listOf("CNY", "USD", "HKD")
     val isFps = draft.channel == "fps"
@@ -859,22 +877,39 @@ fun AmountScreen(
                 if (!opening && !submitting && !confirm && !ambiguousOutcome) payCurrency = currencies[it]
             }
             Spacer(Modifier.height(14.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 金额用自绘数字键盘，不唤起系统输入法；点击金额区弹出。
+            val amountEditable = !opening && !submitting && !confirm && !ambiguousOutcome
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(Tokens.FieldRadius.dp))
+                    .clickable(enabled = amountEditable) { amountFocus.clearFocus(); amountPadOpen = true }
+                    .padding(vertical = 6.dp)
+                    .semantics { contentDescription = "转账金额" },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(when (payCurrency) { "USD" -> "US$"; "HKD" -> "HK$"; else -> "¥" }, fontSize = 24.sp, color = Tokens.Ink, fontWeight = FontWeight.Medium)
-                BasicTextField(
+                Text(
+                    amountText.ifEmpty { "0.00" },
+                    fontSize = 34.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (amountText.isEmpty()) Tokens.BorderStrong else Tokens.Ink,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (amountPadOpen) {
+                SecureNumberPadDialog(
+                    title = "转账金额",
+                    subtitle = payCurrency,
                     value = amountText,
-                    onValueChange = { input ->
-                        if (!opening && !submitting && !confirm && !ambiguousOutcome && (input.isEmpty() || input.matches(Regex("[0-9]*(\\.[0-9]{0,2})?")))) {
-                            amountSide = "pay"; amountText = input.take(12)
-                        }
-                    },
-                    enabled = !opening && !submitting && !confirm && !ambiguousOutcome,
-                    singleLine = true,
-                    textStyle = TextStyle(fontSize = 34.sp, color = Tokens.Ink, fontWeight = FontWeight.SemiBold),
-                    cursorBrush = SolidColor(Tokens.Accent),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { contentDescription = "转账金额" },
-                    decorationBox = { inner -> Box(contentAlignment = Alignment.CenterStart) { if (amountText.isEmpty()) Text("0.00", fontSize = 34.sp, color = Tokens.BorderStrong, fontWeight = FontWeight.SemiBold); inner() } },
+                    maxLength = 12,
+                    masked = false,
+                    allowDecimal = true,
+                    decimalPlaces = 2,
+                    shuffle = false,
+                    onValueChange = { input -> amountSide = "pay"; amountText = decimalInput(amountText, input, 12, 2) },
+                    onDismiss = { amountPadOpen = false },
                 )
             }
             Spacer(Modifier.height(4.dp))
@@ -903,9 +938,9 @@ fun AmountScreen(
                 )
                 if (receiveEditing) {
                     val received = if (amountSide == "receive") receiveText else if (amountCents <= 0) "" else quote?.let { java.math.BigDecimal.valueOf(it.receiveAmount ?: amountCents, 2).toPlainString() }.orEmpty()
-                    TextFieldRow("希望到账（$receiveCurrency）", received, { input ->
-                        if (!opening && !submitting && !confirm && !ambiguousOutcome && (input.isEmpty() || input.matches(Regex("[0-9]*(\\.[0-9]{0,2})?")))) { amountSide = "receive"; receiveText = input.take(12) }
-                    }, placeholder = "输入希望到账的金额", keyboardType = KeyboardType.Decimal)
+                    SecureNumberField("希望到账（$receiveCurrency）", received, { input ->
+                        if (!opening && !submitting && !confirm && !ambiguousOutcome) { amountSide = "receive"; receiveText = decimalInput(receiveText, input, 12, 2) }
+                    }, placeholder = "输入希望到账的金额", allowDecimal = true, maxLength = 12)
                 }
             }
         }
@@ -996,7 +1031,7 @@ fun AmountScreen(
                     Spacer(Modifier.height(2.dp))
                 }
                 Column(Modifier.padding(horizontal = 18.dp, vertical = 12.dp)) {
-                TextFieldRow(
+                SecurePinField(
                     label = "支付密码",
                     value = password,
                     onValueChange = {
@@ -1005,9 +1040,7 @@ fun AmountScreen(
                             confirmError = null
                         }
                     },
-                    placeholder = "6 位数字支付密码",
-                    password = true,
-                    keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
+                    enabled = !submitting,
                 )
                 confirmError?.let {
                     Spacer(Modifier.height(8.dp))

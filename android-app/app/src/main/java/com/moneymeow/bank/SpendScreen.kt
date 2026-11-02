@@ -13,7 +13,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -81,7 +80,7 @@ fun SpendScreen(onBack: () -> Unit, onTransactions: () -> Unit) {
                 }
             }
             if (platform.custom) TextFieldRow("商户名称", merchant, { if (!submitter.busy) merchant = it.take(80) })
-            TextFieldRow("消费金额（元）", amount, { if (!submitter.busy) amount = it.take(16) }, placeholder = "请输入本次消费金额", keyboardType = KeyboardType.Decimal)
+            SecureNumberField("消费金额（元）", amount, { if (!submitter.busy) amount = it }, placeholder = "请输入本次消费金额", allowDecimal = true)
             TextFieldRow("账单详情（选填）", note, { if (!submitter.busy) note = it.take(160) }, placeholder = "添加便于核对的备注")
             if (platform.subscriptionAmount > 0) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

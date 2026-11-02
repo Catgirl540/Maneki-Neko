@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -327,7 +326,7 @@ fun PlansScreen(onBack: () -> Unit) {
             }
             FormCard("定投设置", subtitle = "创建或恢复需有效风险测评、理财资格及支付密码。") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    TextFieldRow("每期金额（元）", amount, { if (!submitter.busy) setAmount(it.take(16)) }, placeholder = "请输入每期投入金额", keyboardType = KeyboardType.Decimal)
+                    SecureNumberField("每期金额（元）", amount, { if (!submitter.busy) setAmount(it) }, placeholder = "请输入每期投入金额", allowDecimal = true)
                     Text("投资频次", style = Tokens.Text.note)
                     SegTabs(listOf("每周", "每两周", "每月"), listOf("每周", "每两周", "每月").indexOf(cycle)) { if (!submitter.busy) cycle = listOf("每周", "每两周", "每月")[it] }
                     Text("当前仅保存计划，不自动扣款。", style = Tokens.Text.note)
@@ -345,7 +344,7 @@ fun PlansScreen(onBack: () -> Unit) {
         PlanFormSheet("自动转入规则", submitter.busy, onDismiss = { editCash = false }) {
             val row = if (loadedTab == 2) data else null
             FormCard("活期保留金额", subtitle = "当前只保存设置，自动转入尚未开放。") {
-                TextFieldRow("保留金额（元）", amount, { if (!submitter.busy) setAmount(it.take(16)) }, placeholder = "请输入需保留的金额", keyboardType = KeyboardType.Decimal)
+                SecureNumberField("保留金额（元）", amount, { if (!submitter.busy) setAmount(it) }, placeholder = "请输入需保留的金额", allowDecimal = true)
             }
             error?.let { ErrorNote(it) }
             PrimaryButton("核对保存金额", onClick = { prepare { PlanReview("修改保留金额", "保留 $amount 元；只保存规则。", "PATCH", "/api/wealth/cash-management/sweep", JSONObject().put("threshold", planCents(amount, true))) } })
@@ -367,7 +366,7 @@ fun PlansScreen(onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("预留币种", style = Tokens.Text.note)
                     SegTabs(listOf("CNY", "USD", "HKD"), listOf("CNY", "USD", "HKD").indexOf(currency)) { if (!submitter.busy) currency = listOf("CNY", "USD", "HKD")[it] }
-                    TextFieldRow("预留金额", amount, { if (!submitter.busy) setAmount(it.take(16)) }, placeholder = "请输入预留金额", keyboardType = KeyboardType.Decimal)
+                    SecureNumberField("预留金额", amount, { if (!submitter.busy) setAmount(it) }, placeholder = "请输入预留金额", allowDecimal = true)
                     Text("预留只减少该币种可用余额，不扣账面余额。鲜花蛋糕另行确认，商户未接入前不创建真实订单。", color = Tokens.Muted, fontSize = 12.sp)
                 }
             }
@@ -413,8 +412,8 @@ fun PlansScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                TextFieldRow("凑整到（元）", roundup, { if (!submitter.busy) roundup = it.take(16) }, keyboardType = KeyboardType.Decimal)
-                TextFieldRow("单日上限（元）", cap, { if (!submitter.busy) cap = it.take(16) }, keyboardType = KeyboardType.Decimal)
+                SecureNumberField("凑整到（元）", roundup, { if (!submitter.busy) roundup = it }, allowDecimal = true)
+                SecureNumberField("单日上限（元）", cap, { if (!submitter.busy) cap = it }, allowDecimal = true)
                 error?.let { ErrorNote(it) }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PrimaryButton("保存并启用", onClick = { prepare {
@@ -436,7 +435,7 @@ fun PlansScreen(onBack: () -> Unit) {
         PlanFormSheet("新建存钱目标", submitter.busy, onDismiss = { createGoal = false }) {
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextFieldRow("目标名称", name, { if (!submitter.busy) setName(it.take(40)) }, placeholder = "例如：旅行基金")
-                TextFieldRow("目标金额（元）", amount, { if (!submitter.busy) setAmount(it.take(16)) }, placeholder = "请输入目标金额", keyboardType = KeyboardType.Decimal)
+                SecureNumberField("目标金额（元）", amount, { if (!submitter.busy) setAmount(it) }, placeholder = "请输入目标金额", allowDecimal = true)
                 TextFieldRow("目标日期（选填）", date, { if (!submitter.busy) setDate(it.take(10)) }, placeholder = "YYYY-MM-DD")
                 error?.let { ErrorNote(it) }
                 PrimaryButton("核对新建目标", onClick = {
@@ -454,7 +453,7 @@ fun PlansScreen(onBack: () -> Unit) {
     review?.let { snapshot -> AlertDialog(onDismissRequest = { if (!submitter.busy) { review = null; pin = "" } }, title = { Text(snapshot.title) }, text = {
         Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(snapshot.detail)
-            if (snapshot.pinRequired) TextFieldRow("支付密码", pin, { if (!submitter.busy) pin = it.filter(Char::isDigit).take(6) }, password = true, keyboardType = KeyboardType.NumberPassword)
+            if (snapshot.pinRequired) SecurePinField("支付密码", pin, { if (!submitter.busy) pin = it.filter(Char::isDigit).take(6) }, enabled = !submitter.busy)
             error?.let { ErrorNote(it) }
         }
     }, confirmButton = { TextButton(enabled = !submitter.busy, onClick = {

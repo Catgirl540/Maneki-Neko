@@ -45,7 +45,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
@@ -1045,33 +1044,31 @@ private fun CardApplicationSheet(
             Spacer(Modifier.height(8.dp))
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 TextFieldRow("收件人", address.recipient, { address = address.copy(recipient = it) }, placeholder = "请输入收件人姓名")
-                TextFieldRow(
+                SecureNumberField(
                     "手机号",
                     address.phone,
                     { address = address.copy(phone = it.filter(Char::isDigit).take(11)) },
                     placeholder = "快递联系用，11 位手机号",
-                    keyboardType = KeyboardType.Number,
+                    maxLength = 11,
                 )
                 TextFieldRow("省 / 直辖市", address.region, { address = address.copy(region = it) }, placeholder = "如：上海市")
                 TextFieldRow("城市", address.city, { address = address.copy(city = it) }, placeholder = "如：上海市")
                 TextFieldRow("详细地址", address.detail, { address = address.copy(detail = it) }, placeholder = "街道、门牌、楼层房号")
-                TextFieldRow(
+                SecureNumberField(
                     "邮政编码（选填）",
                     address.postalCode,
                     { address = address.copy(postalCode = it.filter(Char::isDigit).take(6)) },
                     placeholder = "6 位数字",
-                    keyboardType = KeyboardType.Number,
+                    maxLength = 6,
                 )
             }
 
             Spacer(Modifier.height(14.dp))
-            TextFieldRow(
+            SecurePinField(
                 label = "支付密码",
                 value = pin,
                 onValueChange = { if (!submitter.busy) { pin = it.filter(Char::isDigit).take(6); error = null } },
-                placeholder = "6 位数字支付密码",
-                password = true,
-                keyboardType = KeyboardType.Number,
+                enabled = !submitter.busy,
             )
             Spacer(Modifier.height(6.dp))
             Text(
@@ -1152,13 +1149,11 @@ private fun CardPinActionSheet(
             Spacer(Modifier.height(8.dp))
             Text(description, fontSize = 12.sp, color = Tokens.Ink2, lineHeight = 18.sp)
             Spacer(Modifier.height(14.dp))
-            TextFieldRow(
+            SecurePinField(
                 label = "支付密码",
                 value = pin,
                 onValueChange = { if (!submitter.busy) { pin = it.filter(Char::isDigit).take(6); error = null } },
-                placeholder = "6 位数字支付密码",
-                password = true,
-                keyboardType = KeyboardType.Number,
+                enabled = !submitter.busy,
             )
             Spacer(Modifier.height(6.dp))
             Text(
